@@ -1,7 +1,7 @@
 {
   "name": "dev-pipeline",
   "description": "Calvinball-driven development pipeline: Miss Wormwood (triage), Moe (dev work), and Tracer Bullet (code review) as proper Claude Code subagents. Can be invoked interactively via the Agent tool or unattended via scheduled tasks.",
-  "version": "0.1.0",
+  "version": "0.1.1",
   "author": {
     "name": "Mike Bronner",
     "url": "https://github.com/mike-bronner"
