@@ -1,0 +1,83 @@
+{
+  "id": "dev-pipeline-wormwood",
+  "name": "dev-pipeline: Wormwood (triage)",
+  "nodes": [
+    {
+      "id": "schedule",
+      "name": "Every 15 min",
+      "type": "n8n-nodes-base.scheduleTrigger",
+      "position": [0, 0],
+      "typeVersion": 1.2,
+      "parameters": {
+        "rule": {
+          "interval": [{"field": "minutes", "minutesInterval": 15}]
+        }
+      }
+    },
+    {
+      "id": "auth",
+      "name": "Calvinball Auth",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [220, 0],
+      "typeVersion": 1,
+      "parameters": {
+        "command": "CID=$(security find-generic-password -s calvinball-mcp -a client-id -w) && CSEC=$(security find-generic-password -s calvinball-mcp -a client-secret -w) && curl -sf -X POST https://calvinball.mikebronner.dev/oauth/token -d grant_type=client_credentials -d client_id=$CID -d client_secret=$CSEC | jq -r .access_token"
+      }
+    },
+    {
+      "id": "poll",
+      "name": "Poll Calvinball",
+      "type": "n8n-nodes-base.httpRequest",
+      "position": [440, 0],
+      "typeVersion": 4.2,
+      "parameters": {
+        "url": "https://calvinball.mikebronner.dev/api/project-items",
+        "sendHeaders": true,
+        "headerParameters": {
+          "parameters": [
+            {"name": "Authorization", "value": "=Bearer {{ $json.stdout }}"}
+          ]
+        }
+      }
+    },
+    {
+      "id": "check",
+      "name": "Items exist?",
+      "type": "n8n-nodes-base.if",
+      "position": [660, 0],
+      "typeVersion": 2,
+      "parameters": {
+        "conditions": {
+          "conditions": [
+            {
+              "id": "has-items",
+              "leftValue": "={{ $json.data.items.length }}",
+              "rightValue": 0,
+              "operator": {"type": "number", "operation": "gt"}
+            }
+          ],
+          "combinator": "and"
+        }
+      }
+    },
+    {
+      "id": "dispatch",
+      "name": "Dispatch Wormwood",
+      "type": "n8n-nodes-base.executeCommand",
+      "position": [880, 0],
+      "typeVersion": 1,
+      "parameters": {
+        "command": "=LOG=$HOME/.n8n/logs/wormwood-$(date -u +%Y%m%dT%H%M%SZ).log && mkdir -p $HOME/.n8n/logs && WORKBENCH_SKIP_WARMUP=1 WORKBENCH_SKIP_LOG=1 claude -p --agent dev-pipeline:miss-wormwood --model haiku --dangerously-skip-permissions --no-session-persistence \"Process these Calvinball items for triage: {{ JSON.stringify($json) }}\" 2>&1 | tee \"$LOG\""
+      }
+    }
+  ],
+  "connections": {
+    "Every 15 min": {"main": [[{"node": "Calvinball Auth", "type": "main", "index": 0}]]},
+    "Calvinball Auth": {"main": [[{"node": "Poll Calvinball", "type": "main", "index": 0}]]},
+    "Poll Calvinball": {"main": [[{"node": "Items exist?", "type": "main", "index": 0}]]},
+    "Items exist?": {"main": [[{"node": "Dispatch Wormwood", "type": "main", "index": 0}], []]},
+    "Dispatch Wormwood": {"main": [[]]}
+  },
+  "settings": {"executionOrder": "v1"},
+  "active": false
+}
