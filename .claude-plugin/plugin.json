@@ -1,7 +1,7 @@
 {
-  "name": "dev-pipeline",
+  "name": "workbench-dev-team",
   "description": "Calvinball-driven development pipeline: Miss Wormwood (triage), Moe (dev work), and Tracer Bullet (code review). n8n polls Calvinball every 15 min (zero tokens when idle), dispatches Claude agents only when work exists.",
-  "version": "0.2.0",
+  "version": "0.2.1",
   "author": {
     "name": "Mike Bronner",
     "url": "https://github.com/mike-bronner"
