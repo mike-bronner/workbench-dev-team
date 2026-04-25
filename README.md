@@ -21,7 +21,25 @@ A fourth component — **Dispatch** — is the local scheduled task that polls t
 /plugin install workbench-dev-team@claude-workbench
 ```
 
-That installs the agents and the Dispatch prompt. Nothing is scheduled yet.
+That installs the agents, the Dispatch prompt, and the bundled skills (see below). Nothing is scheduled yet.
+
+## Bundled skills
+
+### `git-commit`
+
+Generates commit messages using Conventional Commits + Gitmoji format. Triggers whenever a commit message is being composed — manual, scripted, or agent-driven (including Moe's PRs).
+
+The skill registers itself globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. So it applies to every Claude Code session, not just dev-team agents. Requires workbench-core 0.2.0+ for the session-warmup discovery mechanism (declared as a hard dependency).
+
+Format example:
+
+```
+feat: ✨ Add email validation endpoint.
+
+Fixes: #789
+```
+
+Full type and emoji references at `skills/git-commit/references/`.
 
 ## Setup
 
