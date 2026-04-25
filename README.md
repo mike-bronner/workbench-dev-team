@@ -9,7 +9,7 @@ You work out of a GitHub project board. New issues land with no acceptance crite
 This plugin runs three agents on a local 20-minute clock to move items through the pipeline for you:
 
 - **Miss Wormwood** (Haiku) — triage. Reads unrefined items, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review.
-- **Moe** (Opus, $5/run cap) — development. Picks the top `Ready` / `In Progress` item, clones the repo, writes code and tests, opens a PR, moves to `In Review`.
+- **Moe** (Opus, $5/run cap) — development. Has two modes: **Calvinball mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no Calvinball calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
 - **Tracer Bullet** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds.
 
 A fourth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
@@ -25,11 +25,19 @@ That installs the agents, the Dispatch prompt, and the bundled skills (see below
 
 ## Bundled skills
 
+Both skills register themselves globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. They apply to every Claude Code / Cowork session, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are. Require workbench-core 0.2.0+ for the session-warmup discovery mechanism (declared as a hard dependency).
+
+### `develop`
+
+Universal dev workflow + standards: orient before writing, plan before coding, atomic commits, every change gets a test, no committed secrets, lint before pushing. Triggers whenever code is being implemented, fixed, refactored, or tested — manual or agent-driven.
+
+Includes a **decision protocol** that requires presenting three options to the human (with reasoning and a recommendation) for any meaningful fork — implementation approach, library choice, scope decisions, naming. The human decides, the agent executes. Trivial choices (mechanical translation, following existing repo conventions, one-line obvious fixes) are exempt.
+
+Used by Moe internally in both operating modes. Also invocable directly in any plugin-aware Claude session.
+
 ### `git-commit`
 
 Generates commit messages using Conventional Commits + Gitmoji format. Triggers whenever a commit message is being composed — manual, scripted, or agent-driven (including Moe's PRs).
-
-The skill registers itself globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. So it applies to every Claude Code session, not just dev-team agents. Requires workbench-core 0.2.0+ for the session-warmup discovery mechanism (declared as a hard dependency).
 
 Format example:
 
