@@ -9,7 +9,7 @@ honors `name` and `description`. There is no model selector — the scheduled
 task runs on the user's Claude Code default model at fire time. Tool scoping
 is inherited from the session; Dispatch only needs Bash + the three
 mcp__calvinball__list_* tools, which are available because the Calvinball
-MCP is registered at user scope by setup.sh.
+MCP is registered at user scope by /workbench-dev-team:setup.
 -->
 
 

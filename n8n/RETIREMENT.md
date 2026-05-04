@@ -6,7 +6,7 @@ Use this once the Dispatch-based pipeline has run end-to-end: the scheduled **Di
 
 Only run the retirement steps below **after** these all pass:
 
-1. `bash setup.sh` at the repo root has completed successfully. Calvinball MCP is registered with Claude Code at user scope (`claude mcp list` shows `calvinball → https://calvinball.mikebronner.dev/mcp`). All four Keychain entries exist: `calvinball-mcp/client-id`, `calvinball-mcp/client-secret`, `github-cli/token`, `claude-code/oauth-token`.
+1. `/workbench-dev-team:setup` has been run successfully in a Claude Code session. Calvinball MCP is registered with Claude Code at user scope (`claude mcp list` shows `calvinball → https://calvinball.mikebronner.dev/mcp`). All four Keychain entries exist: `calvinball-mcp/client-id`, `calvinball-mcp/client-secret`, `github-cli/token`, `claude-code/oauth-token`.
 2. The scheduled **Dispatch** task is registered via `mcp__scheduled-tasks__create_scheduled_task` with the contents of `scheduled-tasks/orchestrator.md` as its prompt, cron `*/20 * * * *` (or `*/30 * * * *`), model `haiku`. Visible in Claude Code's scheduled-tasks panel.
 3. Dispatch has fired at least one full tick that produced work in each lane:
    - An unrefined item was picked up and `workbench-dev-team:miss-wormwood` was dispatched → item ended up in `Backlog` with AC + WSJF populated.

@@ -25,7 +25,10 @@ That installs the agents, the Dispatch prompt, and the bundled skills (see below
 
 ## Bundled skills
 
-Both skills register themselves globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. They apply to every Claude Code / Cowork session, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are. Require workbench-core 0.2.0+ for the session-warmup discovery mechanism (declared as a hard dependency).
+The plugin ships three skills:
+
+- **`develop`** and **`git-commit`** — universal development standards. They register themselves globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. They apply to every Claude Code / Cowork session, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are. Require workbench-core 0.2.0+ for the session-warmup discovery mechanism (declared as a hard dependency).
+- **`setup`** — plugin-specific configuration (Calvinball MCP registration, Keychain seeding, scheduled-task registration). Documented in the [Setup](#setup) section below; not registered globally.
 
 ### `develop`
 
@@ -51,35 +54,34 @@ Full type and emoji references at `skills/git-commit/references/`.
 
 ## Setup
 
-One-time configuration — registers the Calvinball MCP with Claude Code, seeds your Keychain, and registers the scheduled Dispatch task.
+After `/plugin install`, run this in any Claude Code session:
 
-```bash
-cd /path/to/claude-workbench/workbench-dev-team
-bash setup.sh                   # default cadence: every 20 min
-bash setup.sh --cadence=30      # every 30 min
-bash setup.sh --skip-schedule   # don't register the scheduled task
+```
+/workbench-dev-team:setup
 ```
 
-`setup.sh` will prompt for any Keychain entries it can't find. You'll need:
+It walks you through cadence selection (20 or 30 min), Keychain seeding for any missing credentials, Calvinball MCP registration, log directory creation, and Dispatch scheduled-task registration. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or change cadence.
+
+Prerequisites on your machine: `gh` (authenticated), `jq`, `security` (built into macOS).
+
+You'll be prompted in chat for any of these Keychain entries that aren't already present:
 
 | Entry | Purpose |
 |---|---|
 | `calvinball-mcp / client-id` | Calvinball OAuth client ID |
 | `calvinball-mcp / client-secret` | Calvinball OAuth client secret |
-| `github-cli / token` | GitHub token for dispatched agents (setup.sh can auto-extract from `gh auth login`) |
+| `github-cli / token` | GitHub token for dispatched agents (auto-extracted from your existing `gh auth login` Keychain entry when present) |
 | `claude-code / oauth-token` | Claude Code OAuth token for scheduled `claude -p` invocations. Get one with `claude setup-token` |
 
-Prerequisites on your machine: `claude` CLI on PATH, `gh` (authenticated), `jq`.
+### What `/workbench-dev-team:setup` does, in order
 
-### What setup.sh does, in order
-
-1. **Verifies prerequisites** and Keychain credentials; prompts for anything missing.
+1. **Verifies prerequisites** (`gh`, `jq`, `security`) and Keychain credentials; prompts for anything missing.
 2. **Fetches an OAuth bearer token** from Calvinball (client_credentials grant, 1-year lifetime).
-3. **Registers the Calvinball MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__calvinball__*` tools available to every Claude Code session, including the dispatched agents.
+3. **Registers the Calvinball MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__calvinball__*` tools available to every future Claude Code session, including the dispatched agents.
 4. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/`.
-5. **Registers the scheduled Dispatch task** by spawning a headless `claude -p` that calls `mcp__scheduled-tasks__create_scheduled_task` (or `update` if it already exists). Task ID: `workbench-dev-team-dispatch`. Cron: `*/20 * * * *` (or `*/30` per `--cadence`).
+5. **Registers the scheduled Dispatch task** by calling `mcp__scheduled-tasks__create_scheduled_task` (or `update_scheduled_task` if it already exists) directly from the running session. Task ID: `workbench-dev-team-dispatch`. Cron: `*/20 * * * *` (or `*/30` if you chose 30 min).
 
-Re-run `setup.sh` any time you need to refresh the OAuth token, re-register the MCP, or change the Dispatch cadence. It's idempotent.
+Re-run the skill any time you need to refresh the OAuth token, re-register the MCP, or change the Dispatch cadence.
 
 ## How it works
 
@@ -130,7 +132,7 @@ Dispatch runs on your Claude Code default model (scheduled tasks don't expose a 
 
 Two ways to invoke the same agents, same definitions:
 
-1. **Unattended (default).** The scheduled Dispatch task polls Calvinball every 20 minutes and dispatches via `claude -p --agent`. This is what `setup.sh` sets up.
+1. **Unattended (default).** The scheduled Dispatch task polls Calvinball every 20 minutes and dispatches via `claude -p --agent`. This is what `/workbench-dev-team:setup` registers.
 2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:miss-wormwood", ...)`. Useful for manual triage, one-off runs, or debugging without waiting for the next scheduled tick.
 
 ## Monitoring
@@ -143,7 +145,7 @@ Two ways to invoke the same agents, same definitions:
 
 | Problem | Fix |
 |---|---|
-| `claude mcp list` shows calvinball as Failed to connect | Your OAuth token has probably expired or been revoked. Re-run `setup.sh` to fetch a fresh token and re-register. |
+| `claude mcp list` shows calvinball as Failed to connect | Your OAuth token has probably expired or been revoked. Re-run `/workbench-dev-team:setup` to fetch a fresh token and re-register. |
 | Dispatch logs `calvinball unreachable` | `curl https://calvinball.mikebronner.dev/mcp` to check the endpoint. If 500, Calvinball has a middleware bug (should be 401). |
 | Moe stuck (process hung, `/tmp/moe.lock` stale) | `rm /tmp/moe.lock`. Next tick will resume. |
 | Agent not found | `claude agents` should list `workbench-dev-team:miss-wormwood`, `:moe`, `:tracer-bullet`. If not, reinstall the plugin. |
@@ -155,11 +157,11 @@ Two ways to invoke the same agents, same definitions:
 - **Local execution.** Dispatch runs on your Mac. If the host is off, no work moves. Fine for home/dev setups; move Dispatch to an always-on box if you need 24/7 coverage.
 - **Moe budget cap.** `--max-budget-usd 5.00` limits per-run spend. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes.
 - **Calvinball must be reachable.** If the MCP server is down, all three list tools fail and Dispatch logs `calvinball unreachable` and exits cleanly. The next tick retries.
-- **OAuth token lifetime.** Calvinball issues 1-year tokens via client_credentials. Re-run `setup.sh` annually (or whenever you rotate the OAuth client secret).
+- **OAuth token lifetime.** Calvinball issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
 
 ## Manual task registration (fallback)
 
-If the automated registration in `setup.sh` step 5 fails, re-run with `--skip-schedule`, then register manually from any Claude Code session:
+If `/workbench-dev-team:setup` fails at step 5 (scheduled-task registration), choose "Skip" when re-prompted to register the schedule, then register manually from any Claude Code session:
 
 ```
 mcp__scheduled-tasks__create_scheduled_task with
