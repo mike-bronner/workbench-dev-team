@@ -1,14 +1,11 @@
 ---
-name: setup
-description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials for the Calvinball MCP, register the Calvinball MCP with Claude Code at user scope, create the dispatch log directory, and register the scheduled Dispatch task. Use this skill the first time the plugin is installed, when refreshing the OAuth bearer token (annual), when changing Dispatch cadence, or when troubleshooting a failed Calvinball connection. Triggers on "set up workbench-dev-team", "configure dev-team", "register calvinball MCP", "set up dispatch", or any first-run / re-run of the plugin's one-time configuration.
+description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials, register the Calvinball MCP, and deploy the scheduled Dispatch task. Re-run after a plugin update or to refresh the OAuth bearer token (annual).
 ---
-
-# workbench-dev-team Setup
 
 The user has invoked `/workbench-dev-team:setup`. Walk them through the one-time
 (or annual-refresh) configuration of the plugin.
 
-This skill is fully idempotent — re-running is safe at any time. It will skip
+This command is fully idempotent — re-running is safe at any time. It will skip
 already-satisfied steps, refresh the OAuth bearer token (1-year lifetime), and
 update rather than duplicate the scheduled Dispatch task.
 
@@ -190,7 +187,7 @@ fi
 echo "✅ Fetched bearer token (1-year lifetime)"
 ```
 
-The token has roughly a 1-year lifetime — re-run this skill annually (or
+The token has roughly a 1-year lifetime — re-run this command annually (or
 whenever the OAuth client secret rotates) to refresh it.
 
 ## Step 5 — Register Calvinball MCP with Claude Code
@@ -300,14 +297,10 @@ was skipped.
   exactly the desired behavior on re-run (annual refresh is the dominant use
   case).
 - **OAuth token lifetime.** Calvinball issues 1-year tokens via
-  client_credentials. Schedule a calendar reminder, or just re-run this skill
+  client_credentials. Schedule a calendar reminder, or just re-run this command
   any time `claude mcp list` shows `calvinball` as `Failed to connect`.
 - **No headless `claude -p` subprocess.** Earlier versions of this configuration
   spawned a headless `claude -p --dangerously-skip-permissions` to register the
   scheduled task. Inside a slash command the parent session calls
   `mcp__scheduled-tasks__*` tools directly, eliminating subprocess spawn,
   shell-quoted prompt templates, and the skip-permissions flag.
-- **Plugin reach.** Skills are auto-discovered from `skills/*/SKILL.md`; no
-  `plugin.json` edit was needed to register this skill. A new install runs
-  `/workbench-dev-team:setup` from the plugin cache — the user never needs to
-  clone the marketplace repo.
