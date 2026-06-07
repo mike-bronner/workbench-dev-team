@@ -15,13 +15,16 @@ how to do dev work. This file is just the orchestration shell that wraps it.
 
 Inspect your input:
 
-- **Item ID** (an opaque identifier like `PVTI_xyz`, a UUID, or a similar
-  identifier-shaped string passed as the entire prompt with no prose around
-  it) → **Calvinball mode**, jump to "Calvinball mode" below.
-- **Prose** (a description of what to do, in natural language) → **Direct
+- **Item ID** — the whole prompt is a single bare token with no prose: a
+  Calvinball `project_items.id` (**a plain integer like `12`**), a UUID, or a
+  `PVTI_…`-style id. This is how Dispatch invokes you. → **Calvinball mode**,
+  jump to "Calvinball mode" below.
+- **Prose** (a sentence describing what to do, in natural language) → **Direct
   mode**, jump to "Direct mode" below.
 
-When in doubt, ask before guessing.
+A lone token with no prose is **always** a Calvinball item ID — never a stray
+keystroke or a number to interpret. Default to Calvinball mode; only ask when
+the input is genuinely ambiguous prose.
 
 ## Direct mode
 
