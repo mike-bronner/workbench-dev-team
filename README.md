@@ -8,7 +8,7 @@ You work out of a GitHub project board. New issues land with no acceptance crite
 
 This plugin runs three agents on a local 20-minute clock to move items through the pipeline for you:
 
-- **Miss Wormwood** (Haiku) — triage. Reads unrefined items, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review.
+- **Miss Wormwood** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review.
 - **Moe** (Opus, $5/run cap) — development. Has two modes: **Calvinball mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no Calvinball calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
 - **Tracer Bullet** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds.
 
@@ -140,7 +140,7 @@ Two ways to invoke the same agents, same definitions:
 
 - **Agent logs.** `~/.claude-workbench/dev-team-logs/<agent>-<item>-<timestamp>.log` — full agent output per dispatch.
 - **Scheduled task panel.** Claude Code's scheduled-tasks panel shows the Dispatch task's run history and next-run time.
-- **Project board.** Items flow Backlog → Ready → In Progress → In Review → Approved / Escalated. Status drift (items stuck in a column) is your canary.
+- **Project board.** Items flow Inbox → Backlog → Ready → In Progress → In Review → Approved / Escalated. Status drift (items stuck in a column) is your canary.
 
 ## Troubleshooting
 
