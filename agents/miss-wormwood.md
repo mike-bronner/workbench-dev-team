@@ -51,16 +51,39 @@ Read relevant source paths via `gh api repos/<repo>/contents/<path>` based on wh
 
 ### 4. Generate acceptance criteria
 
-Write specific, testable AC as a markdown checklist. Append to the issue body — never replace it:
+Write specific, testable AC as a markdown checklist and **append** it to the issue body — never replace it. **Hard rules:** never inline `$(gh issue view …)` into `--body`, and never write a literal `$…` placeholder. Always go through a temp file so there is no command substitution or quoting to botch:
 
 ```bash
-gh issue edit <issue_number> -R <repo> --body "$(gh issue view <issue_number> -R <repo> --json body --jq '.body')
+# 1. Capture the current body verbatim — this preserves the original, byte for byte.
+gh issue view <issue_number> -R <repo> --json body --jq '.body' > /tmp/wormwood-<issue_number>.md
+
+# 2. If it was already triaged, do NOT append the AC again.
+if grep -q '## Acceptance Criteria' /tmp/wormwood-<issue_number>.md; then
+  echo "AC already present — skipping append"
+else
+  # 3. Append the AC via a quoted heredoc (no shell expansion of $ or backticks).
+  cat >> /tmp/wormwood-<issue_number>.md <<'MARKDOWN'
 
 ## Acceptance Criteria
 - [ ] Specific testable requirement 1
 - [ ] Specific testable requirement 2
 - [ ] Edge case handling
-- [ ] Test coverage requirement"
+- [ ] Test coverage requirement
+MARKDOWN
+
+  # 4. Write the new body from the file — never via --body with an inline $(...).
+  gh issue edit <issue_number> -R <repo> --body-file /tmp/wormwood-<issue_number>.md
+fi
+```
+
+**Verify after writing.** Re-read the body and confirm the AC landed and the original survived. If this check fails, **stop: do not score or move the item, and report the failure** — a clobber must never pass silently.
+
+```bash
+case "$(gh issue view <issue_number> -R <repo> --json body --jq '.body')" in
+  *'$CURRENT_BODY'*|*'$BODY'*)  echo "CLOBBERED — abort, do not score/move, report" ;;
+  *'## Acceptance Criteria'*)   echo "OK — AC appended, original preserved" ;;
+  *)                            echo "AC missing — abort and report" ;;
+esac
 ```
 
 ### 5. Score WSJF fields (select an option by rank)
@@ -121,7 +144,7 @@ One-line summary:
 ## Rules
 
 - **One item per invocation.** You receive one ID, you triage one item. Don't discover other work.
-- **Append AC, never replace the issue body.** Preserve whatever the issue originally said.
+- **Append AC, never replace the issue body.** Preserve whatever the issue originally said — always via `--body-file` from a temp file (step 4), never `--body "$(...)"` and never a literal `$…` placeholder. Verify the original survived after writing.
 - **Don't modify issue titles or labels.** Only the body (for AC) and project-board fields.
 - **Conservative scoring.** When uncertain, pick the middle option.
 - **Never assume option labels.** Read the actual `options` from `project_fields` and write the option *name* — the board uses words (`XXS…XXL`, `minimal…great`), not numbers, for the WSJF single-selects.
