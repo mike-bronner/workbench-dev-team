@@ -1,5 +1,18 @@
 # Calvinball handoff: Dispatch integration
 
+> **✅ COMPLETED — 2026-06-07.** All four tasks shipped to Calvinball `main`
+> (contract fixes in `756f925`; lint hygiene in PR #3 / `4224477`) and verified
+> live: `list_unrefined_items` → `Inbox`, `get_item` → `project_fields` +
+> `field_changes`, `list_development_items` → In-Progress-first. The sections
+> below are retained as the historical spec.
+>
+> **⚠️ One assumption in this spec was wrong.** The board's WSJF single-selects
+> (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`) use **word**
+> options (`XXS…XXL`, `minimal…great`) — **not** the numeric Fibonacci labels
+> assumed under Task 3. Miss Wormwood was corrected to select options by rank
+> from `project_fields` and write the option *name*; Calvinball's `update_fields`
+> already matches single-selects by option name, so no server change was needed.
+
 **Audience:** a Claude Code session running in `/Users/mike/Developer/Sites/calvinball`.
 This is a ready-to-paste prompt describing the MCP contract the `workbench-dev-team`
 plugin depends on, and the corrective changes Calvinball still needs.
@@ -36,15 +49,15 @@ This is the typed interface the plugin relies on. Tool names must match exactly.
 
 | Tool | Behavior |
 |---|---|
-| `list_unrefined_items(limit?)` | Items in the triage intake lane: `status = 'Inbox'`. Sort by creation order (oldest first). **(Task 1 — currently filters `status IS NULL`.)** |
+| `list_unrefined_items(limit?)` | Items in the triage intake lane: `status = 'Inbox'`. Sort by creation order (oldest first). **(Task 1 — ✅ shipped.)** |
 | `list_review_items(limit?)` | Items where `status = 'In Review'`. Sort by creation order. |
-| `list_development_items(limit=1)` | Items where `status IN ('In Progress', 'Ready')`, **In Progress first**, then Ready, then priority/WSJF desc. Excludes PR-type items and items with open `blockedByIssues`; live-enriches priority + blockers via GraphQL. Honors `limit` (Dispatch calls `limit=1`). **(Task 2 — currently returns `Ready` only.)** |
+| `list_development_items(limit=1)` | Items where `status IN ('In Progress', 'Ready')`, **In Progress first**, then Ready, then priority/WSJF desc. Excludes PR-type items and items with open `blockedByIssues`; live-enriches priority + blockers via GraphQL. Honors `limit` (Dispatch calls `limit=1`). **(Task 2 — ✅ shipped.)** |
 
 ### Agent-facing (read, scope `calvinball.mcp.read`)
 
 | Tool | Behavior |
 |---|---|
-| `get_item(id)` | Full item state: `id`, `repo`, `issue_number`, `title`, `status`, `content_node_id`, **`project_fields`** (field catalog with option IDs for each triage single-select), **`field_changes`** (audit trail). **(Task 3 — currently returns neither `project_fields` nor `field_changes`.)** |
+| `get_item(id)` | Full item state: `id`, `repo`, `issue_number`, `title`, `status`, `content_node_id`, **`project_fields`** (field catalog with option IDs for each triage single-select), **`field_changes`** (audit trail). **(Task 3 — ✅ shipped.)** |
 
 ### Agent-facing (write, scope `calvinball.mcp.write`)
 
@@ -69,11 +82,11 @@ So you don't have to rediscover it:
 - **`Inbox` is the triage intake lane.** The board's "Item added to project"
   workflow sets new items to `Inbox`. There are currently items in `Inbox` and
   **0 items with `status IS NULL`** — nothing sits at null anymore.
-- `list_unrefined_items()` currently returns **0** because it still filters on
-  `status IS NULL` (Task 1).
-- `get_item(id)` currently returns **neither `project_fields` nor `field_changes`**
-  — verified against multiple items with field data and history (Task 3). This is
-  blocking: Miss Wormwood cannot score WSJF without `project_fields`.
+- `list_unrefined_items()` returned **0** at the time of writing because it
+  filtered on `status IS NULL` (Task 1). ✅ Now filters `Inbox`.
+- `get_item(id)` returned **neither `project_fields` nor `field_changes`** at the
+  time of writing — blocking Miss Wormwood's WSJF scoring (Task 3). ✅ Now returns
+  both.
 
 ## Codebase map (observed 2026-06-07 — verify before trusting)
 
@@ -191,13 +204,13 @@ the plugin breaks silently in production.
 
 ## Acceptance criteria
 
-- [ ] `list_unrefined_items` returns `status = 'Inbox'` items; description updated.
-- [ ] `list_development_items` returns `In Progress` first then `Ready`; in-progress issues with Moe draft PRs are returned; PR-type items excluded; blockers excluded; `limit` honored.
-- [ ] `get_item` returns `project_fields` (options for every triage single-select) and `field_changes`.
-- [ ] `update_fields` ↔ `get_item` option-ID round-trip verified by test.
-- [ ] Contract test asserts the exact tool names **and** the shapes above.
-- [ ] All access through Eloquent models; OAuth scopes (`calvinball.mcp.read` / `calvinball.mcp.write`) intact; full Pest suite green.
-- [ ] Calvinball README / docs reflect the `Inbox` lane and the corrected `list_development_items` semantics.
+- [x] `list_unrefined_items` returns `status = 'Inbox'` items; description updated.
+- [x] `list_development_items` returns `In Progress` first then `Ready`; in-progress issues with Moe draft PRs are returned; PR-type items excluded; blockers excluded; `limit` honored.
+- [x] `get_item` returns `project_fields` (options for every triage single-select) and `field_changes`.
+- [x] `update_fields` ↔ `get_item` option-ID round-trip verified by test.
+- [x] Contract test asserts the exact tool names **and** the shapes above.
+- [x] All access through Eloquent models; OAuth scopes (`calvinball.mcp.read` / `calvinball.mcp.write`) intact; full Pest suite green.
+- [x] Calvinball README / docs reflect the `Inbox` lane and the corrected `list_development_items` semantics.
 
 ## Constraints
 
