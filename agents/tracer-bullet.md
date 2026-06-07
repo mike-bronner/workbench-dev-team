@@ -41,6 +41,25 @@ PR_NUM=$(echo "$PR_JSON" | jq -r '.[0].number // empty')
 
 If no PR is found, log `no PR for #<issue_number>` and exit. Do not move the item — the state is broken in a way Moe should notice on the next tick.
 
+### 2.5. Decision request? (answer mode — before reviewing code)
+
+Some `In Review` items aren't finished work — they're **Moe asking a tactical question before implementing**. Check for that first:
+
+```bash
+# Moe's blocked-marker comment + a draft PR with essentially no implementation.
+gh pr view $PR_NUM -R <repo> --json additions,deletions,comments \
+  --jq 'if ([.comments[].body] | any(test("<!-- moe-blocked: tactical -->"))) and ((.additions + .deletions) < 5) then "decision-request" else "review" end'
+```
+
+If it returns `decision-request`:
+
+1. Read Moe's question + options (the marked comment) and the issue's acceptance criteria.
+2. **Answer it** — pick the option, or give the smallest correct direction. Comment on the PR; make the **first line** `<!-- tracer-answer -->`, then your decision and a one-line why.
+3. `mcp__calvinball__move(<ITEM_ID>, "In Progress")` — hand it back to Moe to implement with your answer.
+4. Do **not** review code (there is none yet), do **not** approve, and do **not** count this toward the 3-strike rule. Exit.
+
+Otherwise (a real diff, no tactical marker) it's a normal review — continue below.
+
 ### 3. Check the 3-strike rule
 
 Count how many times changes have been requested on this PR:

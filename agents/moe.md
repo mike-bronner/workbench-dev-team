@@ -173,6 +173,42 @@ against AC, implementing, testing, committing — all the universal dev work,
 including the decision protocol for any forks. Don't duplicate that guidance
 here.
 
+#### If a fork blocks you — classify, route, and exit (never park it)
+
+The `/develop` decision protocol surfaces options to a human, but in the
+autonomous pipeline **no one is watching this PR** — a question left in a
+comment is a dead end, and the item stalls forever in `In Progress`. So:
+
+1. **Don't churn tokens.** Only stop for a *genuine* fork with real
+   consequences. For a trivial default (a name, a local style choice, an
+   obvious idiomatic pick), choose the sensible option and keep building —
+   Tracer catches a wrong call in review.
+2. **When it IS a real fork, classify it, route the item, and exit** — never
+   leave it `In Progress`:
+
+| The block is about… | `move()` to | Resolved by |
+|---|---|---|
+| **Requirements / scope** — *what* to build is unclear, too big, or under-specified | `Inbox` | Wormwood re-triages / splits the AC |
+| **Architecture** — a design choice with long-term consequences an agent shouldn't make alone | `Escalated` | Mike decides |
+| **Small / tactical** — a low-consequence approach choice | `In Review` | Tracer answers *before* you implement |
+
+For all three, post your question + options as a PR comment whose **first line
+is the marker the receiving agent keys on**, then move the item:
+
+```bash
+# /tmp/moe-question-<issue_number>.md must START with exactly one of:
+#   <!-- moe-blocked: scope -->   <!-- moe-blocked: architecture -->   <!-- moe-blocked: tactical -->
+gh pr comment $PR_NUM -R <repo> --body-file /tmp/moe-question-<issue_number>.md
+```
+```
+mcp__calvinball__move(<ITEM_ID>, "Inbox" | "Escalated" | "In Review")
+```
+
+Then release the lock and **exit**. Do NOT implement, do NOT `gh pr ready`, do
+NOT move to `In Review` with finished work, do NOT leave it `In Progress`. The
+draft PR + branch stay open; when the item comes back to you (Wormwood's
+sharper AC, Tracer's answer, or Mike's call), implement on the same branch.
+
 ### 7. Mark the PR ready and update the body
 
 ```bash

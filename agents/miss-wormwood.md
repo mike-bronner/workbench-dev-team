@@ -38,6 +38,29 @@ From the response you get: `repo`, `issue_number`, `title`, `content_node_id`, a
 gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 ```
 
+### 2.5. Scope kickback from Moe?
+
+If the comments include a `<!-- moe-blocked: scope -->` marker, Moe sent this item back because the acceptance criteria were too vague, too big, or under-specified to build. **Don't triage from scratch and don't skip** — *refine*:
+
+1. Read Moe's question (the marked comment) and the existing AC.
+2. Sharpen the ambiguous criteria, or **split the work down to the smallest shippable slice** Moe asked for.
+3. **Replace** the existing `## Acceptance Criteria` section with the refined one — keep the issue's original description above it, clobber-safe:
+
+```bash
+gh issue view <issue_number> -R <repo> --json body --jq '.body' \
+  | sed '/^## Acceptance Criteria$/,$d' > /tmp/wormwood-<issue_number>.md
+cat >> /tmp/wormwood-<issue_number>.md <<'MARKDOWN'
+
+## Acceptance Criteria
+- [ ] <refined / split criterion>
+MARKDOWN
+gh issue edit <issue_number> -R <repo> --body-file /tmp/wormwood-<issue_number>.md
+```
+
+4. Re-score (the scope likely shrank) per steps 5–6 and move to `Backlog`. **Skip step 4** — you just rewrote the AC here.
+
+If there is **no** `moe-blocked: scope` marker, triage normally — continue with step 3.
+
 ### 3. Inspect the codebase
 
 Browse the repo to understand context — don't clone if `gh api` is enough:
