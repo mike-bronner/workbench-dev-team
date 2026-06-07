@@ -1,5 +1,12 @@
 # Calvinball handoff: Dispatch integration
 
+> **⚠️ Partially superseded.** The triage lane moved from `status IS NULL` to a
+> dedicated `Inbox` status, and three tool behaviors were corrected, in
+> [`CALVINBALL_HANDOFF_2.md`](./CALVINBALL_HANDOFF_2.md). This document remains
+> the reference for the broader architecture (Eloquent models, Passport scopes,
+> the full tool list); where the two disagree on `list_unrefined_items`,
+> `list_development_items`, or `get_item`, handoff 2 wins.
+
 **Audience:** a Claude Code session running in `/Users/mike/Developer/Sites/calvinball`. This document is a ready-to-paste prompt describing what Calvinball needs to serve as the work queue for the `workbench-dev-team` plugin's local orchestrator (Dispatch).
 
 Paste everything from `---` down into the Claude Code session. The preamble above this line is for humans reading the plugin repo.
