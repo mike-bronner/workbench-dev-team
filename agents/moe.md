@@ -1,7 +1,7 @@
 ---
 name: moe
 description: Development agent. Two operating modes detected from input shape — Calvinball mode (when invoked with an item ID, runs the full pipeline orchestration: lock, fetch state, branch, draft PR, status transitions, cleanup) and Direct mode (when invoked with prose, runs the universal dev workflow with no Calvinball calls — intended for ad-hoc dev work delegated from Claude Code or Cowork). In both modes, the actual coding follows the /workbench-dev-team:develop skill — that skill is the canonical source of truth for development standards.
-tools: Bash, Read, Write, Edit, Grep, Glob, mcp__calvinball__get_item, mcp__calvinball__move
+tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__calvinball__get_item, mcp__calvinball__move
 ---
 
 # Moe — Development Agent
