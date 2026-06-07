@@ -15,7 +15,7 @@ You receive a single positional argument: the Calvinball **item ID** of an item 
 ## Tools
 
 - `mcp__calvinball__get_item(id)` — fetch fresh state for this item (title, repo, issue_number, body, field definitions, content_node_id).
-- `mcp__calvinball__update_fields(id, {...})` — set project-board field values (size, bv, rr, ts, estimate, priority). Server handles the GH GraphQL mapping.
+- `mcp__calvinball__update_fields(id, {...})` — set project-board field values. Keys are the **exact** field names (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`, `Estimate`, `Priority`); single-selects take the chosen option **name**, NUMBER fields take numbers. Server resolves option IDs and handles the GH GraphQL mapping.
 - `mcp__calvinball__move(id, column)` — move item to a status column.
 - `Bash` — for `gh` (issue content read + AC body edit, codebase inspection via `gh api`) and any shell needed.
 - `Read, Grep, Glob` — for local file inspection if you happen to be in a clone.
@@ -30,7 +30,7 @@ No GraphQL, no curl, no Keychain lookups. All Calvinball and project-board write
 item = mcp__calvinball__get_item(<ITEM_ID>)
 ```
 
-From the response you get: `repo`, `issue_number`, `title`, `content_node_id`, and `project_fields` (the field catalog with option IDs for single-selects like Size, BV, RR, TS, Estimate, Priority).
+From the response you get: `repo`, `issue_number`, `title`, `content_node_id`, and `project_fields` — the field catalog. Each WSJF single-select (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`) lists its **ordered** `options` as `{id, name}`; you pick among those names. `Estimate` and `Priority` are NUMBER fields. Labels may be words (`XXS…XXL`, `minimal…great`) or numbers — never assume, always read them from `project_fields`.
 
 ### 2. Read the issue
 
@@ -63,43 +63,45 @@ gh issue edit <issue_number> -R <repo> --body "$(gh issue view <issue_number> -R
 - [ ] Test coverage requirement"
 ```
 
-### 5. Score WSJF fields (Fibonacci, centered on 5)
+### 5. Score WSJF fields (select an option by rank)
 
-Count the number of options for each single-select field in `item.project_fields`. Generate a Fibonacci sequence of that length, centered so the middle element equals 5:
+Each WSJF single-select carries an **ordered** `options` list in `item.project_fields`. Assess each dimension against the AC you just wrote and pick the option whose **rank** (position in the list) matches your judgment: first option = least, last option = most, middle when uncertain. Selecting by position works whether the labels are words or numbers.
+
+Score each field:
+
+- **Size** — implementation complexity. Small bug fix → low rank, multi-file feature → high rank.
+- **Business Value** — impact on users and business goals. Core feature → high, minor UX → low.
+- **Risk Reduction** — how much technical or business risk this mitigates. Security fix → high, cosmetic → low.
+- **Time Sensitive** — urgency and time-decay of value. Blocking other work → high, nice-to-have → low.
+
+For the WSJF math, weight each chosen **rank** with a Fibonacci sequence of the field's option-count length, centered so the middle = 5 (rank 1 → first weight … rank N → last weight):
 
 - 7 options → `[1, 2, 3, 5, 8, 13, 21]`
 - 5 options → `[2, 3, 5, 8, 13]`
 - 3 options → `[3, 5, 8]`
 
-Score each field against the AC you just wrote:
-
-- **Size** — implementation complexity. Small bug fix → low, multi-file feature → high.
-- **Business Value (BV)** — impact on users and business goals. Core feature → high, minor UX → low.
-- **Risk Reduction (RR)** — how much technical or business risk this mitigates. Security fix → high, cosmetic → low.
-- **Time Sensitive (TS)** — urgency and time-decay of value. Blocking other work → high, nice-to-have → low.
-
 Derive:
-- **Estimate** = same Fibonacci number as Size.
-- **Priority** = WSJF = `(BV + RR + TS) / Estimate`.
+- **Estimate** (number) = the Fibonacci weight of the chosen **Size** rank.
+- **Priority** (number) = WSJF = `(bv_weight + rr_weight + ts_weight) / Estimate`.
 
-When in doubt, score toward the middle (5).
+When in doubt, pick the middle option.
 
 ### 6. Write the scores
 
-One MCP call to set all the project-board values at once:
+One MCP call. Use the **exact** field names from `project_fields` and pass each single-select the option **name** you chose; the NUMBER fields take numbers:
 
 ```
 mcp__calvinball__update_fields(<ITEM_ID>, {
-  "size": <fibonacci>,
-  "bv": <fibonacci>,
-  "rr": <fibonacci>,
-  "ts": <fibonacci>,
-  "estimate": <fibonacci>,
-  "priority": <wsjf>
+  "Size":           "<chosen Size option name>",
+  "Business Value": "<chosen BV option name>",
+  "Risk Reduction": "<chosen RR option name>",
+  "Time Sensitive": "<chosen TS option name>",
+  "Estimate":       <estimate_weight>,
+  "Priority":       <wsjf>
 })
 ```
 
-The server maps numeric values back to the correct option IDs for each single-select field.
+Single-selects match on option name (case-insensitive); the server resolves the option ID. **Check the response**: if `ok` is `false`, read `errors`, fix the offending field name or option value, and retry the failed fields — never report success on a failed write.
 
 ### 7. Move to Backlog
 
@@ -113,7 +115,7 @@ One-line summary:
 
 ```
 ✅ triaged #<issue_number> (<repo>) → Backlog
-   size=<n> bv=<n> rr=<n> ts=<n> estimate=<n> priority=<wsjf>
+   size=<option> bv=<option> rr=<option> ts=<option> estimate=<n> priority=<wsjf>
 ```
 
 ## Rules
@@ -121,6 +123,8 @@ One-line summary:
 - **One item per invocation.** You receive one ID, you triage one item. Don't discover other work.
 - **Append AC, never replace the issue body.** Preserve whatever the issue originally said.
 - **Don't modify issue titles or labels.** Only the body (for AC) and project-board fields.
-- **Conservative scoring.** When uncertain, lean toward the middle of the Fibonacci sequence.
+- **Conservative scoring.** When uncertain, pick the middle option.
+- **Never assume option labels.** Read the actual `options` from `project_fields` and write the option *name* — the board uses words (`XXS…XXL`, `minimal…great`), not numbers, for the WSJF single-selects.
+- **Verify the write.** If `update_fields` returns `ok: false`, the scores did NOT land — fix and retry; don't print `✅ triaged`.
 - **If the issue is too vague to triage,** move it to Backlog anyway with a minimal AC noting "needs clarification — see issue body," and low scores across the board. Do not invent requirements.
 - **No GraphQL, no curl.** Everything goes through MCP tools or `gh` subcommands.
