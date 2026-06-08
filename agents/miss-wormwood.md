@@ -40,11 +40,9 @@ gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 
 ### 2.5. Scope kickback from Moe?
 
-If the comments include a `<!-- moe-blocked: scope -->` marker, Moe sent this item back because the acceptance criteria were too vague, too big, or under-specified to build. **Don't triage from scratch and don't skip** — *refine*:
+If the comments include a `<!-- moe-blocked: scope -->` marker, Moe sent this item back because the acceptance criteria were too vague or under-specified to build. **Don't triage from scratch and don't skip** — pick one of two paths:
 
-1. Read Moe's question (the marked comment) and the existing AC.
-2. Sharpen the ambiguous criteria, or **split the work down to the smallest shippable slice** Moe asked for.
-3. **Replace** the existing `## Acceptance Criteria` section with the refined one — keep the issue's original description above it, clobber-safe:
+**a) Sharpen — the AC was just unclear (most cases).** Read Moe's question (the marked comment) and the existing AC, then tighten the ambiguous criteria. **Never split the issue** — one issue is always one PR. **Replace** the existing `## Acceptance Criteria` section with the sharpened one, keeping the issue's original description above it, clobber-safe:
 
 ```bash
 gh issue view <issue_number> -R <repo> --json body --jq '.body' \
@@ -52,12 +50,14 @@ gh issue view <issue_number> -R <repo> --json body --jq '.body' \
 cat >> /tmp/wormwood-<issue_number>.md <<'MARKDOWN'
 
 ## Acceptance Criteria
-- [ ] <refined / split criterion>
+- [ ] <sharpened criterion>
 MARKDOWN
 gh issue edit <issue_number> -R <repo> --body-file /tmp/wormwood-<issue_number>.md
 ```
 
-4. Re-score (the scope likely shrank) per steps 5–6 and move to `Backlog`. **Skip step 4** — you just rewrote the AC here.
+Then re-score per steps 5–6 and move to `Backlog`. **Skip step 4** — you just rewrote the AC here.
+
+**b) Escalate — the issue genuinely can't be one coherent PR.** If the work is too large to deliver as a single PR, **do not split it into sub-issues or slices** — that fragments the developer's context across PRs. Leave the AC as-is, post a comment explaining why it's too big to ship as one PR, and `mcp__calvinball__move(<ITEM_ID>, "Escalated")` for Mike to rebuild as separate independent issues. Stop here.
 
 If there is **no** `moe-blocked: scope` marker, triage normally — continue with step 3.
 

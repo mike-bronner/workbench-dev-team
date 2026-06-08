@@ -188,7 +188,7 @@ comment is a dead end, and the item stalls forever in `In Progress`. So:
 
 | The block is about… | `move()` to | Resolved by |
 |---|---|---|
-| **Requirements / scope** — *what* to build is unclear, too big, or under-specified | `Inbox` | Wormwood re-triages / splits the AC |
+| **Requirements / scope** — *what* to build is unclear, too big, or under-specified | `Inbox` | Wormwood sharpens the AC, or escalates to Mike if it can't be one PR |
 | **Architecture** — a design choice with long-term consequences an agent shouldn't make alone | `Escalated` | Mike decides |
 | **Small / tactical** — a low-consequence approach choice | `In Review` | Tracer answers *before* you implement |
 
@@ -261,6 +261,11 @@ The lock file is released automatically by the `trap` on exit.
   protect).
 - **One task per invocation, either mode.** Finish it, or leave it in a clean
   state for the next tick to resume.
+- **One issue = one PR — implement the *entire* issue.** Never split an issue
+  across multiple PRs, never phase or slice. Keeping the whole unit of work in
+  one PR preserves your context — split across PRs, you lose track of what
+  sibling PRs already did. If an issue genuinely can't be one coherent PR, route
+  the scope block to `Inbox` (per the fork table); never build it piecemeal.
 - **The `/develop` skill is canonical.** When this file and `/develop` seem to
   conflict on dev practice, follow `/develop`. This file is orchestration; the
   skill is substance.
