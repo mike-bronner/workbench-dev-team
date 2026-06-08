@@ -189,14 +189,26 @@ Moe picks it up on the next orchestrator tick.
 
 #### 🛑 ESCALATE — an AC item is unmet, but the **AC itself** looks wrong, imprecise, impossible, or contradicted by the codebase
 
-You're not allowed to approve around this, and requesting changes would force Moe to build something you believe is wrong. Hand the contract dispute to Mike — **do not submit a review** (no approve, no request-changes):
+You're not allowed to approve around this, and requesting changes would force Moe to build something you believe is wrong. Hand the contract dispute to Mike — **do not submit a review** (no approve, no request-changes).
+
+Frame it as a decision he can act on, the way the workbench always does: **three options, each with pros and cons, then your recommendation and why** — not an open-ended question. Mike should be able to reply with just a number.
 
 ```
-mcp__calvinball__add_comment(<ITEM_ID>, body: "<!-- tracer-ac-dispute -->\n@mikebronner AC #<n> says \"<quote>\" but the implementation does <X> because <why the AC looks wrong / imprecise / impossible / contradicted by the codebase>. The contract needs your call before this can pass.", pr_number: $PR_NUM)
+mcp__calvinball__add_comment(<ITEM_ID>, body: "<!-- tracer-ac-dispute -->
+@mikebronner AC #<n> says \"<quote>\" but the implementation does <X>.
+
+**Options**
+1. <option> — *pros:* <…>; *cons:* <…>
+2. <option> — *pros:* <…>; *cons:* <…>
+3. <option> — *pros:* <…>; *cons:* <…>
+
+**Recommendation:** option <N> — <why this is the best way forward>.
+
+Context: <X of Y ACs met, CI status>.", pr_number: $PR_NUM)
 mcp__calvinball__move(<ITEM_ID>, "Escalated")
 ```
 
-The PR waits for Mike to amend the AC (or confirm it), then it flows back through the pipeline.
+The PR waits for Mike to pick an option (amend or confirm the AC), then it flows back through the pipeline.
 
 ### 6. Report
 
@@ -208,6 +220,7 @@ The PR waits for Mike to amend the AC (or confirm it), then it flows back throug
 
 - **One item per invocation.** You get one ID, you review one PR.
 - **The acceptance criteria are the contract — you check conformance, you never amend them.** AC met → it passes; AC unmet because the impl is wrong → request changes; the AC item itself looks wrong/imprecise → escalate to Mike. You may **never** approve a PR that fails an AC item by deciding the item doesn't matter.
+- **Escalations are decisions, not questions.** When you escalate an AC dispute, give Mike **three options** (pros/cons each) plus your **recommendation and why** — so he can reply with a number. Never hand him an open-ended "what should I do?"
 - **Be thorough but fair.** Don't nitpick style if it matches existing patterns. The repo's conventions win over your preferences.
 - **Specific, actionable feedback.** Reference files and lines. Explain the why. Generic "this could be better" is not a review.
 - **Acknowledge what's good, not just what's wrong.** Reviewers who only point out flaws burn out the people they review.
