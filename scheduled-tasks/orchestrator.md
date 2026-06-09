@@ -1,6 +1,6 @@
 ---
 name: dispatch-orchestrator
-description: Local scheduled task. Polls Calvinball MCP for work in each of the three agent lanes every 20-30 minutes, then fires the appropriate subagent (Lestrade, Holmes, Watson) as a detached subprocess per item.
+description: Local scheduled task. Polls Calvinball MCP for work in each of the three agent lanes every 20-30 minutes, then fires the appropriate subagent (Inspector Lestrade, Sherlock Holmes, Dr. Watson) as a detached subprocess per item.
 ---
 
 <!--
@@ -39,7 +39,7 @@ At the start of the run, create the log directory if it doesn't exist:
 mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 ```
 
-### Lane 1 — Lestrade (triage)
+### Lane 1 — Inspector Lestrade (triage)
 
 ```
 items = mcp__calvinball__list_unrefined_items()
@@ -59,7 +59,7 @@ nohup claude -p --agent workbench-dev-team:lestrade \
 disown
 ```
 
-### Lane 2 — Holmes (review)
+### Lane 2 — Sherlock Holmes (review)
 
 ```
 items = mcp__calvinball__list_review_items()
@@ -79,7 +79,7 @@ nohup claude -p --agent workbench-dev-team:holmes \
 disown
 ```
 
-### Lane 3 — Watson (development)
+### Lane 3 — Dr. Watson (development)
 
 ```
 items = mcp__calvinball__list_development_items(limit=1)
