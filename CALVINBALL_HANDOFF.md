@@ -9,7 +9,7 @@
 > **⚠️ One assumption in this spec was wrong.** The board's WSJF single-selects
 > (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`) use **word**
 > options (`XXS…XXL`, `minimal…great`) — **not** the numeric Fibonacci labels
-> assumed under Task 3. Miss Wormwood was corrected to select options by rank
+> assumed under Task 3. Lestrade was corrected to select options by rank
 > from `project_fields` and write the option *name*; Calvinball's `update_fields`
 > already matches single-selects by option name, so no server change was needed.
 
@@ -32,7 +32,7 @@ Passport side.
 The architecture: a local scheduled Claude Code task called **Dispatch** runs
 every 20–30 minutes on the user's machine. It polls Calvinball through three MCP
 tools for pending work in each of three lanes, then fires the matching subagent
-(Miss Wormwood, Moe, Tracer Bullet) as a detached subprocess. **All filter / sort
+(Lestrade, Watson, Holmes) as a detached subprocess. **All filter / sort
 logic lives on Calvinball's side** — Dispatch is a thin router. There is no
 `/fire` endpoint, no trigger registration, no webhook-driven dispatcher (we moved
 off cloud routines because of the 15-runs/day online cap).
@@ -64,7 +64,7 @@ This is the typed interface the plugin relies on. Tool names must match exactly.
 | Tool | Behavior |
 |---|---|
 | `move(id, column)` | Transition project-board status. Valid targets: `Inbox`, `Backlog`, `Ready`, `In Progress`, `In Review`, `Approved`, `Escalated`, `Done`. Maps to GH GraphQL. |
-| `add_comment(id, body)` | Comment on the underlying GitHub issue. Used by Tracer Bullet for escalation pings. |
+| `add_comment(id, body)` | Comment on the underlying GitHub issue. Used by Holmes for escalation pings. |
 | `update_fields(id, { size?, bv?, rr?, ts?, estimate?, priority?, acceptance_criteria? })` | Bulk-update project-board fields. Numeric values map back to option IDs per single-select. |
 
 ### Generic (debug / future callers, scope `calvinball.mcp.read`)
@@ -85,7 +85,7 @@ So you don't have to rediscover it:
 - `list_unrefined_items()` returned **0** at the time of writing because it
   filtered on `status IS NULL` (Task 1). ✅ Now filters `Inbox`.
 - `get_item(id)` returned **neither `project_fields` nor `field_changes`** at the
-  time of writing — blocking Miss Wormwood's WSJF scoring (Task 3). ✅ Now returns
+  time of writing — blocking Lestrade's WSJF scoring (Task 3). ✅ Now returns
   both.
 
 ## Codebase map (observed 2026-06-07 — verify before trusting)
@@ -133,15 +133,15 @@ status-value change:
 
 ## Task 2 — `list_development_items`: restore the resume path
 
-Currently returns `status = 'Ready'` only. Moe's crash-recovery path depends on
-`In Progress` items coming back first — when Moe hits its budget cap or a test
+Currently returns `status = 'Ready'` only. Watson's crash-recovery path depends on
+`In Progress` items coming back first — when Watson hits its budget cap or a test
 failure mid-run it leaves the item `In Progress`, and the next Dispatch tick never
 sees it again.
 
 **The PR filter is already correct — don't touch it.** The `issues_only` filter is
 `whereNotNull('issue_number')`, which excludes PR-*type* project items (e.g.
 Dependabot PRs) while keeping any issue — including an in-flight `In Progress`
-issue that has Moe's draft PR (issues always have `issue_number`). The resume bug
+issue that has Watson's draft PR (issues always have `issue_number`). The resume bug
 is **only** the status filter.
 
 Changes:
@@ -160,7 +160,7 @@ Changes:
 
 ## Task 3 — `get_item` must return `project_fields` and `field_changes` (blocking)
 
-`get_item` returns neither today. Without `project_fields`, Miss Wormwood's scoring
+`get_item` returns neither today. Without `project_fields`, Lestrade's scoring
 step has no option catalog to size its Fibonacci sequence against and no option IDs
 to write back through `update_fields`.
 
@@ -176,13 +176,13 @@ into the payload inside `GetItemTool::handle()`.
   `Business Value`, `Risk Reduction`, `Time Sensitive`, `Estimate`, `Priority`) it
   returns the field's id/name and its ordered options as `{ id, name }`. Where an
   option `name` is a numeric label (the WSJF Fibonacci values), that's what
-  Wormwood counts and selects and what `update_fields` maps a numeric back to.
+  Lestrade counts and selects and what `update_fields` maps a numeric back to.
   Inject `GitHubAppService` (constructor property promotion).
 - **`field_changes`** — read from `$item->meta['field_changes'] ?? []`. Not
   load-bearing, but `get_item` is the agent's single fetch and the contract
   promises it.
 
-Confirm the `update_fields` ↔ `get_item` option-ID round-trip (a numeric Wormwood
+Confirm the `update_fields` ↔ `get_item` option-ID round-trip (a numeric Lestrade
 derives → option id written → reads back as the same option) and add a test for it.
 
 - Tests: assert `get_item` includes `project_fields` (options for every triage
@@ -205,7 +205,7 @@ the plugin breaks silently in production.
 ## Acceptance criteria
 
 - [x] `list_unrefined_items` returns `status = 'Inbox'` items; description updated.
-- [x] `list_development_items` returns `In Progress` first then `Ready`; in-progress issues with Moe draft PRs are returned; PR-type items excluded; blockers excluded; `limit` honored.
+- [x] `list_development_items` returns `In Progress` first then `Ready`; in-progress issues with Watson draft PRs are returned; PR-type items excluded; blockers excluded; `limit` honored.
 - [x] `get_item` returns `project_fields` (options for every triage single-select) and `field_changes`.
 - [x] `update_fields` ↔ `get_item` option-ID round-trip verified by test.
 - [x] Contract test asserts the exact tool names **and** the shapes above.

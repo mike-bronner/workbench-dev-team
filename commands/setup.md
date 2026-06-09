@@ -280,7 +280,7 @@ Print a clean summary block:
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
 
-  Agents:           Wormwood (Haiku), Tracer (Sonnet), Moe (Opus, $5 cap)
+  Agents:           Lestrade (Haiku), Holmes (Sonnet), Watson (Opus, $5 cap)
 
   Verify in Claude Code's scheduled-tasks panel.
 ═══════════════════════════════════════════
