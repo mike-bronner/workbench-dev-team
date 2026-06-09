@@ -9,7 +9,7 @@ You work out of a GitHub project board. New issues land with no acceptance crite
 This plugin runs three agents on a local 20-minute clock to move items through the pipeline for you:
 
 - **Inspector Lestrade** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review.
-- **Dr. Watson** (Opus, $5/run cap) — development. Has two modes: **Calvinball mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no Calvinball calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
+- **Dr. Watson** (Opus, $5/run cap) — development. Has two modes: **The Index mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
 - **Sherlock Holmes** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds.
 
 A fourth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
@@ -61,7 +61,7 @@ After `/plugin install`, run this in any Claude Code session:
 /workbench-dev-team:setup
 ```
 
-It walks you through cadence selection (20 or 30 min), Keychain seeding for any missing credentials, Calvinball MCP registration, log directory creation, and Dispatch scheduled-task registration. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or change cadence.
+It walks you through cadence selection (20 or 30 min), Keychain seeding for any missing credentials, The Index MCP registration, log directory creation, and Dispatch scheduled-task registration. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or change cadence.
 
 Prerequisites on your machine: `gh` (authenticated), `jq`, `security` (built into macOS).
 
@@ -69,16 +69,16 @@ You'll be prompted in chat for any of these Keychain entries that aren't already
 
 | Entry | Purpose |
 |---|---|
-| `calvinball-mcp / client-id` | Calvinball OAuth client ID |
-| `calvinball-mcp / client-secret` | Calvinball OAuth client secret |
+| `the-index-mcp / client-id` | The Index OAuth client ID |
+| `the-index-mcp / client-secret` | The Index OAuth client secret |
 | `github-cli / token` | GitHub token for dispatched agents (auto-extracted from your existing `gh auth login` Keychain entry when present) |
 | `claude-code / oauth-token` | Claude Code OAuth token for scheduled `claude -p` invocations. Get one with `claude setup-token` |
 
 ### What `/workbench-dev-team:setup` does, in order
 
 1. **Verifies prerequisites** (`gh`, `jq`, `security`) and Keychain credentials; prompts for anything missing.
-2. **Fetches an OAuth bearer token** from Calvinball (client_credentials grant, 1-year lifetime).
-3. **Registers the Calvinball MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__calvinball__*` tools available to every future Claude Code session, including the dispatched agents.
+2. **Fetches an OAuth bearer token** from The Index (client_credentials grant, 1-year lifetime).
+3. **Registers The Index MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__the-index__*` tools available to every future Claude Code session, including the dispatched agents.
 4. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/`.
 5. **Registers the scheduled Dispatch task** by calling `mcp__scheduled-tasks__create_scheduled_task` (or `update_scheduled_task` if it already exists) directly from the running session. Task ID: `workbench-dev-team-dispatch`. Cron: `*/20 * * * *` (or `*/30` if you chose 30 min).
 
@@ -87,7 +87,7 @@ Re-run the skill any time you need to refresh the OAuth token, re-register the M
 ## How it works
 
 ```
-GitHub webhook ──► Calvinball (MCP server, OAuth 2.1)
+GitHub webhook ──► The Index (MCP server, OAuth 2.1)
                               ▲
                               │ MCP tool calls
                               │
@@ -102,16 +102,16 @@ GitHub webhook ──► Calvinball (MCP server, OAuth 2.1)
 
 Every 20 minutes, the Dispatch scheduled task wakes up and:
 
-1. Calls `mcp__calvinball__list_unrefined_items()` → fires Lestrade for each item returned.
-2. Calls `mcp__calvinball__list_review_items()` → fires Holmes for each item returned.
-3. Calls `mcp__calvinball__list_development_items(limit=1)` → fires Watson on the top item (if any).
+1. Calls `mcp__the-index__list_unrefined_items()` → fires Lestrade for each item returned.
+2. Calls `mcp__the-index__list_review_items()` → fires Holmes for each item returned.
+3. Calls `mcp__the-index__list_development_items(limit=1)` → fires Watson on the top item (if any).
 4. Exits.
 
 Each dispatch is fire-and-forget via `nohup claude -p --agent workbench-dev-team:<name> ... &; disown`. Watson alone can run for hours; Dispatch never blocks.
 
-### Calvinball does the filtering
+### The Index does the filtering
 
-All "what's pending in each lane" logic lives server-side in Calvinball's MCP tools. Dispatch never interprets item status, field changes, or priority — it just asks Calvinball "what's pending in each lane?" and fires the matching agent per returned item. Adding a new dispatch rule means editing Calvinball, not this plugin.
+All "what's pending in each lane" logic lives server-side in The Index's MCP tools. Dispatch never interprets item status, field changes, or priority — it just asks The Index "what's pending in each lane?" and fires the matching agent per returned item. Adding a new dispatch rule means editing The Index, not this plugin.
 
 ### Concurrency
 
@@ -133,7 +133,7 @@ Dispatch runs on your Claude Code default model (scheduled tasks don't expose a 
 
 Two ways to invoke the same agents, same definitions:
 
-1. **Unattended (default).** The scheduled Dispatch task polls Calvinball every 20 minutes and dispatches via `claude -p --agent`. This is what `/workbench-dev-team:setup` registers.
+1. **Unattended (default).** The scheduled Dispatch task polls The Index every 20 minutes and dispatches via `claude -p --agent`. This is what `/workbench-dev-team:setup` registers.
 2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:lestrade", ...)`. Useful for manual triage, one-off runs, or debugging without waiting for the next scheduled tick.
 
 ## Monitoring
@@ -146,8 +146,8 @@ Two ways to invoke the same agents, same definitions:
 
 | Problem | Fix |
 |---|---|
-| `claude mcp list` shows calvinball as Failed to connect | Your OAuth token has probably expired or been revoked. Re-run `/workbench-dev-team:setup` to fetch a fresh token and re-register. |
-| Dispatch logs `calvinball unreachable` | `curl https://calvinball.mikebronner.dev/mcp` to check the endpoint. If 500, Calvinball has a middleware bug (should be 401). |
+| `claude mcp list` shows the-index as Failed to connect | Your OAuth token has probably expired or been revoked. Re-run `/workbench-dev-team:setup` to fetch a fresh token and re-register. |
+| Dispatch logs `the-index unreachable` | `curl https://the-index.mikebronner.dev/mcp` to check the endpoint. If 500, The Index has a middleware bug (should be 401). |
 | Watson stuck (process hung, `/tmp/watson.lock` stale) | `rm /tmp/watson.lock`. Next tick will resume. |
 | Agent not found | `claude agents` should list `workbench-dev-team:lestrade`, `:watson`, `:holmes`. If not, reinstall the plugin. |
 | Item stuck in `In Review` with no PR | Holmes couldn't find a PR for the issue. Check `gh pr list -R <repo> --search <issue>`. |
@@ -157,8 +157,8 @@ Two ways to invoke the same agents, same definitions:
 
 - **Local execution.** Dispatch runs on your Mac. If the host is off, no work moves. Fine for home/dev setups; move Dispatch to an always-on box if you need 24/7 coverage.
 - **Watson budget cap.** `--max-budget-usd 5.00` limits per-run spend. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes.
-- **Calvinball must be reachable.** If the MCP server is down, all three list tools fail and Dispatch logs `calvinball unreachable` and exits cleanly. The next tick retries.
-- **OAuth token lifetime.** Calvinball issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
+- **The Index must be reachable.** If the MCP server is down, all three list tools fail and Dispatch logs `the-index unreachable` and exits cleanly. The next tick retries.
+- **OAuth token lifetime.** The Index issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
 
 ## Manual task registration (fallback)
 
@@ -168,7 +168,7 @@ If `/workbench-dev-team:setup` fails at step 5 (scheduled-task registration), ch
 mcp__scheduled-tasks__create_scheduled_task with
   taskId:         "workbench-dev-team-dispatch"
   cronExpression: "*/20 * * * *"         # or */30 for 30-min cadence
-  description:    "Dispatch — poll Calvinball every 20 min and fire workbench-dev-team agents on pending items."
+  description:    "Dispatch — poll The Index every 20 min and fire workbench-dev-team agents on pending items."
   prompt:         <body of scheduled-tasks/orchestrator.md, frontmatter stripped>
 ```
 
@@ -177,6 +177,6 @@ mcp__scheduled-tasks__create_scheduled_task with
 An earlier iteration targeted Anthropic's cloud-hosted routines (`/fire` endpoint, configured via `/schedule` → `RemoteTrigger`) for event-driven dispatch. Two things killed it:
 
 1. **The 15-routine-runs-per-day cap** on online routines. Dispatch every 20 minutes = 72 fires/day, seven times over.
-2. **Added operational surface.** Fire-token storage, a Calvinball-side webhook dispatcher, per-transition idempotency — a lot of moving parts to event-drive what a 20-minute poll handles just as well.
+2. **Added operational surface.** Fire-token storage, a The Index-side webhook dispatcher, per-transition idempotency — a lot of moving parts to event-drive what a 20-minute poll handles just as well.
 
 A local 20-minute poll has higher worst-case latency but zero per-fire cost, simpler failure modes, and no token rotation burden. Given that Watson can run for hours, 20-minute dispatch latency is noise.

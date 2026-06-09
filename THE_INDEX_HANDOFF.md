@@ -1,6 +1,6 @@
-# Calvinball handoff: Dispatch integration
+# The Index handoff: Dispatch integration
 
-> **✅ COMPLETED — 2026-06-07.** All four tasks shipped to Calvinball `main`
+> **✅ COMPLETED — 2026-06-07.** All four tasks shipped to The Index `main`
 > (contract fixes in `756f925`; lint hygiene in PR #3 / `4224477`) and verified
 > live: `list_unrefined_items` → `Inbox`, `get_item` → `project_fields` +
 > `field_changes`, `list_development_items` → In-Progress-first. The sections
@@ -10,30 +10,30 @@
 > (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`) use **word**
 > options (`XXS…XXL`, `minimal…great`) — **not** the numeric Fibonacci labels
 > assumed under Task 3. Lestrade was corrected to select options by rank
-> from `project_fields` and write the option *name*; Calvinball's `update_fields`
+> from `project_fields` and write the option *name*; The Index's `update_fields`
 > already matches single-selects by option name, so no server change was needed.
 
-**Audience:** a Claude Code session running in `/Users/mike/Developer/Sites/calvinball`.
+**Audience:** a Claude Code session running in `/Users/mike/Developer/Sites/the-index`.
 This is a ready-to-paste prompt describing the MCP contract the `workbench-dev-team`
-plugin depends on, and the corrective changes Calvinball still needs.
+plugin depends on, and the corrective changes The Index still needs.
 
-Paste everything from `---` down into the Calvinball session. The preamble above
+Paste everything from `---` down into The Index session. The preamble above
 this line is for humans reading the plugin repo.
 
 ---
 
 ## Context
 
-You implement the Calvinball side of the `workbench-dev-team` dev pipeline. The
+You implement The Index side of the `workbench-dev-team` dev pipeline. The
 plugin repo lives at `github.com/mike-bronner/workbench-dev-team` — read its
 `README.md` and `agents/*.md` for the agent design. Your job is the Laravel /
 Passport side.
 
 The architecture: a local scheduled Claude Code task called **Dispatch** runs
-every 20–30 minutes on the user's machine. It polls Calvinball through three MCP
+every 20–30 minutes on the user's machine. It polls The Index through three MCP
 tools for pending work in each of three lanes, then fires the matching subagent
 (Lestrade, Watson, Holmes) as a detached subprocess. **All filter / sort
-logic lives on Calvinball's side** — Dispatch is a thin router. There is no
+logic lives on The Index's side** — Dispatch is a thin router. There is no
 `/fire` endpoint, no trigger registration, no webhook-driven dispatcher (we moved
 off cloud routines because of the 15-runs/day online cap).
 
@@ -45,7 +45,7 @@ from it (Tasks 1–4). It is a tightening pass, not a rewrite.
 
 This is the typed interface the plugin relies on. Tool names must match exactly.
 
-### Dispatch-facing (read, scope `calvinball.mcp.read`)
+### Dispatch-facing (read, scope `index.mcp.read`)
 
 | Tool | Behavior |
 |---|---|
@@ -53,13 +53,13 @@ This is the typed interface the plugin relies on. Tool names must match exactly.
 | `list_review_items(limit?)` | Items where `status = 'In Review'`. Sort by creation order. |
 | `list_development_items(limit=1)` | Items where `status IN ('In Progress', 'Ready')`, **In Progress first**, then Ready, then priority/WSJF desc. Excludes PR-type items and items with open `blockedByIssues`; live-enriches priority + blockers via GraphQL. Honors `limit` (Dispatch calls `limit=1`). **(Task 2 — ✅ shipped.)** |
 
-### Agent-facing (read, scope `calvinball.mcp.read`)
+### Agent-facing (read, scope `index.mcp.read`)
 
 | Tool | Behavior |
 |---|---|
 | `get_item(id)` | Full item state: `id`, `repo`, `issue_number`, `title`, `status`, `content_node_id`, **`project_fields`** (field catalog with option IDs for each triage single-select), **`field_changes`** (audit trail). **(Task 3 — ✅ shipped.)** |
 
-### Agent-facing (write, scope `calvinball.mcp.write`)
+### Agent-facing (write, scope `index.mcp.write`)
 
 | Tool | Behavior |
 |---|---|
@@ -67,7 +67,7 @@ This is the typed interface the plugin relies on. Tool names must match exactly.
 | `add_comment(id, body)` | Comment on the underlying GitHub issue. Used by Holmes for escalation pings. |
 | `update_fields(id, { size?, bv?, rr?, ts?, estimate?, priority?, acceptance_criteria? })` | Bulk-update project-board fields. Numeric values map back to option IDs per single-select. |
 
-### Generic (debug / future callers, scope `calvinball.mcp.read`)
+### Generic (debug / future callers, scope `index.mcp.read`)
 
 | Tool | Behavior |
 |---|---|
@@ -94,8 +94,8 @@ A read-only pass found the relevant code here:
 
 - **MCP framework:** `laravel/mcp` v0. Tools are classes in `app/Mcp/Tools/` with
   `#[Name(...)]` / `#[Description(...)]` attributes, registered in the `$tools`
-  array of `app/Mcp/Servers/CalvinballServer.php`, routed in `routes/ai.php`
-  behind `EnsureMcpAccess:calvinball.mcp.read`.
+  array of `app/Mcp/Servers/TheIndexServer.php`, routed in `routes/ai.php`
+  behind `EnsureMcpAccess:index.mcp.read`.
 - **The three tools to change:** `ListUnrefinedItemsTool.php`,
   `ListDevelopmentItemsTool.php`, `GetItemTool.php` — all in `app/Mcp/Tools/`.
 - **Shared query builder:** `app/Actions/BuildProjectItemQueryAction.php`
@@ -199,7 +199,7 @@ tool names in the surface table above — and the **shapes** the plugin depends 
 - `list_unrefined_items` filters on `Inbox`.
 - `list_development_items` returns In-Progress-first.
 
-Treat this as the typed interface between Calvinball and the plugin. If it's red,
+Treat this as the typed interface between The Index and the plugin. If it's red,
 the plugin breaks silently in production.
 
 ## Acceptance criteria
@@ -209,12 +209,12 @@ the plugin breaks silently in production.
 - [x] `get_item` returns `project_fields` (options for every triage single-select) and `field_changes`.
 - [x] `update_fields` ↔ `get_item` option-ID round-trip verified by test.
 - [x] Contract test asserts the exact tool names **and** the shapes above.
-- [x] All access through Eloquent models; OAuth scopes (`calvinball.mcp.read` / `calvinball.mcp.write`) intact; full Pest suite green.
-- [x] Calvinball README / docs reflect the `Inbox` lane and the corrected `list_development_items` semantics.
+- [x] All access through Eloquent models; OAuth scopes (`index.mcp.read` / `index.mcp.write`) intact; full Pest suite green.
+- [x] The Index README / docs reflect the `Inbox` lane and the corrected `list_development_items` semantics.
 
 ## Constraints
 
-- **Follow Calvinball's `CLAUDE.md`** for all Laravel conventions (test framework, layout, naming).
+- **Follow The Index's `CLAUDE.md`** for all Laravel conventions (test framework, layout, naming).
 - **No raw DB access.** Models / scopes only — every query goes through the model.
 - **No regressions.** The existing tools must keep working; this tightens four behaviors.
 - **Plan before code.** Produce a plan — particularly for Tasks 2 and 3, where current semantics must be read out of the existing tools first — and surface it for review before implementing.
