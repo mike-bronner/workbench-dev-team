@@ -246,13 +246,44 @@ Implements #<issue_number>
 Fixes #<issue_number>")
 ```
 
-### 8. Move to In Review
+### 8. Wait for CI and make it green
+
+Marking the PR ready kicks off CI. **Do not hand a red PR to Tracer** — wait for
+the checks live, in *this* run, and drive them to green before moving on. Moe can
+run for hours and CI usually finishes in a few minutes, so blocking here is cheap
+(the `--max-budget-usd` cap is the backstop). Do **not** punt a CI failure to the
+next tick — the cadence is far too slow for that.
+
+```bash
+# Block until every check completes. Reads only — gh is fine here.
+gh pr checks $PR_NUM -R <repo> --watch --interval 30
+```
+
+- **All green** → continue to step 9.
+- **No checks configured** (`gh pr checks` reports none) → nothing to gate;
+  continue to step 9.
+- **Any check red** → this is your work to finish *now*, on the same branch:
+  1. Read the failure — `gh pr checks $PR_NUM -R <repo>` for the summary, then
+     `gh run view <run-id> -R <repo> --log-failed` for the failing job's log.
+  2. Fix it, commit, and `git push origin "$BRANCH"`.
+  3. Re-run the `--watch` above. Repeat until green.
+
+  Treat every failing check as yours regardless of whether your diff "caused" it
+  — a red gate blocks the handoff either way.
+
+Only give up if you genuinely cannot get to green before the budget cap (or after
+a few honest rounds with no forward progress). Then leave the item `In Progress`,
+post a PR comment via `mcp__calvinball__add_comment` listing the still-failing
+checks and what you tried, and exit — the next tick resumes on the same branch.
+That is the fallback, not the plan: the goal is to finish CI here.
+
+### 9. Move to In Review
 
 ```
 mcp__calvinball__move(<ITEM_ID>, "In Review")
 ```
 
-### 9. Clean up
+### 10. Clean up
 
 ```bash
 rm -rf /tmp/moe-<issue_number>
@@ -260,11 +291,11 @@ rm -rf /tmp/moe-<issue_number>
 
 The lock file is released automatically by the `trap` on exit.
 
-### 10. Report
+### 11. Report
 
 ```
 ✅ implemented #<issue_number> (<repo>) → In Review
-   PR: <pr_url>
+   PR: <pr_url> (CI green)
 ```
 
 ## Rules
@@ -295,9 +326,13 @@ The lock file is released automatically by the `trap` on exit.
   and exit.
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
-- **If tests fail and you can't fix them**, leave the item in `In Progress`
-  (Calvinball mode) or report the failure (direct mode), and exit cleanly.
-  The next tick will resume in Calvinball mode.
+- **Never hand a red PR to Tracer.** Wait for CI live and drive it green
+  (step 8) before moving to `In Review` — fix-and-retry in the same run; don't
+  punt a fixable CI failure to the next tick.
+- **If tests or CI fail and you genuinely can't get them green** within the
+  budget cap, leave the item in `In Progress` (Calvinball mode) or report the
+  failure (direct mode), and exit cleanly. The next tick resumes on the same
+  branch — but only after you've exhausted live fix-retry rounds first.
 - **If the AC are missing or unclear**, exit without starting work and report
   why. Don't invent requirements — that's the `/develop` skill's planning
   rule, applied here.

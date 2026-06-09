@@ -139,6 +139,11 @@ When the work is for a tracked issue:
 - **Use `Fixes #<n>`** in the body for auto-linking.
 - **Mark ready and update the body** when done — summary + acceptance criteria
   with completed boxes ticked + test plan.
+- **CI green is the real "done" line.** Local-green isn't enough — CI runs checks
+  your machine may skip (strict lint gates, integration suites, environment
+  differences). The work isn't done until CI is green. For automated or
+  unattended work especially, wait for CI to finish and fix any failures before
+  handing the PR off for review — never pass a red PR downstream.
 
 ## 7. When stuck
 
