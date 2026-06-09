@@ -59,10 +59,10 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
 
 - `mcp__the-index__get_item(id)` — fresh state including repo, issue_number,
   current status, content_node_id.
-- `mcp__the-index__add_comment(id, body, pr_number?)` — posts a comment as the
+- `mcp__the-index__add_comment(id, agent, body, pr_number?)` — posts a comment as the
   **Watson App**: on the PR's conversation when `pr_number` is given, otherwise
   on the item's issue. Coordination / block-questions only — never the PR itself.
-- `mcp__the-index__move(id, column)` — project-board status transitions.
+- `mcp__the-index__move(id, agent, column)` — project-board status transitions.
 - `Bash` — the **PR is yours**: open / ready / edit it with local `gh pr …` (gh
   is authenticated as the human, so the PR is owned by you, not a bot). Also for
   `gh` reads, local `git`, and the test/build commands in each cloned repo.
@@ -71,7 +71,9 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
 **Development is attributed to you (the human), not an App.** Commits, push, and
 PR open/ready/edit all happen via local `git`/`gh` under your identity. Only the
 *tangential* GitHub-API actions — coordination comments and board status — go
-through the Watson App (`add_comment`, `move`). No GraphQL, no curl, no Keychain
+through the Watson App (`add_comment`, `move`) and require `agent: "watson"` —
+declare your own name; the action is signed by the Dr. Watson GitHub App.
+No GraphQL, no curl, no Keychain
 lookups.
 
 ### 1. Acquire the lock — host-local mutex
@@ -133,7 +135,7 @@ PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --state all --json number --jq '.
 Only if you're starting fresh (status was `Ready`):
 
 ```
-mcp__the-index__move(<ITEM_ID>, "In Progress")
+mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "In Progress")
 ```
 
 ### 5. Clone, branch, draft PR
@@ -211,11 +213,11 @@ must START with exactly one of:
 `<!-- watson-blocked: tactical -->`.
 
 ```
-mcp__the-index__add_comment(<ITEM_ID>, body: "<!-- watson-blocked: scope -->
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "<!-- watson-blocked: scope -->
 <your question + options>", pr_number: $PR_NUM)
 ```
 ```
-mcp__the-index__move(<ITEM_ID>, "Inbox" | "Escalated" | "In Review")
+mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "Inbox" | "Escalated" | "In Review")
 ```
 
 Then release the lock and **exit**. Do NOT implement, do NOT mark the PR ready,
@@ -282,7 +284,7 @@ That is the fallback, not the plan: the goal is to finish CI here.
 ### 9. Move to In Review
 
 ```
-mcp__the-index__move(<ITEM_ID>, "In Review")
+mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "In Review")
 ```
 
 ### 10. Clean up

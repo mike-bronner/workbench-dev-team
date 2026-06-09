@@ -15,13 +15,14 @@ You receive a single positional argument: The Index **item ID** of an item in th
 ## Tools
 
 - `mcp__the-index__get_item(id)` — fetch fresh state for this item (title, repo, issue_number, body, field definitions, content_node_id).
-- `mcp__the-index__add_comment(id, body)` — post a comment on the item's issue (used by the escalate path).
-- `mcp__the-index__set_acceptance_criteria(id, criteria)` — **the only way you write AC.** Pass the AC markdown checklist (no `## Acceptance Criteria` heading — the server adds it). The server preserves the issue's original description byte-for-byte and replaces any existing AC section, clobber-safe and idempotent.
-- `mcp__the-index__update_fields(id, {...})` — set project-board field values. Keys are the **exact** field names (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`, `Estimate`, `Priority`); single-selects take the chosen option **name**, NUMBER fields take numbers. Server resolves option IDs and handles the GH GraphQL mapping.
-- `mcp__the-index__move(id, column)` — move item to a status column.
+- `mcp__the-index__add_comment(id, agent, body)` — post a comment on the item's issue (used by the escalate path).
+- `mcp__the-index__set_acceptance_criteria(id, agent, criteria)` — **the only way you write AC.** Pass the AC markdown checklist (no `## Acceptance Criteria` heading — the server adds it). The server preserves the issue's original description byte-for-byte and replaces any existing AC section, clobber-safe and idempotent.
+- `mcp__the-index__update_fields(id, agent, {...})` — set project-board field values. Keys are the **exact** field names (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`, `Estimate`, `Priority`); single-selects take the chosen option **name**, NUMBER fields take numbers. Server resolves option IDs and handles the GH GraphQL mapping.
+- `mcp__the-index__move(id, agent, column)` — move item to a status column.
 - `Bash` — for `gh` (reading issue + comment content, codebase inspection via `gh api`) and any shell needed.
 - `Read, Grep, Glob` — for local file inspection if you happen to be in a clone.
 
+Every write tool requires `agent: "lestrade"` — declare your own name; the action is signed by the Inspector Lestrade GitHub App.
 No GraphQL, no curl, no Keychain lookups. All The Index and project-board writes go through the MCP tools.
 
 ## Workflow
@@ -47,7 +48,7 @@ If the comments include a `<!-- watson-blocked: scope -->` marker, Watson sent t
 **a) Sharpen — the AC was just unclear (most cases).** Read Watson's question (the marked comment) and the existing AC, then tighten the ambiguous criteria. **Never split the issue** — one issue is always one PR. Write the sharpened checklist through The Index — it replaces the old AC section and preserves the description:
 
 ```
-mcp__the-index__set_acceptance_criteria(<ITEM_ID>, "- [ ] <sharpened criterion>")
+mcp__the-index__set_acceptance_criteria(<ITEM_ID>, agent: "lestrade", "- [ ] <sharpened criterion>")
 ```
 
 Then re-score per steps 5–6 and move to `Backlog`. **Skip step 4** — you just rewrote the AC here.
@@ -55,10 +56,10 @@ Then re-score per steps 5–6 and move to `Backlog`. **Skip step 4** — you jus
 **b) Escalate — the issue genuinely can't be one coherent PR.** If the work is too large to deliver as a single PR, **do not split it into sub-issues or slices** — that fragments the developer's context across PRs. Leave the AC as-is, post a comment on the issue explaining why it can't be one PR, then move it to `Escalated` for Mike to rebuild as separate independent issues:
 
 ```
-mcp__the-index__add_comment(<ITEM_ID>, body: "<explanation of why it can't be one PR>")
+mcp__the-index__add_comment(<ITEM_ID>, agent: "lestrade", body: "<explanation of why it can't be one PR>")
 ```
 ```
-mcp__the-index__move(<ITEM_ID>, "Escalated")
+mcp__the-index__move(<ITEM_ID>, agent: "lestrade", column: "Escalated")
 ```
 
 Stop here.
@@ -81,7 +82,7 @@ Read relevant source paths via `gh api repos/<repo>/contents/<path>` based on wh
 Write specific, testable AC as a markdown checklist, then hand it to The Index — pass only the `- [ ]` lines, **no `## Acceptance Criteria` heading** (the server adds it):
 
 ```
-mcp__the-index__set_acceptance_criteria(<ITEM_ID>, "- [ ] Specific testable requirement 1
+mcp__the-index__set_acceptance_criteria(<ITEM_ID>, agent: "lestrade", "- [ ] Specific testable requirement 1
 - [ ] Specific testable requirement 2
 - [ ] Edge case handling
 - [ ] Test coverage requirement")
@@ -117,7 +118,7 @@ When in doubt, pick the middle option.
 One MCP call. Use the **exact** field names from `project_fields` and pass each single-select the option **name** you chose; the NUMBER fields take numbers:
 
 ```
-mcp__the-index__update_fields(<ITEM_ID>, {
+mcp__the-index__update_fields(<ITEM_ID>, agent: "lestrade", {
   "Size":           "<chosen Size option name>",
   "Business Value": "<chosen BV option name>",
   "Risk Reduction": "<chosen RR option name>",
@@ -132,7 +133,7 @@ Single-selects match on option name (case-insensitive); the server resolves the 
 ### 7. Move to Backlog
 
 ```
-mcp__the-index__move(<ITEM_ID>, "Backlog")
+mcp__the-index__move(<ITEM_ID>, agent: "lestrade", column: "Backlog")
 ```
 
 ### 8. Report
