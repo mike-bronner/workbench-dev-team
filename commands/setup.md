@@ -1,5 +1,5 @@
 ---
-description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials, register the Calvinball MCP, and deploy the scheduled Dispatch task. Re-run after a plugin update or to refresh the OAuth bearer token (annual).
+description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials, register The Index MCP, and deploy the scheduled Dispatch task. Re-run after a plugin update or to refresh the OAuth bearer token (annual).
 ---
 
 The user has invoked `/workbench-dev-team:setup`. Walk them through the one-time
@@ -12,8 +12,8 @@ update rather than duplicate the scheduled Dispatch task.
 ## Constants
 
 ```text
-Calvinball MCP URL:    https://calvinball.mikebronner.dev/mcp
-Calvinball OAuth URL:  https://calvinball.mikebronner.dev/oauth/token
+The Index MCP URL:    https://the-index.mikebronner.dev/mcp
+The Index OAuth URL:  https://the-index.mikebronner.dev/oauth/token
 Log directory:         ~/.claude-workbench/dev-team-logs
 Scheduled task ID:     workbench-dev-team-dispatch
 Orchestrator prompt:   ${CLAUDE_PLUGIN_ROOT}/scheduled-tasks/orchestrator.md
@@ -28,7 +28,7 @@ non-interactive once credentials are in place:
 AskUserQuestion({
   questions: [
     {
-      question: "Dispatch cadence — how often should the orchestrator poll Calvinball?",
+      question: "Dispatch cadence — how often should the orchestrator poll The Index?",
       header: "Cadence",
       multiSelect: false,
       options: [
@@ -92,28 +92,28 @@ keychain_set() {
 }
 ```
 
-### 3a. `calvinball-mcp / client-id`
+### 3a. `the-index-mcp / client-id`
 
 ```bash
-if keychain_exists "calvinball-mcp" "client-id"; then
-  echo "✅ calvinball-mcp / client-id (already in Keychain)"
+if keychain_exists "the-index-mcp" "client-id"; then
+  echo "✅ the-index-mcp / client-id (already in Keychain)"
 else
-  echo "⚠  calvinball-mcp / client-id is missing"
+  echo "⚠  the-index-mcp / client-id is missing"
 fi
 ```
 
-If missing, ask the user in chat: **"Paste your Calvinball OAuth client ID. I'll
-store it in the macOS Keychain under `calvinball-mcp / client-id`."** Wait for
+If missing, ask the user in chat: **"Paste your The Index OAuth client ID. I'll
+store it in the macOS Keychain under `the-index-mcp / client-id`."** Wait for
 the next user message, then:
 
 ```bash
-keychain_set "calvinball-mcp" "client-id" "<value>"
+keychain_set "the-index-mcp" "client-id" "<value>"
 echo "✅ Stored"
 ```
 
-### 3b. `calvinball-mcp / client-secret`
+### 3b. `the-index-mcp / client-secret`
 
-Same pattern as 3a. Prompt: **"Paste your Calvinball OAuth client secret."**
+Same pattern as 3a. Prompt: **"Paste your The Index OAuth client secret."**
 
 ### 3c. `github-cli / token`
 
@@ -168,15 +168,15 @@ echo "✅ Stored"
 ## Step 4 — Fetch OAuth bearer token
 
 ```bash
-CLIENT_ID=$(security find-generic-password -s "calvinball-mcp" -a "client-id" -w)
-CLIENT_SECRET=$(security find-generic-password -s "calvinball-mcp" -a "client-secret" -w)
+CLIENT_ID=$(security find-generic-password -s "the-index-mcp" -a "client-id" -w)
+CLIENT_SECRET=$(security find-generic-password -s "the-index-mcp" -a "client-secret" -w)
 
-TOKEN_RESP=$(curl -sS -X POST "https://calvinball.mikebronner.dev/oauth/token" \
+TOKEN_RESP=$(curl -sS -X POST "https://the-index.mikebronner.dev/oauth/token" \
   -H "Content-Type: application/x-www-form-urlencoded" \
   --data-urlencode "grant_type=client_credentials" \
   --data-urlencode "client_id=$CLIENT_ID" \
   --data-urlencode "client_secret=$CLIENT_SECRET" \
-  --data-urlencode "scope=calvinball.mcp.read calvinball.mcp.write")
+  --data-urlencode "scope=index.mcp.read index.mcp.write")
 
 TOKEN=$(echo "$TOKEN_RESP" | jq -r '.access_token // empty')
 if [ -z "$TOKEN" ]; then
@@ -190,7 +190,7 @@ echo "✅ Fetched bearer token (1-year lifetime)"
 The token has roughly a 1-year lifetime — re-run this command annually (or
 whenever the OAuth client secret rotates) to refresh it.
 
-## Step 5 — Register Calvinball MCP with Claude Code
+## Step 5 — Register The Index MCP with Claude Code
 
 Claude Code's HTTP MCP client doesn't implement the OAuth 2.1
 `client_credentials` grant — `--client-id`/`--client-secret` flags are for
@@ -198,15 +198,15 @@ interactive auth-code flows only. Headless registration uses the bearer token
 fetched in Step 4 via `--header`:
 
 ```bash
-claude mcp remove calvinball 2>/dev/null || true
-claude mcp add calvinball "https://calvinball.mikebronner.dev/mcp" \
+claude mcp remove the-index 2>/dev/null || true
+claude mcp add the-index "https://the-index.mikebronner.dev/mcp" \
   --transport http \
   --scope user \
   --header "Authorization: Bearer $TOKEN"
 
 sleep 1
-if claude mcp list 2>&1 | grep -q "calvinball.*Connected"; then
-  echo "✅ Calvinball MCP registered (user scope) and connected"
+if claude mcp list 2>&1 | grep -q "the-index.*Connected"; then
+  echo "✅ The Index MCP registered (user scope) and connected"
 else
   echo "⚠  'claude mcp list' does not yet show Connected — registration may take a moment"
   echo "   Verify after the next Claude Code restart."
@@ -248,7 +248,7 @@ Call `mcp__scheduled-tasks__list_scheduled_tasks` and look for a task whose
 
 ### 7c. Create or update
 
-Build the description string: `"Dispatch — poll Calvinball every {CADENCE} min and fire workbench-dev-team agents on pending items."`
+Build the description string: `"Dispatch — poll The Index every {CADENCE} min and fire workbench-dev-team agents on pending items."`
 
 **If the task already exists**, call `mcp__scheduled-tasks__update_scheduled_task`:
 
@@ -275,7 +275,7 @@ Print a clean summary block:
   workbench-dev-team setup complete
 ═══════════════════════════════════════════
 
-  Calvinball MCP:   https://calvinball.mikebronner.dev/mcp
+  The Index MCP:   https://the-index.mikebronner.dev/mcp
   Log directory:    ~/.claude-workbench/dev-team-logs
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
@@ -296,9 +296,9 @@ was skipped.
   update flow are safe to re-run. Step 4 always fetches a fresh token, which is
   exactly the desired behavior on re-run (annual refresh is the dominant use
   case).
-- **OAuth token lifetime.** Calvinball issues 1-year tokens via
+- **OAuth token lifetime.** The Index issues 1-year tokens via
   client_credentials. Schedule a calendar reminder, or just re-run this command
-  any time `claude mcp list` shows `calvinball` as `Failed to connect`.
+  any time `claude mcp list` shows `the-index` as `Failed to connect`.
 - **No headless `claude -p` subprocess.** Earlier versions of this configuration
   spawned a headless `claude -p --dangerously-skip-permissions` to register the
   scheduled task. Inside a slash command the parent session calls
