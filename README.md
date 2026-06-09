@@ -8,9 +8,9 @@ You work out of a GitHub project board. New issues land with no acceptance crite
 
 This plugin runs three agents on a local 20-minute clock to move items through the pipeline for you:
 
-- **Miss Wormwood** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review.
-- **Moe** (Opus, $5/run cap) — development. Has two modes: **Calvinball mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no Calvinball calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
-- **Tracer Bullet** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds.
+- **Lestrade** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review.
+- **Watson** (Opus, $5/run cap) — development. Has two modes: **Calvinball mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no Calvinball calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
+- **Holmes** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds.
 
 A fourth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
 
@@ -37,11 +37,11 @@ Universal dev workflow + standards: orient before writing, plan before coding, a
 
 Includes a **decision protocol** that requires presenting three options to the human (with reasoning and a recommendation) for any meaningful fork — implementation approach, library choice, scope decisions, naming. The human decides, the agent executes. Trivial choices (mechanical translation, following existing repo conventions, one-line obvious fixes) are exempt.
 
-Used by Moe internally in both operating modes. Also invocable directly in any plugin-aware Claude session.
+Used by Watson internally in both operating modes. Also invocable directly in any plugin-aware Claude session.
 
 ### `git-commit`
 
-Generates commit messages using Conventional Commits + Gitmoji format. Triggers whenever a commit message is being composed — manual, scripted, or agent-driven (including Moe's PRs).
+Generates commit messages using Conventional Commits + Gitmoji format. Triggers whenever a commit message is being composed — manual, scripted, or agent-driven (including Watson's PRs).
 
 Format example:
 
@@ -96,18 +96,18 @@ GitHub webhook ──► Calvinball (MCP server, OAuth 2.1)
                               ▼ nohup claude -p --agent ... &
             ┌─────────────────┼─────────────────┐
             ▼                 ▼                 ▼
-        Wormwood            Tracer              Moe
+        Lestrade            Holmes              Watson
         (Haiku)             (Sonnet)            (Opus, $5 cap)
 ```
 
 Every 20 minutes, the Dispatch scheduled task wakes up and:
 
-1. Calls `mcp__calvinball__list_unrefined_items()` → fires Miss Wormwood for each item returned.
-2. Calls `mcp__calvinball__list_review_items()` → fires Tracer Bullet for each item returned.
-3. Calls `mcp__calvinball__list_development_items(limit=1)` → fires Moe on the top item (if any).
+1. Calls `mcp__calvinball__list_unrefined_items()` → fires Lestrade for each item returned.
+2. Calls `mcp__calvinball__list_review_items()` → fires Holmes for each item returned.
+3. Calls `mcp__calvinball__list_development_items(limit=1)` → fires Watson on the top item (if any).
 4. Exits.
 
-Each dispatch is fire-and-forget via `nohup claude -p --agent workbench-dev-team:<name> ... &; disown`. Moe alone can run for hours; Dispatch never blocks.
+Each dispatch is fire-and-forget via `nohup claude -p --agent workbench-dev-team:<name> ... &; disown`. Watson alone can run for hours; Dispatch never blocks.
 
 ### Calvinball does the filtering
 
@@ -115,17 +115,17 @@ All "what's pending in each lane" logic lives server-side in Calvinball's MCP to
 
 ### Concurrency
 
-- **Wormwood and Tracer** are idempotent within a tick. Status lanes (`null` and `In Review`) act as the serialization.
-- **Moe** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A host-local PID mutex at `/tmp/moe.lock` prevents two Moes from stepping on the same item. Released automatically via shell `trap` on exit.
+- **Lestrade and Holmes** are idempotent within a tick. Status lanes (`null` and `In Review`) act as the serialization.
+- **Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A host-local PID mutex at `/tmp/watson.lock` prevents two Watsons from stepping on the same item. Released automatically via shell `trap` on exit.
 
 ### Token cost
 
 | Scenario | Tokens |
 |---|---|
 | Idle Dispatch tick (no work in any lane) | ~1–3K on default model — three MCP calls + exit |
-| Wormwood triage | 5–8K Haiku tokens |
-| Tracer review | 5–8K Sonnet tokens |
-| Moe development | Full Opus session, capped at $5 per run |
+| Lestrade triage | 5–8K Haiku tokens |
+| Holmes review | 5–8K Sonnet tokens |
+| Watson development | Full Opus session, capped at $5 per run |
 
 Dispatch runs on your Claude Code default model (scheduled tasks don't expose a model selector). Since each tick is under 3K tokens, the default model's cost is negligible even if it's Sonnet.
 
@@ -134,7 +134,7 @@ Dispatch runs on your Claude Code default model (scheduled tasks don't expose a 
 Two ways to invoke the same agents, same definitions:
 
 1. **Unattended (default).** The scheduled Dispatch task polls Calvinball every 20 minutes and dispatches via `claude -p --agent`. This is what `/workbench-dev-team:setup` registers.
-2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:miss-wormwood", ...)`. Useful for manual triage, one-off runs, or debugging without waiting for the next scheduled tick.
+2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:lestrade", ...)`. Useful for manual triage, one-off runs, or debugging without waiting for the next scheduled tick.
 
 ## Monitoring
 
@@ -148,15 +148,15 @@ Two ways to invoke the same agents, same definitions:
 |---|---|
 | `claude mcp list` shows calvinball as Failed to connect | Your OAuth token has probably expired or been revoked. Re-run `/workbench-dev-team:setup` to fetch a fresh token and re-register. |
 | Dispatch logs `calvinball unreachable` | `curl https://calvinball.mikebronner.dev/mcp` to check the endpoint. If 500, Calvinball has a middleware bug (should be 401). |
-| Moe stuck (process hung, `/tmp/moe.lock` stale) | `rm /tmp/moe.lock`. Next tick will resume. |
-| Agent not found | `claude agents` should list `workbench-dev-team:miss-wormwood`, `:moe`, `:tracer-bullet`. If not, reinstall the plugin. |
-| Item stuck in `In Review` with no PR | Tracer couldn't find a PR for the issue. Check `gh pr list -R <repo> --search <issue>`. |
+| Watson stuck (process hung, `/tmp/watson.lock` stale) | `rm /tmp/watson.lock`. Next tick will resume. |
+| Agent not found | `claude agents` should list `workbench-dev-team:lestrade`, `:watson`, `:holmes`. If not, reinstall the plugin. |
+| Item stuck in `In Review` with no PR | Holmes couldn't find a PR for the issue. Check `gh pr list -R <repo> --search <issue>`. |
 | Scheduled task isn't firing | Check Claude Code's scheduled-tasks panel. The Mac must be awake (this is a local scheduler). |
 
 ## Risks and limitations
 
 - **Local execution.** Dispatch runs on your Mac. If the host is off, no work moves. Fine for home/dev setups; move Dispatch to an always-on box if you need 24/7 coverage.
-- **Moe budget cap.** `--max-budget-usd 5.00` limits per-run spend. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes.
+- **Watson budget cap.** `--max-budget-usd 5.00` limits per-run spend. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes.
 - **Calvinball must be reachable.** If the MCP server is down, all three list tools fail and Dispatch logs `calvinball unreachable` and exits cleanly. The next tick retries.
 - **OAuth token lifetime.** Calvinball issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
 
@@ -179,4 +179,4 @@ An earlier iteration targeted Anthropic's cloud-hosted routines (`/fire` endpoin
 1. **The 15-routine-runs-per-day cap** on online routines. Dispatch every 20 minutes = 72 fires/day, seven times over.
 2. **Added operational surface.** Fire-token storage, a Calvinball-side webhook dispatcher, per-transition idempotency — a lot of moving parts to event-drive what a 20-minute poll handles just as well.
 
-A local 20-minute poll has higher worst-case latency but zero per-fire cost, simpler failure modes, and no token rotation burden. Given that Moe can run for hours, 20-minute dispatch latency is noise.
+A local 20-minute poll has higher worst-case latency but zero per-fire cost, simpler failure modes, and no token rotation burden. Given that Watson can run for hours, 20-minute dispatch latency is noise.
