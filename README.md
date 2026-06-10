@@ -25,9 +25,10 @@ That installs the agents, the Dispatch prompt, and the bundled skills (see below
 
 ## Bundled skills
 
-The plugin ships two skills:
+The plugin ships three skills:
 
 - **`develop`** and **`git-commit`** — universal development standards. They register themselves globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. They apply to every Claude Code / Cowork session, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are. Require workbench-core 0.2.0+ for the session-warmup discovery mechanism — install it first if you don't already have it (Claude Code does not enforce plugin install order).
+- **`orchestrate`** — runs the team as background sub-agents from any interactive session (see below). A `session-warmup.md` hint makes every session aware the team is available for delegation.
 
 Plugin configuration lives in a slash command (`/workbench-dev-team:setup`), not a skill — see the [Setup](#setup) section below.
 
@@ -53,6 +54,36 @@ Fixes: #789
 
 Full type and emoji references at `skills/git-commit/references/`.
 
+### `orchestrate`
+
+Turns the current session into the team's orchestrator: dispatches Lestrade, Watson, and Holmes as **background sub-agents** (Agent tool, `run_in_background`), passing each agent's model from the shared config; maintains a roster table of who's working on what; relays verdicts and decision forks back to you; follows up on running agents via SendMessage. The main conversation stays lean — sub-agents do the heavy work in their own contexts and return summaries.
+
+Watson supports prose-driven **Direct mode** for ad-hoc dev work with no board item. Lestrade and Holmes are Index-coupled and need a board item ID.
+
+The skill also **routes GitHub actions to the right executor**. Two rules: (1) *agent work products* (formal reviews, AC, status moves) only ever go through The Index, signed as the dispatched agent — never `gh`; (2) *your own actions* (comments you dictate, merges you order) go through `gh` under your identity, on any repo. Whether a repo is Index-governed is answered by `check_repo_access` — a server-side tool that checks The Index GitHub App's installation list (spec in `THE_INDEX_HANDOFF_ROUTING.md`; until it ships, the skill degrades to a `list_items` scan and says so). Merges are never delegated to agents and only happen on your explicit request.
+
+## Configuration — models, effort, budget
+
+Per-agent model, effort, and Watson's budget cap live in a single file, written by `/workbench-dev-team:setup` with these defaults and never overwritten on re-run (your edits survive plugin updates):
+
+```json
+// ~/.claude-workbench/dev-team-config.json
+{
+  "agents": {
+    "lestrade": { "model": "haiku" },
+    "holmes": { "model": "sonnet", "effort": "high" },
+    "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
+  }
+}
+```
+
+Both dispatch paths read it:
+
+- **Scheduled (Dispatch)** passes `--model`, `--effort` (only when set), and `--max-budget-usd` on each `claude -p` invocation. CLI flags override agent frontmatter (verified empirically), so a config edit takes effect on the next tick — no plugin files to touch.
+- **Interactive (`orchestrate`)** passes the config's `model` as the Agent tool's per-invocation model override. The Agent tool has no per-invocation effort parameter — interactive sub-agents inherit the session's effort level. `maxBudgetUsd` applies to the scheduled path only.
+
+The agent definitions carry matching frontmatter defaults (`model: haiku|sonnet|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
+
 ## Setup
 
 After `/plugin install`, run this in any Claude Code session:
@@ -61,7 +92,7 @@ After `/plugin install`, run this in any Claude Code session:
 /workbench-dev-team:setup
 ```
 
-It walks you through cadence selection (20 or 30 min), Keychain seeding for any missing credentials, The Index MCP registration, log directory creation, and Dispatch scheduled-task registration. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or change cadence.
+It walks you through cadence selection (20 or 30 min), Keychain seeding for any missing credentials, The Index MCP registration, log directory and agent-config creation, and Dispatch scheduled-task registration. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or change cadence. Your `dev-team-config.json` edits are never overwritten.
 
 Prerequisites on your machine: `gh` (authenticated), `jq`, `security` (built into macOS).
 
@@ -79,7 +110,7 @@ You'll be prompted in chat for any of these Keychain entries that aren't already
 1. **Verifies prerequisites** (`gh`, `jq`, `security`) and Keychain credentials; prompts for anything missing.
 2. **Fetches an OAuth bearer token** from The Index (client_credentials grant, 1-year lifetime).
 3. **Registers The Index MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__the-index__*` tools available to every future Claude Code session, including the dispatched agents.
-4. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/`.
+4. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/` and **writes the default agent config** to `~/.claude-workbench/dev-team-config.json` if (and only if) it doesn't already exist.
 5. **Registers the scheduled Dispatch task** by calling `mcp__scheduled-tasks__create_scheduled_task` (or `update_scheduled_task` if it already exists) directly from the running session. Task ID: `workbench-dev-team-dispatch`. Cron: `*/20 * * * *` (or `*/30` if you chose 30 min).
 
 Re-run the skill any time you need to refresh the OAuth token, re-register the MCP, or change the Dispatch cadence.
@@ -134,7 +165,7 @@ Dispatch runs on your Claude Code default model (scheduled tasks don't expose a 
 Two ways to invoke the same agents, same definitions:
 
 1. **Unattended (default).** The scheduled Dispatch task polls The Index every 20 minutes and dispatches via `claude -p --agent`. This is what `/workbench-dev-team:setup` registers.
-2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:lestrade", ...)`. Useful for manual triage, one-off runs, or debugging without waiting for the next scheduled tick.
+2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:lestrade", ...)`. For multi-agent delegation with config-driven models, background execution, and roster tracking, use the `orchestrate` skill — it wraps this path with the full protocol. Useful for manual triage, one-off runs, ad-hoc dev work (Watson Direct mode), or debugging without waiting for the next scheduled tick.
 
 ## Monitoring
 

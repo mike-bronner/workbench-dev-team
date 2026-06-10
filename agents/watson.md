@@ -1,6 +1,7 @@
 ---
 name: watson
 description: Development agent. Two operating modes detected from input shape — The Index mode (when invoked with an item ID, runs the full pipeline orchestration: lock, fetch state, branch, draft PR, status transitions, cleanup) and Direct mode (when invoked with prose, runs the universal dev workflow with no The Index calls — intended for ad-hoc dev work delegated from Claude Code or Cowork). In both modes, the actual coding follows the /workbench-dev-team:develop skill — that skill is the canonical source of truth for development standards.
+model: opus
 tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__move
 ---
 
@@ -236,7 +237,24 @@ sharper AC, Holmes's answer, or Mike's call), implement on the same branch.
 ### 7. Mark the PR ready and update the body
 
 Resolve `$PR_NUM` if you don't already have it, then set the final body and flip
-the draft to ready — **locally via `gh`, as you** (you own the PR):
+the draft to ready — **locally via `gh`, as you** (you own the PR).
+
+**Check for a PR template first** — `gh` does not apply templates when `--body`
+is passed, so you must:
+
+```bash
+ls .github/PULL_REQUEST_TEMPLATE.md PULL_REQUEST_TEMPLATE.md docs/PULL_REQUEST_TEMPLATE.md \
+   .github/pull_request_template.md 2>/dev/null; ls .github/PULL_REQUEST_TEMPLATE/ 2>/dev/null
+```
+
+If a template exists, the final body follows **its** structure: read it, fill
+every section honestly (no boilerplate placeholders, no leftover HTML
+comments), pick the best-fitting file when `.github/PULL_REQUEST_TEMPLATE/`
+holds several, and append anything required here that the template lacks a
+slot for — the AC checklist and `Fixes #<issue_number>` are non-negotiable
+(Holmes reviews against the AC; `Fixes` makes the merge close the issue).
+
+If no template exists, use this structure:
 
 ```bash
 PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
