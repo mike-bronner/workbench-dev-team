@@ -1,6 +1,7 @@
 ---
 name: lestrade
 description: Triage agent. Dispatched by Dispatch (the orchestrator) on unrefined GitHub project items. Inspects the issue + repo, generates acceptance criteria, scores WSJF fields, and moves the item to Backlog.
+model: haiku
 tools: Bash, Read, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__set_acceptance_criteria, mcp__the-index__update_fields, mcp__the-index__move
 ---
 
