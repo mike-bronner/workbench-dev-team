@@ -8,7 +8,7 @@ You work out of a GitHub project board. New issues land with no acceptance crite
 
 This plugin runs three agents on a local 20-minute clock to move items through the pipeline for you:
 
-- **Inspector Lestrade** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review.
+- **Inspector Lestrade** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review. Also runs **blocker sweeps**: after a repo gets fresh triage work, he re-reads all of its open issues and marks blocked-by dependencies (native GitHub issue dependencies, additive only) so blocked items stay out of Dr. Watson's queue.
 - **Dr. Watson** (Opus, $5/run cap) — development. Has two modes: **The Index mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
 - **Sherlock Holmes** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds.
 
@@ -148,7 +148,7 @@ GitHub webhook ──► The Index (MCP server, OAuth 2.1)
 
 Every 20 minutes, the Dispatch scheduled task wakes up and:
 
-1. Calls `mcp__the-index__list_unrefined_items()` → fires Lestrade for each item returned.
+1. Calls `mcp__the-index__list_unrefined_items()` → fires Lestrade for each item returned, plus one blocker sweep (`Repo sweep: <owner/repo>`) per distinct repo among those items.
 2. Calls `mcp__the-index__list_review_items()` → fires Holmes for each item returned.
 3. Calls `mcp__the-index__list_development_items(limit=1)` → fires Watson on the top item (if any).
 4. Exits.
@@ -170,6 +170,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 |---|---|
 | Idle Dispatch tick (no work in any lane) | ~1–3K on default model — three MCP calls + exit |
 | Lestrade triage | 5–8K Haiku tokens |
+| Lestrade blocker sweep | Haiku tokens scaling with open-issue count (reads every open title + body in the repo); fires only on ticks that triaged new items |
 | Holmes review | 5–8K Sonnet tokens |
 | Watson development | Full Opus session, capped at $5 per run |
 
