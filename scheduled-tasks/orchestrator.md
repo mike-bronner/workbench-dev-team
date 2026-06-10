@@ -54,6 +54,8 @@ it; Sonnet/Opus default to `high` on their own).
 items = mcp__the-index__list_unrefined_items()
 for each item in items:
   dispatch Lestrade on item.id
+for each distinct item.repo across items:
+  dispatch Lestrade sweep on that repo
 ```
 
 Dispatch command (run in Bash, **detached**):
@@ -69,6 +71,24 @@ nohup claude -p --agent workbench-dev-team:lestrade \
   --no-session-persistence \
   "Item ID: <ITEM_ID>" \
   > "$HOME/.claude-workbench/dev-team-logs/lestrade-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+disown
+```
+
+**Blocker sweep** — after the per-item dispatches, collect the **distinct** `repo` values from the items this lane returned and fire one sweep per repo. New issues are the only thing that changes a repo's dependency graph from the pipeline's perspective, so a sweep accompanies every batch of fresh triage work — an idle Lane 1 means no sweeps. In sweep mode Lestrade marks blocked-by dependencies between open issues (additive only) via The Index's `add_blocked_by` tool.
+
+Sweep dispatch command (one per distinct repo, also **detached**; `<REPO_SLUG>` is the repo with `/` replaced by `-` for the log filename):
+
+```bash
+CONFIG="$HOME/.claude-workbench/dev-team-config.json"
+MODEL=$(jq -r '.agents.lestrade.model // "haiku"' "$CONFIG" 2>/dev/null || echo "haiku")
+EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
+nohup claude -p --agent workbench-dev-team:lestrade \
+  --model "$MODEL" \
+  ${EFFORT:+--effort "$EFFORT"} \
+  --dangerously-skip-permissions \
+  --no-session-persistence \
+  "Repo sweep: <OWNER/REPO>" \
+  > "$HOME/.claude-workbench/dev-team-logs/lestrade-sweep-<REPO_SLUG>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
 
@@ -133,6 +153,7 @@ Watson is single-track: the server returns at most one item, and Watson's own `/
 - **Empty lanes are fine.** If a tool returns an empty list, move on. Log nothing for that lane.
 - **Final output.** Print a one-line-per-dispatch summary:
   `→ lestrade #123 (repo/name)`
+  `→ lestrade sweep (repo/name)`
   `→ holmes #456 (repo/name)`
   `→ watson #789 (repo/name)`
   Followed by a count: `dispatched N items across 3 lanes`. If nothing fired, print `idle — nothing to dispatch`.

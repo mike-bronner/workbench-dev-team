@@ -13,14 +13,16 @@ you relay — you do not implement, triage, or review in the main context.
 
 | Agent | `subagent_type` | Role | Input contract |
 |---|---|---|---|
-| Inspector Lestrade | `workbench-dev-team:lestrade` | Triage — AC + WSJF | **Index mode only**: `Item ID: <n>` |
+| Inspector Lestrade | `workbench-dev-team:lestrade` | Triage — AC + WSJF; blocker sweeps | `Item ID: <n>` (triage one item) **or** `Repo sweep: <owner/repo>` (mark blocked-by dependencies across a repo's open issues) |
 | Dr. Watson | `workbench-dev-team:watson` | Development | `Item ID: <n>` (board item) **or** prose (Direct mode, ad-hoc dev) |
 | Sherlock Holmes | `workbench-dev-team:holmes` | Code review | **Index mode only**: `Item ID: <n>` |
 
-Lestrade and Holmes are coupled to The Index board — they need a
+Lestrade and Holmes are coupled to The Index board — triage and review need a
 `project_items.id`. Watson's Direct mode takes a plain-prose task and runs the
 `/workbench-dev-team:develop` workflow with no board calls; use it for any
-ad-hoc dev work the user delegates mid-conversation.
+ad-hoc dev work the user delegates mid-conversation. Lestrade's sweep mode
+takes a repo slug instead of an item id; dispatch it when the user asks to
+"find blockers" or "mark dependencies" in a repo.
 
 ## Read the config first
 
@@ -66,7 +68,8 @@ suggest `/workbench-dev-team:setup`.
 3. **Self-contained prompts.** Sub-agents have no memory of this conversation.
    Watson Direct-mode prompts carry: the repo path, the task, relevant
    constraints, and what "done" looks like. Index-mode prompts are exactly
-   `Item ID: <n>` — nothing else.
+   `Item ID: <n>` — nothing else. Sweep prompts are exactly
+   `Repo sweep: <owner/repo>` — nothing else.
 4. **Parallel when independent.** Multiple independent tasks → multiple Agent
    calls in a single message. Two Watsons touching the **same repo** → give
    each `isolation: "worktree"`.
