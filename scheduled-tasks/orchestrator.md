@@ -39,6 +39,15 @@ At the start of the run, create the log directory if it doesn't exist:
 mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 ```
 
+### Agent config
+
+Per-agent model, effort, and budget live in `~/.claude-workbench/dev-team-config.json`
+(written by `/workbench-dev-team:setup`, editable by the user, survives plugin
+updates). Each dispatch command below reads it with `jq` and falls back to the
+baked-in defaults when the file or a key is missing — a malformed or absent
+config never blocks a dispatch. Effort is passed only when set (Haiku ignores
+it; Sonnet/Opus default to `high` on their own).
+
 ### Lane 1 — Inspector Lestrade (triage)
 
 ```
@@ -50,8 +59,12 @@ for each item in items:
 Dispatch command (run in Bash, **detached**):
 
 ```bash
+CONFIG="$HOME/.claude-workbench/dev-team-config.json"
+MODEL=$(jq -r '.agents.lestrade.model // "haiku"' "$CONFIG" 2>/dev/null || echo "haiku")
+EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:lestrade \
-  --model haiku \
+  --model "$MODEL" \
+  ${EFFORT:+--effort "$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Item ID: <ITEM_ID>" \
@@ -70,8 +83,12 @@ for each item in items:
 Dispatch command:
 
 ```bash
+CONFIG="$HOME/.claude-workbench/dev-team-config.json"
+MODEL=$(jq -r '.agents.holmes.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
+EFFORT=$(jq -r '.agents.holmes.effort // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:holmes \
-  --model sonnet \
+  --model "$MODEL" \
+  ${EFFORT:+--effort "$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Item ID: <ITEM_ID>" \
@@ -90,11 +107,16 @@ if items is non-empty:
 Dispatch command (note the budget cap):
 
 ```bash
+CONFIG="$HOME/.claude-workbench/dev-team-config.json"
+MODEL=$(jq -r '.agents.watson.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
+EFFORT=$(jq -r '.agents.watson.effort // empty' "$CONFIG" 2>/dev/null || true)
+BUDGET=$(jq -r '.agents.watson.maxBudgetUsd // 5.00' "$CONFIG" 2>/dev/null || echo "5.00")
 nohup claude -p --agent workbench-dev-team:watson \
-  --model opus \
+  --model "$MODEL" \
+  ${EFFORT:+--effort "$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
-  --max-budget-usd 5.00 \
+  --max-budget-usd "$BUDGET" \
   "Item ID: <ITEM_ID>" \
   > "$HOME/.claude-workbench/dev-team-logs/watson-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown

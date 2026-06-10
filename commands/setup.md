@@ -15,6 +15,7 @@ update rather than duplicate the scheduled Dispatch task.
 The Index MCP URL:    https://the-index.mikebronner.dev/mcp
 The Index OAuth URL:  https://the-index.mikebronner.dev/oauth/token
 Log directory:         ~/.claude-workbench/dev-team-logs
+Agent config:          ~/.claude-workbench/dev-team-config.json
 Scheduled task ID:     workbench-dev-team-dispatch
 Orchestrator prompt:   ${CLAUDE_PLUGIN_ROOT}/scheduled-tasks/orchestrator.md
 ```
@@ -217,12 +218,37 @@ fi
 Code sessions (including the headless `claude -p` invocations used by Dispatch)
 will see it. The current session may need a restart to pick it up.
 
-## Step 6 — Create the log directory
+## Step 6 — Create the log directory and agent config
 
 ```bash
 mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 echo "✅ Log directory ready: $HOME/.claude-workbench/dev-team-logs"
+
+CONFIG="$HOME/.claude-workbench/dev-team-config.json"
+if [ -f "$CONFIG" ]; then
+  echo "✅ Agent config already present: $CONFIG (left untouched)"
+else
+  cat > "$CONFIG" <<'EOF'
+{
+  "agents": {
+    "lestrade": { "model": "haiku" },
+    "holmes": { "model": "sonnet", "effort": "high" },
+    "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
+  }
+}
+EOF
+  echo "✅ Wrote default agent config: $CONFIG"
+fi
 ```
+
+The config is the single source of truth for per-agent model, effort, and
+Watson's budget cap, read by both dispatch paths: the scheduled Dispatch task
+passes `--model` / `--effort` / `--max-budget-usd` from it, and the
+`/workbench-dev-team:orchestrate` skill reads it for interactive sub-agent
+dispatch. Setup never overwrites an existing config — the user's edits stick
+across plugin updates and re-runs. `effort` applies to models with adaptive
+reasoning (Sonnet/Opus tiers); Haiku has none, so Lestrade carries no effort
+key by default.
 
 ## Step 7 — Register the scheduled Dispatch task
 
@@ -277,10 +303,12 @@ Print a clean summary block:
 
   The Index MCP:   https://the-index.mikebronner.dev/mcp
   Log directory:    ~/.claude-workbench/dev-team-logs
+  Agent config:     ~/.claude-workbench/dev-team-config.json
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
 
   Agents:           Lestrade (Haiku), Holmes (Sonnet), Watson (Opus, $5 cap)
+                    — models/effort/budget editable in the agent config
 
   Verify in Claude Code's scheduled-tasks panel.
 ═══════════════════════════════════════════
