@@ -1,0 +1,16 @@
+{
+  "description": "Commit approval gate — every git commit requires explicit human approval. Carve-out: autonomous Index-pipeline runs (live /tmp/watson.lock or WORKBENCH_DEV_TEAM_PIPELINE=1).",
+  "hooks": {
+    "PreToolUse": [
+      {
+        "matcher": "Bash",
+        "hooks": [
+          {
+            "type": "command",
+            "command": "${CLAUDE_PLUGIN_ROOT}/hooks/scripts/commit-approval-gate.sh"
+          }
+        ]
+      }
+    ]
+  }
+}
