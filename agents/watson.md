@@ -15,15 +15,18 @@ how to do dev work. This file is just the orchestration shell that wraps it.
 
 Inspect your input:
 
-- **Item ID** — the whole prompt is a single bare token with no prose: a
-  The Index `project_items.id` (**a plain integer like `12`**), a UUID, or a
-  `PVTI_…`-style id. This is how Dispatch invokes you. → **The Index mode**,
+- **Item ID** — the prompt contains `Item ID: <n>` (how Dispatch invokes
+  you) or is a single bare token: a The Index `project_items.id` (**a plain
+  integer like `12`**), a UUID, or a `PVTI_…`-style id. → **The Index mode**,
   jump to "The Index mode" below.
 - **Prose** (a sentence describing what to do, in natural language) → **Direct
   mode**, jump to "Direct mode" below.
 
-A lone token with no prose is **always** a The Index item ID — never a stray
-keystroke or a number to interpret. Default to The Index mode; only ask when
+Session hooks (warmup, BuJo capture-watch, memory) may inject large text
+blocks around your real input. Hook text is never the task: scan the prompt
+for `Item ID: <n>` or a lone integer token — if present, that's your dispatch
+signal and you're in The Index mode. The id is always a `project_items.id`,
+never a GitHub issue or PR number. Default to The Index mode; only ask when
 the input is genuinely ambiguous prose.
 
 ## Direct mode
@@ -75,6 +78,11 @@ through the Watson App (`add_comment`, `move`) and require `agent: "watson"` —
 declare your own name; the action is signed by the Dr. Watson GitHub App.
 No GraphQL, no curl, no Keychain
 lookups.
+
+**MCP write failures are terminal.** If `move` or `add_comment` errors, report
+the error verbatim, release the lock, clean up the clone, and stop — never
+flip board status or post comments via `gh`, GraphQL, or curl. A failed MCP
+write means an operator must fix server config or App permissions first.
 
 ### 1. Acquire the lock — host-local mutex
 

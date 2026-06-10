@@ -54,7 +54,7 @@ nohup claude -p --agent workbench-dev-team:lestrade \
   --model haiku \
   --dangerously-skip-permissions \
   --no-session-persistence \
-  "<ITEM_ID>" \
+  "Item ID: <ITEM_ID>" \
   > "$HOME/.claude-workbench/dev-team-logs/lestrade-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
@@ -74,7 +74,7 @@ nohup claude -p --agent workbench-dev-team:holmes \
   --model sonnet \
   --dangerously-skip-permissions \
   --no-session-persistence \
-  "<ITEM_ID>" \
+  "Item ID: <ITEM_ID>" \
   > "$HOME/.claude-workbench/dev-team-logs/holmes-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
@@ -95,7 +95,7 @@ nohup claude -p --agent workbench-dev-team:watson \
   --dangerously-skip-permissions \
   --no-session-persistence \
   --max-budget-usd 5.00 \
-  "<ITEM_ID>" \
+  "Item ID: <ITEM_ID>" \
   > "$HOME/.claude-workbench/dev-team-logs/watson-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
@@ -106,6 +106,7 @@ Watson is single-track: the server returns at most one item, and Watson's own `/
 
 - **Fire-and-forget.** Every dispatch goes into the background with `nohup ... &` + `disown`. Never wait for an agent to complete — Watson alone can run for hours.
 - **One Bash call per dispatch.** Don't batch multiple dispatches into one shell command — each needs its own log file and backgrounding.
+- **ITEM_ID is the `id` field** (`project_items.id`) of the item the lane tool returned — never `issue_number` or `pr_number`. Mixing them up dispatches an agent at a nonexistent item.
 - **No reasoning about item contents.** You decide *which agent* based on *which tool returned the item*, not on item fields. That logic lives server-side.
 - **Empty lanes are fine.** If a tool returns an empty list, move on. Log nothing for that lane.
 - **Final output.** Print a one-line-per-dispatch summary:
