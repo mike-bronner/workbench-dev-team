@@ -46,6 +46,14 @@ the lock — there's no shared state to protect.
 
 That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
 
+**The commit approval gate applies in Direct mode.** Every `git commit`
+triggers a harness-level approval prompt for the human (a plugin `PreToolUse`
+hook enforces this). Follow the `/develop` gate protocol: present the diff and
+the proposed message in your output *before* attempting the commit, so the
+prompt is a confirmation, not a surprise. If approval is denied, stop and
+report — leave the work uncommitted; never retry the commit or route around
+the gate.
+
 ## The Index mode
 
 You're invoked by Dispatch (the orchestrator) with a The Index item ID. Full
@@ -356,6 +364,12 @@ The lock file is released automatically by the `trap` on exit.
   and exit.
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
+- **Commit approval gate.** In Direct mode every commit needs explicit human
+  approval — present diff + message first; the harness hook prompts. In The
+  Index mode the gate is carved out (your live `/tmp/watson.lock` marks the
+  pipeline): board dispatch is the approval, Holmes review + human merge is
+  the gate. Never create the lock or set `WORKBENCH_DEV_TEAM_PIPELINE=1`
+  outside genuine pipeline runs.
 - **Never hand a red PR to Holmes.** Wait for CI live and drive it green
   (step 8) before moving to `In Review` — fix-and-retry in the same run; don't
   punt a fixable CI failure to the next tick.

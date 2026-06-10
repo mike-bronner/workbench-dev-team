@@ -114,6 +114,34 @@ flag it — don't guess.
 
 ## 5. Commit
 
+### 🔒 Commit approval gate — non-negotiable
+
+**Never run `git commit` without explicit human approval for that specific
+commit.** Before any commit:
+
+1. **Show the diff** that will be committed — the human reviews the actual
+   change, not your summary of it.
+2. **Show the proposed commit message** (formatted via the
+   `/workbench-dev-team:git-commit` skill).
+3. **Wait for an explicit yes.** General approval of the task, "looks good"
+   about the code, or approval of a *previous* commit do not carry over.
+   One approval covers one commit — for multi-commit work, present each
+   commit (or an explicitly enumerated batch) for its own approval.
+
+This is enforced at the harness level too: a plugin `PreToolUse` hook
+(`hooks/scripts/commit-approval-gate.sh`) forces a permission prompt on every
+`git commit`, regardless of permission mode. The prose protocol above is what
+makes that prompt meaningful — the human must already have the diff and
+message in front of them when it appears.
+
+**Sole exception — the autonomous Index pipeline.** Scheduled Watson runs are
+headless; there, dispatching an item to the board is the approval, and Holmes
+review plus the human's PR merge is the gate. The hook recognizes the pipeline
+by a live `/tmp/watson.lock` or `WORKBENCH_DEV_TEAM_PIPELINE=1`. Never set
+that variable or create that lock to skip approval in interactive work.
+
+### Message format and hygiene
+
 Use the `/workbench-dev-team:git-commit` skill for message format —
 Conventional Commits + Gitmoji. Beyond format:
 

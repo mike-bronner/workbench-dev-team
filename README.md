@@ -38,6 +38,8 @@ Universal dev workflow + standards: orient before writing, plan before coding, a
 
 Includes a **decision protocol** that requires presenting three options to the human (with reasoning and a recommendation) for any meaningful fork — implementation approach, library choice, scope decisions, naming. The human decides, the agent executes. Trivial choices (mechanical translation, following existing repo conventions, one-line obvious fixes) are exempt.
 
+Also defines the **commit approval gate** (see [Commit approval gate](#commit-approval-gate) below): no `git commit` without explicit human approval of the diff and message.
+
 Used by Watson internally in both operating modes. Also invocable directly in any plugin-aware Claude session.
 
 ### `git-commit`
@@ -61,6 +63,19 @@ Turns the current session into the team's orchestrator: dispatches Lestrade, Wat
 Watson supports prose-driven **Direct mode** for ad-hoc dev work with no board item. Lestrade and Holmes are Index-coupled and need a board item ID.
 
 The skill also **routes GitHub actions to the right executor**. Two rules: (1) *agent work products* (formal reviews, AC, status moves) only ever go through The Index, signed as the dispatched agent — never `gh`; (2) *your own actions* (comments you dictate, merges you order) go through `gh` under your identity, on any repo. Whether a repo is Index-governed is answered by `check_repo_access` — a server-side tool that checks The Index GitHub App's installation list (spec in `THE_INDEX_HANDOFF_ROUTING.md`; until it ships, the skill degrades to a `list_items` scan and says so). Merges are never delegated to agents and only happen on your explicit request.
+
+## Commit approval gate
+
+**Every `git commit` requires explicit human approval. Non-negotiable.** Enforced twice, because prose alone drifts:
+
+1. **Prose** — the `develop` skill instructs the agent to present the staged diff and the proposed commit message, then wait for an explicit yes before committing. One approval covers one commit.
+2. **Machinery** — a plugin `PreToolUse` hook ([hooks/hooks.json](hooks/hooks.json) → [hooks/scripts/commit-approval-gate.sh](hooks/scripts/commit-approval-gate.sh)) detects `git commit` in any Bash invocation (compound commands, `-C`/`-c` flags, env prefixes included) and returns `permissionDecision: "ask"`, forcing the harness to prompt — even in auto-accept permission modes, even if the model forgot the prose.
+
+**Pipeline carve-out.** Headless `ask` prompts auto-deny, so an ungated rule would deadlock every scheduled Watson run at its first commit. The hook therefore allows commits through when the autonomous Index pipeline is demonstrably running: a live-PID `/tmp/watson.lock` (which Watson's Index mode acquires before any work) or `WORKBENCH_DEV_TEAM_PIPELINE=1` in the environment. In the pipeline, board dispatch is the approval and Holmes review + your PR merge is the human gate. A stale lock (dead PID) does **not** bypass.
+
+Known edge: while a scheduled Watson run is live, its lock also exempts concurrent interactive sessions on the same machine. The prose protocol still applies there; the window is the few minutes of a pipeline tick.
+
+Tests: `hooks/scripts/test-commit-approval-gate.sh` (19 cases — detection, non-commit silence, carve-outs).
 
 ## Configuration — models, effort, budget
 
