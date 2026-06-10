@@ -237,7 +237,24 @@ sharper AC, Holmes's answer, or Mike's call), implement on the same branch.
 ### 7. Mark the PR ready and update the body
 
 Resolve `$PR_NUM` if you don't already have it, then set the final body and flip
-the draft to ready — **locally via `gh`, as you** (you own the PR):
+the draft to ready — **locally via `gh`, as you** (you own the PR).
+
+**Check for a PR template first** — `gh` does not apply templates when `--body`
+is passed, so you must:
+
+```bash
+ls .github/PULL_REQUEST_TEMPLATE.md PULL_REQUEST_TEMPLATE.md docs/PULL_REQUEST_TEMPLATE.md \
+   .github/pull_request_template.md 2>/dev/null; ls .github/PULL_REQUEST_TEMPLATE/ 2>/dev/null
+```
+
+If a template exists, the final body follows **its** structure: read it, fill
+every section honestly (no boilerplate placeholders, no leftover HTML
+comments), pick the best-fitting file when `.github/PULL_REQUEST_TEMPLATE/`
+holds several, and append anything required here that the template lacks a
+slot for — the AC checklist and `Fixes #<issue_number>` are non-negotiable
+(Holmes reviews against the AC; `Fixes` makes the merge close the issue).
+
+If no template exists, use this structure:
 
 ```bash
 PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
