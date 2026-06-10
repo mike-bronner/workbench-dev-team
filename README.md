@@ -60,6 +60,8 @@ Turns the current session into the team's orchestrator: dispatches Lestrade, Wat
 
 Watson supports prose-driven **Direct mode** for ad-hoc dev work with no board item. Lestrade and Holmes are Index-coupled and need a board item ID.
 
+The skill also **routes GitHub actions to the right executor**. Two rules: (1) *agent work products* (formal reviews, AC, status moves) only ever go through The Index, signed as the dispatched agent — never `gh`; (2) *your own actions* (comments you dictate, merges you order) go through `gh` under your identity, on any repo. Whether a repo is Index-governed is answered by `check_repo_access` — a server-side tool that checks The Index GitHub App's installation list (spec in `THE_INDEX_HANDOFF_ROUTING.md`; until it ships, the skill degrades to a `list_items` scan and says so). Merges are never delegated to agents and only happen on your explicit request.
+
 ## Configuration — models, effort, budget
 
 Per-agent model, effort, and Watson's budget cap live in a single file, written by `/workbench-dev-team:setup` with these defaults and never overwritten on re-run (your edits survive plugin updates):

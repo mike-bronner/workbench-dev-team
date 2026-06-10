@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Run the dev team (Inspector Lestrade, Dr. Watson, Sherlock Holmes) as background sub-agents from the current session, with per-agent model and effort read from the shared config. Use when delegating development work, triage, or code review to the team instead of doing it in the main conversation — triggers on "delegate this", "send Watson at", "have the team", "dispatch the team", "orchestrate", or any multi-step dev task that should run asynchronously while the conversation stays lean.
+description: Run the dev team (Inspector Lestrade, Dr. Watson, Sherlock Holmes) as background sub-agents from the current session, with per-agent model and effort read from the shared config, and route GitHub actions to the right executor (Index MCP vs gh CLI). Use when delegating development work, triage, or code review to the team, or when the user asks to review a PR, comment on an issue, merge a PR, triage an item, or check where work stands — triggers on "delegate this", "send Watson at", "have the team", "review this PR", "comment on", "merge", "orchestrate", or any multi-step dev task that should run asynchronously while the conversation stays lean.
 ---
 
 # Orchestrate — The Dev Team as Sub-Agents
@@ -112,6 +112,55 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   SendMessage the answer back. The human decides; the team executes.
 - **You never do the work.** If you catch yourself reading a repo to "just fix
   it quickly," stop — that's a Watson dispatch.
+
+## Action routing — Index MCP or gh CLI?
+
+When the user asks for a GitHub action (review, comment, merge, triage, fix),
+two questions decide the path. Answer them in order.
+
+### 1. Whose voice does the action carry?
+
+- **Agent work products** — formal PR reviews, acceptance criteria, status
+  moves, agent comments — exist only inside The Index pipeline, signed by that
+  agent's GitHub App. They go through a dispatched agent and its MCP write
+  tools. Never produce them with `gh`; a Claude-authored verdict posted under
+  the user's identity forges the review gate.
+- **The user's own actions** — comments they dictate, merges they order — are
+  theirs, executed directly with `gh` under their identity, on any repo. You
+  are the secretary here, not an agent.
+
+### 2. Is the repo governed by The Index?
+
+A repo is governed when The Index's GitHub App is installed on it. Check, in
+order:
+
+1. `mcp__the-index__check_repo_access(repo)` — the authoritative answer,
+   straight from the App's installation list. (Requires The Index ≥ the
+   check-repo-access release; if the tool isn't in your tool list yet, fall
+   through.)
+2. Fallback: `mcp__the-index__list_items(limit: 100)` and scan for the repo
+   among item `repo` fields. A hit proves governed; a miss is **inconclusive**
+   — say so, and ask the user rather than silently treating the repo as
+   ungoverned.
+
+Cache the answer per repo for the rest of the session.
+
+To dispatch Lestrade or Holmes you also need the **item ID** for the issue/PR:
+`mcp__the-index__find_item(repo, issue_number)` where available, else the
+`list_items` scan. If the repo is governed but the item can't be resolved
+(webhook lag, item not on the board), **stop and report** — never fall back to
+`gh` for agent work products.
+
+### Routing table
+
+| Request | Governed repo | Ungoverned repo |
+|---|---|---|
+| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review | Wants a GitHub review artifact → review inline, post via `gh pr review` as the user, after confirming. Conversational opinion → verdict in chat, nothing posted. **Unclear which → ask.** |
+| "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
+| "implement / fix / build X" | Item exists → **Watson** Index mode (`Item ID: <n>`). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (prose) |
+| "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
+| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool). Board status follows via webhook | same |
+| "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
 
 ## When NOT to orchestrate
 
