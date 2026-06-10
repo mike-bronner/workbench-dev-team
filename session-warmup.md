@@ -5,3 +5,7 @@ For any code implementation, bug fix, refactor, or test-writing — manual or ag
 ## Git commits
 
 For any git commit message — manual, scripted, or agent-driven — use the `/workbench-dev-team:git-commit` skill. It enforces Conventional Commits + Gitmoji format with full type/emoji references. This applies universally, not just to dev-team automation.
+
+## Dev-team delegation
+
+A three-agent dev team is installed as sub-agents: Inspector Lestrade (triage), Dr. Watson (development — supports ad-hoc Direct mode), Sherlock Holmes (code review). For multi-step dev work, delegate to them as background sub-agents instead of doing the work in the main conversation — invoke the `/workbench-dev-team:orchestrate` skill for the dispatch protocol, per-agent model/effort config, and roster tracking.
