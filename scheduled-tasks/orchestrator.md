@@ -61,6 +61,7 @@ for each distinct item.repo across items:
 Dispatch command (run in Bash, **detached**):
 
 ```bash
+ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.lestrade.model // "haiku"' "$CONFIG" 2>/dev/null || echo "haiku")
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
@@ -69,26 +70,29 @@ nohup claude -p --agent workbench-dev-team:lestrade \
   ${EFFORT:+--effort "$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
-  "Item ID: <ITEM_ID>" \
-  > "$HOME/.claude-workbench/dev-team-logs/lestrade-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+  "Item ID: $ID" \
+  > "$HOME/.claude-workbench/dev-team-logs/lestrade-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
 
 **Blocker sweep** — after the per-item dispatches, collect the **distinct** `repo` values from the items this lane returned and fire one sweep per repo. New issues are the only thing that changes a repo's dependency graph from the pipeline's perspective, so a sweep accompanies every batch of fresh triage work — an idle Lane 1 means no sweeps. In sweep mode Lestrade marks blocked-by dependencies between open issues (additive only) via The Index's `add_blocked_by` tool.
 
-Sweep dispatch command (one per distinct repo, also **detached**; `<REPO_SLUG>` is the repo with `/` replaced by `-` for the log filename):
+Sweep dispatch command (one per distinct repo, also **detached**; the log
+slug is derived in-shell — no manual substitution):
 
 ```bash
+REPO=<OWNER/REPO>  # ← the ONLY line you edit: the repo in owner/name form
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.lestrade.model // "haiku"' "$CONFIG" 2>/dev/null || echo "haiku")
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
+SLUG=$(echo "$REPO" | tr '/' '-')
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
   ${EFFORT:+--effort "$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
-  "Repo sweep: <OWNER/REPO>" \
-  > "$HOME/.claude-workbench/dev-team-logs/lestrade-sweep-<REPO_SLUG>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+  "Repo sweep: $REPO" \
+  > "$HOME/.claude-workbench/dev-team-logs/lestrade-sweep-$SLUG-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
 
@@ -103,6 +107,7 @@ for each item in items:
 Dispatch command:
 
 ```bash
+ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.holmes.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
 EFFORT=$(jq -r '.agents.holmes.effort // empty' "$CONFIG" 2>/dev/null || true)
@@ -111,8 +116,8 @@ nohup claude -p --agent workbench-dev-team:holmes \
   ${EFFORT:+--effort "$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
-  "Item ID: <ITEM_ID>" \
-  > "$HOME/.claude-workbench/dev-team-logs/holmes-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+  "Item ID: $ID" \
+  > "$HOME/.claude-workbench/dev-team-logs/holmes-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
 
@@ -127,6 +132,7 @@ if items is non-empty:
 Dispatch command (note the budget cap):
 
 ```bash
+ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.watson.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
 EFFORT=$(jq -r '.agents.watson.effort // empty' "$CONFIG" 2>/dev/null || true)
@@ -137,8 +143,8 @@ nohup claude -p --agent workbench-dev-team:watson \
   --dangerously-skip-permissions \
   --no-session-persistence \
   --max-budget-usd "$BUDGET" \
-  "Item ID: <ITEM_ID>" \
-  > "$HOME/.claude-workbench/dev-team-logs/watson-<ITEM_ID>-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+  "Item ID: $ID" \
+  > "$HOME/.claude-workbench/dev-team-logs/watson-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
 ```
 
@@ -147,6 +153,7 @@ Watson is single-track: the server returns at most one item, and Watson's own `/
 ## Rules
 
 - **Fire-and-forget.** Every dispatch goes into the background with `nohup ... &` + `disown`. Never wait for an agent to complete — Watson alone can run for hours.
+- **Copy dispatch blocks byte-for-byte.** The only line you edit is the leading assignment (`ID=` or `REPO=`). Everything below it — the flags, the positional `"Item ID: $ID"` prompt, the log redirect — is pasted verbatim. The positional prompt is the agent's entire task: drop or reword it and the agent boots with no work, burns a process, and exits. Never reconstruct a dispatch command from memory.
 - **One Bash call per dispatch.** Don't batch multiple dispatches into one shell command — each needs its own log file and backgrounding.
 - **ITEM_ID is the `id` field** (`project_items.id`) of the item the lane tool returned — never `issue_number` or `pr_number`. Mixing them up dispatches an agent at a nonexistent item.
 - **No reasoning about item contents.** You decide *which agent* based on *which tool returned the item*, not on item fields. That logic lives server-side.
