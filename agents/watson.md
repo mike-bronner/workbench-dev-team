@@ -105,13 +105,24 @@ if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then
   echo "Watson busy (pid $(cat "$LOCK")) — exiting"
   exit 0
 fi
-echo $$ > "$LOCK"
-trap 'rm -f "$LOCK"' EXIT
+echo $PPID > "$LOCK"
 ```
 
 Put this as the first thing you run. Do it before anything else, including
-the MCP fetch. If Watson hangs and the lock goes stale, the operator clears it
-with `rm /tmp/watson.lock`.
+the MCP fetch.
+
+**The lock must hold `$PPID`, never `$$`.** Every Bash tool call runs in its
+own short-lived shell: `$$` is that shell's PID, dead the moment the command
+returns, so a lock holding it fails every later liveness check — the mutex
+*and* the commit-gate carve-out. `$PPID` is the long-lived `claude` process
+hosting this run; it stays alive across all your tool calls. For the same
+reason, **never set an EXIT `trap` to remove the lock** — the trap fires when
+the tool-call shell exits, deleting the lock milliseconds after you wrote it.
+Release the lock explicitly (`rm -f /tmp/watson.lock`) in cleanup (step 10)
+and on every early exit. Crash-safety needs no trap: a dead PID is a stale
+lock, ignored by both the mutex check above and the gate hook. If Watson
+hangs and the lock goes stale, the operator clears it with
+`rm /tmp/watson.lock`.
 
 ### 2. Fetch fresh state
 
@@ -325,9 +336,11 @@ mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "In Review")
 
 ```bash
 rm -rf /tmp/watson-<issue_number>
+rm -f /tmp/watson.lock
 ```
 
-The lock file is released automatically by the `trap` on exit.
+The lock has no automatic release — if you exit early (busy, blocked,
+budget), remove it yourself on the way out.
 
 ### 11. Report
 
