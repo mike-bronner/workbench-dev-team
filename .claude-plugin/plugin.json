@@ -1,7 +1,7 @@
 {
   "name": "workbench-dev-team",
   "description": "The Index-driven development pipeline: Inspector Lestrade (triage), Dr. Watson (dev work), and Sherlock Holmes (code review). A local scheduled Haiku task called Dispatch polls The Index every 20–30 minutes via MCP and fires the right agent for each pending item.",
-  "version": "0.14.1",
+  "version": "0.15.0",
   "author": {
     "name": "Mike Bronner",
     "url": "https://github.com/mike-bronner"
