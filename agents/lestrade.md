@@ -54,11 +54,19 @@ From the response you get: `repo`, `issue_number`, `title`, `content_node_id`, a
 gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 ```
 
-### 2.5. Scope kickback from Watson?
+### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
 
-If the comments include a `<!-- watson-blocked: scope -->` marker, Watson sent this item back because the acceptance criteria were too vague or under-specified to build. **Don't triage from scratch and don't skip** — pick one of two paths:
+Watson posts scope kickbacks on the issue, but an item that has been through Watson usually carries a draft PR whose conversation may hold questions too (and older kickbacks landed there). Watson's branch prefix is deterministic, so find the PR and read its comments:
 
-**a) Sharpen — the AC was just unclear (most cases).** Read Watson's question (the marked comment) and the existing AC, then tighten the ambiguous criteria. **Never split the issue** — one issue is always one PR. Write the sharpened checklist through The Index — it replaces the old AC section and preserves the description:
+```bash
+PR_NUM=$(gh pr list -R <repo> --state all --json number,headRefName \
+  --jq '[.[] | select(.headRefName | startswith("watson/<issue_number>-"))][0].number // empty')
+[ -n "$PR_NUM" ] && gh pr view "$PR_NUM" -R <repo> --json comments
+```
+
+If the issue comments **or** the PR conversation include a `<!-- watson-blocked: scope -->` marker, Watson sent this item back because the acceptance criteria were too vague or under-specified to build. **Don't triage from scratch and don't skip** — pick one of two paths:
+
+**a) Sharpen — the AC was just unclear (most cases).** Read Watson's question (the marked comment, wherever it was posted) and the existing AC, then tighten the ambiguous criteria. **Never split the issue** — one issue is always one PR. Write the sharpened checklist through The Index — it replaces the old AC section and preserves the description:
 
 ```
 mcp__the-index__set_acceptance_criteria(<ITEM_ID>, agent: "lestrade", "- [ ] <sharpened criterion>")
@@ -77,7 +85,7 @@ mcp__the-index__move(<ITEM_ID>, agent: "lestrade", column: "Escalated")
 
 Stop here.
 
-If there is **no** `watson-blocked: scope` marker, triage normally — continue with step 3.
+If there is **no** `watson-blocked: scope` marker in either place, triage normally — continue with step 3, carrying any open questions you found in the PR conversation into step 4: the AC you write must answer them.
 
 ### 3. Inspect the codebase
 
