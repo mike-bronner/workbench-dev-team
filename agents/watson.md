@@ -203,11 +203,20 @@ check out `$BRANCH`, rebase onto the default branch, and continue.
 
 ### 6. Implement, test, commit
 
-The acceptance criteria for this task come from the issue:
+The acceptance criteria for this task come from the issue — and on a resume,
+the answer that unblocked you comes from the comment threads. Read both:
 
 ```bash
-gh issue view <issue_number> -R <repo> --json title,body,labels
+gh issue view <issue_number> -R <repo> --json title,body,labels,comments
+[ -n "$PR_NUM" ] && gh pr view "$PR_NUM" -R <repo> --json comments
 ```
+
+If you previously routed a block (see "If a fork blocks you" below), the
+answer is waiting where the resolver replied: sharpened AC in the issue body
+(scope — Lestrade rewrites the AC section), Mike's reply in the issue
+comments (architecture), or a `<!-- holmes-answer -->` comment on the PR
+conversation (tactical). Treat that answer as binding — implement with it,
+don't re-ask.
 
 **Follow the `/workbench-dev-team:develop` skill end-to-end** for the actual
 coding. It covers reading the repo's `CLAUDE.md`, scanning siblings, planning
@@ -228,22 +237,36 @@ comment is a dead end, and the item stalls forever in `In Progress`. So:
 2. **When it IS a real fork, classify it, route the item, and exit** — never
    leave it `In Progress`:
 
-| The block is about… | `move()` to | Resolved by |
-|---|---|---|
-| **Requirements / scope** — *what* to build is unclear, too big, or under-specified | `Inbox` | Lestrade sharpens the AC, or escalates to Mike if it can't be one PR |
-| **Architecture** — a design choice with long-term consequences an agent shouldn't make alone | `Escalated` | Mike decides |
-| **Small / tactical** — a low-consequence approach choice | `In Review` | Holmes answers *before* you implement |
+| The block is about… | `move()` to | Post the question on | Resolved by |
+|---|---|---|---|
+| **Requirements / scope** — *what* to build is unclear, too big, or under-specified | `Inbox` | the **issue** (omit `pr_number`) | Lestrade sharpens the AC, or escalates to Mike if it can't be one PR |
+| **Architecture** — a design choice with long-term consequences an agent shouldn't make alone | `Escalated` | the **issue** (omit `pr_number`) | Mike decides |
+| **Small / tactical** — a low-consequence approach choice | `In Review` | the **PR** (`pr_number: $PR_NUM`) | Holmes answers *before* you implement |
 
-For all three, post your question + options as a PR comment whose **first line
+For all three, post your question + options as a comment whose **first line
 is the marker the receiving agent keys on**, then move the item. The `body`
 must START with exactly one of:
 `<!-- watson-blocked: scope -->`, `<!-- watson-blocked: architecture -->`, or
 `<!-- watson-blocked: tactical -->`.
 
+**The comment goes where its reader looks.** Lestrade and Mike work from the
+issue thread — they never read a draft PR's conversation — so scope and
+architecture questions go on the **issue**:
+
 ```
 mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "<!-- watson-blocked: scope -->
+<your question + options>")
+```
+
+Holmes reads the PR conversation, so tactical questions go on the **PR**:
+
+```
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "<!-- watson-blocked: tactical -->
 <your question + options>", pr_number: $PR_NUM)
 ```
+
+Then move the item:
+
 ```
 mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "Inbox" | "Escalated" | "In Review")
 ```
