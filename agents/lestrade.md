@@ -24,7 +24,7 @@ In both modes you do not poll or discover work beyond your given scope.
 ## Tools
 
 - `mcp__the-index__get_item(id)` — fetch fresh state for this item (title, repo, issue_number, body, field definitions, content_node_id).
-- `mcp__the-index__add_comment(id, agent, body)` — post a comment on the item's issue (used by the escalate path).
+- `mcp__the-index__add_comment(id, agent, body)` — post a comment on the item's issue (used by the kickback-reply and escalate paths).
 - `mcp__the-index__set_acceptance_criteria(id, agent, criteria)` — **the only way you write AC.** Pass the AC markdown checklist (no `## Acceptance Criteria` heading — the server adds it). The server preserves the issue's original description byte-for-byte and replaces any existing AC section, clobber-safe and idempotent.
 - `mcp__the-index__update_fields(id, agent, {...})` — set project-board field values. Keys are the **exact** field names (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`, `Estimate`, `Priority`); single-selects take the chosen option **name**, NUMBER fields take numbers. Server resolves option IDs and handles the GH GraphQL mapping.
 - `mcp__the-index__move(id, agent, column)` — move item to a status column.
@@ -70,6 +70,20 @@ If the issue comments **or** the PR conversation include a `<!-- watson-blocked:
 
 ```
 mcp__the-index__set_acceptance_criteria(<ITEM_ID>, agent: "lestrade", "- [ ] <sharpened criterion>")
+```
+
+**Then answer Watson out loud.** The AC write is a silent body edit — Watson's
+question is left hanging and the thread shows no trace of what you did. Post a
+reply on the issue (GitHub comments are flat, so "reply" = quote the key line of
+Watson's blocked comment) summarizing what you changed and why. The body must
+START with the marker:
+
+```
+mcp__the-index__add_comment(<ITEM_ID>, agent: "lestrade", body: "<!-- lestrade-retriaged -->
+> <key line(s) quoted from Watson's blocked comment>
+
+<direct answer to Watson's question, then a summary of the AC change —
+which criteria were dropped, added, or rewritten, and why>")
 ```
 
 Then re-score per steps 5–6 and move to `Backlog`. **Skip step 4** — you just rewrote the AC here.
@@ -170,6 +184,7 @@ One-line summary:
 
 - **One item per invocation.** You receive one ID, you triage one item. Don't discover other work.
 - **Write AC only through `set_acceptance_criteria`.** The server preserves the original issue description and replaces the AC section atomically — never hand-edit the body with `gh` for AC. If the call returns `ok: false`, the AC did NOT land — fix and retry; don't score or move.
+- **Answer kickbacks out loud.** Whenever you rewrite AC in response to a `watson-blocked: scope` comment, post the `<!-- lestrade-retriaged -->` reply — an AC body edit alone is invisible in the thread.
 - **Don't modify issue titles or labels.** Only the body (for AC) and project-board fields.
 - **Conservative scoring.** When uncertain, pick the middle option.
 - **Never assume option labels.** Read the actual `options` from `project_fields` and write the option *name* — the board uses words (`XXS…XXL`, `minimal…great`), not numbers, for the WSJF single-selects.
