@@ -232,7 +232,7 @@ else
 {
   "agents": {
     "lestrade": { "model": "haiku" },
-    "holmes": { "model": "sonnet", "effort": "high" },
+    "holmes": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet" },
     "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
   }
 }
@@ -248,7 +248,10 @@ passes `--model` / `--effort` / `--max-budget-usd` from it, and the
 dispatch. Setup never overwrites an existing config — the user's edits stick
 across plugin updates and re-runs. `effort` applies to models with adaptive
 reasoning (Sonnet/Opus tiers); Haiku has none, so Lestrade carries no effort
-key by default.
+key by default. Holmes's optional `fanout` (bool, default `true`) toggles its
+multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets
+the model its lens and skeptic sub-agents run on — both default cleanly when
+absent.
 
 ## Step 7 — Register the scheduled Dispatch task
 

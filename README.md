@@ -10,7 +10,7 @@ This plugin runs three agents on a local 20-minute clock to move items through t
 
 - **Inspector Lestrade** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review. Also runs **blocker sweeps**: after a repo gets fresh triage work, he re-reads all of its open issues and marks blocked-by dependencies (native GitHub issue dependencies, additive only) so blocked items stay out of Dr. Watson's queue.
 - **Dr. Watson** (Opus, $5/run cap) — development. Has two modes: **The Index mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
-- **Sherlock Holmes** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds.
+- **Sherlock Holmes** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds. Reviews fan out across blind, read-only lens sub-agents (AC conformance, correctness, security, test honesty), with every blocker adversarially verified before it lands; only the parent writes, so there's still exactly one App-signed verdict. Falls back to a single inline pass when the fan-out is unavailable.
 
 A fourth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
 
@@ -86,7 +86,7 @@ Per-agent model, effort, and Watson's budget cap live in a single file, written 
 {
   "agents": {
     "lestrade": { "model": "haiku" },
-    "holmes": { "model": "sonnet", "effort": "high" },
+    "holmes": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet" },
     "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
   }
 }
@@ -96,6 +96,8 @@ Both dispatch paths read it:
 
 - **Scheduled (Dispatch)** passes `--model`, `--effort` (only when set), and `--max-budget-usd` on each `claude -p` invocation. CLI flags override agent frontmatter (verified empirically), so a config edit takes effect on the next tick — no plugin files to touch.
 - **Interactive (`orchestrate`)** passes the config's `model` as the Agent tool's per-invocation model override. The Agent tool has no per-invocation effort parameter — interactive sub-agents inherit the session's effort level. `maxBudgetUsd` applies to the scheduled path only.
+
+Holmes also carries two optional review knobs: `fanout` (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run on. Both default cleanly when absent.
 
 The agent definitions carry matching frontmatter defaults (`model: haiku|sonnet|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
 

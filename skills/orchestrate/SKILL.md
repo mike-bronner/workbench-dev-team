@@ -36,11 +36,16 @@ cat "$HOME/.claude-workbench/dev-team-config.json"
 {
   "agents": {
     "lestrade": { "model": "haiku" },
-    "holmes": { "model": "sonnet", "effort": "high" },
+    "holmes": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet" },
     "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
   }
 }
 ```
+
+Holmes carries two optional review knobs: `fanout` (bool, default `true`) toggles
+the multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`)
+sets the model its lens and skeptic sub-agents run on. Both are optional —
+absent file or keys → defaults.
 
 Read it once at the start of an orchestration session. If the file is missing,
 fall back to the values above (they match the agents' frontmatter defaults) and
