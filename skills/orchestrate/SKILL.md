@@ -35,9 +35,9 @@ cat "$HOME/.claude-workbench/dev-team-config.json"
 ```json
 {
   "agents": {
-    "lestrade": { "model": "haiku" },
-    "holmes": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet" },
-    "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
+    "lestrade": { "model": "sonnet", "effort": "high" },
+    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet" },
+    "watson": { "model": "fable", "effort": "xhigh", "maxBudgetUsd": 10.00 }
   }
 }
 ```
@@ -56,8 +56,8 @@ suggest `/workbench-dev-team:setup`.
 - **Interactive (this skill):** pass the config's `model` as the Agent tool's
   per-invocation `model` parameter — it overrides the agent's frontmatter.
   The Agent tool has **no per-invocation effort parameter**; interactive
-  sub-agents inherit the session's effort level (Sonnet/Opus default to
-  `high` on their own, so the config's `effort` is already the lived default).
+  sub-agents inherit the session's effort level — a config `effort` above
+  the session's (e.g. Watson's `xhigh`) only lands on the scheduled path.
   `maxBudgetUsd` is CLI-only — it does not apply to interactive dispatch.
 - **Scheduled (Dispatch):** all three knobs are passed as `--model`,
   `--effort`, and `--max-budget-usd` flags. Not your concern here, but it is
