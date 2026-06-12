@@ -85,9 +85,9 @@ Per-agent model, effort, and Watson's budget cap live in a single file, written 
 // ~/.claude-workbench/dev-team-config.json
 {
   "agents": {
-    "lestrade": { "model": "haiku" },
-    "holmes": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet" },
-    "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
+    "lestrade": { "model": "sonnet", "effort": "high" },
+    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet" },
+    "watson": { "model": "fable", "effort": "xhigh", "maxBudgetUsd": 10.00 }
   }
 }
 ```
@@ -99,7 +99,7 @@ Both dispatch paths read it:
 
 Holmes also carries two optional review knobs: `fanout` (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run on. Both default cleanly when absent.
 
-The agent definitions carry matching frontmatter defaults (`model: haiku|sonnet|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
+The agent definitions carry matching frontmatter defaults (`model: sonnet|fable|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
 
 ## Setup
 
@@ -205,7 +205,7 @@ Two ways to invoke the same agents, same definitions:
 ## Risks and limitations
 
 - **Local execution.** Dispatch runs on your Mac. If the host is off, no work moves. Fine for home/dev setups; move Dispatch to an always-on box if you need 24/7 coverage.
-- **Watson budget cap.** `--max-budget-usd 5.00` limits per-run spend. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes.
+- **Watson budget cap.** `--max-budget-usd 10.00` limits per-run spend (sized for Fable's 2× Opus pricing). Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes.
 - **The Index must be reachable.** If the MCP server is down, all three list tools fail and Dispatch logs `the-index unreachable` and exits cleanly. The next tick retries.
 - **OAuth token lifetime.** The Index issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
 

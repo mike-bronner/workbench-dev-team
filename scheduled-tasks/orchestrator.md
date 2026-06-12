@@ -45,8 +45,8 @@ Per-agent model, effort, and budget live in `~/.claude-workbench/dev-team-config
 (written by `/workbench-dev-team:setup`, editable by the user, survives plugin
 updates). Each dispatch command below reads it with `jq` and falls back to the
 baked-in defaults when the file or a key is missing — a malformed or absent
-config never blocks a dispatch. Effort is passed only when set (Haiku ignores
-it; Sonnet/Opus default to `high` on their own).
+config never blocks a dispatch. Effort is passed only when set (models default
+to `high` on their own when the flag is absent).
 
 ### Lane 1 — Inspector Lestrade (triage)
 
@@ -63,7 +63,7 @@ Dispatch command (run in Bash, **detached**):
 ```bash
 ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.lestrade.model // "haiku"' "$CONFIG" 2>/dev/null || echo "haiku")
+MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
@@ -83,7 +83,7 @@ slug is derived in-shell — no manual substitution):
 ```bash
 REPO=<OWNER/REPO>  # ← the ONLY line you edit: the repo in owner/name form
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.lestrade.model // "haiku"' "$CONFIG" 2>/dev/null || echo "haiku")
+MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
 SLUG=$(echo "$REPO" | tr '/' '-')
 nohup claude -p --agent workbench-dev-team:lestrade \
@@ -109,7 +109,7 @@ Dispatch command:
 ```bash
 ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.holmes.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
+MODEL=$(jq -r '.agents.holmes.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
 EFFORT=$(jq -r '.agents.holmes.effort // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:holmes \
   --model "$MODEL" \
@@ -134,9 +134,9 @@ Dispatch command (note the budget cap):
 ```bash
 ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.watson.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
+MODEL=$(jq -r '.agents.watson.model // "fable"' "$CONFIG" 2>/dev/null || echo "fable")
 EFFORT=$(jq -r '.agents.watson.effort // empty' "$CONFIG" 2>/dev/null || true)
-BUDGET=$(jq -r '.agents.watson.maxBudgetUsd // 5.00' "$CONFIG" 2>/dev/null || echo "5.00")
+BUDGET=$(jq -r '.agents.watson.maxBudgetUsd // 10.00' "$CONFIG" 2>/dev/null || echo "10.00")
 nohup claude -p --agent workbench-dev-team:watson \
   --model "$MODEL" \
   ${EFFORT:+--effort "$EFFORT"} \

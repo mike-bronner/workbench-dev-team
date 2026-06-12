@@ -231,9 +231,9 @@ else
   cat > "$CONFIG" <<'EOF'
 {
   "agents": {
-    "lestrade": { "model": "haiku" },
-    "holmes": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet" },
-    "watson": { "model": "opus", "effort": "high", "maxBudgetUsd": 5.00 }
+    "lestrade": { "model": "sonnet", "effort": "high" },
+    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet" },
+    "watson": { "model": "fable", "effort": "xhigh", "maxBudgetUsd": 10.00 }
   }
 }
 EOF
@@ -246,9 +246,11 @@ Watson's budget cap, read by both dispatch paths: the scheduled Dispatch task
 passes `--model` / `--effort` / `--max-budget-usd` from it, and the
 `/workbench-dev-team:orchestrate` skill reads it for interactive sub-agent
 dispatch. Setup never overwrites an existing config — the user's edits stick
-across plugin updates and re-runs. `effort` applies to models with adaptive
-reasoning (Sonnet/Opus tiers); Haiku has none, so Lestrade carries no effort
-key by default. Holmes's optional `fanout` (bool, default `true`) toggles its
+across plugin updates and re-runs. All three agents now run effort-capable
+models: `xhigh` for the long-horizon agentic roles (Watson's development runs,
+Holmes's reviews), `high` for Lestrade's bounded triage — note `xhigh` is not
+supported on Sonnet, so Lestrade's ceiling short of `max` is `high`.
+Holmes's optional `fanout` (bool, default `true`) toggles its
 multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets
 the model its lens and skeptic sub-agents run on — both default cleanly when
 absent.
