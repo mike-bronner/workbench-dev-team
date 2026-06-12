@@ -67,7 +67,7 @@ MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
-  ${EFFORT:+--effort "$EFFORT"} \
+  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Item ID: $ID" \
@@ -88,7 +88,7 @@ EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
 SLUG=$(echo "$REPO" | tr '/' '-')
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
-  ${EFFORT:+--effort "$EFFORT"} \
+  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Repo sweep: $REPO" \
@@ -113,7 +113,7 @@ MODEL=$(jq -r '.agents.holmes.model // "opus"' "$CONFIG" 2>/dev/null || echo "op
 EFFORT=$(jq -r '.agents.holmes.effort // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:holmes \
   --model "$MODEL" \
-  ${EFFORT:+--effort "$EFFORT"} \
+  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Item ID: $ID" \
@@ -139,7 +139,7 @@ EFFORT=$(jq -r '.agents.watson.effort // empty' "$CONFIG" 2>/dev/null || true)
 BUDGET=$(jq -r '.agents.watson.maxBudgetUsd // 10.00' "$CONFIG" 2>/dev/null || echo "10.00")
 nohup claude -p --agent workbench-dev-team:watson \
   --model "$MODEL" \
-  ${EFFORT:+--effort "$EFFORT"} \
+  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   --max-budget-usd "$BUDGET" \
