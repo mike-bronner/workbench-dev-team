@@ -231,9 +231,9 @@ else
   cat > "$CONFIG" <<'EOF'
 {
   "agents": {
-    "lestrade": { "model": "sonnet", "effort": "high" },
-    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet" },
-    "watson": { "model": "fable", "effort": "xhigh", "maxBudgetUsd": 10.00 }
+    "lestrade": { "model": "sonnet", "effort": "high", "fallback": "haiku" },
+    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 7.00, "fallback": "sonnet" },
+    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
 }
 EOF
@@ -241,19 +241,23 @@ EOF
 fi
 ```
 
-The config is the single source of truth for per-agent model, effort, and
-Watson's budget cap, read by both dispatch paths: the scheduled Dispatch task
-passes `--model` / `--effort` / `--max-budget-usd` from it, and the
+The config is the single source of truth for per-agent model, effort, fallback,
+and budget caps, read by both dispatch paths: the scheduled Dispatch task passes
+`--model` / `--effort` / `--fallback-model` / `--max-budget-usd` from it, and the
 `/workbench-dev-team:orchestrate` skill reads it for interactive sub-agent
 dispatch. Setup never overwrites an existing config — the user's edits stick
-across plugin updates and re-runs. All three agents now run effort-capable
-models: `xhigh` for the long-horizon agentic roles (Watson's development runs,
-Holmes's reviews), `high` for Lestrade's bounded triage — note `xhigh` is not
-supported on Sonnet, so Lestrade's ceiling short of `max` is `high`.
-Holmes's optional `fanout` (bool, default `true`) toggles its
-multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets
-the model its lens and skeptic sub-agents run on — both default cleanly when
-absent.
+across plugin updates and re-runs. All three agents run effort-capable models:
+`xhigh` for the long-horizon agentic roles (Watson's development runs, Holmes's
+reviews), `high` for Lestrade's bounded triage — note `xhigh` is not supported on
+Sonnet, so Lestrade's ceiling short of `max` is `high`. Holmes's optional `fanout`
+(bool, default `true`) toggles its multi-lens review fan-out, and `lensModel`
+(default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run
+on — both default cleanly when absent. The optional `fallback` knob (a
+comma-separated model list) is passed to `--fallback-model` on the scheduled path,
+so a dispatch degrades to the next model when the primary is overloaded or
+unavailable — e.g. a retired model — instead of failing. `maxBudgetUsd` caps a
+run's spend: Watson defaults to `10.00`, Holmes's is optional and applied only
+when set, and both default cleanly when absent.
 
 ## Step 7 — Register the scheduled Dispatch task
 
@@ -312,8 +316,8 @@ Print a clean summary block:
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
 
-  Agents:           Lestrade (Haiku), Holmes (Sonnet), Watson (Opus, $5 cap)
-                    — models/effort/budget editable in the agent config
+  Agents:           Lestrade (Sonnet), Holmes (Opus, $7 cap), Watson (Opus, $10 cap)
+                    — models/effort/fallback/budget editable in the agent config
 
   Verify in Claude Code's scheduled-tasks panel.
 ═══════════════════════════════════════════

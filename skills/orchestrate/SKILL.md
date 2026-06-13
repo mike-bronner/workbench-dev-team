@@ -35,17 +35,21 @@ cat "$HOME/.claude-workbench/dev-team-config.json"
 ```json
 {
   "agents": {
-    "lestrade": { "model": "sonnet", "effort": "high" },
-    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet" },
-    "watson": { "model": "fable", "effort": "xhigh", "maxBudgetUsd": 10.00 }
+    "lestrade": { "model": "sonnet", "effort": "high", "fallback": "haiku" },
+    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 7.00, "fallback": "sonnet" },
+    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
 }
 ```
 
 Holmes carries two optional review knobs: `fanout` (bool, default `true`) toggles
 the multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`)
-sets the model its lens and skeptic sub-agents run on. Both are optional —
-absent file or keys → defaults.
+sets the model its lens and skeptic sub-agents run on. Any agent may carry an
+optional `fallback` knob — a comma-separated model list handed to
+`--fallback-model` so a dispatch degrades to the next model when the primary is
+overloaded or unavailable (e.g. a retired model) rather than failing. Holmes also
+takes an optional `maxBudgetUsd` cap (Watson's defaults to `10.00`). All of these
+are optional — absent file or keys → defaults.
 
 Read it once at the start of an orchestration session. If the file is missing,
 fall back to the values above (they match the agents' frontmatter defaults) and
@@ -58,10 +62,13 @@ suggest `/workbench-dev-team:setup`.
   The Agent tool has **no per-invocation effort parameter**; interactive
   sub-agents inherit the session's effort level — a config `effort` above
   the session's (e.g. Watson's `xhigh`) only lands on the scheduled path.
-  `maxBudgetUsd` is CLI-only — it does not apply to interactive dispatch.
-- **Scheduled (Dispatch):** all three knobs are passed as `--model`,
-  `--effort`, and `--max-budget-usd` flags. Not your concern here, but it is
-  the same config file — one edit moves both paths.
+  `maxBudgetUsd` and `fallback` are CLI-only — neither applies to interactive
+  dispatch (the Agent tool has no budget or fallback-model parameter; a model
+  error on this path surfaces immediately for the human to handle).
+- **Scheduled (Dispatch):** the `model`, `effort`, `fallback`, and budget knobs
+  are passed as `--model`, `--effort`, `--fallback-model`, and `--max-budget-usd`
+  flags. Not your concern here, but it is the same config file — one edit moves
+  both paths.
 
 ## Dispatch protocol
 
