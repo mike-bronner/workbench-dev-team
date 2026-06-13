@@ -139,14 +139,21 @@ Regardless of whether you came in on `Ready` or `In Progress`, check for a
 prior branch/PR — state can drift:
 
 ```bash
-SLUG="$(echo '<title>' | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-50)"
-BRANCH="watson/<issue_number>-$SLUG"
+# Find an existing branch for this issue BY NUMBER — type-prefix- and
+# slug-agnostic, so resume never depends on re-deriving the branch name (the
+# fix/feature/chore bucket is chosen only on a fresh start, in step 5). The
+# legacy `watson` prefix stays in the match so in-flight branches created before
+# this change still resume instead of getting a duplicate.
+BRANCH=$(gh api repos/<repo>/branches --jq '.[].name' \
+  | grep -E '^(fix|feature|chore|watson)/<issue_number>-' | head -1)
+[ -n "$BRANCH" ] && BRANCH_EXISTS=1 || BRANCH_EXISTS=0
 
-# Does a branch for this issue exist?
-gh api repos/<repo>/branches --jq ".[].name" | grep -qx "$BRANCH" && BRANCH_EXISTS=1 || BRANCH_EXISTS=0
-
-# Does a PR for this branch exist?
-PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --state all --json number --jq '.[0].number // empty')
+# Does a PR for that branch exist?
+if [ "$BRANCH_EXISTS" = 1 ]; then
+  PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --state all --json number --jq '.[0].number // empty')
+else
+  PR_NUM=""
+fi
 ```
 
 **Decision tree:**
@@ -168,9 +175,20 @@ mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "In Progress")
 
 ### 5. Clone, branch, draft PR
 
-On a fresh start:
+On a fresh start, pick the Git-flow branch type from the issue's nature
+(its labels first, else the AC/title), then build the name. Discovery (step 3)
+matches by issue number, so a wrong guess is cosmetic — it never strands a
+duplicate branch.
+
+- **`fix/`** — a bug fix: broken behaviour, a `bug`/`defect` label.
+- **`chore/`** — maintenance: dependencies, docs, refactor, tooling, CI, version bumps.
+- **`feature/`** — a new capability or enhancement. The default when unsure.
 
 ```bash
+TYPE=feature   # set to fix or chore when the issue calls for it
+SLUG="$(echo '<title>' | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-50)"
+BRANCH="$TYPE/<issue_number>-$SLUG"
+
 CLONE=/tmp/watson-<issue_number>
 rm -rf "$CLONE"
 gh repo clone <repo> "$CLONE"

@@ -56,11 +56,11 @@ gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 
 ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
 
-Watson posts scope kickbacks on the issue, but an item that has been through Watson usually carries a draft PR whose conversation may hold questions too (and older kickbacks landed there). Watson's branch prefix is deterministic, so find the PR and read its comments:
+Watson posts scope kickbacks on the issue, but an item that has been through Watson usually carries a draft PR whose conversation may hold questions too (and older kickbacks landed there). Watson's branch encodes the issue number after a Git-flow type prefix, so match on the number to find the PR and read its comments:
 
 ```bash
 PR_NUM=$(gh pr list -R <repo> --state all --json number,headRefName \
-  --jq '[.[] | select(.headRefName | startswith("watson/<issue_number>-"))][0].number // empty')
+  --jq '[.[] | select(.headRefName | test("^(fix|feature|chore|watson)/<issue_number>-"))][0].number // empty')
 [ -n "$PR_NUM" ] && gh pr view "$PR_NUM" -R <repo> --json comments
 ```
 
@@ -224,7 +224,7 @@ One MCP call per blocked issue, listing all of its blockers:
 mcp__the-index__add_blocked_by(agent: "lestrade", repo: "<owner/repo>", issue_number: <blocked>, blocked_by: [<blocker>, ...])
 ```
 
-The server is additive and idempotent — it skips links that already exist and never removes existing dependencies (yours or human-set), so you don't need to pre-read the current dependency graph. **Check each response:** if `ok` is not `true`, report the error verbatim and stop — no `gh` fallback, ever.
+The server is additive and idempotent — it skips links that already exist and never removes existing dependencies (yours or human-set), so you don't need to pre-read the current dependency graph. **Check each response:** if the `add_blocked_by` tool is unavailable, or its response `ok` is not `true`, surface the unmarked dependency in your report (step 4) and stop. Never record the dependency another way — no `gh`, and **never as an issue comment.** A dependency you can't set natively is an operator problem to report, not something to narrate on the issue.
 
 ### 4. Report
 
@@ -242,4 +242,4 @@ If no dependencies were found, say so: `🔗 swept <owner/repo>: <n> open issues
 - **Evidence-based links only.** Every link in your report carries its one-line justification. If you can't state the reason in one line, the link doesn't exist.
 - **No epics, no grouping, no splitting.** You mark dependencies between existing issues; you never create issues, sub-issues, or parent/child hierarchies.
 - **Read via `gh`, write via MCP.** Same discipline as Item mode — a failed `add_blocked_by` is terminal.
-- **Don't modify issues.** No comments, no labels, no body edits in sweep mode — dependencies are your only output.
+- **Don't modify issues — a comment is not a dependency.** No comments, no labels, no body edits in sweep mode; native blocked-by links are your only output. If you can't set a link — the `add_blocked_by` tool is missing or errors — report it in your return message and stop. Never fall back to narrating the dependency as an issue comment.
