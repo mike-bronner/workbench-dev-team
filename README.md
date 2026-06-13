@@ -164,7 +164,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 ### Concurrency
 
 - **Inspector Lestrade and Sherlock Holmes** are idempotent within a tick. Status lanes (`null` and `In Review`) act as the serialization.
-- **Dr. Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A host-local PID mutex at `/tmp/watson.lock` prevents two Watsons from stepping on the same item. Released automatically via shell `trap` on exit.
+- **Dr. Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A host-local PID mutex at `/tmp/watson.lock` prevents two Watsons from stepping on the same item. Released explicitly (`rm -f /tmp/watson.lock`) in cleanup and on every early exit — never via a shell `trap`, which would delete the lock the moment the tool-call shell returns.
 
 ### Token cost
 
