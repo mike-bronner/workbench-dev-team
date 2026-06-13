@@ -56,11 +56,11 @@ gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 
 ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
 
-Watson posts scope kickbacks on the issue, but an item that has been through Watson usually carries a draft PR whose conversation may hold questions too (and older kickbacks landed there). Watson's branch prefix is deterministic, so find the PR and read its comments:
+Watson posts scope kickbacks on the issue, but an item that has been through Watson usually carries a draft PR whose conversation may hold questions too (and older kickbacks landed there). Watson's branch encodes the issue number after a Git-flow type prefix, so match on the number to find the PR and read its comments:
 
 ```bash
 PR_NUM=$(gh pr list -R <repo> --state all --json number,headRefName \
-  --jq '[.[] | select(.headRefName | startswith("watson/<issue_number>-"))][0].number // empty')
+  --jq '[.[] | select(.headRefName | test("^(fix|feature|chore|watson)/<issue_number>-"))][0].number // empty')
 [ -n "$PR_NUM" ] && gh pr view "$PR_NUM" -R <repo> --json comments
 ```
 
