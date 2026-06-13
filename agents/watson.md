@@ -236,6 +236,39 @@ comments (architecture), or a `<!-- holmes-answer -->` comment on the PR
 conversation (tactical). Treat that answer as binding — implement with it,
 don't re-ask.
 
+#### Holmes's non-blocking follow-ups (on a review-requested resume)
+
+If you came back because Holmes requested changes, his review body carries a
+**`## 📋 Non-blocking follow-ups`** section alongside the blockers. Fix the
+blockers — those are required. The follow-ups are *your* call, but **none may
+be dropped**. For each:
+
+- **Address it in this PR** when it's cheap, in scope, and obviously right —
+  fold the fix in with the rest of your changes.
+- **Otherwise, open a tracked issue for it** so it survives. The MCP has no
+  create-issue tool, so use `gh` directly (you already author the PR as
+  yourself):
+
+  ```bash
+  gh issue create -R <repo> \
+    --title "<concise, specific title>" \
+    --body "Follow-up from Holmes's review of #<issue_number> (PR #$PR_NUM).
+
+  **Observation:** <Holmes's note>
+  **Why deferred:** <one line — why it's out of scope for this PR>
+
+  <!-- followup-from: PR#$PR_NUM -->"
+  ```
+
+  Each new issue auto-lands on The Casebook and Lestrade triages it next tick.
+
+Then **record the dispositions on the PR** in one comment, so the trail is
+visible — what you fixed inline and what you spun out (with issue numbers):
+
+```
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Non-blocking follow-ups: fixed <a>, <b> in this PR; opened #<x>, #<y> for the rest.", pr_number: $PR_NUM)
+```
+
 **Follow the `/workbench-dev-team:develop` skill end-to-end** for the actual
 coding. It covers reading the repo's `CLAUDE.md`, scanning siblings, planning
 against AC, implementing, testing, committing — all the universal dev work,
@@ -416,6 +449,11 @@ budget), remove it yourself on the way out.
 - **Resume logic repairs state drift.** If a PR already exists and is
   merged/closed, don't redo work — just move The Index status forward
   and exit.
+- **Holmes's non-blocking follow-ups are never dropped.** When a review
+  bounces back, fix the blockers, then for each follow-up either address it
+  in the PR or open a tracked issue (`gh issue create`, marker
+  `<!-- followup-from: PR#<n> -->`) for the ones you won't — and record the
+  dispositions on the PR. Silence loses them.
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
 - **Commit approval gate.** In Direct mode every commit needs explicit human
