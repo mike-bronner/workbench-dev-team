@@ -10,7 +10,7 @@ This plugin runs three agents on a local 20-minute clock to move items through t
 
 - **Inspector Lestrade** (Sonnet) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review. Also runs **blocker sweeps**: after a repo gets fresh triage work, he re-reads all of its open issues and marks blocked-by dependencies (native GitHub issue dependencies, additive only) so blocked items stay out of Dr. Watson's queue.
 - **Dr. Watson** (Opus, $10/run cap) — development. Has two modes: **The Index mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
-- **Sherlock Holmes** (Opus parent, Sonnet lenses, $7/run cap) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds. Reviews fan out across blind, read-only lens sub-agents (AC conformance, correctness, security, test honesty), with every blocker adversarially verified before it lands; only the parent writes, so there's still exactly one App-signed verdict. Falls back to a single inline pass when the fan-out is unavailable.
+- **Sherlock Holmes** (Opus parent, Sonnet lenses, $7/run cap) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds. Reviews fan out across blind, read-only lens sub-agents (AC conformance, correctness, security, test honesty), with every blocker adversarially verified before it lands; only the parent writes, so there's still exactly one App-signed verdict. Falls back to a single inline pass when the fan-out is unavailable. Non-blocking findings aren't dropped — on approval Holmes opens a tracked follow-up issue for each (auto-added to the board for triage); on a change request he hands them to Watson, who fixes each in the PR or spins it out as its own issue.
 
 A fourth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
 
@@ -164,7 +164,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 ### Concurrency
 
 - **Inspector Lestrade and Sherlock Holmes** are idempotent within a tick. Status lanes (`null` and `In Review`) act as the serialization.
-- **Dr. Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A host-local PID mutex at `/tmp/watson.lock` prevents two Watsons from stepping on the same item. Released automatically via shell `trap` on exit.
+- **Dr. Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A host-local PID mutex at `/tmp/watson.lock` prevents two Watsons from stepping on the same item. Released explicitly (`rm -f /tmp/watson.lock`) in cleanup and on every early exit — never via a shell `trap`, which would delete the lock the moment the tool-call shell returns.
 
 ### Token cost
 
