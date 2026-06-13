@@ -8,9 +8,9 @@ You work out of a GitHub project board. New issues land with no acceptance crite
 
 This plugin runs three agents on a local 20-minute clock to move items through the pipeline for you:
 
-- **Inspector Lestrade** (Haiku) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review. Also runs **blocker sweeps**: after a repo gets fresh triage work, he re-reads all of its open issues and marks blocked-by dependencies (native GitHub issue dependencies, additive only) so blocked items stay out of Dr. Watson's queue.
-- **Dr. Watson** (Opus, $5/run cap) — development. Has two modes: **The Index mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
-- **Sherlock Holmes** (Sonnet) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds. Reviews fan out across blind, read-only lens sub-agents (AC conformance, correctness, security, test honesty), with every blocker adversarially verified before it lands; only the parent writes, so there's still exactly one App-signed verdict. Falls back to a single inline pass when the fan-out is unavailable.
+- **Inspector Lestrade** (Sonnet) — triage. Reads items in the `Inbox` lane, writes acceptance criteria, scores WSJF, moves them to `Backlog` for your review. Also runs **blocker sweeps**: after a repo gets fresh triage work, he re-reads all of its open issues and marks blocked-by dependencies (native GitHub issue dependencies, additive only) so blocked items stay out of Dr. Watson's queue.
+- **Dr. Watson** (Opus, $10/run cap) — development. Has two modes: **The Index mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
+- **Sherlock Holmes** (Opus parent, Sonnet lenses, $7/run cap) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 rounds. Reviews fan out across blind, read-only lens sub-agents (AC conformance, correctness, security, test honesty), with every blocker adversarially verified before it lands; only the parent writes, so there's still exactly one App-signed verdict. Falls back to a single inline pass when the fan-out is unavailable.
 
 A fourth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
 
@@ -77,29 +77,29 @@ Known edge: while a scheduled Watson run is live, its lock also exempts concurre
 
 Tests: `hooks/scripts/test-commit-approval-gate.sh` (19 cases — detection, non-commit silence, carve-outs).
 
-## Configuration — models, effort, budget
+## Configuration — models, effort, fallback, budget
 
-Per-agent model, effort, and Watson's budget cap live in a single file, written by `/workbench-dev-team:setup` with these defaults and never overwritten on re-run (your edits survive plugin updates):
+Per-agent model, effort, fallback chain, and budget caps live in a single file, written by `/workbench-dev-team:setup` with these defaults and never overwritten on re-run (your edits survive plugin updates):
 
 ```json
 // ~/.claude-workbench/dev-team-config.json
 {
   "agents": {
-    "lestrade": { "model": "sonnet", "effort": "high" },
-    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet" },
-    "watson": { "model": "fable", "effort": "xhigh", "maxBudgetUsd": 10.00 }
+    "lestrade": { "model": "sonnet", "effort": "high", "fallback": "haiku" },
+    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 7.00, "fallback": "sonnet" },
+    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
 }
 ```
 
 Both dispatch paths read it:
 
-- **Scheduled (Dispatch)** passes `--model`, `--effort` (only when set), and `--max-budget-usd` on each `claude -p` invocation. CLI flags override agent frontmatter (verified empirically), so a config edit takes effect on the next tick — no plugin files to touch.
-- **Interactive (`orchestrate`)** passes the config's `model` as the Agent tool's per-invocation model override. The Agent tool has no per-invocation effort parameter — interactive sub-agents inherit the session's effort level. `maxBudgetUsd` applies to the scheduled path only.
+- **Scheduled (Dispatch)** passes `--model`, `--effort` (only when set), `--fallback-model` (only when set), and `--max-budget-usd` on each `claude -p` invocation. CLI flags override agent frontmatter (verified empirically), so a config edit takes effect on the next tick — no plugin files to touch.
+- **Interactive (`orchestrate`)** passes the config's `model` as the Agent tool's per-invocation model override. The Agent tool has no per-invocation effort, budget, or fallback parameter — interactive sub-agents inherit the session's effort level, and `maxBudgetUsd`/`fallback` apply to the scheduled path only (a model error there surfaces immediately for you to handle).
 
-Holmes also carries two optional review knobs: `fanout` (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run on. Both default cleanly when absent.
+Holmes also carries two optional review knobs: `fanout` (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run on. Both default cleanly when absent. The optional `fallback` knob (any agent) is a comma-separated model list handed to `--fallback-model`, so a dispatch degrades to the next model when the primary is overloaded or unavailable — e.g. a retired model — instead of failing; `maxBudgetUsd` caps per-run spend (Watson defaults to `10.00`; Holmes's is optional). All default cleanly when absent.
 
-The agent definitions carry matching frontmatter defaults (`model: sonnet|fable|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
+The agent definitions carry matching frontmatter defaults (`model: sonnet|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
 
 ## Setup
 
@@ -145,7 +145,7 @@ GitHub webhook ──► The Index (MCP server, OAuth 2.1)
             ┌─────────────────┼─────────────────┐
             ▼                 ▼                 ▼
         Lestrade            Holmes              Watson
-        (Haiku)             (Sonnet)            (Opus, $5 cap)
+        (Sonnet)            (Opus, $7 cap)      (Opus, $10 cap)
 ```
 
 Every 20 minutes, the Dispatch scheduled task wakes up and:
@@ -171,10 +171,10 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 | Scenario | Tokens |
 |---|---|
 | Idle Dispatch tick (no work in any lane) | ~1–3K on default model — three MCP calls + exit |
-| Lestrade triage | 5–8K Haiku tokens |
-| Lestrade blocker sweep | Haiku tokens scaling with open-issue count (reads every open title + body in the repo); fires only on ticks that triaged new items |
-| Holmes review | 5–8K Sonnet tokens |
-| Watson development | Full Opus session, capped at $5 per run |
+| Lestrade triage | 5–8K Sonnet tokens |
+| Lestrade blocker sweep | Sonnet tokens scaling with open-issue count (reads every open title + body in the repo); fires only on ticks that triaged new items |
+| Holmes review | Opus parent + four blind Sonnet lens sub-agents + adversarial skeptic per review; capped at $7 per run |
+| Watson development | Full Opus session, capped at $10 per run |
 
 Dispatch runs on your Claude Code default model (scheduled tasks don't expose a model selector). Since each tick is under 3K tokens, the default model's cost is negligible even if it's Sonnet.
 
@@ -205,7 +205,7 @@ Two ways to invoke the same agents, same definitions:
 ## Risks and limitations
 
 - **Local execution.** Dispatch runs on your Mac. If the host is off, no work moves. Fine for home/dev setups; move Dispatch to an always-on box if you need 24/7 coverage.
-- **Watson budget cap.** `--max-budget-usd 10.00` limits per-run spend (sized for Fable's 2× Opus pricing). Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes.
+- **Budget caps.** `--max-budget-usd 10.00` limits Watson's per-run spend; Holmes carries an optional cap too (default `7.00`), since its lens fan-out is the only uncapped, multi-agent lane. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes. (The $10 figure was originally sized for Fable's 2× Opus pricing; on Opus it now buys roughly twice the tokens per run.)
 - **The Index must be reachable.** If the MCP server is down, all three list tools fail and Dispatch logs `the-index unreachable` and exits cleanly. The next tick retries.
 - **OAuth token lifetime.** The Index issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
 

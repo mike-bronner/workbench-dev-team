@@ -41,12 +41,17 @@ mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 
 ### Agent config
 
-Per-agent model, effort, and budget live in `~/.claude-workbench/dev-team-config.json`
-(written by `/workbench-dev-team:setup`, editable by the user, survives plugin
-updates). Each dispatch command below reads it with `jq` and falls back to the
-baked-in defaults when the file or a key is missing — a malformed or absent
-config never blocks a dispatch. Effort is passed only when set (models default
-to `high` on their own when the flag is absent).
+Per-agent model, effort, fallback model, and budget live in
+`~/.claude-workbench/dev-team-config.json` (written by `/workbench-dev-team:setup`,
+editable by the user, survives plugin updates). Each dispatch command below reads
+it with `jq` and falls back to the baked-in defaults when the file or a key is
+missing — a malformed or absent config never blocks a dispatch. Effort, the
+optional `fallback` model chain, and Holmes's optional budget cap are passed only
+when set; Watson's budget cap defaults to `10.00` when absent, and models default
+to `high` effort on their own when the flag is absent. The `fallback` value is a
+comma-separated model list passed to `--fallback-model` (print-mode only) — when
+the primary model is overloaded or unavailable (e.g. a retired model), the
+dispatch degrades to the next model in the chain instead of failing.
 
 ### Lane 1 — Inspector Lestrade (triage)
 
@@ -65,9 +70,11 @@ ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
+FALLBACK=$(jq -r '.agents.lestrade.fallback // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
+  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Item ID: $ID" \
@@ -85,10 +92,12 @@ REPO=<OWNER/REPO>  # ← the ONLY line you edit: the repo in owner/name form
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
+FALLBACK=$(jq -r '.agents.lestrade.fallback // empty' "$CONFIG" 2>/dev/null || true)
 SLUG=$(echo "$REPO" | tr '/' '-')
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
+  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Repo sweep: $REPO" \
@@ -111,9 +120,13 @@ ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.holmes.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
 EFFORT=$(jq -r '.agents.holmes.effort // empty' "$CONFIG" 2>/dev/null || true)
+FALLBACK=$(jq -r '.agents.holmes.fallback // empty' "$CONFIG" 2>/dev/null || true)
+BUDGET=$(jq -r '.agents.holmes.maxBudgetUsd // empty' "$CONFIG" 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:holmes \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
+  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
+  ${BUDGET:+--max-budget-usd} ${BUDGET:+"$BUDGET"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   "Item ID: $ID" \
@@ -134,12 +147,14 @@ Dispatch command (note the budget cap):
 ```bash
 ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.watson.model // "fable"' "$CONFIG" 2>/dev/null || echo "fable")
+MODEL=$(jq -r '.agents.watson.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
 EFFORT=$(jq -r '.agents.watson.effort // empty' "$CONFIG" 2>/dev/null || true)
+FALLBACK=$(jq -r '.agents.watson.fallback // empty' "$CONFIG" 2>/dev/null || true)
 BUDGET=$(jq -r '.agents.watson.maxBudgetUsd // 10.00' "$CONFIG" 2>/dev/null || echo "10.00")
 nohup claude -p --agent workbench-dev-team:watson \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
+  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
   --dangerously-skip-permissions \
   --no-session-persistence \
   --max-budget-usd "$BUDGET" \
