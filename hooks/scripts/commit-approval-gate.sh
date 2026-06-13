@@ -10,6 +10,9 @@
 # Holmes review + human PR merge is the approval gate:
 #   * WORKBENCH_DEV_TEAM_PIPELINE=1 in the environment, or
 #   * /tmp/watson.lock holding a live PID (Watson Index mode writes it first).
+#     The lock path defaults to /tmp/watson.lock and can be overridden with
+#     WORKBENCH_DEV_TEAM_WATSON_LOCK — the test suite uses this to isolate from
+#     (and avoid clobbering) a real lock held by a concurrent pipeline run.
 #
 # Exit 0 with no output = no opinion (normal permission flow applies).
 # Exit 0 with permissionDecision "ask" = harness must prompt the human.
@@ -22,7 +25,9 @@ if [ "${WORKBENCH_DEV_TEAM_PIPELINE:-0}" = "1" ]; then
 fi
 
 # Pipeline carve-out: live Watson lock (Index mode acquires it before any work).
-WATSON_LOCK=/tmp/watson.lock
+# Path overridable (WORKBENCH_DEV_TEAM_WATSON_LOCK) so tests don't depend on —
+# or clobber — a real /tmp/watson.lock a concurrent pipeline run may hold.
+WATSON_LOCK="${WORKBENCH_DEV_TEAM_WATSON_LOCK:-/tmp/watson.lock}"
 if [ -f "$WATSON_LOCK" ] && kill -0 "$(cat "$WATSON_LOCK" 2>/dev/null)" 2>/dev/null; then
   exit 0
 fi
