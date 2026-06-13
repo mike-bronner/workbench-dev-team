@@ -8,6 +8,17 @@ GATE="$(cd "$(dirname "$0")" && pwd)/commit-approval-gate.sh"
 PASS=0
 FAIL=0
 
+# Isolate the Watson-lock carve-out from the real /tmp/watson.lock. Point the
+# gate at a temp path this test owns, so a concurrent pipeline run holding a
+# live /tmp/watson.lock can neither leak into the "expected ask" cases nor get
+# clobbered by this test. mktemp -u yields an unused name (absent → no carve-out
+# until we deliberately create it below).
+WORKBENCH_DEV_TEAM_WATSON_LOCK="$(mktemp -u "${TMPDIR:-/tmp}/watson-lock-test.XXXXXX")"
+export WORKBENCH_DEV_TEAM_WATSON_LOCK
+DECOY_LOCK=""
+cleanup() { rm -f "$WORKBENCH_DEV_TEAM_WATSON_LOCK" "$DECOY_LOCK" 2>/dev/null; }
+trap cleanup EXIT
+
 run_case() {
   local desc="$1" cmd="$2" expect="$3"  # expect: ask | silent
   local payload output verdict
@@ -56,23 +67,35 @@ else
   FAIL=$((FAIL + 1)); echo "  ❌ WORKBENCH_DEV_TEAM_PIPELINE=1 should bypass the gate"
 fi
 
-LOCK_BACKUP=""
-if [ -f /tmp/watson.lock ]; then LOCK_BACKUP=$(cat /tmp/watson.lock); fi
-echo $$ > /tmp/watson.lock  # this test's live PID simulates a running Watson
+echo "$$" > "$WORKBENCH_DEV_TEAM_WATSON_LOCK"  # this test's live PID simulates a running Watson
 output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
 if [ -z "$output" ]; then
   PASS=$((PASS + 1)); echo "  ✅ live watson.lock bypasses the gate"
 else
   FAIL=$((FAIL + 1)); echo "  ❌ live watson.lock should bypass the gate"
 fi
-echo "999999" > /tmp/watson.lock  # dead PID -> stale lock must NOT bypass
+echo "999999" > "$WORKBENCH_DEV_TEAM_WATSON_LOCK"  # dead PID -> stale lock must NOT bypass
 output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
 if printf '%s' "$output" | grep -q '"permissionDecision": *"ask"'; then
   PASS=$((PASS + 1)); echo "  ✅ stale watson.lock does NOT bypass the gate"
 else
   FAIL=$((FAIL + 1)); echo "  ❌ stale watson.lock must not bypass the gate"
 fi
-if [ -n "$LOCK_BACKUP" ]; then echo "$LOCK_BACKUP" > /tmp/watson.lock; else rm -f /tmp/watson.lock; fi
+rm -f "$WORKBENCH_DEV_TEAM_WATSON_LOCK"  # configured lock absent again
+
+# Isolation guarantee: only the configured lock path is consulted. A live lock
+# at a DIFFERENT path (standing in for a real /tmp/watson.lock held by a
+# concurrent pipeline run) must NOT bypass the gate — proving the override is
+# honored and that this test no longer depends on, or clobbers, the real lock.
+DECOY_LOCK="$(mktemp "${TMPDIR:-/tmp}/watson-decoy.XXXXXX")"
+echo "$$" > "$DECOY_LOCK"  # live PID at a path the gate is NOT pointed at
+output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
+if printf '%s' "$output" | grep -q '"permissionDecision": *"ask"'; then
+  PASS=$((PASS + 1)); echo "  ✅ live lock at another path does NOT bypass (isolation holds)"
+else
+  FAIL=$((FAIL + 1)); echo "  ❌ a foreign live lock leaked into the gate"
+fi
+rm -f "$DECOY_LOCK"; DECOY_LOCK=""
 
 echo
 echo "$PASS passed, $FAIL failed"
