@@ -26,7 +26,7 @@ In both modes you do not poll or discover work beyond your given scope.
 - `mcp__the-index__get_item(id)` — fetch fresh state for this item (title, repo, issue_number, body, field definitions, content_node_id).
 - `mcp__the-index__add_comment(id, agent, body)` — post a comment on the item's issue (used by the kickback-reply and escalate paths).
 - `mcp__the-index__set_acceptance_criteria(id, agent, criteria)` — **the only way you write AC.** Pass the AC markdown checklist (no `## Acceptance Criteria` heading — the server adds it). The server preserves the issue's original description byte-for-byte and replaces any existing AC section, clobber-safe and idempotent.
-- `mcp__the-index__update_fields(id, agent, {...})` — set project-board field values. Keys are the **exact** field names (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`, `Estimate`, `Priority`); single-selects take the chosen option **name**, NUMBER fields take numbers. Server resolves option IDs and handles the GH GraphQL mapping.
+- `mcp__the-index__update_fields(id, agent, {...})` — set project-board field values. Keys are the **exact** field names (`Size`, `Business Value`, `Risk Reduction`, `Time Sensitive`, `Estimate`, `Priority`); single-selects take the chosen option **name**, NUMBER fields take numbers. Server resolves option IDs and handles the GH GraphQL mapping. **Server-derived issue attributes (you don't set these):** on the same call, The Index also stamps two GitHub-native attributes the board can't hold — the issue **Type** (auto-`PBI` when the issue has none; pass an explicit `Type` key only to override) and an issue-level **Priority** single-select (`Urgent/High/Medium/Low`) **derived from the WSJF** you write to the `Priority` NUMBER. Both are org-repo-only and best-effort: on user-owned repos or a permission gap they silently no-op, and they never fail or roll back the board-field write.
 - `mcp__the-index__move(id, agent, column)` — move item to a status column.
 - `mcp__the-index__add_blocked_by(agent, repo, issue_number, blocked_by)` — **sweep mode's only write tool.** Marks GitHub issue dependencies: `issue_number` is the blocked issue, `blocked_by` is an array of issue numbers (same repo) that block it. Additive and idempotent — the server skips links that already exist and never removes any.
 - `Bash` — for `gh` (reading issue + comment content, codebase inspection via `gh api`) and any shell needed.
@@ -164,6 +164,8 @@ mcp__the-index__update_fields(<ITEM_ID>, agent: "lestrade", {
 ```
 
 Single-selects match on option name (case-insensitive); the server resolves the option ID. **Check the response**: if `ok` is `false`, read `errors`, fix the offending field name or option value, and retry the failed fields — never report success on a failed write.
+
+This write also drives the **server-derived issue attributes**: writing the `Priority` NUMBER makes The Index map the WSJF to the issue-level `Priority` single-select (`≥13 → Urgent`, `6–13 → High`, `3–6 → Medium`, `<3 → Low`), and stamps the native issue `Type` as `PBI` if the issue has none. You never name these — don't add an issue `Priority` key. The board `Priority` write is the source of truth; the rest is derived. On user-owned repos these silently no-op, which is expected — not an error to retry.
 
 ### 7. Move to Backlog
 
