@@ -172,10 +172,20 @@ To dispatch Lestrade or Holmes you also need the **item ID** for the issue/PR:
 |---|---|---|
 | "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review | Wants a GitHub review artifact → review inline, post via `gh pr review` as the user, after confirming. Conversational opinion → verdict in chat, nothing posted. **Unclear which → ask.** |
 | "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
+| "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
 | "implement / fix / build X" | Item exists → **Watson** Index mode (`Item ID: <n>`). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (prose) |
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
 | "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool). Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
+
+**Issue creation, two identities.** When *you* ask for an issue in conversation,
+it's opened with `gh issue create` so **you** (the human) are the author — the
+user's voice, same as comments. Agent-authored follow-ups are the other case:
+Holmes (on approve) and Watson (on a change request) open theirs via
+`mcp__the-index__create_issue(agent: …)`, so the issue carries the **agent's**
+GitHub App identity, lands on The Casebook, and gets the native `PBI` type. That
+path is internal to those agents — not an orchestration call you make; it only
+works on governed repos (App-signed), and degrades to no Type on user-owned ones.
 
 ## When NOT to orchestrate
 
