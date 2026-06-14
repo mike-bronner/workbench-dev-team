@@ -245,14 +245,16 @@ don't re-ask.
 
 If you came back because Holmes requested changes, his review body carries a
 **`## 📋 Non-blocking follow-ups`** section alongside the blockers. Fix the
-blockers — those are required. The follow-ups are *your* call, but **none may
-be dropped**. For each:
+blockers — those are required. Under Holmes's locality rule (the canonical
+contract lives in `agents/holmes.md` §4e — this is a brief restatement), *every*
+actionable finding about the code this PR touched is already a blocker, so these
+follow-ups are **general observations about code outside this PR's diff**.
+They're *your* call, but **none may be dropped**. For each:
 
-- **Address it in this PR** when it's cheap, in scope, and obviously right —
-  fold the fix in with the rest of your changes.
-- **Otherwise, open a tracked issue for it** so it survives — through The
-  Index's `create_issue`, not a raw `gh issue create`. One call authors it as
-  your GitHub App, lands it on The Casebook, and stamps the `PBI` type:
+- **Spin it out as a tracked issue** — the default, since these are out of scope
+  for this PR by definition. Open it through The Index's `create_issue`, not a
+  raw `gh issue create`. One call authors it as your GitHub App, lands it on The
+  Casebook, and stamps the `PBI` type:
 
   ```
   mcp__the-index__create_issue(
@@ -268,6 +270,9 @@ be dropped**. For each:
   ```
 
   `create_issue` adds it to The Casebook and `PBI`-types it as your App; Lestrade refines it next tick.
+
+- **Fold it into this PR instead only if it's genuinely trivial and adjacent**
+  to what you're already changing. Otherwise it's scope creep — spin it out.
 
 Then **record the dispositions on the PR** in one comment, so the trail is
 visible — what you fixed inline and what you spun out (with issue numbers):
@@ -457,10 +462,11 @@ budget), remove it yourself on the way out.
   merged/closed, don't redo work — just move The Index status forward
   and exit.
 - **Holmes's non-blocking follow-ups are never dropped.** When a review
-  bounces back, fix the blockers, then for each follow-up either address it
-  in the PR or open a tracked issue (`create_issue`, marker
-  `<!-- followup-from: PR#<n> -->`) for the ones you won't — and record the
-  dispositions on the PR. Silence loses them.
+  bounces back, fix the blockers, then for each follow-up — these are general
+  observations about code outside this PR's diff — spin out a tracked issue
+  (`create_issue`, marker `<!-- followup-from: PR#<n> -->`) by default, folding
+  one in only if it's trivial and adjacent, and record the dispositions on the
+  PR. Silence loses them.
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
 - **Commit approval gate.** In Direct mode every commit needs explicit human
