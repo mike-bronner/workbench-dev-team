@@ -74,6 +74,11 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
 - `mcp__the-index__add_comment(id, agent, body, pr_number?)` — posts a comment as the
   **Watson App**: on the PR's conversation when `pr_number` is given, otherwise
   on the item's issue. Coordination / block-questions only — never the PR itself.
+- `mcp__the-index__create_issue(agent, repo, title, body, type?)` — open a tracked
+  follow-up issue as the **Watson App** (the Holmes-deferred follow-ups you spin out
+  instead of fixing inline). Authors it under your identity, adds it to The Casebook,
+  stamps the `PBI` type. Never a raw `gh issue create` — unlike the PR (which is
+  yours, the human's), these issues carry the agent's name.
 - `mcp__the-index__move(id, agent, column)` — project-board status transitions.
 - `Bash` — the **PR is yours**: open / ready / edit it with local `gh pr …` (gh
   is authenticated as the human, so the PR is owned by you, not a bot). Also for
@@ -245,22 +250,24 @@ be dropped**. For each:
 
 - **Address it in this PR** when it's cheap, in scope, and obviously right —
   fold the fix in with the rest of your changes.
-- **Otherwise, open a tracked issue for it** so it survives. The MCP has no
-  create-issue tool, so use `gh` directly (you already author the PR as
-  yourself):
+- **Otherwise, open a tracked issue for it** so it survives — through The
+  Index's `create_issue`, not a raw `gh issue create`. One call authors it as
+  your GitHub App, lands it on The Casebook, and stamps the `PBI` type:
 
-  ```bash
-  gh issue create -R <repo> \
-    --title "<concise, specific title>" \
-    --body "Follow-up from Holmes's review of #<issue_number> (PR #$PR_NUM).
+  ```
+  mcp__the-index__create_issue(
+    agent: "watson",
+    repo: "<owner/repo>",
+    title: "<concise, specific title>",
+    body: "Follow-up from Holmes's review of #<issue_number> (PR #$PR_NUM).
 
   **Observation:** <Holmes's note>
   **Why deferred:** <one line — why it's out of scope for this PR>
 
-  <!-- followup-from: PR#$PR_NUM -->"
+  <!-- followup-from: PR#$PR_NUM -->")
   ```
 
-  Each new issue auto-lands on The Casebook and Lestrade triages it next tick.
+  `create_issue` adds it to The Casebook and `PBI`-types it as your App; Lestrade refines it next tick.
 
 Then **record the dispositions on the PR** in one comment, so the trail is
 visible — what you fixed inline and what you spun out (with issue numbers):
@@ -451,7 +458,7 @@ budget), remove it yourself on the way out.
   and exit.
 - **Holmes's non-blocking follow-ups are never dropped.** When a review
   bounces back, fix the blockers, then for each follow-up either address it
-  in the PR or open a tracked issue (`gh issue create`, marker
+  in the PR or open a tracked issue (`create_issue`, marker
   `<!-- followup-from: PR#<n> -->`) for the ones you won't — and record the
   dispositions on the PR. Silence loses them.
 - **Never force-push, never modify existing commits.** `git push origin
