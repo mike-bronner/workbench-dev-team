@@ -69,8 +69,11 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
 
 ### Tools
 
-- `mcp__the-index__get_item(id)` — fresh state including repo, issue_number,
-  current status, content_node_id.
+- `mcp__the-index__get_item(id, blockers?)` — fresh state including repo,
+  issue_number, current status, content_node_id. Pass `blockers: true` to also
+  get `has_open_blockers` (`true` | `false` | `null`; `null` = the check could
+  not run) and `blocked_by` (an array of `{number, state, title, url}`) — the
+  blocker gate (step 2.5) reads these.
 - `mcp__the-index__add_comment(id, agent, body, pr_number?)` — posts a comment as the
   **Watson App**: on the PR's conversation when `pr_number` is given, otherwise
   on the item's issue. Coordination / block-questions only — never the PR itself.
@@ -132,11 +135,45 @@ hangs and the lock goes stale, the operator clears it with
 ### 2. Fetch fresh state
 
 ```
-item = mcp__the-index__get_item(<ITEM_ID>)
+item = mcp__the-index__get_item(<ITEM_ID>, blockers: true)
 ```
 
 From the response: `repo`, `issue_number`, `title`, `status` (either `Ready`
-or `In Progress`), `content_node_id`.
+or `In Progress`), `content_node_id`. With `blockers: true` you also get
+`has_open_blockers` (`true` | `false` | `null`) and `blocked_by` (an array of
+`{number, state, title, url}`) — the blocker gate (step 2.5) reads these.
+
+### 2.5. Blocker gate — never touch a blocked item
+
+**Watson must NEVER begin or resume work on a blocked item.** Read
+`has_open_blockers` from step 2 and branch *before* resume detection:
+
+- `has_open_blockers` is `true` — the item is blocked by an open issue.
+- `has_open_blockers` is `null` — the blocker check could not run; **fail
+  closed** and treat it exactly like `true`.
+
+In either case, do **not** touch the item: do NOT move it, do NOT create a
+branch or PR, do NOT implement. Leave its status **exactly as-is** — a `Ready`
+item stays `Ready`, an `In Progress` item stays `In Progress`. Frozen in
+place: never demoted, never abandoned. Release the lock and exit, reporting
+which open issue(s) block it (from `blocked_by`):
+
+```bash
+rm -f /tmp/watson.lock
+```
+
+```
+🚫 #<issue_number> (<repo>) is blocked — leaving status untouched.
+   Blocked by: #<n> <title>, #<m> <title>  (from blocked_by)
+```
+
+Do **not** post a board comment — the GitHub blocked-by relationship documents
+itself.
+
+Blocked items are normally filtered out of `list_development_items` before
+dispatch, so this gate is the safety net for direct dispatch by ID.
+
+Only when `has_open_blockers` is exactly `false` does Watson continue to step 3.
 
 ### 3. Check for existing work (resume detection)
 
@@ -461,6 +498,12 @@ budget), remove it yourself on the way out.
 - **Resume logic repairs state drift.** If a PR already exists and is
   merged/closed, don't redo work — just move The Index status forward
   and exit.
+- **Never begin or resume work on a blocked item.** A blocked item stays
+  exactly where it is (`Ready` or `In Progress`), frozen and untouched, until
+  its blocker closes; the normal selection then resumes it (`In Progress`
+  sorts first). The blocker gate (step 2.5) is the safety net for direct
+  dispatch — `list_development_items` already filters blocked items out of the
+  autonomous queue.
 - **Holmes's non-blocking follow-ups are never dropped.** When a review
   bounces back, fix the blockers, then for each follow-up — these are general
   observations about code outside this PR's diff — spin out a tracked issue
