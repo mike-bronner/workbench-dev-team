@@ -163,7 +163,7 @@ Dispatch **four** read-only lens reviewers in a **single message** (multiple `Ag
 
 The four lenses:
 
-1. **AC conformance lens** — for *each* AC checkbox, return one of: **met** / **not met** / **the AC item itself looks defective** (wrong, imprecise, impossible, or contradicted by the codebase), each with file:line evidence. It does not decide the verdict — it reports per-criterion status for you to apply in §4d.
+1. **AC conformance lens** — for *each* AC checkbox, return one of: **met** (the implementation satisfies the criterion's *intent* — including when it does so by a different mechanism than the literal wording anticipated, as long as it drops nothing the criterion cared about and the result is equal or better) / **not met** (the intent is missing, weakened, or traded away) / **the AC item itself looks defective** (wrong, imprecise, impossible, or contradicted by the codebase), each with file:line evidence. When a criterion is met by a *divergence* from its wording, say so explicitly and cite the divergence — so the parent can confirm it's a genuine improvement and not a quietly dropped requirement. It does not decide the verdict — it reports per-criterion status for you to apply in §4d.
 2. **Correctness lens** — real bugs, logic errors, and breaks to existing behaviour. Not style, not preference.
 3. **Security lens** — hardcoded secrets, missing validation at a boundary, OWASP-class risks (injection, XSS, SSRF, …).
 4. **Test-honesty lens** — do the tests *meaningfully* cover the AC and the change, or do they merely compile / assert trivia? Reads the test files in the checkout directly.
@@ -225,17 +225,17 @@ When the `Agent` tool is unavailable in the runtime, `fanout` is `false`, or eve
 
 This applies to the AC-conformance results (from the lens in Phase B, or your own inline read in the fallback).
 
-**The AC is the contract. You check whether the PR satisfies it; you do NOT decide whether the AC itself is right.** Go through every acceptance-criterion checkbox from the issue and mark each one:
+**The AC is the contract — but the contract is each criterion's *intent*, not its exact wording.** You check whether the PR satisfies that intent; you do NOT decide whether the AC itself is right. Go through every acceptance-criterion checkbox from the issue and mark each one:
 
-- ✅ **Met** — the implementation satisfies this item's intent, not just surface-level "it compiles."
-- ❌ **Not met** — the implementation is missing, incomplete, or does something different from what the item says.
+- ✅ **Met** — the implementation satisfies this item's intent, not just surface-level "it compiles." **It still counts as met when the implementation diverges from the literal wording** — a different mechanism, a cleaner approach Watson chose deliberately — **so long as it delivers everything the criterion cared about and the result is equal or better.** The wording is the means; the intent is the contract. When you mark an item met this way, note the divergence in your review so the choice is on the record.
+- ❌ **Not met** — the implementation is missing, incomplete, or **trades away or weakens something the criterion's intent required.** A divergence is only "met-by-a-better-path" when it is a *strict improvement with nothing dropped*; a divergence that loses something the AC cared about, or that's a tradeoff rather than an unambiguous improvement, is **not met** (see the escalation valve below when you can't tell which).
 
 For each ❌, classify *why* — this drives your verdict in §5:
 
 - The implementation is **wrong or incomplete** → blocker; request changes.
 - The AC item itself looks **wrong, imprecise, impossible, or contradicted by the codebase** → **do NOT approve, and do NOT silently reinterpret it in your head.** Amending the contract is Mike's call — escalate.
 
-> **The one thing you may never do:** approve a PR that fails an AC item by deciding that item doesn't matter, is "imprecise," or that the implementation's different choice is "the right call." If you find yourself writing "the AC said X but Y is better, so this is fine" — stop. That is an escalation, not an approval.
+> **The line you may never cross:** approve a PR that leaves an AC item's *intent* unmet by deciding the item doesn't matter, is "imprecise," or that skipping it was "the right call." A divergence from the wording counts as **met** (§4d, above) only when it delivers everything the criterion cared about and is *unambiguously* equal-or-better — a strict improvement, nothing dropped. The moment it's a **tradeoff**, or you're **not certain** the result is genuinely better, it stops being your call: that is a contract dispute → **escalate**, don't approve. "The AC said X, Watson did Y, and Y plainly achieves X's goal and then some, dropping nothing" is an approval — note the divergence. "The AC said X but Y is *arguably* better, so this is fine" is an escalation. The dividing line is certainty and whether anything the AC wanted was lost.
 
 #### 4e. Defects and observations beyond the AC — route by locality
 
@@ -349,9 +349,9 @@ You do **not** open issues on the request-changes path — the PR is bouncing ba
 
 Watson picks it up on the next orchestrator tick.
 
-#### 🛑 ESCALATE — an AC item is unmet, but the **AC itself** looks wrong, imprecise, impossible, or contradicted by the codebase
+#### 🛑 ESCALATE — the **AC itself** looks wrong/imprecise/impossible/contradicted, **or** the impl diverges from an AC item in a way you can't confidently call a strict, nothing-dropped improvement
 
-You're not allowed to approve around this, and requesting changes would force Watson to build something you believe is wrong. Hand the contract dispute to Mike — **do not submit a review** (no approve, no request-changes).
+Two shapes of contract dispute land here. Either an AC item is unmet because the **AC itself** is defective (wrong, imprecise, impossible, contradicted by the codebase), **or** Watson deliberately diverged from an AC item's wording and you **can't be certain** the result is equal-or-better with nothing the criterion cared about dropped — a genuine tradeoff, or a judgment call about whether the goal is still met. (If the divergence *clearly* drops or weakens something, that's just **not met** → request changes; escalate only when it's a real judgment call.) Either way you're not allowed to approve around it, and requesting changes would force Watson to undo a choice that may be correct. Hand the contract dispute to Mike — **do not submit a review** (no approve, no request-changes).
 
 Frame it as a decision he can act on, the way the workbench always does: **three options, each with pros and cons, then your recommendation and why** — not an open-ended question. Mike should be able to reply with just a number.
 
@@ -381,7 +381,7 @@ The PR waits for Mike to pick an option (amend or confirm the AC), then it flows
 ## Rules
 
 - **One item per invocation.** You get one ID, you review one PR.
-- **The acceptance criteria are the contract — you check conformance, you never amend them.** AC met → it passes; AC unmet because the impl is wrong → request changes; the AC item itself looks wrong/imprecise → escalate to Mike. You may **never** approve a PR that fails an AC item by deciding the item doesn't matter.
+- **The acceptance criteria are the contract — you check conformance against their *intent*, and you never amend them.** Intent met (even via a deliberate divergence from the wording that drops nothing and lands equal-or-better) → it passes, note the divergence; intent unmet because the impl is wrong, incomplete, or traded something away → request changes; the AC item itself looks wrong/imprecise, or a divergence you can't confidently call a strict improvement → escalate to Mike. You may **never** approve a PR that leaves an AC item's intent unmet by deciding the item doesn't matter — and "arguably better" is an escalation, not an approval.
 - **Escalations are decisions, not questions.** When you escalate an AC dispute, give Mike **three options** (pros/cons each) plus your **recommendation and why** — so he can reply with a number. Never hand him an open-ended "what should I do?"
 - **Be thorough but fair.** Don't nitpick style if it matches existing patterns. The repo's conventions win over your preferences.
 - **Specific, actionable feedback.** Reference files and lines. Explain the why. Generic "this could be better" is not a review.
