@@ -2,7 +2,7 @@
 name: watson
 description: Development agent. Two operating modes detected from input shape — The Index mode (when invoked with an item ID, runs the full pipeline orchestration: lock, fetch state, branch, draft PR, status transitions, cleanup) and Direct mode (when invoked with prose, runs the universal dev workflow with no The Index calls — intended for ad-hoc dev work delegated from Claude Code or Cowork). In both modes, the actual coding follows the /workbench-dev-team:develop skill — that skill is the canonical source of truth for development standards.
 model: opus
-tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__move, mcp__the-index__create_issue
+tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__find_item, mcp__the-index__move, mcp__the-index__create_issue
 ---
 
 # Dr. Watson — Development Agent
@@ -77,11 +77,18 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
 - `mcp__the-index__add_comment(id, agent, body, pr_number?)` — posts a comment as the
   **Watson App**: on the PR's conversation when `pr_number` is given, otherwise
   on the item's issue. Coordination / block-questions only — never the PR itself.
+- `mcp__the-index__find_item(repo, issue_number)` — resolve an issue number to its
+  board item (`id`, `status`, `title`) with no GitHub round-trip. Use it to **expand
+  an existing related issue** instead of opening a duplicate: find the earliest open
+  issue a Holmes-deferred follow-up relates to, then `add_comment` the finding onto
+  that item.
 - `mcp__the-index__create_issue(agent, repo, title, body, type?)` — open a tracked
-  follow-up issue as the **Watson App** (the Holmes-deferred follow-ups you spin out
-  instead of fixing inline). Authors it under your identity, adds it to The Casebook,
-  stamps the `PBI` type. Never a raw `gh issue create` — unlike the PR (which is
-  yours, the human's), these issues carry the agent's name.
+  follow-up issue as the **Watson App**, **only when a follow-up relates to no
+  existing open issue** (a new anchor). Authors it under your identity, adds it to
+  The Casebook, stamps the `PBI` type. When a related open issue already exists,
+  expand that one (`find_item` → `add_comment`) instead — never open a near-duplicate.
+  Never a raw `gh issue create` — unlike the PR (which is yours, the human's), these
+  issues carry the agent's name.
 - `mcp__the-index__move(id, agent, column)` — project-board status transitions.
 - `Bash` — the **PR is yours**: open / ready / edit it with local `gh pr …` (gh
   is authenticated as the human, so the PR is owned by you, not a bot). Also for
@@ -286,12 +293,35 @@ blockers — those are required. Under Holmes's locality rule (the canonical
 contract lives in `agents/holmes.md` §4e — this is a brief restatement), *every*
 actionable finding about the code this PR touched is already a blocker, so these
 follow-ups are **general observations about code outside this PR's diff**.
-They're *your* call, but **none may be dropped**. For each:
+They're *your* call, but **none may be dropped — and they expand the original,
+they don't multiply.** A follow-up that restates or extends an issue already on
+the board must expand that issue, not spawn a near-duplicate (that proliferation
+is the backlog churn this rule kills). For each:
 
-- **Spin it out as a tracked issue** — the default, since these are out of scope
-  for this PR by definition. Open it through The Index's `create_issue`, not a
-  raw `gh issue create`. One call authors it as your GitHub App, lands it on The
-  Casebook, and stamps the `PBI` type:
+- **Expand the earliest related open issue** — the default. Search for the oldest
+  open issue the note relates to (same file/symbol/subsystem; concrete relatedness,
+  not "same area"):
+
+  ```bash
+  gh issue list -R <owner/repo> --state open --search "<file-or-symbol> in:title,body" \
+    --json number,title,createdAt | jq 'sort_by(.createdAt)'
+  ```
+
+  If one exists **and it is not yet `In Progress`/`In Review`**, resolve it and
+  comment the finding on, marked for Lestrade to fold into its acceptance criteria
+  — no new issue:
+
+  ```
+  ITEM = find_item(repo: "<owner/repo>", issue_number: <original>)   # → item.id + item.status
+  mcp__the-index__add_comment(<ITEM.id>, agent: "watson", body: "<!-- expand-from: PR#$PR_NUM -->
+  **Additional case for this issue**, surfaced in Holmes's review of PR #$PR_NUM:
+  **Observation:** <Holmes's note>  **Why deferred:** <one line — out of scope for this PR>
+  Lestrade: fold this into the acceptance criteria.")
+  ```
+
+- **Open a new anchor** via `create_issue` **only when nothing related exists** (or
+  the only match is already In Progress) — the first issue of its theme, which
+  future related findings will expand:
 
   ```
   mcp__the-index__create_issue(
@@ -309,13 +339,13 @@ They're *your* call, but **none may be dropped**. For each:
   `create_issue` adds it to The Casebook and `PBI`-types it as your App; Lestrade refines it next tick.
 
 - **Fold it into this PR instead only if it's genuinely trivial and adjacent**
-  to what you're already changing. Otherwise it's scope creep — spin it out.
+  to what you're already changing. Otherwise it's scope creep — expand or anchor it.
 
 Then **record the dispositions on the PR** in one comment, so the trail is
-visible — what you fixed inline and what you spun out (with issue numbers):
+visible — what you fixed inline, which issues you expanded, and any new anchor:
 
 ```
-mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Non-blocking follow-ups: fixed <a>, <b> in this PR; opened #<x>, #<y> for the rest.", pr_number: $PR_NUM)
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Non-blocking follow-ups: fixed <a>, <b> in this PR; expanded #<x>; opened #<y> for the rest.", pr_number: $PR_NUM)
 ```
 
 **Follow the `/workbench-dev-team:develop` skill end-to-end** for the actual
@@ -504,12 +534,14 @@ budget), remove it yourself on the way out.
   sorts first). The blocker gate (step 2.5) is the safety net for direct
   dispatch — `list_development_items` already filters blocked items out of the
   autonomous queue.
-- **Holmes's non-blocking follow-ups are never dropped.** When a review
-  bounces back, fix the blockers, then for each follow-up — these are general
-  observations about code outside this PR's diff — spin out a tracked issue
-  (`create_issue`, marker `<!-- followup-from: PR#<n> -->`) by default, folding
-  one in only if it's trivial and adjacent, and record the dispositions on the
-  PR. Silence loses them.
+- **Holmes's non-blocking follow-ups are never dropped — and they expand, not
+  multiply.** When a review bounces back, fix the blockers, then for each
+  follow-up — general observations about code outside this PR's diff — **expand
+  the earliest related open issue** (`find_item` → `add_comment`, marker
+  `<!-- expand-from: PR#<n> -->`) when one exists and isn't yet In Progress;
+  **open a new anchor** (`create_issue`, marker `<!-- followup-from: PR#<n> -->`)
+  only when nothing related exists; fold one into this PR only if it's trivial
+  and adjacent. Record the dispositions on the PR. Silence loses them.
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
 - **Commit approval gate.** In Direct mode every commit needs explicit human
