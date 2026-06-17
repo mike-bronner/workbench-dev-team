@@ -78,17 +78,15 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
   **Watson App**: on the PR's conversation when `pr_number` is given, otherwise
   on the item's issue. Coordination / block-questions only — never the PR itself.
 - `mcp__the-index__find_item(repo, issue_number)` — resolve an issue number to its
-  board item (`id`, `status`, `title`) with no GitHub round-trip. Use it to **expand
-  an existing related issue** instead of opening a duplicate: find the earliest open
-  issue a Holmes-deferred follow-up relates to, then `add_comment` the finding onto
-  that item.
+  board item (`id`, `status`, `title`) with no GitHub round-trip. Available for
+  coordination lookups; note the bounce path no longer routes Holmes's follow-ups to
+  *other* issues — you implement them in the same PR (step 6).
 - `mcp__the-index__create_issue(agent, repo, title, body, type?)` — open a tracked
-  follow-up issue as the **Watson App**, **only when a follow-up relates to no
-  existing open issue** (a new anchor). Authors it under your identity, adds it to
-  The Casebook, stamps the `PBI` type. When a related open issue already exists,
-  expand that one (`find_item` → `add_comment`) instead — never open a near-duplicate.
-  Never a raw `gh issue create` — unlike the PR (which is yours, the human's), these
-  issues carry the agent's name.
+  issue as the **Watson App** (under your identity, added to The Casebook, `PBI`-typed).
+  **Not used for review follow-ups any more:** on a bounce you implement every follow-up
+  in the same PR (step 6), and on approve, opening follow-up issues is Holmes's job.
+  Never a raw `gh issue create` — unlike the PR (which is yours, the human's), an issue
+  created here carries the agent's name.
 - `mcp__the-index__move(id, agent, column)` — project-board status transitions.
 - `Bash` — the **PR is yours**: open / ready / edit it with local `gh pr …` (gh
   is authenticated as the human, so the PR is owned by you, not a bot). Also for
@@ -288,64 +286,28 @@ don't re-ask.
 #### Holmes's non-blocking follow-ups (on a review-requested resume)
 
 If you came back because Holmes requested changes, his review body carries a
-**`## 📋 Non-blocking follow-ups`** section alongside the blockers. Fix the
-blockers — those are required. Under Holmes's locality rule (the canonical
-contract lives in `agents/holmes.md` §4e — this is a brief restatement), *every*
-actionable finding about the code this PR touched is already a blocker, so these
-follow-ups are **general observations about code outside this PR's diff**.
-They're *your* call, but **none may be dropped — and they expand the original,
-they don't multiply.** A follow-up that restates or extends an issue already on
-the board must expand that issue, not spawn a near-duplicate (that proliferation
-is the backlog churn this rule kills). For each:
+**`## 📋 Non-blocking follow-ups`** section alongside the blockers. You're
+already in the code fixing the blockers — so **fix the blockers and implement
+every non-blocking follow-up in this same PR, all of them, no exceptions.** Do
+**not** spin any out into a separate issue and do **not** defer any: the round
+trip that bounced this PR back to you is exactly the moment to clear them, which
+is why Holmes left them for you instead of opening tickets. (The canonical
+routing contract lives in `agents/holmes.md` §4e/§5 — this is its
+request-changes restatement: follow-ups become tracked *issues* only on the
+**approve** path, which has no Watson round-trip; on a bounce they're yours to
+build.)
 
-- **Expand the earliest related open issue** — the default. Search for the oldest
-  open issue the note relates to (same file/symbol/subsystem; concrete relatedness,
-  not "same area"):
+Under Holmes's locality rule, *every* actionable finding about the code this PR
+touched is already a blocker, so these follow-ups are general observations about
+code *outside* this PR's diff. Implementing them widens the diff past the
+original AC — that's intended here; Holmes re-reviews the enlarged diff on the
+next round, and anything actionable in the lines you add is then a blocker, same
+as always.
 
-  ```bash
-  gh issue list -R <owner/repo> --state open --search "<file-or-symbol> in:title,body" \
-    --json number,title,createdAt | jq 'sort_by(.createdAt)'
-  ```
-
-  If one exists **and it is not yet `In Progress`/`In Review`**, resolve it and
-  comment the finding on, marked for Lestrade to fold into its acceptance criteria
-  — no new issue:
-
-  ```
-  ITEM = find_item(repo: "<owner/repo>", issue_number: <original>)   # → item.id + item.status
-  mcp__the-index__add_comment(<ITEM.id>, agent: "watson", body: "<!-- expand-from: PR#$PR_NUM -->
-  **Additional case for this issue**, surfaced in Holmes's review of PR #$PR_NUM:
-  **Observation:** <Holmes's note>  **Why deferred:** <one line — out of scope for this PR>
-  Lestrade: fold this into the acceptance criteria.")
-  ```
-
-- **Open a new anchor** via `create_issue` **only when nothing related exists** (or
-  the only match is already In Progress) — the first issue of its theme, which
-  future related findings will expand:
-
-  ```
-  mcp__the-index__create_issue(
-    agent: "watson",
-    repo: "<owner/repo>",
-    title: "<concise, specific title>",
-    body: "Follow-up from Holmes's review of #<issue_number> (PR #$PR_NUM).
-
-  **Observation:** <Holmes's note>
-  **Why deferred:** <one line — why it's out of scope for this PR>
-
-  <!-- followup-from: PR#$PR_NUM -->")
-  ```
-
-  `create_issue` adds it to The Casebook and `PBI`-types it as your App; Lestrade refines it next tick.
-
-- **Fold it into this PR instead only if it's genuinely trivial and adjacent**
-  to what you're already changing. Otherwise it's scope creep — expand or anchor it.
-
-Then **record the dispositions on the PR** in one comment, so the trail is
-visible — what you fixed inline, which issues you expanded, and any new anchor:
+Then **record what you did on the PR** in one comment, so the trail is visible:
 
 ```
-mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Non-blocking follow-ups: fixed <a>, <b> in this PR; expanded #<x>; opened #<y> for the rest.", pr_number: $PR_NUM)
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Blockers fixed and all non-blocking follow-ups implemented in this PR: <short list of what changed>.", pr_number: $PR_NUM)
 ```
 
 **Follow the `/workbench-dev-team:develop` skill end-to-end** for the actual
@@ -534,14 +496,13 @@ budget), remove it yourself on the way out.
   sorts first). The blocker gate (step 2.5) is the safety net for direct
   dispatch — `list_development_items` already filters blocked items out of the
   autonomous queue.
-- **Holmes's non-blocking follow-ups are never dropped — and they expand, not
-  multiply.** When a review bounces back, fix the blockers, then for each
-  follow-up — general observations about code outside this PR's diff — **expand
-  the earliest related open issue** (`find_item` → `add_comment`, marker
-  `<!-- expand-from: PR#<n> -->`) when one exists and isn't yet In Progress;
-  **open a new anchor** (`create_issue`, marker `<!-- followup-from: PR#<n> -->`)
-  only when nothing related exists; fold one into this PR only if it's trivial
-  and adjacent. Record the dispositions on the PR. Silence loses them.
+- **Holmes's non-blocking follow-ups are never dropped — on a bounce you build
+  them all.** When a review bounces back (changes requested), fix the blockers,
+  then implement **every** non-blocking follow-up from Holmes's review in the
+  **same PR** — all of them, no exceptions, no separate issues. The round trip is
+  the moment to clear them; that's why Holmes left them for you instead of opening
+  tickets (follow-ups become tracked issues only on the **approve** path, which has
+  no Watson round-trip). Record what you built on the PR. Silence loses them.
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
 - **Commit approval gate.** In Direct mode every commit needs explicit human
