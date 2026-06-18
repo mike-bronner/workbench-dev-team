@@ -273,6 +273,10 @@ Read it as three rules:
 - **🔴 A hard defect blocks no matter where it lives.** A real correctness bug, a security hole (hardcoded secret, missing boundary validation, an OWASP-top-10 risk like injection / XSS / SSRF), or a missing/meaningless test is a blocker even in code the PR never touched. A pre-existing security hole that review surfaced does not get to ship just because this PR didn't create it.
 - **🟡 Only a soft observation about untouched code, unrelated to the AC, is non-blocking.** That — and only that — is the follow-up tier. It's still a real, actionable thing a person could pick up and *do* — "extract this duplicated parser into a helper (`x.ts:40`, `y.ts:55`)" — but it lives outside the PR's changes and no AC item names it. Collect it as a `note` and carry it into the **`## 📋 Non-blocking follow-ups`** section of your verdict (§5), where it gets dispositioned **by verdict path** rather than dying in your context: **on approve it becomes a tracked issue** (you route it — there's no Watson round-trip to catch it), and **on request-changes Watson implements it in the same bounce PR** alongside the blocker fixes (he's already in the code, so a separate issue would just be churn). Hold the bar high: something doable, not "consider renaming this someday." Vague observations are noise; leave them out.
 
+> **🔭 When a soft observation is an instance of an *invariant*, sweep the whole class before you file it — don't file one surface at a time.** Some non-blocking notes aren't one-off; they're a single sighting of a rule that is supposed to hold *uniformly* across every call-site of a class — a containment guard every filesystem read should pass through, a null-check every resolver owes, a helper every caller should route through. **The tell:** your "why" is *"for consistency / so the invariant holds everywhere,"* and you can already name a second site that has the same gap. The moment you recognize that shape, **stop treating the finding as a single location.** Sweep the class against the actual tree — `Grep`/`rg` for the guard, the helper, the sibling pattern, the call-shape — and enumerate **every** site that violates the invariant, not just the one next to this diff. The follow-up you carry into §5 is then the **whole list**. On the **approve** path — the only path where a follow-up becomes a tracked *issue*, and so the only path where the chain forms — that list is filed as **one umbrella issue** whose acceptance criteria is a checkbox per violating site, titled for the *class*, never one surface per review. (On **request-changes** there's no issue to multiply: Watson is already in the code, so surface the class as one follow-up and he closes the sites in the bounce PR — don't force a fresh sweep larger than the bounce warrants.)
+>
+> This is the treadmill the rule exists to kill: file the gap one-site-at-a-time and each single-site fix PR comes back for review, surfaces the next unguarded sibling, and spawns the next single-site issue — an endless `#A → #B → #C` chain that never converges because every review only ever looks one site past the last fix. **Enumerate once; close the class in one PR (or a deliberate handful), not a chain of dozens.** If the sweep is genuinely too large to verify in this review, say so in the umbrella body and list the sites you did confirm versus the ones still to audit — a bounded, visible backlog, never a silent drip. (Lestrade's consolidation sweep cleans up duplicates that slip through *after* the fact; this rule stops them being minted in the first place.)
+
 ### 5. Submit your verdict — three outcomes, and only three
 
 Your verdict follows mechanically from §4. There is no fourth "approve despite an unmet AC" option.
@@ -296,7 +300,14 @@ Ready for @mikebronner to merge.")
 mcp__the-index__move(<ITEM_ID>, agent: "holmes", column: "Approved")
 ```
 
-**Then route each follow-up to its home — expand the original, don't multiply.** On approve there is no Watson round-trip, so the buck stops with you: every note must land somewhere. But a note that restates or extends an issue already on the board must **expand that issue, not spawn a near-duplicate** — unchecked follow-up issues are exactly the backlog churn this rule exists to stop. For each note:
+**Then route each follow-up to its home — expand the original, don't multiply.** On approve there is no Watson round-trip, so the buck stops with you: every note must land somewhere. But a note that restates or extends an issue already on the board must **expand that issue, not spawn a near-duplicate** — unchecked follow-up issues are exactly the backlog churn this rule exists to stop.
+
+First split each note by shape:
+
+- **An invariant-class note (§4e), where you already swept the class, is one umbrella issue — never one-per-site.** If an open umbrella for that invariant already exists, **expand it** with any newly-found sites (2a — and its class exception applies even when sibling fix PRs are in flight). If none exists, open **one** anchor (2b) whose acceptance criteria is the full checkbox list of every violating site you enumerated, titled for the *class* (e.g. "Wire every filesystem read through `path_within_root`"), not for the single surface that triggered it. One umbrella, one burn-down — that is the chain-breaker.
+- **A one-off note** routes per-note through 1 → 2a/2b below.
+
+For each note (or the single swept umbrella):
 
 **1. Find the earliest open issue this note relates to.** Search by the real signal — the file, symbol, or subsystem the note is about — and take the oldest match (the "original"):
 
@@ -310,19 +321,27 @@ gh issue list -R <owner/repo> --state open --search '"followup-from: PR#'"$PR_NU
 
 Relatedness must be concrete — same file/symbol, or the same defect class on the same surface — not "both touch the parser." When in doubt, treat the note as new (2b).
 
-**2a. A related open issue exists and is NOT yet `In Progress`/`In Review` → expand it, no new issue.** Resolve it to its board item and comment the finding on, marked for Lestrade to fold into its acceptance criteria:
+**2a. A related open issue exists and is NOT yet `In Progress`/`In Review` (or it's a §4e class umbrella) → expand it, no new issue.** Resolve it to its board item and comment the finding on, marked for Lestrade to fold into its acceptance criteria:
 
 ```
 ITEM = find_item(repo: "<owner/repo>", issue_number: <original>)   # → item.id + item.status
-# Expand only when item.status is null/Inbox/Backlog/Ready — never an item already In Progress
-# or In Review (don't move Watson's goalposts mid-build; fall through to 2b for a fresh anchor).
+# Normal case: expand only when item.status is null/Inbox/Backlog/Ready — never an
+# item already In Progress or In Review (don't move Watson's goalposts mid-build or
+# mid-review; fall through to 2b for a fresh anchor).
+#
+# EXCEPTION — a §4e class-umbrella tracker: ALWAYS expand it with newly-found sites,
+# even while sibling per-surface fix PRs are In Review. A class tracker is not any one
+# PR's AC — appending a site to its checklist neither blocks nor re-scopes the PR in
+# front of you; it just keeps that invariant's whole backlog in one place instead of
+# spawning a fresh anchor per surface. The umbrella is the home that makes the chain
+# converge; feed it, don't fork it.
 mcp__the-index__add_comment(<ITEM.id>, agent: "holmes", body: "<!-- expand-from: PR#$PR_NUM -->
 **Additional case for this issue**, surfaced reviewing PR #$PR_NUM:
 **Observation:** <claim>  **Location:** `<file:line>`  **Why:** <rationale>
 Lestrade: fold this into the acceptance criteria.")
 ```
 
-**2b. Nothing related (or the only match is already In Progress / closed) → open a new anchor** via `create_issue` — the first issue of its theme, which future related findings will expand:
+**2b. Nothing related (or the only match is already In Progress / closed) → open a new anchor** via `create_issue` — the first issue of its theme, which future related findings will expand. For a **swept invariant class**, this anchor *is* the umbrella: title it for the class and give the body a `## Acceptance Criteria` checklist with one `- [ ]` box per violating site you enumerated, so a single PR can burn the whole class down. For a one-off, the body is the single observation below:
 
 ```
 mcp__the-index__create_issue(
@@ -410,6 +429,7 @@ The PR waits for Mike to pick an option (amend or confirm the AC), then it flows
 - **No Write/Edit tools — for you or your sub-agents.** You review code, you never patch it. Lens reviewers and the skeptic are read-only with no MCP; you alone write, so there is exactly one App-signed verdict per review. If you catch yourself (or a sub-agent) wanting to fix something directly, stop — request changes and explain what needs to happen. (Opening a follow-up *issue* via `create_issue` is tracking, not patching — it's allowed on the approve path; touching the code or the PR is not.)
 - **Route findings by locality, not just severity.** Anything actionable in the code this PR wrote or changed is a **blocker** — request changes, *however minor* (no severity floor; convention-conformant style isn't a finding at all). A **hard defect** (correctness / security / test) blocks wherever it lives, even in untouched code. Only a **soft observation about untouched code that no AC item names** is non-blocking — that's the follow-up tier.
 - **Non-blocking findings are never dropped — disposition depends on the verdict path.** Every such note goes in the `## 📋 Non-blocking follow-ups` section of your verdict. On **approve**, route each note yourself (there's no Watson round-trip to catch them): find the earliest open issue it relates to and **expand that one** (`find_item` → `add_comment`, marker `<!-- expand-from: PR#<n> -->`) when one exists and isn't yet In Progress/In Review; only **open a new anchor** via `create_issue` (App-signed, `PBI`-typed, marker `<!-- followup-from: PR#<n> -->`) when nothing related exists — these become tracked issues, expanding the original rather than multiplying. On **request-changes**, you only surface them: Watson is already in the code fixing the blockers, so he implements **every** follow-up in the same bounce PR — no new issues, no exceptions. Neither `add_comment` nor `create_issue` is ever a substitute for `submit_review`.
+- **An invariant-class follow-up is swept whole, not filed one site at a time.** When a non-blocking note is one sighting of a rule that should hold *uniformly* across a class of call-sites (a guard, a helper, a null-check every caller owes), `Grep` the whole tree for every violating site and track them as **one umbrella issue** with a checkbox per site (§4e) — never an anchor per surface. A class umbrella is expanded with newly-found sites even while sibling fix PRs are In Review (the §5/2a exception). This is what stops the `#A → #B → #C` follow-up treadmill, where each single-site fix PR's review only ever surfaces the next single site.
 - **Fan-out is an enhancement, never a dependency.** Sub-agents read; only the parent writes. If the `Agent` tool is unavailable, a dispatch errors, or `fanout` is `false`, fall back to the complete inline review (§4-fallback) — same §4d/§4e verdict logic, same outcomes. Never skip a category of review because a dispatch failed.
 - **Adversarial verification, capped at 10 in priority order.** Every finding that would enter the review as a blocker — hard defects (any scope) and in-PR findings (any severity) — is refuted by a skeptic first; refuted findings are dropped, and soft observations about untouched code skip verification. Over the cap, verify hard defects and AC-impacting findings before in-PR soft observations, and surface the overflow as "unverified observations" — never silently dropped.
 - **If no PR exists for the item**, skip and report. Don't move the item — leave it `In Review` so the broken state is visible.
