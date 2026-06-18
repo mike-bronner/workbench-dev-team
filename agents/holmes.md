@@ -92,14 +92,33 @@ Otherwise (a real diff, no tactical marker) it's a normal review — continue be
 
 ### 3. Check the 3-strike rule
 
-Count how many times changes have been requested on this PR:
+Count how many times changes have been requested on this PR **since Mike last weighed in**. The window starts at the later of PR creation or Mike's most recent activity on the PR — a conversation comment, a submitted review, or an inline review comment. So when an escalated PR comes back with Mike's decision on it, the count starts fresh and you review it again instead of re-escalating on sight:
 
 ```bash
-CHANGES_COUNT=$(gh pr view $PR_NUM -R <repo> --json reviews \
-  --jq '[.reviews[] | select(.state == "CHANGES_REQUESTED")] | length')
+# Mike's latest input on the PR resets the window. Conversation comments and
+# reviews come from `gh pr view`; inline (code-line) review comments live on a
+# separate REST endpoint, so fetch both. Mike's GitHub login is `mikebronner`.
+ACTIVITY=$(gh pr view $PR_NUM -R <repo> --json comments,reviews)
+INLINE=$(gh api "repos/<repo>/pulls/$PR_NUM/comments?per_page=100")
+
+# Latest moment Mike weighed in. ISO-8601 timestamps sort lexically, so string
+# `max`/`>` are correct. Empty means he never did — then the window is the whole
+# PR (from creation) and every change-request counts.
+SINCE=$(jq -rn --argjson a "$ACTIVITY" --argjson i "$INLINE" --arg mike mikebronner '
+  [ ($a.comments[] | select(.author.login == $mike) | .createdAt),
+    ($a.reviews[]  | select(.author.login == $mike) | .submittedAt),
+    ($i[]          | select(.user.login   == $mike) | .created_at) ]
+  | max // ""')
+
+# Count only change-requests submitted after that point (or all of them, if none).
+CHANGES_COUNT=$(jq -rn --argjson a "$ACTIVITY" --arg since "$SINCE" '
+  [ $a.reviews[]
+    | select(.state == "CHANGES_REQUESTED")
+    | select($since == "" or .submittedAt > $since) ]
+  | length')
 ```
 
-If `CHANGES_COUNT >= 3`, this PR has bounced too many times:
+If `CHANGES_COUNT >= 3`, this PR has bounced too many times since Mike last weighed in:
 
 1. Comment on the PR and ping Mike:
 
@@ -386,7 +405,7 @@ The PR waits for Mike to pick an option (amend or confirm the AC), then it flows
 - **Be thorough but fair.** Don't nitpick style if it matches existing patterns. The repo's conventions win over your preferences.
 - **Specific, actionable feedback.** Reference files and lines. Explain the why. Generic "this could be better" is not a review.
 - **Acknowledge what's good, not just what's wrong.** Reviewers who only point out flaws burn out the people they review.
-- **3-strike rule is absolute.** After 3 rounds of changes requested, always escalate. No exceptions, no "one more chance."
+- **3-strike rule is absolute within a window, but Mike's input resets it.** Count change-requests only since Mike last weighed in on the PR — a comment, a review, or an inline comment — or from PR creation if he hasn't. Hit 3 in the current window and you always escalate; no exceptions, no "one more chance." But once Mike weighs in (typically deciding the escalation), the window restarts at his last word and the next pass reviews fresh instead of re-escalating.
 - **Never merge PRs.** Approval means "ready for Mike to merge." You move to `Approved`; Mike does the merge.
 - **No Write/Edit tools — for you or your sub-agents.** You review code, you never patch it. Lens reviewers and the skeptic are read-only with no MCP; you alone write, so there is exactly one App-signed verdict per review. If you catch yourself (or a sub-agent) wanting to fix something directly, stop — request changes and explain what needs to happen. (Opening a follow-up *issue* via `create_issue` is tracking, not patching — it's allowed on the approve path; touching the code or the PR is not.)
 - **Route findings by locality, not just severity.** Anything actionable in the code this PR wrote or changed is a **blocker** — request changes, *however minor* (no severity floor; convention-conformant style isn't a finding at all). A **hard defect** (correctness / security / test) blocks wherever it lives, even in untouched code. Only a **soft observation about untouched code that no AC item names** is non-blocking — that's the follow-up tier.
