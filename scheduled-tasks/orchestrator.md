@@ -9,7 +9,10 @@ honors `name` and `description`. There is no model selector — the scheduled
 task runs on the user's Claude Code default model at fire time. Tool scoping
 is inherited from the session; Dispatch only needs Bash + the three
 mcp__the-index__list_* tools, which are available because The Index
-MCP is registered at user scope by /workbench-dev-team:setup.
+MCP is registered at user scope by /workbench-dev-team:setup. Those
+list tools load on demand — Dispatch must ToolSearch-load them before
+use (see Workflow). Larger models infer this on their own; smaller
+ones (e.g. Haiku) will not, so the step is made explicit.
 -->
 
 
@@ -27,13 +30,21 @@ You have **three** MCP tools from The Index:
 
 The Index server owns all the filter and sort logic. You never interpret status or field_changes yourself — trust the tool results.
 
-You also have `Bash` for dispatching subprocesses. No other tools.
+You also have `Bash` for dispatching subprocesses, and `ToolSearch` to load the three deferred Index tools (see Workflow). No other tools.
 
 ## Workflow
 
 Execute these three lanes in order. Within each lane, process every item returned by the tool.
 
-At the start of the run, create the log directory if it doesn't exist:
+**First, load your tools.** The three Index `list_*` tools are deferred — not directly callable until loaded. Before polling any lane, call `ToolSearch` once to load all three:
+
+```
+ToolSearch  query: select:mcp__the-index__list_unrefined_items,mcp__the-index__list_review_items,mcp__the-index__list_development_items
+```
+
+Skip this and the `mcp__the-index__list_*` calls below are unavailable — the tick polls nothing and dispatches nothing.
+
+Then create the log directory if it doesn't exist:
 
 ```bash
 mkdir -p "$HOME/.claude-workbench/dev-team-logs"
@@ -71,6 +82,7 @@ CONFIG="$HOME/.claude-workbench/dev-team-config.json"
 MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
 FALLBACK=$(jq -r '.agents.lestrade.fallback // empty' "$CONFIG" 2>/dev/null || true)
+export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
@@ -94,6 +106,7 @@ MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo
 EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
 FALLBACK=$(jq -r '.agents.lestrade.fallback // empty' "$CONFIG" 2>/dev/null || true)
 SLUG=$(echo "$REPO" | tr '/' '-')
+export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:lestrade \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
@@ -122,6 +135,7 @@ MODEL=$(jq -r '.agents.holmes.model // "opus"' "$CONFIG" 2>/dev/null || echo "op
 EFFORT=$(jq -r '.agents.holmes.effort // empty' "$CONFIG" 2>/dev/null || true)
 FALLBACK=$(jq -r '.agents.holmes.fallback // empty' "$CONFIG" 2>/dev/null || true)
 BUDGET=$(jq -r '.agents.holmes.maxBudgetUsd // empty' "$CONFIG" 2>/dev/null || true)
+export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:holmes \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
@@ -151,6 +165,7 @@ MODEL=$(jq -r '.agents.watson.model // "opus"' "$CONFIG" 2>/dev/null || echo "op
 EFFORT=$(jq -r '.agents.watson.effort // empty' "$CONFIG" 2>/dev/null || true)
 FALLBACK=$(jq -r '.agents.watson.fallback // empty' "$CONFIG" 2>/dev/null || true)
 BUDGET=$(jq -r '.agents.watson.maxBudgetUsd // 10.00' "$CONFIG" 2>/dev/null || echo "10.00")
+export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 nohup claude -p --agent workbench-dev-team:watson \
   --model "$MODEL" \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
