@@ -478,6 +478,10 @@ budget), remove it yourself on the way out.
 - **The `/develop` skill is canonical.** When this file and `/develop` seem to
   conflict on dev practice, follow `/develop`. This file is orchestration; the
   skill is substance.
+- **YAGNI and minimal solutions.** Build the least that satisfies the AC — no
+  speculative abstraction or future-proofing — and prefer the most concise
+  *readable* solution (the one-liner over the verbose construct when it's just
+  as clear). The `/develop` skill carries the full rule; this is the reminder.
 - **Development is yours; tangential actions are the App's.** Commits, push, and
   **PR open / ready / edit** happen via local `git`/`gh` under *your* identity —
   you own the PR, never a bot. Only coordination **comments** (`add_comment`) and

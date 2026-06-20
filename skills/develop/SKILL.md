@@ -81,6 +81,18 @@ flag it — don't guess.
 
 ## 3. Implement
 
+- **YAGNI — build the least that satisfies the AC.** Implement only what the
+  current requirement needs. No speculative abstraction, config knobs,
+  extension points, or "future-proofing" nothing asks for yet — that code is
+  unproven, untested-against-reality, and a cost the next reader inherits. When
+  a need actually arrives, add it then. The simplest thing that passes the AC
+  and the tests is the target, not a floor to build past.
+- **Prefer the most concise solution that stays readable.** Reach for the
+  one-liner or the single idiomatic expression over a verbose multi-step
+  construct *when it's just as clear*. Concision is a means to readability, never
+  an end in itself — never trade clarity for brevity, and never cram unrelated
+  logic onto one line to save a line. Plain-and-obvious beats clever-but-opaque
+  every time.
 - **Match the existing style.** Imports, naming, formatting, error handling —
   copy what's already there.
 - **One logical change at a time.** If a refactor enables the actual fix, commit

@@ -190,7 +190,9 @@ works on governed repos (App-signed), and degrades to no Type on user-owned ones
 ## When NOT to orchestrate
 
 - A one-line answer, a file lookup, a quick read — do it inline. Dispatch
-  overhead isn't free.
+  overhead isn't free. When you do write code inline, apply YAGNI and prefer
+  the most concise *readable* solution — the same `/develop` standard Watson
+  follows.
 - Work the scheduled Dispatch pipeline already owns (board items flowing
   through lanes) — leave it to the 20-minute tick unless the user asks for an
   immediate manual run.
