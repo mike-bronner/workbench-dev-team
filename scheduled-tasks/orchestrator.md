@@ -30,7 +30,7 @@ You have **three** MCP tools from The Index:
 
 The Index server owns all the filter and sort logic. You never interpret status or field_changes yourself — trust the tool results.
 
-You also have `Bash` for dispatching subprocesses, and `ToolSearch` to load the three deferred Index tools (see Workflow). No other tools.
+You also have `Bash` for dispatching subprocesses, and `ToolSearch` to load the three deferred Index tools (see Workflow). The only other tools you may touch are `mcp__the-index__move` and `mcp__the-index__add_comment` — loaded on demand *only* when the circuit breaker (below) decides to escalate a wedged item. You never use them in normal routing.
 
 ## Workflow
 
@@ -64,14 +64,70 @@ comma-separated model list passed to `--fallback-model` (print-mode only) — wh
 the primary model is overloaded or unavailable (e.g. a retired model), the
 dispatch degrades to the next model in the chain instead of failing.
 
-### Lane 1 — Inspector Lestrade (triage)
+### Circuit breaker — pre-flight before every dispatch
+
+An agent can die on a **fatal, non-recoverable error before it ever runs a tool** — most notably `API Error: Output blocked by content filtering policy`, which aborts the whole `claude -p` run the instant the model tries to emit flagged output (e.g. generating a CODE_OF_CONDUCT / Contributor Covenant). When that happens the agent never gets to move its own item, so the item stays in its lane and **every tick re-dispatches it forever** — burning processes and, in the single-track dev lane, starving all other work behind it.
+
+The circuit breaker stops that. **Before each per-item dispatch in every lane**, run the pre-flight below with the lane's `AGENT` (`lestrade` / `holmes` / `watson`) and the item's `ID`. It inspects that item's own recent **run logs** — not its content — and prints `DISPATCH` (proceed) or `ESCALATE<TAB><reason>` (the item is wedged — escalate instead).
+
+```bash
+AGENT=watson   # ← the lane's agent: lestrade | holmes | watson
+ID=<ITEM_ID>   # ← the item's `id` field
+# >>> circuit-breaker-preflight >>>  (markers used by scheduled-tasks/test-circuit-breaker.sh — keep them)
+# Inputs: AGENT (lestrade|holmes|watson), ID (project_items.id). Optional: LOGDIR.
+# Prints "DISPATCH" (proceed) or "ESCALATE<TAB><reason>" (escalate, do not dispatch).
+LOGDIR="${LOGDIR:-$HOME/.claude-workbench/dev-team-logs}"
+CB_FATAL_STRIKES=3   # generic fatal errors may be transient — only escalate after N identical runs
+cb_latest=$(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null | head -1)
+if [ -z "$cb_latest" ]; then
+  echo DISPATCH                       # never run before — go
+elif tail -3 "$cb_latest" 2>/dev/null | grep -qi 'content filtering policy'; then
+  # Deterministic: the deliverable trips the output filter and will never succeed on retry. Escalate on the first hit.
+  printf 'ESCALATE\toutput blocked by the content filtering policy — a required deliverable trips the output content filter, so the run can never succeed on retry'
+else
+  cb_sig=$(tail -3 "$cb_latest" 2>/dev/null | grep -iE '^(API Error|Execution error|Error:)' | tail -1)
+  if [ -z "$cb_sig" ]; then
+    echo DISPATCH                     # last run didn't end on a fatal error — go
+  else
+    cb_strikes=0
+    for cb_f in $(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null); do
+      if tail -3 "$cb_f" 2>/dev/null | grep -qiF "$cb_sig"; then
+        cb_strikes=$((cb_strikes + 1))
+      else
+        break                         # streak broken — older runs failed differently (or succeeded)
+      fi
+    done
+    if [ "$cb_strikes" -ge "$CB_FATAL_STRIKES" ]; then
+      printf 'ESCALATE\t%s consecutive runs died with the same fatal error: %s' "$cb_strikes" "$cb_sig"
+    else
+      echo DISPATCH                   # not enough strikes yet — let this tick retry
+    fi
+  fi
+fi
+# <<< circuit-breaker-preflight <<<
+```
+
+**If the pre-flight prints `DISPATCH`** (the normal case), proceed with the lane's dispatch command exactly as written.
+
+**If it prints a line starting with `ESCALATE`**, do *not* dispatch this item — re-dispatching only burns another process. Escalate it instead:
+
+1. Load the escalation tools once (deferred): `ToolSearch query: select:mcp__the-index__move,mcp__the-index__add_comment`.
+2. `mcp__the-index__move(agent=<AGENT>, column="Escalated", id=<ID>)`.
+3. `mcp__the-index__add_comment(agent=<AGENT>, id=<ID>, body=…)` — the body states the item was **auto-escalated by the Dispatch circuit breaker**, quotes the `<reason>` the pre-flight printed (the text after the tab), and notes it was pulled from the lane to stop an infinite re-dispatch loop so a human can unblock it.
+4. If `<AGENT>` is `watson`, also clear a dead lock so the next legitimate Watson isn't blocked: only `rm -f /tmp/watson.lock` when the PID inside it is **not** alive.
+
+Record it as an **escalation** (not a dispatch) in the final summary, and move on to the next item.
+
+
 
 ```
 items = mcp__the-index__list_unrefined_items()
 for each item in items:
-  dispatch Lestrade on item.id
+  run circuit-breaker pre-flight (AGENT=lestrade, ID=item.id)
+  if it says ESCALATE: escalate the item, skip dispatch
+  else: dispatch Lestrade on item.id
 for each distinct item.repo across items:
-  dispatch Lestrade sweep on that repo
+  dispatch Lestrade sweep on that repo   # sweeps are per-repo, not per-item — breaker does not apply
 ```
 
 Dispatch command (run in Bash, **detached**):
@@ -123,7 +179,9 @@ disown
 ```
 items = mcp__the-index__list_review_items()
 for each item in items:
-  dispatch Holmes on item.id
+  run circuit-breaker pre-flight (AGENT=holmes, ID=item.id)
+  if it says ESCALATE: escalate the item, skip dispatch
+  else: dispatch Holmes on item.id
 ```
 
 Dispatch command:
@@ -153,7 +211,9 @@ disown
 ```
 items = mcp__the-index__list_development_items(limit=1)
 if items is non-empty:
-  dispatch Watson on items[0].id
+  run circuit-breaker pre-flight (AGENT=watson, ID=items[0].id)
+  if it says ESCALATE: escalate the item, skip dispatch
+  else: dispatch Watson on items[0].id
 ```
 
 Dispatch command (note the budget cap):
@@ -186,14 +246,15 @@ Watson is single-track: the server returns at most one item, and Watson's own `/
 - **Copy dispatch blocks byte-for-byte.** The only line you edit is the leading assignment (`ID=` or `REPO=`). Everything below it — the flags, the positional `"Item ID: $ID"` prompt, the log redirect — is pasted verbatim. The positional prompt is the agent's entire task: drop or reword it and the agent boots with no work, burns a process, and exits. Never reconstruct a dispatch command from memory.
 - **One Bash call per dispatch.** Don't batch multiple dispatches into one shell command — each needs its own log file and backgrounding.
 - **ITEM_ID is the `id` field** (`project_items.id`) of the item the lane tool returned — never `issue_number` or `pr_number`. Mixing them up dispatches an agent at a nonexistent item.
-- **No reasoning about item contents.** You decide *which agent* based on *which tool returned the item*, not on item fields. That logic lives server-side.
+- **No reasoning about item contents.** You decide *which agent* based on *which tool returned the item*, not on item fields. That logic lives server-side. The lone exception is the **circuit breaker**, which reads an item's own **run logs** (not its content) to decide skip-and-escalate.
 - **Empty lanes are fine.** If a tool returns an empty list, move on. Log nothing for that lane.
-- **Final output.** Print a one-line-per-dispatch summary:
+- **Final output.** Print a one-line-per-action summary:
   `→ lestrade #123 (repo/name)`
   `→ lestrade sweep (repo/name)`
   `→ holmes #456 (repo/name)`
   `→ watson #789 (repo/name)`
-  Followed by a count: `dispatched N items across 3 lanes`. If nothing fired, print `idle — nothing to dispatch`.
+  `⛔ escalated #66 (repo/name) — content filter`   ← circuit-breaker escalations
+  Followed by a count: `dispatched N, escalated M across 3 lanes`. If nothing fired, print `idle — nothing to dispatch`.
 
 ## Failure modes
 
