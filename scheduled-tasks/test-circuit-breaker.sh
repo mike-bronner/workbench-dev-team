@@ -44,38 +44,46 @@ echo "Testing circuit-breaker pre-flight ($SNIPPET):"
 d="$WORK/case1"; mkdir -p "$d"
 expect "no logs -> dispatch" "DISPATCH" "$(run "$d" watson 131)"
 
-# 2. Single content-filter failure -> ESCALATE on first hit (deterministic)
+# 2. Single content-filter failure -> ESCALATE on first hit (deterministic, any lane — incl. Watson)
 d="$WORK/case2"; mkdir -p "$d"
 mklog "$d" watson 131 202606210800 "API Error: Output blocked by content filtering policy"
-expect "content filter (1 strike) -> escalate" "ESCALATE" "$(run "$d" watson 131)"
+expect "watson content filter (1 strike) -> escalate" "ESCALATE" "$(run "$d" watson 131)"
 
 # 3. Successful last run -> DISPATCH
 d="$WORK/case3"; mkdir -p "$d"
 mklog "$d" holmes 200 202606210800 "Review complete. Approved PR #5. Done."
 expect "success -> dispatch" "DISPATCH" "$(run "$d" holmes 200)"
 
-# 4. One generic fatal, below strike threshold -> DISPATCH (let it retry)
+# 4. Review-stage lane, one generic fatal, below strike threshold -> DISPATCH (let it retry)
 d="$WORK/case4"; mkdir -p "$d"
-mklog "$d" watson 99 202606210800 "API Error: 529 overloaded"
-expect "1 transient fatal -> dispatch (retry)" "DISPATCH" "$(run "$d" watson 99)"
+mklog "$d" holmes 99 202606210800 "API Error: 529 overloaded"
+expect "holmes 1 transient fatal -> dispatch (retry)" "DISPATCH" "$(run "$d" holmes 99)"
 
-# 5. Three consecutive identical generic fatals -> ESCALATE
+# 5. Review-stage lane, three consecutive identical generic fatals -> ESCALATE
 d="$WORK/case5"; mkdir -p "$d"
-mklog "$d" watson 99 202606210800 "API Error: 529 overloaded"
-mklog "$d" watson 99 202606210820 "API Error: 529 overloaded"
-mklog "$d" watson 99 202606210840 "API Error: 529 overloaded"
-expect "3 identical fatals -> escalate" "ESCALATE" "$(run "$d" watson 99)"
+mklog "$d" holmes 99 202606210800 "API Error: 529 overloaded"
+mklog "$d" holmes 99 202606210820 "API Error: 529 overloaded"
+mklog "$d" holmes 99 202606210840 "API Error: 529 overloaded"
+expect "holmes 3 identical fatals -> escalate" "ESCALATE" "$(run "$d" holmes 99)"
 
-# 6. Latest fatal but streak broken by an earlier success -> DISPATCH
+# 6. Review-stage lane, latest fatal but streak broken by an earlier success -> DISPATCH
 d="$WORK/case6"; mkdir -p "$d"
-mklog "$d" watson 99 202606210800 "All good. PR opened."
-mklog "$d" watson 99 202606210820 "API Error: 529 overloaded"
-expect "broken streak -> dispatch" "DISPATCH" "$(run "$d" watson 99)"
+mklog "$d" holmes 99 202606210800 "All good. Review posted."
+mklog "$d" holmes 99 202606210820 "API Error: 529 overloaded"
+expect "holmes broken streak -> dispatch" "DISPATCH" "$(run "$d" holmes 99)"
 
 # 7. Logs for a different item id must not bleed in -> DISPATCH
 d="$WORK/case7"; mkdir -p "$d"
 mklog "$d" watson 131 202606210800 "API Error: Output blocked by content filtering policy"
 expect "other item's logs ignored -> dispatch" "DISPATCH" "$(run "$d" watson 777)"
+
+# 8. Watson NEVER escalates on generic fatals -> DISPATCH (escalation is Holmes's, post-review).
+#    Three identical fatals that WOULD escalate on a review-stage lane (case 5) must not on Watson.
+d="$WORK/case8"; mkdir -p "$d"
+mklog "$d" watson 99 202606210800 "API Error: 529 overloaded"
+mklog "$d" watson 99 202606210820 "API Error: 529 overloaded"
+mklog "$d" watson 99 202606210840 "API Error: 529 overloaded"
+expect "watson 3 identical fatals -> dispatch (no pre-review escalation)" "DISPATCH" "$(run "$d" watson 99)"
 
 echo
 echo "circuit-breaker: $pass passed, $fail failed"

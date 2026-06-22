@@ -70,6 +70,11 @@ An agent can die on a **fatal, non-recoverable error before it ever runs a tool*
 
 The circuit breaker stops that. **Before each per-item dispatch in every lane**, run the pre-flight below with the lane's `AGENT` (`lestrade` / `holmes` / `watson`) and the item's `ID`. It inspects that item's own recent **run logs** — not its content — and prints `DISPATCH` (proceed) or `ESCALATE<TAB><reason>` (the item is wedged — escalate instead).
 
+**Escalating before review is a last resort, reserved for the provably-terminal case.** The normal "this has been tried too many times" judgement is **Holmes's** — his 3-change-round rule, which only counts *after* a PR reaches review. A sequence should always end on Holmes finishing a review and deciding how it moves forward, not on Dispatch pulling an item before review. So the breaker splits by lane:
+
+- **Content filter** (any lane, including Watson) — deterministic: the deliverable itself trips the output filter, so the run can *never* succeed and can never produce a PR to review. There is nothing to wait for — escalate on the first hit. This is the only case that can escalate a Watson-lane item, and it's the exact failure (#66) the breaker was built for.
+- **N identical fatal errors** (**Lestrade and Holmes lanes only**) — a transient guard for a run wedged on the same generic fatal where no review stage will ever catch it. It does **not** apply to Watson: a 529, a budget-cap exhaustion, or a partial isn't provably terminal, the work may yet reach a PR, and pulling it to `Escalated` before review is precisely the premature escalation the dev lane must avoid. On the Watson lane a generic fatal just retries on the next tick — escalation waits for Holmes.
+
 ```bash
 AGENT=watson   # ← the lane's agent: lestrade | holmes | watson
 ID=<ITEM_ID>   # ← the item's `id` field
@@ -77,14 +82,22 @@ ID=<ITEM_ID>   # ← the item's `id` field
 # Inputs: AGENT (lestrade|holmes|watson), ID (project_items.id). Optional: LOGDIR.
 # Prints "DISPATCH" (proceed) or "ESCALATE<TAB><reason>" (escalate, do not dispatch).
 LOGDIR="${LOGDIR:-$HOME/.claude-workbench/dev-team-logs}"
-CB_FATAL_STRIKES=3   # generic fatal errors may be transient — only escalate after N identical runs
+CB_FATAL_STRIKES=3   # generic fatal errors may be transient — Lestrade/Holmes only escalate after N identical runs (never Watson; see below)
 cb_latest=$(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null | head -1)
 if [ -z "$cb_latest" ]; then
   echo DISPATCH                       # never run before — go
 elif tail -3 "$cb_latest" 2>/dev/null | grep -qi 'content filtering policy'; then
-  # Deterministic: the deliverable trips the output filter and will never succeed on retry. Escalate on the first hit.
+  # Deterministic, any lane: the deliverable trips the output filter and will never succeed on retry — and can never produce a PR to review. Escalate on the first hit.
   printf 'ESCALATE\toutput blocked by the content filtering policy — a required deliverable trips the output content filter, so the run can never succeed on retry'
+elif [ "$AGENT" = watson ]; then
+  # Dev lane, generic (non-content-filter) fatal. Watson NEVER escalates here: a 529, a
+  # budget-cap exhaustion, or a partial isn't provably terminal, the work may yet reach a
+  # PR, and "tried too many times" is Holmes's call AFTER review (his 3-change-round rule),
+  # not Dispatch's before it. Retry on the next tick; let the sequence end on Holmes.
+  echo DISPATCH
 else
+  # Lestrade / Holmes lanes — no review stage, or the PR already exists. A run wedged on the
+  # same generic fatal would otherwise re-dispatch forever, so escalate after N strikes.
   cb_sig=$(tail -3 "$cb_latest" 2>/dev/null | grep -iE '^(API Error|Execution error|Error:)' | tail -1)
   if [ -z "$cb_sig" ]; then
     echo DISPATCH                     # last run didn't end on a fatal error — go
