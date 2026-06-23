@@ -85,6 +85,31 @@ mklog "$d" watson 99 202606210820 "API Error: 529 overloaded"
 mklog "$d" watson 99 202606210840 "API Error: 529 overloaded"
 expect "watson 3 identical fatals -> dispatch (no pre-review escalation)" "DISPATCH" "$(run "$d" watson 99)"
 
+# 9. Human re-activation (escalation marker present) -> REPRIEVE, even atop logs that would otherwise
+#    escalate. This is the override: a manually re-reviewed item must NOT bounce straight back out.
+d="$WORK/case9"; mkdir -p "$d"
+mklog "$d" holmes 215 202606210800 "Error: Exceeded USD budget (7)"
+touch "$d/holmes-215.escalated"
+expect "marker + budget death -> reprieve (human override)" "REPRIEVE" "$(run "$d" holmes 215)"
+
+# 10. Budget exceeded on a review-stage lane -> ESCALATE on the FIRST hit (deterministic; don't burn more).
+d="$WORK/case10"; mkdir -p "$d"
+mklog "$d" holmes 300 202606210800 "Error: Exceeded USD budget (7)"
+expect "holmes budget death (1 hit) -> escalate" "ESCALATE" "$(run "$d" holmes 300)"
+
+# 11. Budget exceeded on the Watson lane -> DISPATCH (the dev lane never escalates pre-review).
+d="$WORK/case11"; mkdir -p "$d"
+mklog "$d" watson 300 202606210800 "Error: Exceeded USD budget (10)"
+expect "watson budget death -> dispatch (no pre-review escalation)" "DISPATCH" "$(run "$d" watson 300)"
+
+# 12. Marker also resets the generic strike count -> REPRIEVE (re-activation after ANY escalation type).
+d="$WORK/case12"; mkdir -p "$d"
+mklog "$d" holmes 99 202606210800 "API Error: 529 overloaded"
+mklog "$d" holmes 99 202606210820 "API Error: 529 overloaded"
+mklog "$d" holmes 99 202606210840 "API Error: 529 overloaded"
+touch "$d/holmes-99.escalated"
+expect "marker + 3 identical fatals -> reprieve (human override)" "REPRIEVE" "$(run "$d" holmes 99)"
+
 echo
 echo "circuit-breaker: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
