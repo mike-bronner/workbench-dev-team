@@ -143,10 +143,21 @@ The review runs in three phases: **Phase A** sets up the evidence (issue, AC, ch
 ##### 4a. Read the issue and AC
 
 ```bash
-gh issue view <issue_number> -R <repo> --json title,body,labels
+gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 ```
 
-Extract the acceptance criteria from the issue body. This is your rubric — paste it verbatim into the lens prompts in Phase B; never paraphrase or amend it.
+The acceptance criteria live in a **managed comment**, not the body. Read them
+**comment-first, body-fallback**:
+
+1. **Marked comment first.** Find the comment whose **first line** is exactly
+   `<!-- acceptance-criteria -->`. Strip that marker line — what remains (the
+   `## Acceptance Criteria` heading and its `- [ ]` checklist) is your rubric.
+2. **Fall back to the body** only when **no** such comment exists — a legacy item
+   triaged before AC moved to comments (and deploy-order safety). Then extract the
+   `## Acceptance Criteria` section from the issue body as before.
+
+This is your rubric — paste it verbatim into the lens prompts in Phase B; never
+paraphrase or amend it. Holmes **never** writes or amends AC, in either location.
 
 ##### 4b. Check out the PR — the shared evidence room
 
