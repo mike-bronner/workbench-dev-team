@@ -259,6 +259,146 @@ unavailable — e.g. a retired model — instead of failing. `maxBudgetUsd` caps
 run's spend: Watson defaults to `10.00`, Holmes's is optional and applied only
 when set, and both default cleanly when absent.
 
+## Step 6.5 — Choose commit attribution behavior
+
+The Claude Code harness injects a built-in default that appends a
+`Co-Authored-By: Claude` trailer to every commit message (and a comparable PR
+footer) **whenever the `attribution` key is absent from `settings.json`**.
+Whether that trailer should appear is the user's call — and dev-team owns commit
+conventions, so it owns this setting either way: left unmanaged, the key is an
+orphan that nothing maintains and silently drifts back to the harness default.
+
+This step **detects the current state, asks the user which behavior they want,
+and applies their choice in either direction** — non-destructively, preserving
+every other key in `settings.json`. `jq` is already verified in Step 2, so no
+re-check is needed.
+
+### 6.5a — Detect the current state
+
+```bash
+SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+
+ATTR_STATE="default"   # default | suppressed | custom
+if [ -f "$SETTINGS" ] && jq empty "$SETTINGS" 2>/dev/null; then
+  if jq -e '.attribution.commit == "" and .attribution.pr == ""' "$SETTINGS" >/dev/null 2>&1; then
+    ATTR_STATE="suppressed"
+  elif jq -e '(.attribution.commit != null) or (.attribution.pr != null)' "$SETTINGS" >/dev/null 2>&1; then
+    ATTR_STATE="custom"
+  fi
+fi
+
+case "$ATTR_STATE" in
+  suppressed) echo "ℹ  Current state: attribution suppressed (commit + PR trailers off)";;
+  custom)     echo "ℹ  Current state: custom attribution values set";;
+  *)          echo "ℹ  Current state: default (Co-Authored-By trailer visible)";;
+esac
+```
+
+Save the printed classification — feed it into the question text below as
+`CURRENT_STATE` (`suppressed`, `custom`, or `default (visible)`).
+
+### 6.5b — Ask the user
+
+Use `AskUserQuestion`, surfacing the detected current state in the question
+text. List the Recommended option first:
+
+```jsonc
+AskUserQuestion({
+  questions: [
+    {
+      question: "Commit attribution — current state is {CURRENT_STATE}. Should commits and PRs carry Claude Code's Co-Authored-By / attribution footer?",
+      header: "Attribution",
+      multiSelect: false,
+      options: [
+        { label: "Suppress trailers (Recommended)", description: "Commits and PRs show no Co-Authored-By / attribution footer. Sets .attribution.commit/pr = \"\"." },
+        { label: "Leave attribution in", description: "Keep Claude Code's default Co-Authored-By trailer on commits and PRs." }
+      ]
+    }
+  ]
+})
+```
+
+Save the answer as `ATTR_CHOICE` (`suppress` or `leave-in`).
+
+### 6.5c — Apply the choice
+
+Run **only** the block matching `ATTR_CHOICE`. Both are non-destructive: `jq`
+reads the whole settings object and writes it back with only the two
+`attribution` keys touched, so unrelated settings (permissions, env, hooks,
+`outputStyle`) are preserved. Each branch refuses up front if the existing file
+isn't valid JSON, validates the produced file with `jq empty` before replacing,
+and makes **no write** when the file already matches the chosen end-state.
+
+**If `ATTR_CHOICE` is `suppress`:**
+
+```bash
+# Already suppressed (present and empty-string) → no write.
+if [ -f "$SETTINGS" ] \
+  && jq -e '.attribution.commit == "" and .attribution.pr == ""' "$SETTINGS" >/dev/null 2>&1; then
+  echo "✅ already suppressed (commit + PR trailers) — no change"
+  ATTR_RESULT="suppressed"
+else
+  tmp="$(mktemp)"
+  if [ -f "$SETTINGS" ]; then
+    # Refuse up front if the existing file isn't valid JSON — never clobber it.
+    if ! jq empty "$SETTINGS" 2>/dev/null; then
+      rm -f "$tmp"
+      echo "❌ Refusing to touch $SETTINGS — existing file is not valid JSON. Fix it by hand, then re-run."
+      exit 1
+    fi
+    jq '.attribution.commit = "" | .attribution.pr = ""' "$SETTINGS" > "$tmp"
+  else
+    mkdir -p "$(dirname "$SETTINGS")"
+    jq -n '{ attribution: { commit: "", pr: "" } }' > "$tmp"
+  fi
+  # Validate the produced file before replacing — never leave settings.json malformed.
+  if ! jq empty "$tmp" 2>/dev/null || [ ! -s "$tmp" ]; then
+    rm -f "$tmp"
+    echo "❌ Refusing to write — produced invalid JSON for $SETTINGS"
+    exit 1
+  fi
+  mv "$tmp" "$SETTINGS"
+  echo "✅ attribution suppressed (commit + PR trailers)"
+  ATTR_RESULT="suppressed"
+fi
+```
+
+**If `ATTR_CHOICE` is `leave-in`:**
+
+```bash
+# Desired end-state: our two keys absent (harness default returns). Already there
+# (no file, or both keys absent) → no write, nothing created.
+if [ ! -f "$SETTINGS" ] \
+  || jq -e '(.attribution.commit == null) and (.attribution.pr == null)' "$SETTINGS" >/dev/null 2>&1; then
+  echo "✅ already default (attribution trailer visible) — no change"
+  ATTR_RESULT="default (visible)"
+else
+  # Refuse up front if the existing file isn't valid JSON — never clobber it.
+  if ! jq empty "$SETTINGS" 2>/dev/null; then
+    echo "❌ Refusing to touch $SETTINGS — existing file is not valid JSON. Fix it by hand, then re-run."
+    exit 1
+  fi
+  tmp="$(mktemp)"
+  # Drop only our two keys; if that leaves .attribution an empty object, drop it
+  # too so the harness default returns. Sibling attribution keys are preserved.
+  jq 'del(.attribution.commit, .attribution.pr)
+      | if (.attribution // {}) == {} then del(.attribution) else . end' \
+      "$SETTINGS" > "$tmp"
+  # Validate the produced file before replacing — never leave settings.json malformed.
+  if ! jq empty "$tmp" 2>/dev/null || [ ! -s "$tmp" ]; then
+    rm -f "$tmp"
+    echo "❌ Refusing to write — produced invalid JSON for $SETTINGS"
+    exit 1
+  fi
+  mv "$tmp" "$SETTINGS"
+  echo "✅ attribution left in (default Co-Authored-By trailer restored)"
+  ATTR_RESULT="default (visible)"
+fi
+```
+
+Carry `ATTR_RESULT` (`suppressed` or `default (visible)`) into the Step 8
+summary.
+
 ## Step 7 — Register the scheduled Dispatch task
 
 Skip this step entirely if `REGISTER_SCHEDULE` from Step 1 was "Skip".
@@ -313,6 +453,8 @@ Print a clean summary block:
   The Index MCP:   https://the-index.mikebronner.dev/mcp
   Log directory:    ~/.claude-workbench/dev-team-logs
   Agent config:     ~/.claude-workbench/dev-team-config.json
+  Attribution:      {ATTR_RESULT} in ~/.claude/settings.json
+                    (suppressed = no Co-Authored-By; default (visible) = trailer on)
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
 
@@ -323,8 +465,9 @@ Print a clean summary block:
 ═══════════════════════════════════════════
 ```
 
-Substitute the actual cadence and adjust the scheduled-task line if registration
-was skipped.
+Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
+choice (`suppressed` or `default (visible)`), and adjust the scheduled-task line
+if registration was skipped.
 
 ## Notes
 
@@ -333,6 +476,19 @@ was skipped.
   update flow are safe to re-run. Step 4 always fetches a fresh token, which is
   exactly the desired behavior on re-run (annual refresh is the dominant use
   case).
+- **Why dev-team owns commit attribution.** The harness re-injects a
+  `Co-Authored-By: Claude` commit trailer (and a PR footer) whenever the
+  `attribution` key is absent from `settings.json` — so the key is an orphan that
+  drifts back to the default unless something owns it. Dev-team owns commit
+  conventions, so it owns this too. Step 6.5 doesn't force a value: it **detects
+  the current state, prompts the user** (suppress vs. leave the trailer in), and
+  **applies the choice in either direction** — suppressing sets
+  `.attribution.commit/pr = ""`, leaving-in deletes those two keys (and the now-
+  empty `.attribution` object) so the harness default returns. Both branches are
+  non-destructive (only the two `attribution` keys are touched; every other key
+  is preserved), refuse to touch a malformed `settings.json`, validate the
+  produced JSON before replacing the real file, and write nothing when the file
+  already matches the chosen end-state.
 - **OAuth token lifetime.** The Index issues 1-year tokens via
   client_credentials. Schedule a calendar reminder, or just re-run this command
   any time `claude mcp list` shows `the-index` as `Failed to connect`.
