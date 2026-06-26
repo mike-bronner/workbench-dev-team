@@ -297,9 +297,12 @@ request-changes restatement: follow-ups become tracked *issues* only on the
 **approve** path, which has no Watson round-trip; on a bounce they're yours to
 build.)
 
-Under Holmes's locality rule, *every* actionable finding about the code this PR
-touched is already a blocker, so these follow-ups are general observations about
-code *outside* this PR's diff. Implementing them widens the diff past the
+Under Holmes's coupling rule, *every* actionable finding about the code this PR
+touched — **and any untouched code this PR's change made stale, inconsistent, or
+wrong** (coupling beats locality) — is already a blocker. So the items left in the
+non-blocking section are the genuine remainder: soft observations about code
+*outside* this PR's diff that the change *didn't* cause (they'd still be true if
+this PR had never happened). Implementing them widens the diff past the
 original AC — that's intended here; Holmes re-reviews the enlarged diff on the
 next round, and anything actionable in the lines you add is then a blocker, same
 as always.
