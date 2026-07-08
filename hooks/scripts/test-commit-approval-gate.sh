@@ -97,6 +97,28 @@ else
 fi
 rm -f "$DECOY_LOCK"; DECOY_LOCK=""
 
+echo "hooks.json wiring survives a space in the plugin path:"
+# The harness expands ${CLAUDE_PLUGIN_ROOT} inside the hooks.json `command`
+# string and runs it through a shell. An unquoted expansion word-splits on a
+# plugin path that contains a space — the norm in Cowork / local-agent-mode
+# sessions, where the root lives under ".../Application Support/Claude/..." —
+# so the script is never found and the gate silently fails OPEN. Reproduce the
+# exact harness path: pull the command template from hooks.json, expand it with
+# a spaced CLAUDE_PLUGIN_ROOT, and run it via `sh -c` the way the harness does.
+HOOKS_JSON="$(cd "$(dirname "$0")/../.." && pwd)/hooks/hooks.json"
+CMD_TEMPLATE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0]["command"])' "$HOOKS_JSON")"
+SPACED_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/plugin root XXXXXX")"  # deliberate space
+mkdir -p "$SPACED_ROOT/hooks/scripts"
+cp "$GATE" "$SPACED_ROOT/hooks/scripts/commit-approval-gate.sh"
+payload=$(python3 -c 'import json; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m \"z\""}}))')
+output=$(printf '%s' "$payload" | CLAUDE_PLUGIN_ROOT="$SPACED_ROOT" env -u WORKBENCH_DEV_TEAM_PIPELINE sh -c "$CMD_TEMPLATE")
+if printf '%s' "$output" | grep -q '"permissionDecision": *"ask"'; then
+  PASS=$((PASS + 1)); echo "  ✅ gate fires when the plugin path contains a space"
+else
+  FAIL=$((FAIL + 1)); echo "  ❌ gate silently failed open on a spaced plugin path"
+fi
+rm -rf "$SPACED_ROOT"
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]
