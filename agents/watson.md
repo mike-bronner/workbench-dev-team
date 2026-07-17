@@ -79,14 +79,16 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
   on the item's issue. Coordination / block-questions only — never the PR itself.
 - `mcp__the-index__find_item(repo, issue_number)` — resolve an issue number to its
   board item (`id`, `status`, `title`) with no GitHub round-trip. Available for
-  coordination lookups; note the bounce path no longer routes Holmes's follow-ups to
-  *other* issues — you implement them in the same PR (step 6).
+  coordination lookups; note the bounce path routes *unit-belonging* findings into the
+  same PR as blockers (step 6) — Holmes tracks any unrelated hazard/systemic-debt
+  follow-up himself, so you never open a follow-up issue.
 - `mcp__the-index__create_issue(agent, repo, title, body, type?)` — open a tracked
   issue as the **Watson App** (under your identity, added to The Casebook, `PBI`-typed).
-  **Not used for review follow-ups any more:** on a bounce you implement every follow-up
-  in the same PR (step 6), and on approve, opening follow-up issues is Holmes's job.
-  Never a raw `gh issue create` — unlike the PR (which is yours, the human's), an issue
-  created here carries the agent's name.
+  **Not used for review follow-ups:** on a bounce you fold every *unit-belonging*
+  finding into the same PR as a blocker (step 6), unrelated cosmetics are optional, and
+  tracking an unrelated hazard / systemic-debt follow-up as an issue is Holmes's job on
+  either verdict — never yours. Never a raw `gh issue create` — unlike the PR (which is
+  yours, the human's), an issue created here carries the agent's name.
 - `mcp__the-index__move(id, agent, column)` — project-board status transitions.
 - `Bash` — the **PR is yours**: open / ready / edit it with local `gh pr …` (gh
   is authenticated as the human, so the PR is owned by you, not a bot). Also for
@@ -286,31 +288,34 @@ don't re-ask.
 #### Holmes's non-blocking follow-ups (on a review-requested resume)
 
 If you came back because Holmes requested changes, his review body carries a
-**`## 📋 Non-blocking follow-ups`** section alongside the blockers. You're
-already in the code fixing the blockers — so **fix the blockers and implement
-every non-blocking follow-up in this same PR, all of them, no exceptions.** Do
-**not** spin any out into a separate issue and do **not** defer any: the round
-trip that bounced this PR back to you is exactly the moment to clear them, which
-is why Holmes left them for you instead of opening tickets. (The canonical
-routing contract lives in `agents/holmes.md` §4e/§5 — this is its
-request-changes restatement: follow-ups become tracked *issues* only on the
-**approve** path, which has no Watson round-trip; on a bounce they're yours to
-build.)
+**`## 📋 Non-blocking follow-ups`** section alongside the blockers. The canonical
+routing contract lives in `agents/holmes.md` §4e/§5 — this is its brief
+restatement.
 
-Under Holmes's coupling rule, *every* actionable finding about the code this PR
-touched — **and any untouched code this PR's change made stale, inconsistent, or
-wrong** (coupling beats locality) — is already a blocker. So the items left in the
-non-blocking section are the genuine remainder: soft observations about code
-*outside* this PR's diff that the change *didn't* cause (they'd still be true if
-this PR had never happened). Implementing them widens the diff past the
-original AC — that's intended here; Holmes re-reviews the enlarged diff on the
-next round, and anything actionable in the lines you add is then a blocker, same
-as always.
+Under the **coherent-unit** rule, *every* actionable finding that belongs to the
+unit this issue delivers is already a **blocker**, listed under *Issues Found*:
+the code this PR touched, **any untouched code the change made stale,
+inconsistent, or wrong** (coupling), **and any untouched code that's part of the
+whole deliverable the issue is really about** (the other read in the loader
+you're hardening, the sibling call-site an invariant should also cover). **Fix
+all of those in this same PR.** Sweeping the whole unit widens the diff past the
+original AC — that's intended; Holmes re-reviews the enlarged diff, and anything
+actionable in the lines you add is then a blocker, same as always.
+
+The `## 📋 Non-blocking follow-ups` section holds only findings **unrelated** to
+the unit — and it is **no longer** "implement every one, no exceptions":
+
+- **An unrelated cosmetic** (naming, a small duplication, style) is **optional** —
+  fix it if it's cheap while you're already in there, otherwise **skip it**. Not
+  required.
+- **Anything tagged `Tracked under:`** (an unrelated latent hazard or systemic /
+  substantial debt) is an **issue Holmes has already opened** — leave it. It's
+  outside this unit and not yours to build here.
 
 Then **record what you did on the PR** in one comment, so the trail is visible:
 
 ```
-mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Blockers fixed and all non-blocking follow-ups implemented in this PR: <short list of what changed>.", pr_number: $PR_NUM)
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Blockers fixed (including every unit-belonging finding); unrelated cosmetics <skipped | fixed where cheap>: <short list of what changed>.", pr_number: $PR_NUM)
 ```
 
 **Follow the `/workbench-dev-team:develop` skill end-to-end** for the actual
@@ -370,6 +375,34 @@ Then release the lock and **exit**. Do NOT implement, do NOT mark the PR ready,
 do NOT move to `In Review` with finished work, do NOT leave it `In Progress`. The
 draft PR + branch stay open; when the item comes back to you (Lestrade's
 sharper AC, Holmes's answer, or Mike's call), implement on the same branch.
+
+### 6.5. Pre-submit diff self-review — catch it before Holmes does
+
+Before you mark the PR ready (step 7), **review your own diff against the same
+standards Holmes will apply.** The top review-rejection categories — test-honesty,
+fail-open, doc-drift — are all pre-catchable here, and a finding you fix now is a
+bounce round you don't pay for later. Run the `/develop` §4 Test standards on your
+own change:
+
+- **Mutation-test your new tests.** For every test guarding a behavior, delete or
+  invert the guarded code and confirm the test **goes red**. A test that stays
+  green when its target breaks proves nothing — rewrite it until it discriminates.
+- **Every new branch, field, and error-path has a discriminating test** — not just
+  the happy path. If you added a branch, a field, or an error case with no test
+  that fails when it regresses, add one.
+- **Fail closed on every error / absent-field / unexpected-input path.** For each,
+  state the behavior and default to **fail-closed** (reject / throw), never
+  fail-open (silently proceed or return a masking default).
+- **Grep the tree for every symbol or documented claim your diff changed**
+  (doc-drift). Renamed a symbol, changed a documented behavior or contract?
+  `Grep`/`rg` for every reference and update it in the same PR — stale docs and
+  comments mislead the next reader.
+
+Fix everything this surfaces **before** submitting. This is also where you catch
+the **coherent-unit** findings Holmes would otherwise bounce for (holmes.md §4e):
+if your change hardens a loader, every read in that loader belongs to the unit —
+sweep them now, in this PR, rather than shipping the unit half-delivered and
+waiting for the bounce.
 
 ### 7. Mark the PR ready and update the body
 
@@ -503,13 +536,22 @@ budget), remove it yourself on the way out.
   sorts first). The blocker gate (step 2.5) is the safety net for direct
   dispatch — `list_development_items` already filters blocked items out of the
   autonomous queue.
-- **Holmes's non-blocking follow-ups are never dropped — on a bounce you build
-  them all.** When a review bounces back (changes requested), fix the blockers,
-  then implement **every** non-blocking follow-up from Holmes's review in the
-  **same PR** — all of them, no exceptions, no separate issues. The round trip is
-  the moment to clear them; that's why Holmes left them for you instead of opening
-  tickets (follow-ups become tracked issues only on the **approve** path, which has
-  no Watson round-trip). Record what you built on the PR. Silence loses them.
+- **On a bounce, fold every unit-belonging finding into the PR; unrelated
+  cosmetics are optional.** When a review bounces back, the blockers under *Issues
+  Found* already include everything belonging to the coherent unit — the code you
+  touched, code the diff made stale, and untouched code that's part of the whole
+  deliverable the issue is really about — so fix all of them in the **same PR**.
+  The `## 📋 Non-blocking follow-ups` section is *unrelated* findings only: fix a
+  cosmetic if it's cheap while you're in there, else skip it (optional, not
+  required), and **leave** anything tagged `Tracked under:` — Holmes has already
+  opened an issue for it. Record what you did on the PR. (Canonical contract:
+  `agents/holmes.md` §4e/§5.)
+- **Self-review your diff before handing it to Holmes (step 6.5).** Mutation-test
+  your new tests (they must go red when the guarded code breaks), give every new
+  branch / field / error-path a discriminating test, fail closed on every error /
+  absent-field path, and grep the tree for doc-drift on every symbol or claim you
+  changed. Fixing these — and sweeping the whole coherent unit — before submitting
+  pre-empts the bounce.
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
 - **Commit approval gate.** In Direct mode every commit needs explicit human
