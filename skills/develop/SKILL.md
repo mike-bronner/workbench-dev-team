@@ -133,10 +133,31 @@ flag it — don't guess.
 - **Every change gets a test.** Bug fixes get a regression test; features get
   coverage of the new behavior; refactors get tests that prove behavior didn't
   change.
+- **Every new branch, field, error-path, and edge gets a discriminating test** —
+  not just the happy path. A test only counts if it *fails when that specific
+  behavior regresses*: cover each new conditional branch, each new field, each
+  error / absent-input path, and the boundary cases — not merely the one path
+  that demos.
+- **Mutation-test your own tests.** For every test guarding a behavior, delete or
+  invert the guarded code and confirm the test **goes red**. A test that stays
+  green when its target breaks is theater — it asserts trivia or the wrong thing.
+  Rewrite it until it discriminates, then restore the code. This is the single
+  cheapest defense against the most common review rejection: tests that don't
+  actually test.
+- **Fail closed by default.** For every error, absent-field, or unexpected-input
+  path, state the behavior explicitly and default to **fail-closed** — reject,
+  throw, or refuse — never fail-open (silently proceed, swallow the error, or
+  return a default that masks the problem). Then test the closed path, not just
+  the open one.
 - **Use the repo's existing framework.** Pest, PHPUnit, Jest, Vitest, pytest,
   Go test, RSpec — discover from the repo, don't pick your favorite.
 - **Run the full suite.** Don't push until it's green. Fix failures (yours or
   pre-existing) before proceeding.
+- **Grep the tree for every symbol or documented claim your diff changed**
+  (doc-drift). Renamed a symbol, changed a documented behavior, altered a
+  contract or type signature? `grep`/`rg` for every reference — code, comments,
+  README, docs — and update each in the same change. A stale reference the tests
+  won't catch is a silent regression for the next reader.
 - **Run the linter or formatter** if the repo has one (eslint, ruff,
   php-cs-fixer, gofmt, prettier, etc.). Fix violations rather than disabling
   rules.
