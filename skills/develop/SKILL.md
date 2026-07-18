@@ -78,6 +78,15 @@ flag it — don't guess.
   Inventing requirements creates the wrong thing well.
 - **Stay scoped.** Only change what the task requires. Unrelated cleanup goes in
   a separate change — note it, don't fold it in.
+- **Read the review-learnings digest first, if one exists.** In the dev-team
+  pipeline a Harvester distils the team's recurring review rejections into a
+  top-lessons digest — the concrete prevention rules for the traps that most often
+  bounce a PR (test-honesty, fail-open, doc-drift lead the list). If
+  `dev-team/top-lessons.md` exists in the memory vault (resolve the vault root from
+  workbench-core's config — override env → `.memory_path` in config.json → default
+  `~/Documents/Claude/Memory`), read it and apply every rule to what you're about to
+  write. Absent (no harvest yet, or not a vault-equipped host)? Skip it and rely on
+  §4 below — never block on its absence.
 
 ## 3. Implement
 

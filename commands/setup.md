@@ -233,7 +233,8 @@ else
   "agents": {
     "lestrade": { "model": "sonnet", "effort": "high", "fallback": "haiku" },
     "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 7.00, "fallback": "sonnet" },
-    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
+    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" },
+    "harvester": { "model": "sonnet", "effort": "high", "fallback": "haiku" }
   }
 }
 EOF
@@ -246,10 +247,14 @@ and budget caps, read by both dispatch paths: the scheduled Dispatch task passes
 `--model` / `--effort` / `--fallback-model` / `--max-budget-usd` from it, and the
 `/workbench-dev-team:orchestrate` skill reads it for interactive sub-agent
 dispatch. Setup never overwrites an existing config — the user's edits stick
-across plugin updates and re-runs. All three agents run effort-capable models:
+across plugin updates and re-runs. All four agents run effort-capable models:
 `xhigh` for the long-horizon agentic roles (Watson's development runs, Holmes's
-reviews), `high` for Lestrade's bounded triage — note `xhigh` is not supported on
-Sonnet, so Lestrade's ceiling short of `max` is `high`. Holmes's optional `fanout`
+reviews), `high` for Lestrade's bounded triage and the Harvester's daily
+review-learnings sweep — note `xhigh` is not supported on Sonnet, so the two
+Sonnet agents' ceiling short of `max` is `high`. The optional
+`harvester.minIntervalHours` (default `24`) sets how often Dispatch's harvest gate
+lets the Harvester run — raise it to harvest less often, all defaulting cleanly
+when absent. Holmes's optional `fanout`
 (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel`
 (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run
 on — both default cleanly when absent. The optional `fallback` knob (a
@@ -458,7 +463,8 @@ Print a clean summary block:
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
 
-  Agents:           Lestrade (Sonnet), Holmes (Opus, $7 cap), Watson (Opus, $10 cap)
+  Agents:           Lestrade (Sonnet), Holmes (Opus, $7 cap), Watson (Opus, $10 cap),
+                    Harvester (Sonnet, daily review-learnings sweep)
                     — models/effort/fallback/budget editable in the agent config
 
   Verify in Claude Code's scheduled-tasks panel.

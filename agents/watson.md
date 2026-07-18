@@ -278,6 +278,31 @@ gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 [ -n "$PR_NUM" ] && gh pr view "$PR_NUM" -R <repo> --json comments
 ```
 
+#### Read the top-lessons digest before coding
+
+Before you write any code, read the pipeline's **top-lessons digest** — the
+recurring review-rejection categories the Harvester distils from Holmes's past
+change-requests, each with the concrete prevention rule that pre-empts it. It's a
+plain markdown file in the memory vault (you have `Read`, not a memory tool, so read
+it off disk). Resolve the vault root the same way workbench-core does — override env
+→ config.json → default — then read the digest:
+
+```bash
+CFG="$HOME/.claude/plugins/data/workbench-core-claude-workbench/config.json"
+CFG_LEGACY="$HOME/.claude/plugins/data/workbench-claude-workbench/config.json"
+[ ! -f "$CFG" ] && [ -f "$CFG_LEGACY" ] && CFG="$CFG_LEGACY"
+VAULT="${WORKBENCH_MEMORY_PATH:-$(jq -r '.memory_path // empty' "$CFG" 2>/dev/null)}"
+VAULT="${VAULT:-$HOME/Documents/Claude/Memory}"
+LESSONS="$VAULT/dev-team/top-lessons.md"
+[ -f "$LESSONS" ] && cat "$LESSONS"   # then Read it and apply every rule to your diff
+```
+
+**Apply every prevention rule in the digest to the code you're about to write** —
+these are the exact traps Holmes has bounced PRs for (test-honesty, fail-open,
+doc-drift lead the list). Applying them now is a bounce round you don't pay for
+later. **Degrade gracefully:** if the file doesn't exist yet (no harvest has run),
+skip this and rely on the `/develop` §4 standards — never block on its absence.
+
 If you previously routed a block (see "If a fork blocks you" below), the
 answer is waiting where the resolver replied: sharpened AC in the issue body
 (scope — Lestrade rewrites the AC section), Mike's reply in the issue
@@ -546,6 +571,12 @@ budget), remove it yourself on the way out.
   required), and **leave** anything tagged `Tracked under:` — Holmes has already
   opened an issue for it. Record what you did on the PR. (Canonical contract:
   `agents/holmes.md` §4e/§5.)
+- **Read the top-lessons digest before coding (step 6).** The Harvester distils
+  Holmes's recurring change-request categories into a `dev-team/top-lessons.md`
+  digest in the memory vault, each with a concrete prevention rule. Resolve the
+  vault root from workbench-core's config and read it off disk (you have `Read`, no
+  memory tool); apply every rule to your diff. Degrade gracefully if it doesn't
+  exist yet — never block on its absence.
 - **Self-review your diff before handing it to Holmes (step 6.5).** Mutation-test
   your new tests (they must go red when the guarded code breaks), give every new
   branch / field / error-path a discriminating test, fail closed on every error /
