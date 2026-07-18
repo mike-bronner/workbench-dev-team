@@ -6,13 +6,15 @@ A Claude Code plugin that runs a three-agent development pipeline against a GitH
 
 You work out of a GitHub project board. New issues land with no acceptance criteria. Well-refined ones sit in `Ready`. Work-in-progress has open draft PRs. PRs waiting on review pile up.
 
-This plugin runs three agents on a local 20-minute clock to move items through the pipeline for you:
+This plugin runs a team of agents on a local 20-minute clock — three move items through the pipeline for you, and a fourth records what the reviews teach so the team stops repeating itself:
 
 - **Inspector Lestrade** (Sonnet) — triage. Reads items in the `Inbox` lane, writes acceptance criteria as a managed follow-up comment on the issue (the description is left untouched), scores WSJF, moves them to `Backlog` for your review. The WSJF write also lands two GitHub-native issue attributes The Index derives server-side: the issue **Type** (`PBI`) and an issue-level **Priority** (`Urgent/High/Medium/Low`) mapped from the WSJF — org-repo-only and best-effort. Also runs **blocker + consolidation sweeps**: after a repo gets fresh triage work, he re-reads all of its open issues and (1) marks blocked-by dependencies (native GitHub issue dependencies, additive only) so blocked items stay out of Dr. Watson's queue, and (2) consolidates follow-ups — folds `expand-from` comments into the issue they target and merges unmistakable near-duplicate follow-ups into the earliest anchor (native duplicate-close, high bar, ambiguous clusters flagged not closed) so the backlog stops sprawling.
 - **Dr. Watson** (Opus, $10/run cap) — development. Has two modes: **The Index mode** (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`) and **Direct mode** (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context). Both modes follow the `/develop` skill for the actual coding.
 - **Sherlock Holmes** (Opus parent, Sonnet lenses, $7/run cap) — code review. Reviews open PRs, approves or requests changes. Escalates to you after 3 change rounds — but your input resets that count: comment, review, or weigh in on the PR and the window restarts from your last word, so an escalated PR you've decided on gets a fresh review instead of bouncing straight back. Reviews fan out across blind, read-only lens sub-agents (AC conformance, correctness, security, test honesty), with every blocker adversarially verified before it lands; only the parent writes, so there's still exactly one App-signed verdict. Falls back to a single inline pass when the fan-out is unavailable. Findings route by the **coherent unit of work** — *what the issue is really about* — then coupling and locality: a finding that **belongs to the unit blocks and is fixed in this PR**, even in untouched code the diff never caused, because a half-delivered unit is itself the defect. On top of that, anything actionable in the code a PR touched blocks (request changes, however minor), a hard correctness/security/test defect blocks wherever it lives, and — coupling beating locality — untouched code the diff made stale, inconsistent, or wrong blocks too. The self-test: *block and fix here if EITHER the diff caused it OR it belongs to the coherent unit* — a follow-up only when both are false. The precise routing rule lives in Holmes's canonical review contract (`agents/holmes.md`, §4e/§5). The **non-blocking follow-up tier is then gated by materiality, default-deny**: it holds only findings *unrelated* to the unit, and most of those — one-off cosmetics (naming, small duplication, style) — are **noted in the verdict, not tracked**. Only an unrelated **latent hazard** (security/data-integrity/correctness not live enough to block) or **systemic/substantial debt** (a schedulable chunk with its own testable "done") earns **one tracked issue**, tagged `Tracked under:`, capped at one new anchor per PR — the materiality bar that stops the follow-up flood. When Holmes does track, he **expands the earliest related open issue** in place (a comment Lestrade folds into its acceptance criteria) rather than opening a near-duplicate, and opens a new anchor via `create_issue` (App-signed as Holmes, board-added and `PBI`-typed) only when nothing related exists. A class of sites violating one *invariant* (a containment guard, a null-check, a helper every caller owes) is swept whole: if the class belongs to the unit it's folded into the PR; if it's an unrelated anti-pattern agents will replicate it becomes **one umbrella issue with a checkbox per site** — either way closing the class at once rather than minting a fresh single-site issue every review, the treadmill that otherwise turns one finding into an endless `#A → #B → #C` chain. A finding gets the **same disposition regardless of verdict**, so a clean PR never generates more tracked work than a messy one: on a change request, unit-belonging findings are blockers Watson folds into the **same PR**, unrelated cosmetics are optional (fix if cheap, else skip), and the unrelated hazard/debt tier is tracked exactly as on approval.
 
-A fourth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
+- **The Harvester** (Sonnet, daily) — the pipeline's **feedback loop**. Lestrade, Watson, and Holmes have no memory of their own reviews: nothing records *what* Holmes rejects, *why*, or *how* it gets fixed, so the same lessons get re-taught every review (test-honesty is ~38% of all rejections, fail-open ~11%, doc-drift ~11%). Once a day the Harvester mines Holmes's `CHANGES_REQUESTED` reviews across the governed repos, categorizes each rejection against a fixed taxonomy, correlates it to the bounce commits that resolved it, and records each as a **consequential event** — a rejection, its fix, or an escalation — in a `dev-team/review-learnings.md` note in the memory vault, plus a distilled `dev-team/top-lessons.md` digest (the recurring categories, frequency-ranked, each with the concrete prevention rule). **Watson reads that digest before coding**, so the pipeline learns instead of repeating itself. It's idempotent via a per-repo high-water mark (reruns add only new events) and backfills all history on the first run. Records consequential events only — never "the harvester ran," a tick, or a no-op pass.
+
+A fifth component — **Dispatch** — is the local scheduled task that polls the board every 20 minutes and fires the right agent for each pending item, then runs the daily harvest. Dispatch is the only thing that's scheduled; the four agents run as dispatched subprocesses.
 
 ## Install
 
@@ -87,7 +89,8 @@ Per-agent model, effort, fallback chain, and budget caps live in a single file, 
   "agents": {
     "lestrade": { "model": "sonnet", "effort": "high", "fallback": "haiku" },
     "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 7.00, "fallback": "sonnet" },
-    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
+    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" },
+    "harvester": { "model": "sonnet", "effort": "high", "fallback": "haiku" }
   }
 }
 ```
@@ -97,7 +100,7 @@ Both dispatch paths read it:
 - **Scheduled (Dispatch)** passes `--model`, `--effort` (only when set), `--fallback-model` (only when set), and `--max-budget-usd` on each `claude -p` invocation. CLI flags override agent frontmatter (verified empirically), so a config edit takes effect on the next tick — no plugin files to touch.
 - **Interactive (`orchestrate`)** passes the config's `model` as the Agent tool's per-invocation model override. The Agent tool has no per-invocation effort, budget, or fallback parameter — interactive sub-agents inherit the session's effort level, and `maxBudgetUsd`/`fallback` apply to the scheduled path only (a model error there surfaces immediately for you to handle).
 
-Holmes also carries two optional review knobs: `fanout` (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run on. Both default cleanly when absent. The optional `fallback` knob (any agent) is a comma-separated model list handed to `--fallback-model`, so a dispatch degrades to the next model when the primary is overloaded or unavailable — e.g. a retired model — instead of failing; `maxBudgetUsd` caps per-run spend (Watson defaults to `10.00`; Holmes's is optional). All default cleanly when absent.
+Holmes also carries two optional review knobs: `fanout` (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run on. Both default cleanly when absent. The Harvester carries one optional knob, `minIntervalHours` (default `24`), which sets how often Dispatch's harvest gate lets it run. The optional `fallback` knob (any agent) is a comma-separated model list handed to `--fallback-model`, so a dispatch degrades to the next model when the primary is overloaded or unavailable — e.g. a retired model — instead of failing; `maxBudgetUsd` caps per-run spend (Watson defaults to `10.00`; Holmes's is optional; the Harvester is uncapped — it's a cheap Sonnet sweep). All default cleanly when absent.
 
 The agent definitions carry matching frontmatter defaults (`model: sonnet|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
 
@@ -130,7 +133,7 @@ You'll be prompted in chat for any of these Keychain entries that aren't already
 4. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/` and **writes the default agent config** to `~/.claude-workbench/dev-team-config.json` if (and only if) it doesn't already exist.
 5. **Registers the scheduled Dispatch task** by calling `mcp__scheduled-tasks__create_scheduled_task` (or `update_scheduled_task` if it already exists) directly from the running session. Task ID: `workbench-dev-team-dispatch`. Cron: `*/20 * * * *` (or `*/30` if you chose 30 min).
 
-Re-run the skill any time you need to refresh the OAuth token, re-register the MCP, or change the Dispatch cadence.
+Re-run the skill any time you need to refresh the OAuth token, re-register the MCP, or change the Dispatch cadence. **Also re-run it after a plugin update that changes Dispatch's flow** (like the addition of the daily harvest): step 5 reads `scheduled-tasks/orchestrator.md`, strips its frontmatter, and passes the **body** as the scheduled task's prompt, so the deployed task holds a *baked-in copy*. A plugin update refreshes the file on disk but not the running task — the re-run redeploys the fresh orchestrator body. (Agent definitions and skills are read live per dispatch, so those need no re-run — only the scheduled Dispatch prompt is baked in.)
 
 ## How it works
 
@@ -142,10 +145,15 @@ GitHub webhook ──► The Index (MCP server, OAuth 2.1)
      scheduled Dispatch task (every 20 min, local)
                               │
                               ▼ nohup claude -p --agent ... &
-            ┌─────────────────┼─────────────────┐
-            ▼                 ▼                 ▼
-        Lestrade            Holmes              Watson
-        (Sonnet)            (Opus, $7 cap)      (Opus, $10 cap)
+            ┌───────────┬───────────┬───────────┬───────────┐
+            ▼           ▼           ▼           ▼
+        Lestrade      Holmes      Watson     Harvester
+        (Sonnet)    (Opus,$7)   (Opus,$10)   (Sonnet, daily)
+                                                  │
+                                                  ▼ reads/writes
+                                          memory vault ◄─── Watson reads
+                                       (review-learnings +   top-lessons
+                                        top-lessons digest)  before coding
 ```
 
 Every 20 minutes, the Dispatch scheduled task wakes up and:
@@ -153,9 +161,14 @@ Every 20 minutes, the Dispatch scheduled task wakes up and:
 1. Calls `mcp__the-index__list_unrefined_items()` → fires Lestrade for each item returned, plus one blocker sweep (`Repo sweep: <owner/repo>`) per distinct repo among those items.
 2. Calls `mcp__the-index__list_review_items()` → fires Holmes for each item returned.
 3. Calls `mcp__the-index__list_development_items(limit=1)` → fires Watson on the top item (if any).
-4. Exits.
+4. Runs the **harvest gate** — a last-harvest timestamp check. If ≥ 24h since the last harvest, fires the Harvester (a whole-history review-learnings sweep); otherwise skips. At most once/day.
+5. Exits.
 
 Each dispatch is fire-and-forget via `nohup claude -p --agent workbench-dev-team:<name> ... &; disown`. Watson alone can run for hours; Dispatch never blocks.
+
+### The feedback loop
+
+The Harvester closes the loop the three item-lane agents can't: they have no memory of their own reviews, so without it the pipeline re-teaches the same lessons every review. The division of labor keeps Dispatch a thin router — the harvest gate only enforces *"at most once/day"* (a timestamp check, no review content read); the *"only when there's new data"* half lives in the Harvester's per-repo **high-water mark**, so a run with no new rejections records nothing and exits cheaply. Each recorded event is **consequential** — a rejection, the fix that resolved it, or an escalation — never a routine trigger. Fix-correlation is **Option B, best-effort per event**: the Harvester attributes each rejection to the bounce commits pushed in its resolution window (from the change-request to the next review/merge), and when it can't confidently attribute one, it records the rejection alone marked `fix: unattributed` rather than fabricating a fix or dropping the event. The Harvester writes to the **vault's filesystem** (resolved from workbench-core's config: override env → `.memory_path` → default `~/Documents/Claude/Memory`) rather than a memory MCP — a dispatched agent reliably has only The Index MCP, and Watson, the consumer, reads the digest straight off disk (he has `Read`, no memory tool). Governed repos are discovered from The Index board (`list_items` → distinct repos).
 
 ### The Index does the filtering
 
@@ -175,6 +188,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 | Lestrade blocker sweep | Sonnet tokens scaling with open-issue count (reads every open title + body in the repo); fires only on ticks that triaged new items |
 | Holmes review | Opus parent + four blind Sonnet lens sub-agents + adversarial skeptic per review; capped at $7 per run |
 | Watson development | Full Opus session, capped at $10 per run |
+| Harvester (daily) | Sonnet sweep of Holmes's change-requests across governed repos; incremental past the first run (per-repo high-water mark), so most days it's a small read + digest rewrite. The first run backfills all history and is heavier. Fires at most once/day; a no-op day writes nothing. |
 
 Dispatch runs on your Claude Code default model (scheduled tasks don't expose a model selector). Since each tick is under 3K tokens, the default model's cost is negligible even if it's Sonnet.
 
@@ -187,7 +201,8 @@ Two ways to invoke the same agents, same definitions:
 
 ## Monitoring
 
-- **Agent logs.** `~/.claude-workbench/dev-team-logs/<agent>-<item>-<timestamp>.log` — full agent output per dispatch.
+- **Agent logs.** `~/.claude-workbench/dev-team-logs/<agent>-<item>-<timestamp>.log` — full agent output per dispatch. The Harvester has no item, so its logs are `harvester-<timestamp>.log`, and its last-run timestamp is `~/.claude-workbench/dev-team-logs/.last-harvest`.
+- **Review-learnings notes.** `dev-team/review-learnings.md` (the consequential-event archive + high-water marks) and `dev-team/top-lessons.md` (the digest Watson reads) in your memory vault. An empty or absent pair means no harvest has landed yet.
 - **Scheduled task panel.** Claude Code's scheduled-tasks panel shows the Dispatch task's run history and next-run time.
 - **Project board.** Items flow Inbox → Backlog → Ready → In Progress → In Review → Approved / Escalated. Status drift (items stuck in a column) is your canary.
 
