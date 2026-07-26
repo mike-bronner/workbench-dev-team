@@ -184,7 +184,6 @@ nohup claude -p --agent workbench-dev-team:lestrade \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
   ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
   --dangerously-skip-permissions \
-  --no-session-persistence \
   "Item ID: $ID" \
   > "$HOME/.claude-workbench/dev-team-logs/lestrade-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
@@ -208,7 +207,6 @@ nohup claude -p --agent workbench-dev-team:lestrade \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
   ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
   --dangerously-skip-permissions \
-  --no-session-persistence \
   "Repo sweep: $REPO" \
   > "$HOME/.claude-workbench/dev-team-logs/lestrade-sweep-$SLUG-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
@@ -247,7 +245,6 @@ nohup claude -p --agent workbench-dev-team:holmes \
   ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
   ${BUDGET:+--max-budget-usd} ${BUDGET:+"$BUDGET"} \
   --dangerously-skip-permissions \
-  --no-session-persistence \
   "Item ID: $ID" \
   > "$HOME/.claude-workbench/dev-team-logs/holmes-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
 disown
@@ -285,7 +282,6 @@ nohup claude -p --agent workbench-dev-team:watson \
   ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
   ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
   --dangerously-skip-permissions \
-  --no-session-persistence \
   --max-budget-usd "$BUDGET" \
   "Item ID: $ID" \
   > "$HOME/.claude-workbench/dev-team-logs/watson-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
