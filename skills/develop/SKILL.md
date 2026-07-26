@@ -79,12 +79,13 @@ flag it — don't guess.
 - **Stay scoped.** Only change what the task requires. Unrelated cleanup goes in
   a separate change — note it, don't fold it in.
 - **Read the review-learnings digest first, if one exists.** Holmes records what
-  he rejects and what fixed it directly to the memory vault at re-review (no
-  separate harvester agent). If `dev-team/top-lessons.md` exists (a frequency-ranked
-  digest of recurring rejection categories, each with the concrete prevention rule),
-  read it via the memory MCP and apply every rule to what you're about to write.
-  Absent (nothing recorded yet)? Skip it and rely on §4 below — never block on its
-  absence.
+  he rejects and what fixed it, and a lightweight note on a clean first-pass
+  approve, directly to the memory vault at review time (no separate harvester
+  agent). If `dev-team/top-lessons.md` exists (a frequency-ranked digest of
+  recurring rejection categories, each with the concrete prevention rule, plus a
+  running clean-approval tally above the list for context), read it via the
+  memory MCP and apply every rule to what you're about to write. Absent (nothing
+  recorded yet)? Skip it and rely on §4 below — never block on its absence.
 
 ## 3. Implement
 

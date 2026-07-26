@@ -90,7 +90,7 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
   either verdict — never yours. Never a raw `gh issue create` — unlike the PR (which is
   yours, the human's), an issue created here carries the agent's name.
 - `mcp__the-index__move(id, agent, column)` — project-board status transitions.
-- `mcp__plugin_workbench-core_memory__read` / `mcp__plugin_workbench-core_memory__search` — the memory vault. Holmes records what he rejects and what fixes it at re-review; you read his top-lessons digest and search for anything specific to the work in front of you (step 6, before coding).
+- `mcp__plugin_workbench-core_memory__read` / `mcp__plugin_workbench-core_memory__search` — the memory vault. Holmes records what he rejects and what fixes it at re-review, plus a lightweight note on a clean first-pass approve; you read his top-lessons digest and search for anything specific to the work in front of you (step 6, before coding).
 - `Bash` — the **PR is yours**: open / ready / edit it with local `gh pr …` (gh
   is authenticated as the human, so the PR is owned by you, not a bot). Also for
   `gh` reads, local `git`, and the test/build commands in each cloned repo.
@@ -575,10 +575,11 @@ budget), remove it yourself on the way out.
   `agents/holmes.md` §4e/§5.)
 - **Read the top-lessons digest and search for task-specific learnings before
   coding (step 6).** Holmes records his own rejections and their fixes to the
-  memory vault at re-review — read `dev-team/top-lessons.md` (the frequency-ranked
-  digest) via the memory MCP and apply every rule, then `search` for anything
-  specific to this repo/task. Degrade gracefully if either is empty — never block
-  on their absence.
+  memory vault at re-review, plus a lightweight note on a clean first-pass
+  approve — read `dev-team/top-lessons.md` (the frequency-ranked digest, with a
+  running clean-approval tally above the ranked list) via the memory MCP and
+  apply every rule, then `search` for anything specific to this repo/task.
+  Degrade gracefully if either is empty — never block on their absence.
 - **Self-review your diff before handing it to Holmes (step 6.5).** Mutation-test
   your new tests (they must go red when the guarded code breaks), give every new
   branch / field / error-path a discriminating test, fail closed on every error /
