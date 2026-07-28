@@ -314,30 +314,16 @@ don't re-ask.
 
 #### Holmes's non-blocking follow-ups (on a review-requested resume)
 
-If you came back because Holmes requested changes, his review body carries a
-**`## 📋 Non-blocking follow-ups`** section alongside the blockers. The canonical
-routing contract lives in `agents/holmes.md` §4e/§5 — this is its brief
-restatement.
+If Holmes requested changes, his review already lists every unit-belonging
+finding as a blocker under *Issues Found* — fix all of it in this same PR
+(routing logic is canonical in `agents/holmes.md` §4e/§5; don't re-derive it
+here). The `## 📋 Non-blocking follow-ups` section holds only what's unrelated
+to the unit:
 
-Under the **coherent-unit** rule, *every* actionable finding that belongs to the
-unit this issue delivers is already a **blocker**, listed under *Issues Found*:
-the code this PR touched, **any untouched code the change made stale,
-inconsistent, or wrong** (coupling), **and any untouched code that's part of the
-whole deliverable the issue is really about** (the other read in the loader
-you're hardening, the sibling call-site an invariant should also cover). **Fix
-all of those in this same PR.** Sweeping the whole unit widens the diff past the
-original AC — that's intended; Holmes re-reviews the enlarged diff, and anything
-actionable in the lines you add is then a blocker, same as always.
-
-The `## 📋 Non-blocking follow-ups` section holds only findings **unrelated** to
-the unit — and it is **no longer** "implement every one, no exceptions":
-
-- **An unrelated cosmetic** (naming, a small duplication, style) is **optional** —
-  fix it if it's cheap while you're already in there, otherwise **skip it**. Not
-  required.
-- **Anything tagged `Tracked under:`** (an unrelated latent hazard or systemic /
-  substantial debt) is an **issue Holmes has already opened** — leave it. It's
-  outside this unit and not yours to build here.
+- **Unrelated cosmetic** (naming, small duplication, style) — optional: fix it
+  if it's cheap while you're already in there, otherwise skip it.
+- **Anything tagged `Tracked under:`** — Holmes already opened an issue for it.
+  Leave it; not yours to build here.
 
 Then **record what you did on the PR** in one comment, so the trail is visible:
 
@@ -405,27 +391,15 @@ sharper AC, Holmes's answer, or Mike's call), implement on the same branch.
 
 ### 6.5. Pre-submit diff self-review — catch it before Holmes does
 
-Before you mark the PR ready (step 7), **review your own diff against the same
-standards Holmes will apply.** The top review-rejection categories — test-honesty,
-fail-open, doc-drift — are all pre-catchable here, and a finding you fix now is a
-bounce round you don't pay for later. Run the `/develop` §4 Test standards on your
-own change:
+Before you mark the PR ready (step 7), run the `/develop` §4 Test standards
+against your own diff as if you were Holmes: mutation-test every new test
+(delete/invert the guarded code, confirm it goes red), give every new branch /
+field / error-path a discriminating test, fail closed on every error /
+absent-field / unexpected-input path, and grep the tree for doc-drift on every
+symbol or claim you changed. These are the top review-rejection categories —
+catching them here is a bounce round you don't pay for later.
 
-- **Mutation-test your new tests.** For every test guarding a behavior, delete or
-  invert the guarded code and confirm the test **goes red**. A test that stays
-  green when its target breaks proves nothing — rewrite it until it discriminates.
-- **Every new branch, field, and error-path has a discriminating test** — not just
-  the happy path. If you added a branch, a field, or an error case with no test
-  that fails when it regresses, add one.
-- **Fail closed on every error / absent-field / unexpected-input path.** For each,
-  state the behavior and default to **fail-closed** (reject / throw), never
-  fail-open (silently proceed or return a masking default).
-- **Grep the tree for every symbol or documented claim your diff changed**
-  (doc-drift). Renamed a symbol, changed a documented behavior or contract?
-  `Grep`/`rg` for every reference and update it in the same PR — stale docs and
-  comments mislead the next reader.
-
-Fix everything this surfaces **before** submitting. This is also where you catch
+This is also where you catch
 the **coherent-unit** findings Holmes would otherwise bounce for (holmes.md §4e):
 if your change hardens a loader, every read in that loader belongs to the unit —
 sweep them now, in this PR, rather than shipping the unit half-delivered and
@@ -563,16 +537,9 @@ budget), remove it yourself on the way out.
   sorts first). The blocker gate (step 2.5) is the safety net for direct
   dispatch — `list_development_items` already filters blocked items out of the
   autonomous queue.
-- **On a bounce, fold every unit-belonging finding into the PR; unrelated
-  cosmetics are optional.** When a review bounces back, the blockers under *Issues
-  Found* already include everything belonging to the coherent unit — the code you
-  touched, code the diff made stale, and untouched code that's part of the whole
-  deliverable the issue is really about — so fix all of them in the **same PR**.
-  The `## 📋 Non-blocking follow-ups` section is *unrelated* findings only: fix a
-  cosmetic if it's cheap while you're in there, else skip it (optional, not
-  required), and **leave** anything tagged `Tracked under:` — Holmes has already
-  opened an issue for it. Record what you did on the PR. (Canonical contract:
-  `agents/holmes.md` §4e/§5.)
+- **On a bounce, fix every unit-belonging finding in the same PR; unrelated
+  cosmetics are optional, tracked items are Holmes's, not yours.** Mechanics:
+  step 6 above. Canonical contract: `agents/holmes.md` §4e/§5.
 - **Read the top-lessons digest and search for task-specific learnings before
   coding (step 6).** Holmes records his own rejections and their fixes to the
   memory vault at re-review, plus a lightweight note on a clean first-pass
@@ -580,20 +547,14 @@ budget), remove it yourself on the way out.
   running clean-approval tally above the ranked list) via the memory MCP and
   apply every rule, then `search` for anything specific to this repo/task.
   Degrade gracefully if either is empty — never block on their absence.
-- **Self-review your diff before handing it to Holmes (step 6.5).** Mutation-test
-  your new tests (they must go red when the guarded code breaks), give every new
-  branch / field / error-path a discriminating test, fail closed on every error /
-  absent-field path, and grep the tree for doc-drift on every symbol or claim you
-  changed. Fixing these — and sweeping the whole coherent unit — before submitting
-  pre-empts the bounce.
+- **Self-review your diff before handing it to Holmes (step 6.5, canonical in
+  `/develop` §4).**
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
-- **Commit approval gate.** In Direct mode every commit needs explicit human
-  approval — present diff + message first; the harness hook prompts. In The
-  Index mode the gate is carved out (your live `/tmp/watson.lock` marks the
-  pipeline): board dispatch is the approval, Holmes review + human merge is
-  the gate. Never create the lock or set `WORKBENCH_DEV_TEAM_PIPELINE=1`
-  outside genuine pipeline runs.
+- **Commit approval gate — canonical in `/develop` §5.** Index mode: your live
+  lock (step 1) is what the hook reads as the pipeline carve-out — never
+  create it, or set `WORKBENCH_DEV_TEAM_PIPELINE=1`, outside a genuine
+  pipeline run.
 - **Never hand a red PR to Holmes.** Wait for CI live and drive it green
   (step 8) before moving to `In Review` — fix-and-retry in the same run; don't
   punt a fixable CI failure to the next tick.
