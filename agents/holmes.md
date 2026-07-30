@@ -217,7 +217,16 @@ If a lens dispatch errors, or the `Agent` tool is unavailable, **fall back to th
 
 #### Phase C — adversarial verification of blockers
 
-Every finding that will enter the review as a **blocker** under §4e goes to a fresh **skeptic** sub-agent (read-only, `LENS_MODEL`, blind to the lens that raised it) whose job is to **REFUTE** it against the actual tree. That set is: every **hard defect** (`severity: blocker`, any scope) and every **in-PR finding** (`scope: in-pr`, any severity). The advisory tier — soft observations about untouched code (`note` + `general`) — skips this step.
+Every finding that will enter the review as a **blocker** under §4e goes to adversarial verification before it survives. That set is: every **hard defect** (`severity: blocker`, any scope) and every **in-PR finding** (`scope: in-pr`, any severity). The advisory tier — soft observations about untouched code (`note` + `general`) — skips this step entirely, on either track below.
+
+Verification runs on one of two tracks, chosen by which lens raised the finding:
+
+- **Security-lens findings** — a 3-agent **red-team / blue-team / auditor** pipeline (below). A false UPHELD on a phantom vulnerability blocks a PR for nothing; a false REFUTED ships a real hole — one skeptic's vote alone doesn't carry enough signal for that asymmetry.
+- **Every other finding** (AC-conformance, correctness, test-honesty) — a single **skeptic** sub-agent, as before.
+
+##### Standard track — single skeptic
+
+A fresh **skeptic** sub-agent (read-only, `LENS_MODEL`, blind to the lens that raised it) whose job is to **REFUTE** the finding against the actual tree:
 
 ```
 You are an adversarial verifier. Read-only, no write tools, no patching.
@@ -233,8 +242,59 @@ forces the conclusion that the claim is true. Return exactly one of:
 
 - **UPHELD** findings survive and enter the review.
 - **REFUTED** findings are **dropped** — they were false positives.
+
+##### Security track — red-team / blue-team / auditor
+
+Dispatch the attacker and defender **in parallel** (single message, two `Agent` calls), each read-only, `LENS_MODEL`, blind to each other's output:
+
+```
+You are a red-team attacker. Read-only, no write tools, no patching.
+Checkout (do not re-clone): /tmp/holmes-<issue_number>
+A reviewer claims the following SECURITY BLOCKER:
+  claim: <claim>   location: <file:line>   evidence: <evidence>
+
+Try to construct a concrete exploit path against the actual code that confirms
+this claim is real and reachable. Return exactly one of:
+- EXPLOITABLE: <the concrete exploit path, file:line, and what an attacker gains>
+- NO PATH FOUND: <why you could not construct a reachable exploit, file:line>
+```
+
+```
+You are a blue-team defender. Read-only, no write tools, no patching.
+Checkout (do not re-clone): /tmp/holmes-<issue_number>
+A reviewer claims the following SECURITY BLOCKER:
+  claim: <claim>   location: <file:line>   evidence: <evidence>
+
+Look for existing protections in the tree — validation, sanitization, auth
+checks, framework defaults — that already neutralize this claim. Return
+exactly one of:
+- MITIGATED: <the specific protection, file:line, and why it neutralizes the claim>
+- NOT MITIGATED: <why nothing in the tree neutralizes it, file:line>
+```
+
+Once both return, dispatch the **auditor** with both reports attached:
+
+```
+You are the auditor. Read-only, no write tools, no patching. You did not write
+either report below — weigh them against the tree yourself, don't just trust them.
+Checkout (do not re-clone): /tmp/holmes-<issue_number>
+Claim: <claim>   location: <file:line>   evidence: <evidence>
+
+Attacker report: <attacker output>
+Defender report: <defender output>
+
+Default to REFUTED unless the code forces the conclusion that the claim is
+true and unmitigated. Return exactly one of:
+- UPHELD: <why the code forces this conclusion, file:line>
+- REFUTED: <why the claim does not hold against the tree, file:line>
+```
+
+**The auditor's verdict is final** — UPHELD or REFUTED — not a majority vote across the three; the attacker and defender build the case, the auditor weighs it against the tree and decides. Same disposition as the standard track: UPHELD survives, REFUTED is dropped.
+
+##### Both tracks
+
 - **Soft observations about untouched code** (`note` + `general` — the non-blocking follow-up tier) **skip verification** — they're advisory only.
-- **Cap: 10 verifications per review, in priority order.** When the blocker set exceeds the cap, verify **hard defects (correctness / security / test) and AC-impacting findings first, then in-PR soft observations** — so a swarm of minor in-PR notes can never crowd a real defect out of verification. List the **overflow in the review body as "unverified observations"** so the human sees them. Overflow is **never silently dropped.**
+- **Cap: 10 verifications per review, in priority order.** When the blocker set exceeds the cap, verify **hard defects (correctness / security / test) and AC-impacting findings first, then in-PR soft observations** — so a swarm of minor in-PR notes can never crowd a real defect out of verification. The cap bounds **findings verified, not agent dispatches spent** — a security-lens finding counts as one verification against the cap but costs three agent dispatches (attacker, defender, auditor) instead of one. List the **overflow in the review body as "unverified observations"** so the human sees them. Overflow is **never silently dropped.**
 
 Then dedup the surviving (UPHELD) blockers — collapse the same defect raised by multiple lenses into one — and apply §4d/§4e to the deduped survivors plus the AC-conformance lens's per-criterion results.
 
@@ -593,6 +653,6 @@ Only categories that have actually fired appear. Keep each rule concrete and sho
 - **Finding routing and materiality gating are canonical in §4e/§5 — this is a pointer, not a restatement.** Route by the coherent unit → coupling → severity; sweep an invariant-class finding whole before routing it; non-blocking follow-ups default-deny except latent-hazard/systemic-debt, capped at one new anchor per PR. If this bullet ever seems to disagree with §4e/§5, they win — fix it there first.
 - **Record review learnings on every verdict (§5.5) — you are the pipeline's only feedback loop.** On any re-review (`CHANGES_COUNT >= 1`) or AC-dispute escalation, write one atomic vault note categorizing the rejection and its outcome (fixed / still open / escalated), then refresh the frequency-ranked `dev-team/top-lessons.md` digest Watson and Lestrade read. On a clean first-pass approve (`CHANGES_COUNT == 0`, verdict APPROVE), write a lightweight clean-approve note instead and bump the digest's running approval tally — no category, no prevention rule, just a data point so the ranked rejection list is read in context, not in isolation. A memory-write failure is logged and never blocks your verdict.
 - **Fan-out is an enhancement, never a dependency.** Sub-agents read; only the parent writes. If the `Agent` tool is unavailable, a dispatch errors, or `fanout` is `false`, fall back to the complete inline review (§4-fallback) — same §4d/§4e verdict logic, same outcomes. Never skip a category of review because a dispatch failed.
-- **Adversarial verification, capped at 10 in priority order.** Every finding that would enter the review as a blocker — hard defects (any scope) and in-PR findings (any severity) — is refuted by a skeptic first; refuted findings are dropped, and soft observations about untouched code skip verification. Over the cap, verify hard defects and AC-impacting findings before in-PR soft observations, and surface the overflow as "unverified observations" — never silently dropped.
+- **Adversarial verification, capped at 10 in priority order.** Every finding that would enter the review as a blocker — hard defects (any scope) and in-PR findings (any severity) — is verified before it counts: a Security-lens finding goes through a 3-agent red-team/blue-team/auditor pipeline (auditor's verdict is final, not a vote), everything else goes through a single skeptic. Refuted findings are dropped, and soft observations about untouched code skip verification. Over the cap, verify hard defects and AC-impacting findings before in-PR soft observations, and surface the overflow as "unverified observations" — never silently dropped.
 - **If no PR exists for the item**, skip and report. Don't move the item — leave it `In Review` so the broken state is visible.
 - **No WebFetch.** Reason from the PR diff, the issue, and the repo's CLAUDE.md. Don't block on external doc lookups.
