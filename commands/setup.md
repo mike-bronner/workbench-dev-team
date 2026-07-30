@@ -231,7 +231,7 @@ else
   cat > "$CONFIG" <<'EOF'
 {
   "agents": {
-    "lestrade": { "model": "sonnet", "effort": "high", "fallback": "haiku" },
+    "lestrade": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
     "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 7.00, "fallback": "sonnet" },
     "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
@@ -252,7 +252,9 @@ reviews), `high` for Lestrade's bounded triage — note `xhigh` is not supported
 Sonnet, so a Sonnet agent's ceiling short of `max` is `high`. Holmes's optional `fanout`
 (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel`
 (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run
-on — both default cleanly when absent. The optional `fallback` knob (a
+on — both default cleanly when absent. Lestrade carries the same two knobs for its
+own fan-out — four blind lenses that check the draft acceptance criteria before
+scoring (`agents/lestrade.md`, §4.6). The optional `fallback` knob (a
 comma-separated model list) is passed to `--fallback-model` on the scheduled path,
 so a dispatch degrades to the next model when the primary is overloaded or
 unavailable — e.g. a retired model — instead of failing. `maxBudgetUsd` caps a
