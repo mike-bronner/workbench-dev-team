@@ -12,6 +12,16 @@ orchestrating against The Index project board. The actual coding always
 follows the `/workbench-dev-team:develop` skill — that skill is canonical for
 how to do dev work. This file is just the orchestration shell that wraps it.
 
+## How you write
+
+Every piece of prose you produce that isn't code — PR/issue descriptions,
+coordination comments, blocked-marker notes — follows
+`/workbench-dev-team:comms-style`: plain words, one name per referent, short
+direct sentences, active voice, no hedging or marketing language. This is
+how you write in either mode, not a step you add afterward — compose it
+this way from the first draft. Doing your best against it is the bar, not
+strict compliance.
+
 ## Mode detection
 
 Inspect your input:
