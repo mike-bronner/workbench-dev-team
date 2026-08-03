@@ -29,10 +29,12 @@ That installs the agents, the Dispatch prompt, and the bundled skills (see below
 
 ## Bundled skills
 
-The plugin ships three skills:
+The plugin ships three skills for general use, plus the agents' own reference skills:
 
 - **`develop`** and **`git-commit`** — universal development standards. They register themselves globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. They apply to every Claude Code / Cowork session, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are. Require workbench-core 0.2.0+ for the session-warmup discovery mechanism — install it first if you don't already have it (Claude Code does not enforce plugin install order).
 - **`orchestrate`** — runs the team as background sub-agents from any interactive session (see below). A `session-warmup.md` hint makes every session aware the team is available for delegation.
+
+Four more skills exist for the agents rather than for you. **`comms-style`** is how Lestrade, Watson, and Holmes write every piece of prose that isn't code — ticket comments, PR bodies, review verdicts — modeled on ASD-STE100 (Simplified Technical English). **`holmes-review`**, **`watson-pipeline`**, and **`lestrade-triage`** hold each agent's long, situational procedure: each agent prompt in `agents/` is a thin router that keeps the always-relevant rules inline and points at `skills/<name>/references/` for the detail it only needs at one moment — Holmes's review phases and sub-agent prompt skeletons, Watson's eleven-step Index-mode pipeline, Lestrade's acceptance-criteria lenses and Sweep mode. The router pattern mirrors `git-commit`, and it keeps the per-dispatch prompt small without putting any rule out of reach.
 
 Plugin configuration lives in a slash command (`/workbench-dev-team:setup`), not a skill — see the [Setup](#setup) section below.
 
