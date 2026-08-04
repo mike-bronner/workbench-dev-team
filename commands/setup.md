@@ -443,6 +443,56 @@ with the same four arguments.
 
 Confirm to the user which action was taken (`registered` or `updated`).
 
+### 7d. Pin the router's model and working directory (best effort)
+
+`create_scheduled_task`/`update_scheduled_task` have no `model` or `cwd`
+parameter — Dispatch silently inherits whatever the app resolves as its
+current default at registration time. That default is not guaranteed to be
+Sonnet: a fresh registration has been observed picking up Opus instead,
+roughly doubling the router's per-tick cost with no error or warning. The
+actual value lives outside the MCP tool surface, in the app's own per-profile
+`scheduled-tasks.json` registry — a separate file from the `SKILL.md` Step 7c
+just wrote.
+
+```bash
+TARGET_CWD="$HOME/Developer/workbench-dev-team"
+PATCHED=0
+while IFS= read -r -d '' REG; do
+  jq -e '.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")' "$REG" >/dev/null 2>&1 || continue
+  if ! jq empty "$REG" 2>/dev/null; then
+    echo "⚠  $REG is not valid JSON — skipping"
+    continue
+  fi
+  tmp="$(mktemp)"
+  if [ -d "$TARGET_CWD" ]; then
+    jq --arg cwd "$TARGET_CWD" \
+      '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = "claude-sonnet-5" | .cwd = $cwd)' \
+      "$REG" > "$tmp"
+  else
+    jq '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = "claude-sonnet-5")' \
+      "$REG" > "$tmp"
+  fi
+  if jq empty "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
+    mv "$tmp" "$REG"
+    echo "✅ pinned model=claude-sonnet-5 in $REG"
+    PATCHED=$((PATCHED + 1))
+  else
+    rm -f "$tmp"
+    echo "⚠  produced invalid JSON patching $REG — left untouched"
+  fi
+done < <(find "$HOME/Library/Application Support" -path "*/claude-code-sessions/*/scheduled-tasks.json" -print0 2>/dev/null)
+
+if [ "$PATCHED" -eq 0 ]; then
+  echo "⚠  Could not locate/patch the scheduled-tasks registry — verify manually in the Scheduled panel."
+fi
+```
+
+This edits undocumented internal app state, not a supported API — the file's
+location or shape can change silently on a future app update and this step
+can start finding nothing without any other symptom. That's exactly why
+Step 8 always prints the manual verification line below, regardless of
+whether this step reports success.
+
 ## Step 8 — Final summary
 
 Print a clean summary block:
@@ -459,17 +509,21 @@ Print a clean summary block:
                     (suppressed = no Co-Authored-By; default (visible) = trailer on)
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
+  Router model:     pinned to Sonnet ({PATCHED} registry(ies) patched)
+                    (or: ⚠ could not confirm — verify in the Scheduled panel)
 
   Agents:           Lestrade (Sonnet), Holmes (Opus, $7 cap), Watson (Opus, $10 cap)
                     — models/effort/fallback/budget editable in the agent config
 
-  Verify in Claude Code's scheduled-tasks panel.
+  Verify in Claude Code's scheduled-tasks panel that Dispatch shows Sonnet —
+  Step 7d's patch isn't a supported API and can silently stop working.
 ═══════════════════════════════════════════
 ```
 
 Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
-choice (`suppressed` or `default (visible)`), and adjust the scheduled-task line
-if registration was skipped.
+choice (`suppressed` or `default (visible)`), fill `{PATCHED}` from Step 7d's
+count, and adjust the scheduled-task and router-model lines if registration
+was skipped or the patch found nothing.
 
 ## Notes
 
@@ -494,6 +548,17 @@ if registration was skipped.
 - **OAuth token lifetime.** The Index issues 1-year tokens via
   client_credentials. Schedule a calendar reminder, or just re-run this command
   any time `claude mcp list` shows `the-index` as `Failed to connect`.
+- **Why Step 7d exists.** Discovered 2026-08-04: recreating the scheduled task
+  left it running on Opus instead of Sonnet — roughly double the router's
+  per-tick cost, with no error to notice it by. Root cause: neither
+  `create_scheduled_task` nor `update_scheduled_task` exposes a `model` or
+  `cwd` parameter, so the task inherits the app's default at registration
+  time instead of anything this skill controls. The actual value lives in a
+  per-profile `scheduled-tasks.json` the scheduled-tasks MCP tools don't
+  expose either — Step 7d patches it directly as a best-effort workaround,
+  not a supported fix. If a future Claude Code version changes that file's
+  location or shape, Step 7d quietly patches nothing; the Step 8 reminder to
+  check the Scheduled panel is the backstop for that failure mode.
 - **No headless `claude -p` subprocess.** Earlier versions of this configuration
   spawned a headless `claude -p --dangerously-skip-permissions` to register the
   scheduled task. Inside a slash command the parent session calls
