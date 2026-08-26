@@ -80,7 +80,8 @@ lane, with `In Progress` taking precedence over `Ready` (the resume path).
   issue_number, current status, content_node_id. Pass `blockers: true` to also
   get `has_open_blockers` (`true` | `false` | `null`; `null` = the check could
   not run) and `blocked_by` (an array of `{number, state, title, url}`) — the
-  blocker gate (step 2.5) reads these.
+  blocker gate (step 2.6) reads these. `status` is the item's current Status
+  column, which the status gate (step 2.5) checks — never assume it.
 - `mcp__the-index__add_comment(id, agent, body, pr_number?)` — posts a comment as the
   **Watson App**: on the PR's conversation when `pr_number` is given, otherwise
   on the item's issue. Coordination / block-questions only — never the PR itself.
@@ -124,8 +125,9 @@ What you are loading, so nothing goes unnoticed:
 
 1. Acquire the lock — host-local mutex.
 2. Fetch fresh state.
-2.5. Blocker gate — never touch a blocked item.
-3. Check for existing work (resume detection).
+2.5. Status gate — never work an item outside the `Ready`/`In Progress` lane.
+2.6. Blocker gate — never touch a blocked item.
+3. Check for existing work (resume detection and provenance).
 4. Fresh-work path: move to In Progress.
 5. Clone, branch, draft PR.
 6. Implement, test, commit — the top-lessons read, Holmes's follow-ups, and the fork-classification routing when a real fork blocks you.
@@ -163,13 +165,33 @@ What you are loading, so nothing goes unnoticed:
   mode — before any implementation. Makes progress visible from the start and
   creates the issue↔PR link early.
 - **Always use `Fixes #<issue_number>`** (not "Closes") in the PR body.
+- **Never work an item outside the `Ready`/`In Progress` lane.** If `status` is
+  any other column — or is `null`, which fails closed — leave the item exactly
+  where it is, comment, release the lock, and exit. Never `move` an item into
+  your own lane to justify working it. The status gate (step 2.5) is the
+  mechanics.
+- **Never adopt a branch or PR you did not create.** Resume detection matches
+  by issue number across every branch-type prefix, so a human's branch for the
+  same issue matches too. Only resume on branches carrying Watson's own
+  provenance mark — the `Watson-Branch: #<issue>` commit trailer or the legacy
+  `watson/` prefix. Everything else, including a provenance check that cannot
+  complete, is a human's: comment, leave the status, exit. Never push to their
+  branch and never open a competing PR. Comment **once per branch** — the notice
+  carries a `<!-- watson-hands-off: <branch> -->` marker and you skip it when the
+  issue already has one for that branch, because Dispatch will land you back on
+  this item every tick for the whole life of their PR. A *different* branch has
+  its own marker and still earns its own comment. The mechanics, and why PR
+  authorship cannot serve as the signal, are in step 3.
+- **Keep the `Watson-Branch: #<issue>` trailer on the start-of-work commit**
+  (step 5). It is the only durable provenance mark on a Watson branch. Drop it
+  and the next run hands its own work off to a phantom human.
 - **Resume logic repairs state drift.** If a PR already exists and is
   merged/closed, don't redo work — just move The Index status forward
   and exit.
 - **Never begin or resume work on a blocked item.** A blocked item stays
   exactly where it is (`Ready` or `In Progress`), frozen and untouched, until
   its blocker closes; the normal selection then resumes it (`In Progress`
-  sorts first). The blocker gate (step 2.5) is the safety net for direct
+  sorts first). The blocker gate (step 2.6) is the safety net for direct
   dispatch — `list_development_items` already filters blocked items out of the
   autonomous queue.
 - **On a bounce, fix every unit-belonging finding in the same PR; unrelated

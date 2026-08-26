@@ -13,10 +13,17 @@ modes, so it lives here.
 ## What's here
 
 - `references/index-mode-pipeline.md` — steps 1 through 11, verbatim: acquire the
-  lock, fetch fresh state, the blocker gate, resume detection, the fresh-work
-  path, clone/branch/draft PR, implement and test (including the
-  fork-classification routing), the pre-submit diff self-review, marking the PR
-  ready, driving CI green, moving to In Review, cleanup, and the report.
+  lock, fetch fresh state, the status gate, the blocker gate, resume detection
+  and branch provenance, the fresh-work path, clone/branch/draft PR, implement
+  and test (including the fork-classification routing), the pre-submit diff
+  self-review, marking the PR ready, driving CI green, moving to In Review,
+  cleanup, and the report.
+- `test-resume-detection.sh` — the test for step 3's two shell blocks: the
+  resume-detection verdict and the once-per-branch guard on its `HANDS-OFF`
+  comment. It extracts the shipped snippets from between the
+  `watson-resume-detection` and `watson-handsoff-comment` sentinel markers and
+  runs them against a stub `gh`, so the test cannot drift from the shipped
+  logic. Run: `bash skills/watson-pipeline/test-resume-detection.sh`.
 
 ## How to use it
 
