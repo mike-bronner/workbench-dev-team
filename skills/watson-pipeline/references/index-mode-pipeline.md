@@ -47,12 +47,63 @@ hangs and the lock goes stale, the operator clears it with
 item = mcp__the-index__get_item(<ITEM_ID>, blockers: true)
 ```
 
-From the response: `repo`, `issue_number`, `title`, `status` (either `Ready`
-or `In Progress`), `content_node_id`. With `blockers: true` you also get
-`has_open_blockers` (`true` | `false` | `null`) and `blocked_by` (an array of
-`{number, state, title, url}`) — the blocker gate (step 2.5) reads these.
+From the response: `repo`, `issue_number`, `title`, `status` (the item's current
+Status column — the status gate at step 2.5 checks it; never assume it),
+`content_node_id`. With `blockers: true` you also get `has_open_blockers`
+(`true` | `false` | `null`) and `blocked_by` (an array of
+`{number, state, title, url}`) — the blocker gate (step 2.6) reads these.
 
-### 2.5. Blocker gate — never touch a blocked item
+### 2.5. Status gate — never work an item outside the dev lane
+
+**Watson's lane is exactly two columns: `Ready` and `In Progress`.** Nothing
+before this point verifies that. Read `status` from step 2 and branch:
+
+- `status` is exactly `Ready` or `In Progress` — go on to step 2.6.
+- `status` is any other column — `Backlog`, `Inbox`, `In Review`, `Done`,
+  `Escalated`, or a name you do not recognize. The dispatch was wrong.
+- `status` is `null`, absent, or empty — the column could not be read. **Fail
+  closed** and treat it exactly like any other column.
+
+In either failing case, do **not** touch the item: no `move`, no branch, no PR,
+no implementation. Leave its status **exactly as-is** — Watson never drags an
+item into its own lane to justify working it. Post one comment on the issue so
+the mis-dispatch is visible, release the lock, and exit.
+
+```
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Dispatch sent me to this item while its Status is `<status>`. The development lane accepts `Ready` and `In Progress` only. I left the item untouched: no branch, no pull request, no status change.")
+```
+
+```bash
+rm -f /tmp/watson.lock
+```
+
+```
+🚫 #<issue_number> (<repo>) is in `<status>`, not Ready/In Progress — left untouched.
+```
+
+**This comment is not deduplicated, and should not be.** Step 3's hands-off
+notice is, because it answers a standing condition that Dispatch re-polls every
+twenty minutes with nobody asking. This one answers a *dispatch* — a deliberate
+act by whoever sent Watson to an item outside his lane, bounded in number, and
+each one owed a reply. Suppress the second one and that dispatcher gets a silent
+no-op instead of a reason. The gate could not afford the read anyway: it fires
+before Watson has made a single `gh` call, and its whole claim to running first
+is that `status` is already in hand.
+
+**This gate runs before the blocker gate** because it is both cheaper and more
+fundamental. It is cheaper because `status` is already in hand from step 2,
+while the blocker fields cost a live GraphQL pull. It is more fundamental
+because an item outside the dev lane is not Watson's work at all — whether that
+item is blocked only matters once it is Watson's.
+
+**What this gate does not catch.** GitHub Projects' built-in *Pull request
+linked to issue* workflow sets a linked issue's Status to `In Progress` within
+seconds of **anyone** opening a PR whose branch name carries the issue number —
+a human's own PR included. An item pulled out of `Backlog` that way reaches
+Watson reading `In Progress`, so it passes this gate legitimately. The
+provenance check in step 3 is what stops Watson touching that work.
+
+### 2.6. Blocker gate — never touch a blocked item
 
 **Watson must NEVER begin or resume work on a blocked item.** Read
 `has_open_blockers` from step 2 and branch *before* resume detection:
@@ -84,37 +135,168 @@ dispatch, so this gate is the safety net for direct dispatch by ID.
 
 Only when `has_open_blockers` is exactly `false` does Watson continue to step 3.
 
-### 3. Check for existing work (resume detection)
+### 3. Check for existing work (resume detection and provenance)
 
-Regardless of whether you came in on `Ready` or `In Progress`, check for a
-prior branch/PR — state can drift:
+Whether you came in on `Ready` or `In Progress`, check for a prior branch and
+PR — state can drift. Ask two questions, in this order:
+
+1. **Is there a branch for this issue at all?** Match by issue number, not by
+   name, so resume never depends on re-deriving a slug.
+2. **Did Watson create that branch?** A human's branch for the same issue
+   matches by number too. Adopting one means pushing commits onto a colleague's
+   work-in-progress, or opening a second PR beside theirs. Both have happened.
+
+The block below answers both and prints one verdict.
 
 ```bash
-# Find an existing branch for this issue BY NUMBER — type-prefix- and
-# slug-agnostic, so resume never depends on re-deriving the branch name (the
-# fix/feature/chore bucket is chosen only on a fresh start, in step 5). The
-# legacy `watson` prefix stays in the match so in-flight branches created before
-# this change still resume instead of getting a duplicate.
-BRANCH=$(gh api repos/<repo>/branches --jq '.[].name' \
-  | grep -E '^(fix|feature|chore|watson)/<issue_number>-' | head -1)
-[ -n "$BRANCH" ] && BRANCH_EXISTS=1 || BRANCH_EXISTS=0
+REPO=<repo>            # ← the item's `repo`, as owner/name
+ISSUE=<issue_number>   # ← the item's `issue_number`
+BASE=$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name)
+# >>> watson-resume-detection >>>  (markers used by skills/watson-pipeline/test-resume-detection.sh — keep them)
+# Inputs: REPO (owner/name), ISSUE (issue number), BASE (default branch name).
+# Prints exactly one tab-separated verdict, "<VERDICT>\t<branch|->\t<pr|->":
+#   "FRESH"     — no branch for this issue. Start fresh (step 4).
+#   "RESUME"    — Watson's own in-flight work. Resume on that branch (step 5).
+#   "DRIFT"     — Watson's own work is already merged or closed. Repair status, exit.
+#   "HANDS-OFF" — someone else owns that branch/PR. Do not touch it, exit.
+wr_verdict=FRESH; wr_branch=-; wr_pr=-
 
-# Does a PR for that branch exist?
-if [ "$BRANCH_EXISTS" = 1 ]; then
-  PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --state all --json number --jq '.[0].number // empty')
-else
-  PR_NUM=""
-fi
+# Match every Conventional-Commit type a human or an agent may prefix a branch with, plus the
+# legacy `watson` prefix so branches opened before provenance tracking still resume. The old
+# pattern listed only fix|feature|chore|watson, so a human `ci/292-os-matrix` was invisible and
+# Watson opened a duplicate PR beside it. `$ISSUE(-.*)?$` pins the number to a whole path
+# segment: `fix/288-locale-consistency` and `ci/288` match, `fix/2881-x` does not. `--paginate`
+# because the branches endpoint returns 30 names per page and a busy repo hides matches past it.
+for wr_b in $(gh api --paginate "repos/$REPO/branches" --jq '.[].name' 2>/dev/null \
+  | grep -E "^(build|chore|ci|docs|feat|feature|fix|perf|refactor|revert|style|test|watson)/$ISSUE(-.*)?\$"); do
+
+  # Provenance. Watson opens PRs with `gh` under the human's credentials, so the PR author reads
+  # as the human on Watson's PRs and on human PRs alike — worthless as a signal. These two work:
+  #   1. the legacy `watson/` branch prefix — no human names a branch that;
+  #   2. Watson's start-of-work commit (step 5), which carries the `Watson-Branch: #<issue>`
+  #      trailer. Its pre-trailer subject form is accepted too, so a branch that was in flight
+  #      when this check shipped still resumes instead of stalling.
+  # Commits are immutable here (Watson never amends and never force-pushes), so a trailer that
+  # is present stays present. Anything else belongs to someone else — including a `compare` call
+  # that fails or returns nothing, which falls through to HANDS-OFF. Fail closed: an unproven
+  # branch is treated as a human's.
+  case "$wr_b" in
+    watson/*) wr_mine=1 ;;
+    *) if gh api "repos/$REPO/compare/$BASE...$wr_b" --jq '.commits[].commit.message' 2>/dev/null \
+          | grep -qxE "(Watson-Branch: #$ISSUE|chore: start work on #$ISSUE)"; then
+         wr_mine=1
+       else
+         wr_mine=0
+       fi ;;
+  esac
+
+  wr_p=$(gh pr list -R "$REPO" --head "$wr_b" --state all --json number --jq '.[0].number // empty' 2>/dev/null)
+  wr_s=$(gh pr list -R "$REPO" --head "$wr_b" --state all --json state --jq '.[0].state // empty' 2>/dev/null)
+  [ -n "$wr_p" ] || wr_p=-
+
+  if [ "$wr_mine" != 1 ]; then
+    wr_verdict=HANDS-OFF; wr_branch=$wr_b; wr_pr=$wr_p
+    break                    # a human works this issue. That decision is final; nothing overrides it.
+  fi
+  if [ "$wr_verdict" = FRESH ]; then   # first branch of Watson's own — keep scanning for a human's
+    case "$wr_s" in
+      MERGED|CLOSED) wr_verdict=DRIFT ;;
+      *)             wr_verdict=RESUME ;;
+    esac
+    wr_branch=$wr_b; wr_pr=$wr_p
+  fi
+done
+printf '%s\t%s\t%s\n' "$wr_verdict" "$wr_branch" "$wr_pr"
+# <<< watson-resume-detection <<<
 ```
 
-**Decision tree:**
+Read the three fields into the variables the later steps use: `BRANCH` is field
+2 and `PR_NUM` is field 3. A `-` in either field means "none".
 
-| Branch | PR | Action |
-|---|---|---|
-| No | No | Fresh start. Go to step 4 (fresh-work path). |
-| Yes | No | Resume. Clone, check out the branch, skip creation in step 5, go to step 6. |
-| Yes | Yes (open) | Resume. Same as above — PR already exists, just continue work. |
-| Yes | Yes (merged/closed) | State drift — work was already completed. `move(<ITEM_ID>, "In Review")` to repair drift, log, exit. |
+**Decision tree** — every branch, PR, and provenance combination:
+
+| Branch for the issue | Provenance | PR on that branch | Verdict | Action |
+|---|---|---|---|---|
+| None | — | — | `FRESH` | Fresh start. Go to step 4 (fresh-work path). |
+| Yes | Watson's | None | `RESUME` | Clone, check out `$BRANCH`, skip creation in step 5, go to step 6. |
+| Yes | Watson's | Open (draft or ready) | `RESUME` | Same as above — the PR already exists, just continue the work. |
+| Yes | Watson's | Merged or closed | `DRIFT` | The work was already completed. `move(<ITEM_ID>, "In Review")` to repair the drift, log, exit. |
+| Yes | Not Watson's | None | `HANDS-OFF` | Someone else's branch. Comment, leave the status, release the lock, exit. |
+| Yes | Not Watson's | Any state | `HANDS-OFF` | Same as above. Name their PR in the comment. |
+| Several | At least one is not Watson's | Any | `HANDS-OFF` | A human works this issue. Never compete, even when one of the branches is Watson's own. |
+| Yes | Undeterminable — the `compare` call failed or returned nothing | Any | `HANDS-OFF` | Fail closed. Treat an unproven branch as a human's. |
+
+**`HANDS-OFF` — the human owns it.** Do not check out that branch. Do not push
+to it. Do not open a competing branch or PR. Do not implement. Do not `move`
+the item; leave its status exactly as-is. Say so once on the issue, release the
+lock, and exit.
+
+**Say it once per branch, not once per tick.** GitHub Projects' *Pull request
+linked to issue* workflow parks the issue in `In Progress` for the whole life of
+the human's pull request, and `In Progress` outranks `Ready` in Dispatch's
+`limit=1` pick — so Watson lands back on this same item every tick until that PR
+closes. An unconditional comment is therefore a fresh copy of the same notice
+every twenty minutes on somebody's working issue. Look for the marker first, and
+post only when it is absent:
+
+```bash
+REPO=<repo>            # ← the item's `repo`, as owner/name
+ISSUE=<issue_number>   # ← the item's `issue_number`
+BRANCH=<branch>        # ← field 2 of the verdict line above
+# >>> watson-handsoff-comment >>>  (markers used by skills/watson-pipeline/test-resume-detection.sh — keep them)
+# Inputs: REPO (owner/name), ISSUE (issue number), BRANCH (the hands-off branch, field 2 above).
+# Prints "POST" when this branch's hands-off notice still has to go on the issue, "SKIP" when a
+# comment carrying its marker is already there.
+#
+# The marker is keyed on the branch name. Keying it on the item alone would silence Watson
+# forever, hiding a genuinely new situation — a second person's branch, or a fresh take after the
+# first branch was deleted. Adding the PR number would do the opposite: a branch is pushed before
+# its PR exists, so the PR opening on a branch already reported would earn a second notice about
+# the same person's same work. The branch name is the stable identity of that work, and the issue
+# thread scopes the marker to this item for free.
+#
+# `gh api` on the issue's comments is the cheapest reliable read here: one endpoint, no clone,
+# and `get_item` does not carry comments. `--paginate` because that endpoint returns 30 per page
+# and a long thread would bury the marker past page one — the same trap as in the block above.
+# `grep -F` because a branch name is not a regular expression: a marker left for `fix/288-v1x2`
+# must not match branch `fix/288-v1.2`.
+#
+# A read that fails prints POST. This is the one place the pipeline does not fail closed, and it
+# is deliberate: here suppression is the dangerous outcome. A duplicate notice costs one comment;
+# a missing one costs the human the only warning that an agent was dispatched onto their branch.
+wr_marker="<!-- watson-hands-off: $BRANCH -->"
+if gh api --paginate "repos/$REPO/issues/$ISSUE/comments" --jq '.[].body' 2>/dev/null \
+     | grep -qF "$wr_marker"; then
+  echo SKIP
+else
+  echo POST
+fi
+# <<< watson-handsoff-comment <<<
+```
+
+On `POST`, comment. The marker is the **first line** of the body, exactly as it
+is for every other Watson marker:
+
+```
+mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "<!-- watson-hands-off: <branch> -->
+Branch `<branch>` (PR #<pr>) is already open against this issue, and I did not create it. I left it alone: no competing branch, no pull request, no status change. The person who owns that branch owns this issue.")
+```
+
+On `SKIP`, post nothing at all. **Nothing else about this exit changes either
+way**: still no checkout, no push, no competing branch or PR, no implementation,
+no `move`. Release the lock and exit, the same on both paths.
+
+```bash
+rm -f /tmp/watson.lock
+```
+
+```
+🚫 #<issue_number> (<repo>) already has <branch> (PR #<pr>), which is not mine — left untouched.
+```
+
+That last line is the run's own report and prints on every tick, `POST` or
+`SKIP` — silencing the repeat comment silences the issue thread, not Watson's
+log. Omit the `(PR #<pr>)` part of both messages when the third field is `-`.
 
 ### 4. Fresh-work path: move to In Progress
 
@@ -145,7 +327,10 @@ rm -rf "$CLONE"
 gh repo clone <repo> "$CLONE"
 cd "$CLONE"
 git checkout -b "$BRANCH"
-git commit --allow-empty -m "chore: start work on #<issue_number>"
+# The trailer is Watson's provenance mark. Step 3 reads it to tell its own branch from a human's,
+# so keep it exactly as written, on its own line, on this first commit. Without it, the next run
+# treats this branch as a human's and hands off instead of resuming.
+git commit --allow-empty -m "chore: start work on #<issue_number>" -m "Watson-Branch: #<issue_number>"
 git push -u origin "$BRANCH"
 ```
 
