@@ -17,8 +17,13 @@ The Index OAuth URL:  https://the-index.mikebronner.dev/oauth/token
 Log directory:         ~/.claude-workbench/dev-team-logs
 Agent config:          ~/.claude-workbench/dev-team-config.json
 Scheduled task ID:     workbench-dev-team-dispatch
-Orchestrator prompt:   ${CLAUDE_PLUGIN_ROOT}/scheduled-tasks/orchestrator.md
+Plugin registry:       ~/.claude/plugins/installed_plugins.json
+Orchestrator prompt:   <resolved install path>/scheduled-tasks/orchestrator.md
 ```
+
+The orchestrator prompt path is **resolved at run time in Step 7a**, not
+hard-coded off `${CLAUDE_PLUGIN_ROOT}` — the running root can be a frozen
+session snapshot. See Step 7a for the resolution order.
 
 ## Step 1 — Collect cadence and scheduling preference
 
@@ -405,13 +410,106 @@ summary.
 
 Skip this step entirely if `REGISTER_SCHEDULE` from Step 1 was "Skip".
 
-### 7a. Read and strip the orchestrator prompt
+### 7a. Resolve the orchestrator source, then read and strip it
 
-Use the `Read` tool to read the orchestrator file:
+**Never read the orchestrator from `${CLAUDE_PLUGIN_ROOT}` when a better source
+exists.** The harness expands that variable to the *executing* copy of the
+plugin, which in a resumed session is a snapshot materialized once at session
+creation under `~/Library/Application Support/Claude/local-agent-mode-sessions/…/plugin_<hash>/`
+and never refreshed — not even by a full app restart, because the app resumes
+the same session (anthropics/claude-code#45810). Deploying from that copy
+silently pins Dispatch to whatever the plugin looked like weeks ago, and
+because the stale prompt equals the stale source, setup reports success. Resolve
+the install path recorded in `~/.claude/plugins/installed_plugins.json` instead,
+and only fall back to the running root when that file can't answer:
 
+```bash
+RUN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
+REGISTRY="$HOME/.claude/plugins/installed_plugins.json"
+PLUGIN_KEY="workbench-dev-team@claude-workbench"
+
+SRC_ROOT=""
+SRC_VERSION=""
+
+# `.plugins[$key]` is an ARRAY — one object per install scope (user/project/
+# local), each carrying installPath, version, scope, installedAt, lastUpdated,
+# gitCommitSha. Keep the enabled entries that actually name a path, then take
+# the highest version. Sort numerically per dotted segment: a lexical sort ranks
+# "0.9.0" above "0.37.4" and would deploy the older copy.
+if [ -f "$REGISTRY" ] && jq empty "$REGISTRY" 2>/dev/null; then
+  ENTRY=$(jq -c --arg key "$PLUGIN_KEY" '
+    (.plugins[$key] // [])
+    | map(select((.enabled != false) and ((.installPath // "") != "")))
+    | sort_by((.version // "0") | split(".") | map(tonumber? // 0))
+    | last // empty
+  ' "$REGISTRY" 2>/dev/null || true)
+
+  if [ -n "$ENTRY" ]; then
+    CAND_ROOT=$(printf '%s' "$ENTRY" | jq -r '.installPath // ""')
+    CAND_VERSION=$(printf '%s' "$ENTRY" | jq -r '.version // ""')
+    # Trust the registry only if the file we actually need is really there.
+    if [ -n "$CAND_ROOT" ] && [ -f "$CAND_ROOT/scheduled-tasks/orchestrator.md" ]; then
+      SRC_ROOT="$CAND_ROOT"
+      SRC_VERSION="$CAND_VERSION"
+    elif [ -n "$CAND_ROOT" ]; then
+      echo "⚠  $REGISTRY points at $CAND_ROOT, but scheduled-tasks/orchestrator.md is not readable there."
+    fi
+  fi
+fi
+
+# Fallback: the running root. Correct in a fresh session, stale in a resumed one
+# — say so out loud rather than deploying from it quietly.
+if [ -z "$SRC_ROOT" ]; then
+  if [ -n "$RUN_ROOT" ] && [ -f "$RUN_ROOT/scheduled-tasks/orchestrator.md" ]; then
+    SRC_ROOT="$RUN_ROOT"
+    SRC_VERSION=$(jq -r '.version // ""' "$RUN_ROOT/.claude-plugin/plugin.json" 2>/dev/null || true)
+    echo "⚠  Could not resolve an install path from $REGISTRY — falling back to the running"
+    echo "   plugin root ($SRC_ROOT). If this session's copy is frozen, the prompt deployed"
+    echo "   below is frozen with it."
+  else
+    echo "❌ Could not locate scheduled-tasks/orchestrator.md — neither $REGISTRY nor"
+    echo "   \$CLAUDE_PLUGIN_ROOT resolved a readable copy. Re-install or update the plugin,"
+    echo "   then re-run /workbench-dev-team:setup."
+    exit 1
+  fi
+fi
+
+# Stale-root detection: what this session is EXECUTING vs. what is INSTALLED.
+RUN_VERSION=""
+if [ -n "$RUN_ROOT" ] && jq empty "$RUN_ROOT/.claude-plugin/plugin.json" 2>/dev/null; then
+  RUN_VERSION=$(jq -r '.version // ""' "$RUN_ROOT/.claude-plugin/plugin.json")
+fi
+
+ORCHESTRATOR_SRC="$SRC_ROOT/scheduled-tasks/orchestrator.md"
+STALE_ROOT_WARNING=""
+
+if [ -n "$RUN_VERSION" ] && [ -n "$SRC_VERSION" ] && [ "$RUN_VERSION" != "$SRC_VERSION" ]; then
+  STALE_ROOT_WARNING="⚠  STALE PLUGIN ROOT — this session ran v$RUN_VERSION; Dispatch was deployed from installed v$SRC_VERSION"
+  cat <<EOF
+⚠  ═══════════════ STALE PLUGIN ROOT ═══════════════
+   This session is EXECUTING workbench-dev-team v$RUN_VERSION from:
+     $RUN_ROOT
+   but the INSTALLED plugin is v$SRC_VERSION at:
+     $SRC_ROOT
+   \$CLAUDE_PLUGIN_ROOT is materialized once when a session is created and is
+   never refreshed — not even by an app restart that resumes the same session
+   (anthropics/claude-code#45810).
+   → The Dispatch prompt IS being deployed from the installed path (v$SRC_VERSION),
+     so the scheduled task will be current.
+   → Every OTHER step in this run still came from the stale v$RUN_VERSION copy.
+     Start a brand-new session and re-run /workbench-dev-team:setup for a fully
+     current run.
+   ═══════════════════════════════════════════════════
+EOF
+fi
+
+echo "Orchestrator source: $ORCHESTRATOR_SRC (v${SRC_VERSION:-unknown})"
 ```
-${CLAUDE_PLUGIN_ROOT}/scheduled-tasks/orchestrator.md
-```
+
+Carry `STALE_ROOT_WARNING` (empty when the running root is current) into the
+Step 8 summary. Then use the `Read` tool on the **absolute path** the block
+printed as `Orchestrator source:` — never re-derive it from
+`${CLAUDE_PLUGIN_ROOT}`.
 
 Strip the leading YAML frontmatter — everything between the first `---` line
 and its matching closing `---` (inclusive of both `---` markers and any blank
@@ -509,8 +607,11 @@ Print a clean summary block:
                     (suppressed = no Co-Authored-By; default (visible) = trailer on)
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
+  Prompt source:    {SRC_ROOT}/scheduled-tasks/orchestrator.md (v{SRC_VERSION})
   Router model:     pinned to Sonnet ({PATCHED} registry(ies) patched)
                     (or: ⚠ could not confirm — verify in the Scheduled panel)
+
+  {STALE_ROOT_WARNING}
 
   Agents:           Lestrade (Sonnet), Holmes (Opus, $7 cap), Watson (Opus, $10 cap)
                     — models/effort/fallback/budget editable in the agent config
@@ -522,8 +623,15 @@ Print a clean summary block:
 
 Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
 choice (`suppressed` or `default (visible)`), fill `{PATCHED}` from Step 7d's
-count, and adjust the scheduled-task and router-model lines if registration
-was skipped or the patch found nothing.
+count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a, and adjust the
+scheduled-task, prompt-source and router-model lines if registration was
+skipped or the patch found nothing.
+
+`{STALE_ROOT_WARNING}` is Step 7a's one-liner. **When it is empty (the common
+case — the running root is current) omit that line and the blank line above it
+entirely.** When it is non-empty, print it verbatim and do **not** dress it as
+a ✅ — a version mismatch is never a clean success, and hiding it is the exact
+failure this summary exists to surface.
 
 ## Notes
 
@@ -548,6 +656,25 @@ was skipped or the patch found nothing.
 - **OAuth token lifetime.** The Index issues 1-year tokens via
   client_credentials. Schedule a calendar reminder, or just re-run this command
   any time `claude mcp list` shows `the-index` as `Failed to connect`.
+- **Why Step 7a resolves its own source.** Discovered 2026-08-27: the live
+  Dispatch prompt was missing the in-flight dispatch lock shipped in v0.37.0+
+  and had been stale for 23 days, across two apparently-successful setup runs.
+  Root cause: `${CLAUDE_PLUGIN_ROOT}` expands to the *executing* copy of the
+  plugin, and in a resumed session that copy is a per-session snapshot
+  materialized once at session creation and never refreshed (a full app restart
+  resumes the same session, so it doesn't help either —
+  anthropics/claude-code#45810). The running root was v0.35.0 while
+  `installed_plugins.json` correctly resolved v0.37.4; setup compared the
+  installed task prompt against the *stale* source, found them identical, wrote
+  nothing, and printed the normal success summary. Equal-and-stale was
+  indistinguishable from equal-and-correct. Step 7a now prefers the install path
+  recorded in `installed_plugins.json` and only falls back to the running root
+  when that file is missing, unparseable, or names no usable path — and it
+  compares the two versions so a frozen root produces a loud warning instead of
+  a green checkmark. **Caveat: this doesn't repair an already-frozen session.**
+  A stale root still carries the old Step 7a, so the fix needs one clean
+  bootstrap — a single session started after the update, running the patched
+  setup — after which the failure class is closed by construction.
 - **Why Step 7d exists.** Discovered 2026-08-04: recreating the scheduled task
   left it running on Opus instead of Sonnet — roughly double the router's
   per-tick cost, with no error to notice it by. Root cause: neither
