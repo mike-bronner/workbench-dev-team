@@ -507,14 +507,112 @@ echo "Orchestrator source: $ORCHESTRATOR_SRC (v${SRC_VERSION:-unknown})"
 ```
 
 Carry `STALE_ROOT_WARNING` (empty when the running root is current) into the
-Step 8 summary. Then use the `Read` tool on the **absolute path** the block
-printed as `Orchestrator source:` — never re-derive it from
-`${CLAUDE_PLUGIN_ROOT}`.
+Step 8 summary.
 
-Strip the leading YAML frontmatter — everything between the first `---` line
-and its matching closing `---` (inclusive of both `---` markers and any blank
-line after the closing one). The remaining markdown body is the prompt the
-scheduled task will execute every tick.
+### 7a-bis. Strip and verify the orchestrator body
+
+**Resolving the right file is not the same as reading a good file.** Step 7a
+guarantees the *path* is the installed one; nothing yet guarantees the
+*content*. 7a accepts any candidate root where `orchestrator.md` merely
+**exists** — truncated, half-written, or the wrong file entirely all pass
+unchallenged, and whatever is there becomes the prompt Dispatch runs every
+tick. (Staleness is Step 7a's job, not this one: `setup.md` and the
+orchestrator resolve from the same root, so a frozen root carries a frozen
+guard. This step is about integrity.)
+
+So strip the frontmatter **deterministically here**, in bash, rather than by
+hand — and refuse to deploy a body that has lost anything load-bearing. The
+checks are **derived from the body**, not a hand-maintained list of names: they
+count lanes and locks rather than looking for `lestrade`/`holmes`/`watson`, so a
+rename or a fourth lane needs no edit here. Run this with `ORCHESTRATOR_SRC` set
+to the path Step 7a printed:
+
+```bash
+# >>> orchestrator-body-guard >>>  (markers used by scheduled-tasks/test-setup-orchestrator-guard.sh — keep them)
+# Inputs:  ORCHESTRATOR_SRC — absolute path to the resolved orchestrator.md.
+#          BODY_OUT (optional) — destination for the stripped body; defaults to a temp file.
+# Prints:  "Orchestrator body: <path>" on success; "❌ …" and exit 1 on any failure.
+# Fails closed: a body that cannot be verified is never deployed.
+set -u
+
+if [ -z "${ORCHESTRATOR_SRC:-}" ] || [ ! -f "$ORCHESTRATOR_SRC" ]; then
+  echo "❌ ORCHESTRATOR_SRC is unset or not a readable file — cannot verify the Dispatch prompt."
+  exit 1
+fi
+BODY_OUT="${BODY_OUT:-$(mktemp)}"
+
+# Strip the leading YAML frontmatter: the opening `---` fence, everything through
+# its matching `---`, and any blank lines immediately following. A file with no
+# frontmatter passes through unchanged; an unterminated fence yields an empty
+# body, which the size check below rejects.
+awk 'NR==1 && $0=="---" {fm=1; next}
+     fm==1 && $0=="---" {fm=2; next}
+     fm==2 {if (!started && $0 ~ /^[[:space:]]*$/) next; started=1; print; next}
+     fm!=1 {print}' "$ORCHESTRATOR_SRC" > "$BODY_OUT"
+
+og_fail=0
+og_reject() { echo "   ✗ $1"; og_fail=1; }
+
+# 1. The strip produced something, and produced a body — not frontmatter.
+[ -s "$BODY_OUT" ] || og_reject "stripped body is empty (unterminated frontmatter fence, or empty source)"
+head -1 "$BODY_OUT" | grep -qx -- '---' && og_reject "body still opens with a '---' frontmatter fence"
+grep -qF -- 'name: dispatch-orchestrator' "$BODY_OUT" && og_reject "frontmatter survived the strip"
+
+# 2. Non-trivial size — catches truncation and wrong-file.
+og_lines=$(wc -l < "$BODY_OUT" | tr -d ' ')
+[ "$og_lines" -ge 200 ] || og_reject "body is only $og_lines lines (expected >= 200) — truncated or not the orchestrator"
+
+# 3. Lane structure, DERIVED from the body — no agent names appear here, so
+#    renaming a lane or adding a fourth one needs no edit in this file. Two
+#    counts, both computed from what the body actually contains:
+#      - distinct agents dispatched, which must cover all three lanes;
+#      - distinct agents writing a per-item in-flight lock (#39). Every lane that
+#        dispatches on a single item records one; the per-repo Lestrade sweep is
+#        the one dispatch that legitimately has none, so the floor is 2, not 3.
+#    A body that dispatches agents but locks nothing is the exact pre-#39
+#    regression: overlapping runs racing each other's board writes.
+#    The lock pattern deliberately matches the FILE NAME only, not the log
+#    directory, so relocating the log dir needs no edit here. (The pre-flight's
+#    own `$LOGDIR/$AGENT-$ID.lock` cannot inflate the count: `$AGENT` is
+#    uppercase and `[a-z-]+` will not match it.)
+og_agents=$(grep -oE -- '--agent workbench-dev-team:[a-z-]+' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
+og_lockers=$(grep -oE -- '[a-z-]+-\$ID\.lock' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
+[ "$og_agents" -ge 3 ] || og_reject "only $og_agents distinct agent lane(s) dispatched (expected >= 3) — a lane is missing"
+[ "$og_lockers" -ge 2 ] || og_reject "only $og_lockers agent lane(s) write a per-item in-flight lock (expected >= 2) — the #39 dispatch race is unguarded"
+
+# 4. The circuit-breaker sentinel pair. This is the guard's only literal, and it
+#    is not new maintenance: scheduled-tasks/test-circuit-breaker.sh already
+#    extracts the pre-flight from between this exact pair, so the markers are
+#    load-bearing whether or not this guard names them.
+grep -qF -- '>>> circuit-breaker-preflight >>>' "$BODY_OUT" || og_reject "missing the circuit-breaker-preflight opening sentinel"
+grep -qF -- '<<< circuit-breaker-preflight <<<' "$BODY_OUT" || og_reject "missing the circuit-breaker-preflight closing sentinel"
+
+if [ "$og_fail" -ne 0 ]; then
+  cat <<EOF
+❌ ═══════ ORCHESTRATOR BODY FAILED VERIFICATION ═══════
+   Source: $ORCHESTRATOR_SRC
+   The resolved Dispatch prompt is missing content the pipeline depends on.
+   Deploying it would silently downgrade the running pipeline, so setup is
+   stopping rather than writing it.
+   → Update or re-install the plugin, then re-run /workbench-dev-team:setup.
+   ═════════════════════════════════════════════════════
+EOF
+  exit 1
+fi
+
+echo "✅ Orchestrator body verified ($og_lines lines, $og_agents lanes, $og_lockers locked)"
+echo "Orchestrator body: $BODY_OUT"
+# <<< orchestrator-body-guard <<<
+```
+
+**If this block exits non-zero, stop Step 7 entirely** — do not create or update
+the scheduled task, and report the failure in the Step 8 summary. A verified-bad
+body is a worse outcome than no deployment.
+
+Otherwise use the `Read` tool on the **absolute path** the block printed as
+`Orchestrator body:` — that file is already stripped, so read it verbatim. Never
+re-derive the path from `${CLAUDE_PLUGIN_ROOT}`, and never re-strip by hand. Its
+contents are the prompt the scheduled task will execute every tick.
 
 ### 7b. Check for an existing task
 
@@ -608,6 +706,7 @@ Print a clean summary block:
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
   Prompt source:    {SRC_ROOT}/scheduled-tasks/orchestrator.md (v{SRC_VERSION})
+                    body verified — {BODY_LINES} lines, {BODY_LANES} lanes, {BODY_LOCKS} locked
   Router model:     pinned to Sonnet ({PATCHED} registry(ies) patched)
                     (or: ⚠ could not confirm — verify in the Scheduled panel)
 
@@ -623,9 +722,10 @@ Print a clean summary block:
 
 Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
 choice (`suppressed` or `default (visible)`), fill `{PATCHED}` from Step 7d's
-count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a, and adjust the
-scheduled-task, prompt-source and router-model lines if registration was
-skipped or the patch found nothing.
+count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a and
+`{BODY_LINES}`/`{BODY_LANES}`/`{BODY_LOCKS}` from Step 7a-bis's success line,
+and adjust the scheduled-task, prompt-source and router-model lines if
+registration was skipped or the patch found nothing.
 
 `{STALE_ROOT_WARNING}` is Step 7a's one-liner. **When it is empty (the common
 case — the running root is current) omit that line and the blank line above it
@@ -675,6 +775,35 @@ failure this summary exists to surface.
   A stale root still carries the old Step 7a, so the fix needs one clean
   bootstrap — a single session started after the update, running the patched
   setup — after which the failure class is closed by construction.
+- **Why Step 7a-bis verifies the body.** Step 7a resolves the right *path*;
+  that is not the same as reading a good *file*. 7a accepts any candidate root
+  where `orchestrator.md` merely **exists** — a truncated, half-written, or
+  wrong file passes unchallenged, and the deployed prompt is whatever was
+  there. Step 7a-bis closes that by stripping the frontmatter deterministically
+  in bash (rather than by hand, which is its own error class) and refusing to
+  deploy a body that has lost structure, shrunk below a plausible size, or kept
+  its frontmatter. It fails closed: a body that cannot be verified is never
+  written to the scheduled task.
+  **The lane checks are derived, not listed.** They count distinct dispatched
+  lanes and distinct lanes writing a per-item in-flight lock, so no agent name
+  appears in this file — renaming a lane or adding a fourth needs no edit here.
+  The guard's one literal is the `circuit-breaker-preflight` sentinel pair, and
+  that is not new maintenance: `scheduled-tasks/test-circuit-breaker.sh`
+  already extracts the pre-flight from between those exact markers. The pair
+  now appears in three files — `orchestrator.md` declares it, the circuit-breaker
+  test extracts between it, this guard asserts it — so a test case pins all
+  three together; drift in any one turns that file into a silent no-op.
+  *Scope note: this guards integrity, not staleness.* `setup.md` and the
+  orchestrator resolve from the same root, so a frozen root carries a frozen
+  guard — staleness is Step 7a's job, via the registry and the version
+  comparison.
+  Tests: `scheduled-tasks/test-setup-orchestrator-guard.sh` (15 cases — happy
+  path, absent/unreadable input, strip failures, truncation, one case per
+  derived check, a boundary case pinning the two-lock floor so the Lestrade
+  sweep isn't falsely rejected, and cross-file agreement on the sentinel pair)
+  extracts the *shipped* guard from between this file's
+  `orchestrator-body-guard` sentinels, so the test cannot drift from the logic
+  it guards.
 - **Why Step 7d exists.** Discovered 2026-08-04: recreating the scheduled task
   left it running on Opus instead of Sonnet — roughly double the router's
   per-tick cost, with no error to notice it by. Root cause: neither
