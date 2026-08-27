@@ -81,7 +81,7 @@ The skill also **routes GitHub actions to the right executor**. Two rules: (1) *
 
 Known edge: while a scheduled Watson run is live, its lock also exempts concurrent interactive sessions on the same machine. The prose protocol still applies there; the window is the few minutes of a pipeline tick.
 
-Tests: `hooks/scripts/test-commit-approval-gate.sh` (19 cases — detection, non-commit silence, carve-outs).
+Tests: `hooks/scripts/test-commit-approval-gate.sh` (21 cases — detection, non-commit silence, carve-outs).
 
 ## Configuration — models, effort, fallback, budget
 
@@ -134,9 +134,10 @@ You'll be prompted in chat for any of these Keychain entries that aren't already
 2. **Fetches an OAuth bearer token** from The Index (client_credentials grant, 1-year lifetime).
 3. **Registers The Index MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__the-index__*` tools available to every future Claude Code session, including the dispatched agents.
 4. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/` and **writes the default agent config** to `~/.claude-workbench/dev-team-config.json` if (and only if) it doesn't already exist.
-5. **Registers the scheduled Dispatch task** by calling `mcp__scheduled-tasks__create_scheduled_task` (or `update_scheduled_task` if it already exists) directly from the running session. Task ID: `workbench-dev-team-dispatch`. Cron: `*/20 * * * *` (or `*/30` if you chose 30 min).
+5. **Resolves and verifies the orchestrator prompt** — takes the install path from `~/.claude/plugins/installed_plugins.json` (never the running `${CLAUDE_PLUGIN_ROOT}`, which can be a frozen per-session snapshot), strips the frontmatter, and refuses to continue unless the resulting body still has its expected structure — all three dispatch lanes, per-item in-flight locks, the circuit-breaker block, and a plausible size. The checks are derived from the body rather than matched against a list of agent names. Fails closed: an unverifiable body is never deployed.
+6. **Registers the scheduled Dispatch task** by calling `mcp__scheduled-tasks__create_scheduled_task` (or `update_scheduled_task` if it already exists) directly from the running session. Task ID: `workbench-dev-team-dispatch`. Cron: `*/20 * * * *` (or `*/30` if you chose 30 min).
 
-Re-run the skill any time you need to refresh the OAuth token, re-register the MCP, or change the Dispatch cadence. **Also re-run it after a plugin update that changes Dispatch's flow** (a change to `scheduled-tasks/orchestrator.md` itself, not the agent contracts): step 5 reads that file, strips its frontmatter, and passes the **body** as the scheduled task's prompt, so the deployed task holds a *baked-in copy*. A plugin update refreshes the file on disk but not the running task — the re-run redeploys the fresh orchestrator body. (Agent definitions and skills are read live per dispatch, so those need no re-run — only the scheduled Dispatch prompt is baked in.)
+Re-run the skill any time you need to refresh the OAuth token, re-register the MCP, or change the Dispatch cadence. **Also re-run it after a plugin update that changes Dispatch's flow** (a change to `scheduled-tasks/orchestrator.md` itself, not the agent contracts): steps 5–6 read that file, strip its frontmatter, verify the body, and pass it as the scheduled task's prompt, so the deployed task holds a *baked-in copy*. A plugin update refreshes the file on disk but not the running task — the re-run redeploys the fresh orchestrator body. (Agent definitions and skills are read live per dispatch, so those need no re-run — only the scheduled Dispatch prompt is baked in.)
 
 ## How it works
 
@@ -225,7 +226,7 @@ Two ways to invoke the same agents, same definitions:
 
 ## Manual task registration (fallback)
 
-If `/workbench-dev-team:setup` fails at step 5 (scheduled-task registration), choose "Skip" when re-prompted to register the schedule, then register manually from any Claude Code session:
+If `/workbench-dev-team:setup` fails at step 6 (scheduled-task registration), choose "Skip" when re-prompted to register the schedule, then register manually from any Claude Code session:
 
 ```
 mcp__scheduled-tasks__create_scheduled_task with
