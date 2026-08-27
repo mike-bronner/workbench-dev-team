@@ -62,7 +62,9 @@ human just signed off by re-activating it. Raise the factor (or the base
 
 An agent can die on a **fatal, non-recoverable error before it ever runs a tool** — most notably `API Error: Output blocked by content filtering policy`, which aborts the whole `claude -p` run the instant the model tries to emit flagged output (e.g. generating a CODE_OF_CONDUCT / Contributor Covenant). When that happens the agent never gets to move its own item, so the item stays in its lane and **every tick re-dispatches it forever** — burning processes and, in the single-track dev lane, starving all other work behind it.
 
-The circuit breaker stops that. **Before each per-item dispatch in every lane**, run the pre-flight below with the lane's `AGENT` (`lestrade` / `holmes` / `watson`) and the item's `ID`. It inspects that item's own recent **run logs** — not its content — and prints `DISPATCH` (proceed), `REPRIEVE<TAB><note>` (a human re-activated a previously-escalated item — give it one fresh, raised-budget run), or `ESCALATE<TAB><reason>` (the item is wedged — escalate instead).
+The circuit breaker stops that. **Before each per-item dispatch in every lane**, run the pre-flight below with the lane's `AGENT` (`lestrade` / `holmes` / `watson`) and the item's `ID`. It inspects that item's own recent **run logs** and **dispatch lock** — not its content — and prints `DISPATCH` (proceed), `SKIP<TAB><reason>` (a run on this item is still in flight — leave it for a later tick), `REPRIEVE<TAB><note>` (a human re-activated a previously-escalated item — give it one fresh, raised-budget run), or `ESCALATE<TAB><reason>` (the item is wedged — escalate instead).
+
+**An in-flight run holds its item.** A dispatched agent writes its status changes at the *end* of its run, so for the whole time it works the item still reads as lane-eligible. When a run outlives the tick interval — a fan-out review with a full test suite routinely does — the next tick sees the same item and fires a second agent at it. Both then do the same work and both write, and whichever finishes last stomps everything that happened in between, including a human's own moves. So each dispatch records its PID in a per-item lock (`<agent>-<id>.lock`), and the pre-flight prints `SKIP` while that PID is alive. The lock is per **item**, not per lane — parallel agents on *different* items are the point, and unaffected. Nothing cleans the lock up (the run is detached and may die abruptly); a dead PID simply reads as free, and the next dispatch overwrites it.
 
 **Escalating before review is a last resort, reserved for the provably-terminal case.** The normal "this has been tried too many times" judgement is **Holmes's** — his 3-change-round rule, which only counts *after* a PR reaches review. A sequence should always end on Holmes finishing a review and deciding how it moves forward, not on Dispatch pulling an item before review. So the breaker splits by lane:
 
@@ -78,14 +80,24 @@ ID=<ITEM_ID>   # ← the item's `id` field
 # Inputs: AGENT (lestrade|holmes|watson), ID (project_items.id). Optional: LOGDIR.
 # Prints one of:
 #   "DISPATCH"            — proceed with the normal dispatch.
+#   "SKIP<TAB><reason>"   — a run dispatched on this item is still alive; leave it alone this tick.
 #   "REPRIEVE<TAB><note>" — a human re-activated a previously-escalated item; dispatch ONE fresh run
 #                           with a raised budget (the orchestrator consumes the marker + bumps budget).
 #   "ESCALATE<TAB><reason>" — the item is wedged; escalate, do not dispatch.
 LOGDIR="${LOGDIR:-$HOME/.claude-workbench/dev-team-logs}"
 CB_FATAL_STRIKES=3   # generic fatal errors may be transient — Lestrade/Holmes only escalate after N identical runs (never Watson; see below)
 cb_marker="$LOGDIR/$AGENT-$ID.escalated"   # written when the breaker escalates this item; presence => it was escalated before
+cb_lock="$LOGDIR/$AGENT-$ID.lock"          # written at dispatch; holds the dispatched run's PID
 cb_latest=$(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null | head -1)
-if [ -f "$cb_marker" ]; then
+cb_pid=$(cat "$cb_lock" 2>/dev/null || true)
+case "$cb_pid" in ''|0|*[!0-9]*) cb_pid= ;; esac   # empty, malformed, or `0` (kill -0 0 hits our own process GROUP — never a run) => item is free
+if [ -n "$cb_pid" ] && kill -0 "$cb_pid" 2>/dev/null; then
+  # An earlier tick's run on this same item is STILL ALIVE. Its status writes haven't landed yet, so
+  # the item still reads as lane-eligible — dispatching a second run would duplicate the whole review
+  # and race its board writes (the loser lands last and stomps whatever happened in between). Skip:
+  # the next tick either finds the lock dead (run finished) or the item gone from the lane.
+  printf 'SKIP\ta run dispatched on this item is still alive (pid %s) — a second one would duplicate its work and race its board writes' "$cb_pid"
+elif [ -f "$cb_marker" ]; then
   # This item was escalated by the breaker before, yet here it is back in its lane — which can only
   # mean a HUMAN re-activated it. Their intervention OVERRIDES the breaker: do not re-escalate on the
   # same stale logs (the bug where a manual re-review bounced straight back out). Grant exactly one
@@ -140,6 +152,8 @@ fi
 
 **If the pre-flight prints `DISPATCH`** (the normal case), proceed with the lane's dispatch command exactly as written.
 
+**If it prints a line starting with `SKIP`**, an earlier run on this item is still working. Do *not* dispatch, do *not* escalate, and do *not* touch the item — the live run owns it and will move it when it finishes. Record it as a **skip** (with the reason) in the final summary and move on to the next item.
+
 **If it prints a line starting with `REPRIEVE`**, a human re-activated an item the breaker had escalated. Honour the override:
 
 1. **Consume the marker** so this reprieve is one-shot, not permanent: `rm -f "$HOME/.claude-workbench/dev-team-logs/<AGENT>-<ID>.escalated"`. (If the fresh run wedges again, the breaker re-escalates from scratch and writes a new marker.)
@@ -163,6 +177,7 @@ Record it as an **escalation** (not a dispatch) in the final summary, and move o
 items = mcp__the-index__list_unrefined_items()
 for each item in items:
   run circuit-breaker pre-flight (AGENT=lestrade, ID=item.id)
+  if it says SKIP: a run on this item is still alive — leave it alone, skip dispatch
   if it says ESCALATE: escalate the item (write the marker after move succeeds), skip dispatch
   if it says REPRIEVE: consume the marker, then dispatch Lestrade on item.id with REPRIEVE=1
   else: dispatch Lestrade on item.id
@@ -186,6 +201,7 @@ nohup claude -p --agent workbench-dev-team:lestrade \
   --dangerously-skip-permissions \
   "Item ID: $ID" \
   > "$HOME/.claude-workbench/dev-team-logs/lestrade-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+echo $! > "$HOME/.claude-workbench/dev-team-logs/lestrade-$ID.lock"   # in-flight lock: the pre-flight SKIPs this item while this PID lives
 disown
 ```
 
@@ -218,6 +234,7 @@ disown
 items = mcp__the-index__list_review_items()
 for each item in items:
   run circuit-breaker pre-flight (AGENT=holmes, ID=item.id)
+  if it says SKIP: a run on this item is still alive — leave it alone, skip dispatch
   if it says ESCALATE: escalate the item (write the marker after move succeeds), skip dispatch
   if it says REPRIEVE: consume the marker, then dispatch Holmes on item.id with REPRIEVE=1
   else: dispatch Holmes on item.id
@@ -247,6 +264,7 @@ nohup claude -p --agent workbench-dev-team:holmes \
   --dangerously-skip-permissions \
   "Item ID: $ID" \
   > "$HOME/.claude-workbench/dev-team-logs/holmes-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+echo $! > "$HOME/.claude-workbench/dev-team-logs/holmes-$ID.lock"   # in-flight lock: the pre-flight SKIPs this item while this PID lives
 disown
 ```
 
@@ -256,6 +274,7 @@ disown
 items = mcp__the-index__list_development_items(limit=1)
 if items is non-empty:
   run circuit-breaker pre-flight (AGENT=watson, ID=items[0].id)
+  if it says SKIP: a run on this item is still alive — leave it alone, skip dispatch
   if it says ESCALATE: escalate the item (write the marker after move succeeds), skip dispatch
   if it says REPRIEVE: consume the marker, then dispatch Watson on items[0].id with REPRIEVE=1
   else: dispatch Watson on items[0].id
@@ -285,6 +304,7 @@ nohup claude -p --agent workbench-dev-team:watson \
   --max-budget-usd "$BUDGET" \
   "Item ID: $ID" \
   > "$HOME/.claude-workbench/dev-team-logs/watson-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
+echo $! > "$HOME/.claude-workbench/dev-team-logs/watson-$ID.lock"   # in-flight lock: the pre-flight SKIPs this item while this PID lives
 disown
 ```
 

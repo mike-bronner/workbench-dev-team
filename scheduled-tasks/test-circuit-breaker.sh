@@ -110,6 +110,65 @@ mklog "$d" holmes 99 202606210840 "API Error: 529 overloaded"
 touch "$d/holmes-99.escalated"
 expect "marker + 3 identical fatals -> reprieve (human override)" "REPRIEVE" "$(run "$d" holmes 99)"
 
+# 13. A live in-flight run on this item -> SKIP (the race that let a second Holmes stomp the board).
+#     $$ is this test's own pid — guaranteed alive.
+d="$WORK/case13"; mkdir -p "$d"
+mklog "$d" holmes 431 202606210800 "Review complete. Approved."
+echo $$ > "$d/holmes-431.lock"
+expect "live lock -> skip" "SKIP" "$(run "$d" holmes 431)"
+
+# 14. Live lock beats every other verdict — an in-flight run is never escalated out from under itself.
+d="$WORK/case14"; mkdir -p "$d"
+mklog "$d" holmes 431 202606210800 "Error: Exceeded USD budget (7)"
+echo $$ > "$d/holmes-431.lock"
+expect "live lock + budget death -> skip (not escalate)" "SKIP" "$(run "$d" holmes 431)"
+
+# 15. ...and beats the human-reactivation reprieve too: dispatching a reprieve alongside a live run
+#     would duplicate it. The marker survives, so the reprieve is still there on the next tick.
+d="$WORK/case15"; mkdir -p "$d"
+mklog "$d" holmes 431 202606210800 "Error: Exceeded USD budget (7)"
+touch "$d/holmes-431.escalated"
+echo $$ > "$d/holmes-431.lock"
+expect "live lock + reprieve marker -> skip (not reprieve)" "SKIP" "$(run "$d" holmes 431)"
+
+# 16. Dead pid in the lock -> the item is free -> DISPATCH. A detached run that died (or finished)
+#     never cleans up after itself, so a stale lock must never wedge the lane.
+d="$WORK/case16"; mkdir -p "$d"
+cb_dead=$$; while kill -0 "$cb_dead" 2>/dev/null; do cb_dead=$((cb_dead + 7717)); done   # find a pid nobody holds
+mklog "$d" holmes 431 202606210800 "Review complete. Approved."
+echo "$cb_dead" > "$d/holmes-431.lock"
+expect "dead lock -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+
+# 17. Malformed lock (truncated write, garbage) -> treated as free -> DISPATCH, never a crash.
+d="$WORK/case17"; mkdir -p "$d"
+mklog "$d" holmes 431 202606210800 "Review complete. Approved."
+printf 'not-a-pid\n' > "$d/holmes-431.lock"
+expect "malformed lock -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+
+# 18. Empty lock file -> treated as free -> DISPATCH.
+d="$WORK/case18"; mkdir -p "$d"
+mklog "$d" holmes 431 202606210800 "Review complete. Approved."
+: > "$d/holmes-431.lock"
+expect "empty lock -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+
+# 18b. A lock holding `0` -> DISPATCH. `kill -0 0` signals the CALLER'S OWN process group and always
+#      succeeds, so an unguarded check would read a truncated `0` as a live run and wedge the item forever.
+d="$WORK/case18b"; mkdir -p "$d"
+mklog "$d" holmes 431 202606210800 "Review complete. Approved."
+printf '0\n' > "$d/holmes-431.lock"
+expect "lock of 0 -> dispatch (not our own process group)" "DISPATCH" "$(run "$d" holmes 431)"
+
+# 19. The lock is per ITEM, not per lane — a live run on item 431 must not hold item 432.
+#     Parallel agents on different items are the point; the guard must not serialize the lane.
+d="$WORK/case19"; mkdir -p "$d"
+echo $$ > "$d/holmes-431.lock"
+expect "other item's lock ignored -> dispatch" "DISPATCH" "$(run "$d" holmes 432)"
+
+# 20. The lock is per AGENT too — Watson working item 431 must not block Holmes reviewing it later.
+d="$WORK/case20"; mkdir -p "$d"
+echo $$ > "$d/watson-431.lock"
+expect "other agent's lock ignored -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+
 echo
 echo "circuit-breaker: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]
