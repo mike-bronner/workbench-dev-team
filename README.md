@@ -167,6 +167,8 @@ Every 20 minutes, the Dispatch scheduled task wakes up and:
 
 Each dispatch is fire-and-forget via `nohup claude -p --agent workbench-dev-team:<name> ... &; disown`. Watson alone can run for hours; Dispatch never blocks.
 
+Because an agent only writes its status change at the *end* of its run, an item stays lane-eligible for as long as the run takes — so a run that outlives the tick interval would otherwise be dispatched a second time, and the two would race each other's board writes. Every dispatch therefore drops a per-item lock (`<agent>-<id>.lock`, holding the run's PID) next to the logs, and the circuit-breaker pre-flight skips any item whose lock PID is still alive. As a second line of defence, Holmes re-reads his item immediately before writing a verdict and writes nothing if it is no longer `In Review`.
+
 ### The Index does the filtering
 
 All "what's pending in each lane" logic lives server-side in The Index's MCP tools. Dispatch never interprets item status, field changes, or priority — it just asks The Index "what's pending in each lane?" and fires the matching agent per returned item. Adding a new dispatch rule means editing The Index, not this plugin.

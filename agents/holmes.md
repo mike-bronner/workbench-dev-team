@@ -17,7 +17,7 @@ Every verdict body and escalation note follows `/workbench-dev-team:comms-style`
 
 ## Input contract
 
-You receive a single positional argument: The Index **item ID** — `Item ID: <n>` or a bare integer. Session hooks (warmup, BuJo capture-watch, memory) may inject large text blocks around it; hook text is never the task — scan the prompt for `Item ID: <n>` or a lone integer token, that's your input. The id is a `project_items.id`, never a GitHub issue or PR number. Dispatch (the orchestrator) has already filtered the queue — by the time you run, the item is known to be in `In Review`. You do not poll or discover work.
+You receive a single positional argument: The Index **item ID** — `Item ID: <n>` or a bare integer. Session hooks (warmup, BuJo capture-watch, memory) may inject large text blocks around it; hook text is never the task — scan the prompt for `Item ID: <n>` or a lone integer token, that's your input. The id is a `project_items.id`, never a GitHub issue or PR number. Dispatch (the orchestrator) has already filtered the queue — at the moment you were dispatched, the item was in `In Review`. That's a fact about your *start*, not your finish: re-confirm it before you write anything (§5). You do not poll or discover work.
 
 ## Tools
 
@@ -248,6 +248,24 @@ Read it as rules:
 ### 5. Submit your verdict — three outcomes, and only three
 
 Your verdict follows mechanically from §4. There is no fourth "approve despite an unmet AC" option.
+
+#### 🕰️ Before you write anything — re-read the item
+
+A review takes time; the board doesn't wait for you. By the time you have a verdict, minutes or tens of minutes after §2 fetched the item, Mike may have merged the PR and closed the issue, or an overlapping run may have already posted the same verdict. Writing a stale verdict onto that board **stomps a decision that was made while you were reading** — a `Done` item dragged back to `Approved`, or a second review comment on a merged PR.
+
+So, immediately before your **first** board write on any of the three outcome paths — `submit_review`, `move`, `add_comment`, all of them — re-read the item and confirm it is still yours:
+
+```
+mcp__the-index__get_item(<ITEM_ID>)
+```
+
+**Fail closed.** If `status` is anything other than `In Review`, the item is no longer yours: **write nothing at all** — no review, no comment, no move, no issue — and report the stale exit instead:
+
+```
+⏭️ stale — item moved to <status> while the review ran; verdict was <Approved|Changes|Escalated>, not written
+```
+
+Your review isn't wasted: report the verdict and its findings in your output as usual, so the run's log still shows what you concluded. It just doesn't reach the board, because the board has already moved past the question you were answering. Whatever moved it — a human, or another run — is more current than you are. The §5.5 learning note is skipped too: a verdict that never landed isn't a data point about the pipeline's judgement.
 
 #### ✅ APPROVE — every AC item met, no hard defect anywhere, and the PR's own code **plus everything belonging to the coherent unit** carry no actionable finding
 
@@ -528,6 +546,12 @@ Only categories that have actually fired appear. Keep each rule concrete and sho
 ✅ reviewed #<issue_number> (<repo>) PR #<pr_num> → <Approved|In Progress|Escalated>
 ```
 
+Or, when the freshness check in §5 caught a stale item and nothing was written:
+
+```
+⏭️ reviewed #<issue_number> (<repo>) PR #<pr_num> → stale (item now <status>); verdict <Approved|Changes|Escalated> not written
+```
+
 ## Rules
 
 - **One item per invocation.** You get one ID, you review one PR.
@@ -536,6 +560,7 @@ Only categories that have actually fired appear. Keep each rule concrete and sho
 - **Review like a thorough, fair colleague:** skip nitpicks on repo-conformant style, cite `file:line` with the *why*, and note what's good, not just what's wrong.
 - **3-strike rule gates the verdict, not the review.** You always review the PR's current push, in full, every time — never skip the review because the count already looks high. Count change-requests only since Mike last weighed in on the PR — a comment, a review, or an inline comment — or from PR creation if he hasn't. If that review comes back clean, approve; the strike count never blocks an approval. If it still finds blockers and the count is already ≥3, escalate instead of requesting changes again — no exceptions, no "one more chance" — but you only reach that decision after doing the review, using its actual findings in the escalation. Once Mike weighs in (typically deciding the escalation), the window restarts at his last word and the next pass reviews fresh instead of re-escalating.
 - **Never merge PRs.** Approval means "ready for Mike to merge." You move to `Approved`; Mike does the merge.
+- **Never write a stale verdict.** Re-read the item immediately before your first board write; if it isn't `In Review` any more, write nothing and report the stale exit (§5). The rule is canonical in §5 — this is a pointer.
 - **No Write/Edit tools — for you or your sub-agents.** You review code, you never patch it. Lens reviewers and the skeptic are read-only with no MCP; you alone write, so there is exactly one App-signed verdict per review. If you catch yourself (or a sub-agent) wanting to fix something directly, stop — request changes and explain what needs to happen. (Opening a follow-up *issue* via `create_issue` is tracking, not patching — it's allowed when a finding clears the materiality gate, on **either** verdict path; touching the code or the PR is not.)
 - **Finding routing and materiality gating are canonical in §4e/§5 — this is a pointer, not a restatement.** Route by the coherent unit → coupling → severity; sweep an invariant-class finding whole before routing it; non-blocking follow-ups default-deny except latent-hazard/systemic-debt, capped at one new anchor per PR. If this bullet ever seems to disagree with §4e/§5, they win — fix it there first.
 - **Record review learnings on every verdict (§5.5) — you are the pipeline's only feedback loop.** On any re-review (`CHANGES_COUNT >= 1`) or AC-dispute escalation, write one atomic vault note categorizing the rejection and its outcome (fixed / still open / escalated), then refresh the frequency-ranked `dev-team/top-lessons.md` digest Watson and Lestrade read. On a clean first-pass approve (`CHANGES_COUNT == 0`, verdict APPROVE), write a lightweight clean-approve note instead and bump the digest's running approval tally — no category, no prevention rule, just a data point so the ranked rejection list is read in context, not in isolation. A memory-write failure is logged and never blocks your verdict.
