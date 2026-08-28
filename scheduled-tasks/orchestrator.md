@@ -194,7 +194,7 @@ Record it as a **reprieve** in the final summary, then move on.
 
 Record it as an **escalation** (not a dispatch) in the final summary, and move on to the next item.
 
-
+### Lane 1 — Inspector Lestrade (triage)
 
 ```
 items = mcp__the-index__list_unrefined_items()
