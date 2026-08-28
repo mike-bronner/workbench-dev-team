@@ -115,22 +115,22 @@ expect_reject "truncated body -> reject" "$WORK/truncated.md" "expected >= 200"
 # and confirm the guard goes red — a check that stays green is asserting nothing.
 echo "  -- derived structural checks --"
 
-# 9. A lane goes missing: drop one agent's dispatch (leaving its lock line, so
-#    only the lane count moves) -> reject on lanes, not on locks.
-grep -vF -- '--agent workbench-dev-team:watson' "$REAL" > "$WORK/two-lanes.md"
+# 9. A lane goes missing: drop one agent's dispatch -> reject on lanes.
+grep -vF -- 'dispatch-agent.sh" watson' "$REAL" > "$WORK/two-lanes.md"
 expect_reject "only 2 dispatched lanes -> reject" "$WORK/two-lanes.md" "distinct agent lane(s) dispatched"
 
-# 10. The pre-#39 regression: agents still dispatched, no per-item in-flight lock
-#     written by any of them -> reject on locks. This is the real-world shape of
-#     the frozen v0.35.0 orchestrator.
-grep -vE -- 'dev-team-logs/[a-z-]+-\$ID\.lock' "$REAL" > "$WORK/nolocks.md"
-expect_reject "no in-flight locks (pre-#39) -> reject" "$WORK/nolocks.md" "in-flight lock"
+# 10. Dispatch stops going through the wrapper entirely — the shape that would
+#     put every tick back under the auto-mode classifier. No `dispatch-agent.sh`
+#     invocation means no countable lane, so the guard rejects.
+grep -vF -- 'dispatch-agent.sh' "$REAL" > "$WORK/no-wrapper.md"
+expect_reject "no wrapper invocations -> reject" "$WORK/no-wrapper.md" "distinct agent lane(s) dispatched"
 
-# 11. Boundary: the Lestrade sweep legitimately dispatches without a lock, so a
-#     body with exactly 2 lock-writing lanes must still be ACCEPTED. Without this,
-#     the floor could be raised to 3 and nothing would catch the false rejection.
-grep -vF -- 'dev-team-logs/lestrade-$ID.lock' "$REAL" > "$WORK/two-locks.md"
-expect_pass "exactly 2 lock-writing lanes -> accept" "$WORK/two-locks.md"
+# 11. Boundary: Lestrade's per-repo sweep reuses the `lestrade` token, so it must
+#     NOT inflate the lane count into passing on its own — and dropping it must
+#     still leave three real lanes and be ACCEPTED. Without this, the sweep could
+#     silently substitute for a missing lane.
+grep -vF -- 'dispatch-agent.sh" lestrade <OWNER/REPO>' "$REAL" > "$WORK/no-sweep.md"
+expect_pass "sweep removed, three lanes remain -> accept" "$WORK/no-sweep.md"
 
 # 12-13. The circuit-breaker sentinel pair, each half independently.
 grep -vF -- '>>> circuit-breaker-preflight >>>' "$REAL" > "$WORK/no-open.md"

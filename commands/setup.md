@@ -563,22 +563,18 @@ og_lines=$(wc -l < "$BODY_OUT" | tr -d ' ')
 [ "$og_lines" -ge 200 ] || og_reject "body is only $og_lines lines (expected >= 200) — truncated or not the orchestrator"
 
 # 3. Lane structure, DERIVED from the body — no agent names appear here, so
-#    renaming a lane or adding a fourth one needs no edit in this file. Two
-#    counts, both computed from what the body actually contains:
-#      - distinct agents dispatched, which must cover all three lanes;
-#      - distinct agents writing a per-item in-flight lock (#39). Every lane that
-#        dispatches on a single item records one; the per-repo Lestrade sweep is
-#        the one dispatch that legitimately has none, so the floor is 2, not 3.
-#    A body that dispatches agents but locks nothing is the exact pre-#39
-#    regression: overlapping runs racing each other's board writes.
-#    The lock pattern deliberately matches the FILE NAME only, not the log
-#    directory, so relocating the log dir needs no edit here. (The pre-flight's
-#    own `$LOGDIR/$AGENT-$ID.lock` cannot inflate the count: `$AGENT` is
-#    uppercase and `[a-z-]+` will not match it.)
-og_agents=$(grep -oE -- '--agent workbench-dev-team:[a-z-]+' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
-og_lockers=$(grep -oE -- '[a-z-]+-\$ID\.lock' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
+#    renaming a lane or adding a fourth one needs no edit in this file. Every
+#    dispatch goes through the wrapper script, so one count covers it: distinct
+#    `dispatch-agent.sh <agent>` invocations, which must reach all three lanes.
+#    (Lestrade's per-repo sweep reuses the `lestrade` token and so collapses
+#    into its lane rather than inflating the count.)
+#
+#    The per-item in-flight lock (#39) is NOT checked here any more. It moved
+#    into the wrapper script when the dispatch block collapsed into one command,
+#    and 7a-ter verifies it by RUNNING the script's own test suite — an executed
+#    assertion rather than a grep for a string in a prompt.
+og_agents=$(grep -oE -- 'dispatch-agent\.sh"? +[a-z-]+' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
 [ "$og_agents" -ge 3 ] || og_reject "only $og_agents distinct agent lane(s) dispatched (expected >= 3) — a lane is missing"
-[ "$og_lockers" -ge 2 ] || og_reject "only $og_lockers agent lane(s) write a per-item in-flight lock (expected >= 2) — the #39 dispatch race is unguarded"
 
 # 4. The circuit-breaker sentinel pair. This is the guard's only literal, and it
 #    is not new maintenance: scheduled-tasks/test-circuit-breaker.sh already
@@ -600,7 +596,7 @@ EOF
   exit 1
 fi
 
-echo "✅ Orchestrator body verified ($og_lines lines, $og_agents lanes, $og_lockers locked)"
+echo "✅ Orchestrator body verified ($og_lines lines, $og_agents lanes)"
 echo "Orchestrator body: $BODY_OUT"
 # <<< orchestrator-body-guard <<<
 ```
@@ -613,6 +609,69 @@ Otherwise use the `Read` tool on the **absolute path** the block printed as
 `Orchestrator body:` — that file is already stripped, so read it verbatim. Never
 re-derive the path from `${CLAUDE_PLUGIN_ROOT}`, and never re-strip by hand. Its
 contents are the prompt the scheduled task will execute every tick.
+
+### 7a-ter. Install the dispatch wrapper and prove it works
+
+The verified body dispatches every lane through `dispatch-agent.sh`. That script
+has to exist at a **stable** path before the task is registered, or every tick
+fails at the shell. It is installed to `$HOME/.claude-workbench/bin/` — not the
+plugin cache, whose path carries the version and moves on every update (the same
+trap #40 fixed for the orchestrator itself).
+
+Run from the resolved `$SRC_ROOT` (Step 7a), not `${CLAUDE_PLUGIN_ROOT}`:
+
+```bash
+set -u
+WRAPPER_SRC="$SRC_ROOT/bin/dispatch-agent.sh"
+WRAPPER_TEST="$SRC_ROOT/bin/test-dispatch-agent.sh"
+WRAPPER_DST="$HOME/.claude-workbench/bin/dispatch-agent.sh"
+
+if [ ! -f "$WRAPPER_SRC" ] || [ ! -f "$WRAPPER_TEST" ]; then
+  echo "❌ Dispatch wrapper or its test is missing under $SRC_ROOT/bin — cannot deploy."
+  exit 1
+fi
+
+# Prove the shipped script behaves before installing it. The suite covers the
+# per-item in-flight lock (#39), the budget cap and its reprieve multiple, and
+# the per-agent defaults that survive a missing or malformed config — the
+# assertions the body guard used to approximate with a grep.
+if ! bash "$WRAPPER_TEST" >/dev/null 2>&1; then
+  echo "❌ bin/test-dispatch-agent.sh FAILED — refusing to install a wrapper that does not pass its own suite."
+  echo "   Re-run it directly for the detail:  bash $WRAPPER_TEST"
+  exit 1
+fi
+
+mkdir -p "$HOME/.claude-workbench/bin"
+install -m 755 "$WRAPPER_SRC" "$WRAPPER_DST"
+echo "✅ Dispatch wrapper installed and self-tested: $WRAPPER_DST"
+```
+
+**If this block exits non-zero, stop Step 7 entirely**, exactly as for the body
+guard above — a registered task pointing at a missing or broken wrapper stalls
+every lane silently.
+
+Then ensure the permission rule exists, so Dispatch's own Bash call is matched by
+a rule rather than judged by the auto-mode classifier. Without it the classifier
+re-decides the spawn on every tick and refuses nondeterministically — the stall
+this wrapper exists to end. Both spellings are added: the `$HOME` form the
+orchestrator writes, and the absolute path it expands to.
+
+```bash
+SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+cp "$SETTINGS" "$SETTINGS.bak-wrapper-$(date +%Y%m%d-%H%M%S)"
+jq --arg abs "Bash(bash $HOME/.claude-workbench/bin/dispatch-agent.sh:*)" \
+   --arg home 'Bash(bash "$HOME/.claude-workbench/bin/dispatch-agent.sh":*)' \
+   '.permissions.allow = ((.permissions.allow // []) + [$abs, $home] | unique)' \
+   "$SETTINGS" > "$SETTINGS.tmp" \
+  && jq empty "$SETTINGS.tmp" \
+  && mv "$SETTINGS.tmp" "$SETTINGS" \
+  && echo "✅ Dispatch permission rules present in $SETTINGS" \
+  || { rm -f "$SETTINGS.tmp"; echo "⚠  Could not update $SETTINGS — add the rules by hand or Dispatch stays under the classifier."; }
+```
+
+A failure here is a **warning, not a stop**: the task is still worth registering,
+it will just be at the classifier's mercy until the rules land.
 
 ### 7b. Check for an existing task
 
@@ -706,7 +765,7 @@ Print a clean summary block:
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
   Prompt source:    {SRC_ROOT}/scheduled-tasks/orchestrator.md (v{SRC_VERSION})
-                    body verified — {BODY_LINES} lines, {BODY_LANES} lanes, {BODY_LOCKS} locked
+                    body verified — {BODY_LINES} lines, {BODY_LANES} lanes
   Router model:     pinned to Sonnet ({PATCHED} registry(ies) patched)
                     (or: ⚠ could not confirm — verify in the Scheduled panel)
 
@@ -723,7 +782,7 @@ Print a clean summary block:
 Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
 choice (`suppressed` or `default (visible)`), fill `{PATCHED}` from Step 7d's
 count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a and
-`{BODY_LINES}`/`{BODY_LANES}`/`{BODY_LOCKS}` from Step 7a-bis's success line,
+`{BODY_LINES}`/`{BODY_LANES}` from Step 7a-bis's success line,
 and adjust the scheduled-task, prompt-source and router-model lines if
 registration was skipped or the patch found nothing.
 

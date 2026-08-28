@@ -17,7 +17,7 @@ You have **three** MCP tools from The Index:
 
 The Index server owns all the filter and sort logic. You never interpret status or field_changes yourself — trust the tool results.
 
-You also have `Bash` for dispatching subprocesses, and `ToolSearch` to load the three deferred Index tools (see Workflow). The only other tools you may touch are `mcp__the-index__move` and `mcp__the-index__add_comment` — loaded on demand *only* when the circuit breaker (below) decides to escalate a wedged item. You never use them in normal routing.
+You also have `Bash` — used for exactly two things: the circuit-breaker pre-flight, and invoking `dispatch-agent.sh` — and `ToolSearch` to load the three deferred Index tools (see Workflow). The only other tools you may touch are `mcp__the-index__move` and `mcp__the-index__add_comment` — loaded on demand *only* when the circuit breaker (below) decides to escalate a wedged item. You never use them in normal routing.
 
 ## Workflow
 
@@ -41,8 +41,8 @@ mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 
 Per-agent model, effort, fallback model, and budget live in
 `~/.claude-workbench/dev-team-config.json` (written by `/workbench-dev-team:setup`,
-editable by the user, survives plugin updates). Each dispatch command below reads
-it with `jq` and falls back to the baked-in defaults when the file or a key is
+editable by the user, survives plugin updates). `dispatch-agent.sh` reads it on
+every dispatch and falls back to the baked-in defaults when the file or a key is
 missing — a malformed or absent config never blocks a dispatch. Effort, the
 optional `fallback` model chain, and Holmes's optional budget cap are passed only
 when set; Watson's budget cap defaults to `10.00` when absent, and models default
@@ -157,7 +157,7 @@ fi
 **If it prints a line starting with `REPRIEVE`**, a human re-activated an item the breaker had escalated. Honour the override:
 
 1. **Consume the marker** so this reprieve is one-shot, not permanent: `rm -f "$HOME/.claude-workbench/dev-team-logs/<AGENT>-<ID>.escalated"`. (If the fresh run wedges again, the breaker re-escalates from scratch and writes a new marker.)
-2. **Dispatch the lane's command with `REPRIEVE=1` exported** — set it in the same shell *before* the dispatch block. The budget-capped lanes (Holmes, Watson) read it and multiply the cap by `agents.<agent>.reprieveBudgetMultiplier` (default `3`); the uncapped Lestrade lane ignores it and just runs fresh.
+2. **Dispatch the lane's command with `REPRIEVE=1` exported** — prefix it onto the same command, e.g. `REPRIEVE=1 bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <ITEM_ID>`. The budget-capped lanes (Holmes, Watson) multiply the cap by `agents.<agent>.reprieveBudgetMultiplier` (default `3`); the uncapped Lestrade lane ignores it and just runs fresh.
 
 Record it as a **reprieve** in the final summary, then move on.
 
@@ -188,21 +188,7 @@ for each distinct item.repo across items:
 Dispatch command (run in Bash, **detached**):
 
 ```bash
-ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
-CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
-EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
-FALLBACK=$(jq -r '.agents.lestrade.fallback // empty' "$CONFIG" 2>/dev/null || true)
-export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
-nohup claude -p --agent workbench-dev-team:lestrade \
-  --model "$MODEL" \
-  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
-  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
-  --dangerously-skip-permissions \
-  "Item ID: $ID" \
-  > "$HOME/.claude-workbench/dev-team-logs/lestrade-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
-echo $! > "$HOME/.claude-workbench/dev-team-logs/lestrade-$ID.lock"   # in-flight lock: the pre-flight SKIPs this item while this PID lives
-disown
+bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" lestrade <ITEM_ID>
 ```
 
 **Blocker sweep** — after the per-item dispatches, collect the **distinct** `repo` values from the items this lane returned and fire one sweep per repo. New issues are the only thing that changes a repo's dependency graph from the pipeline's perspective, so a sweep accompanies every batch of fresh triage work — an idle Lane 1 means no sweeps. In sweep mode Lestrade marks blocked-by dependencies between open issues (additive only) via The Index's `add_blocked_by` tool.
@@ -211,21 +197,7 @@ Sweep dispatch command (one per distinct repo, also **detached**; the log
 slug is derived in-shell — no manual substitution):
 
 ```bash
-REPO=<OWNER/REPO>  # ← the ONLY line you edit: the repo in owner/name form
-CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.lestrade.model // "sonnet"' "$CONFIG" 2>/dev/null || echo "sonnet")
-EFFORT=$(jq -r '.agents.lestrade.effort // empty' "$CONFIG" 2>/dev/null || true)
-FALLBACK=$(jq -r '.agents.lestrade.fallback // empty' "$CONFIG" 2>/dev/null || true)
-SLUG=$(echo "$REPO" | tr '/' '-')
-export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
-nohup claude -p --agent workbench-dev-team:lestrade \
-  --model "$MODEL" \
-  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
-  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
-  --dangerously-skip-permissions \
-  "Repo sweep: $REPO" \
-  > "$HOME/.claude-workbench/dev-team-logs/lestrade-sweep-$SLUG-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
-disown
+bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" lestrade <OWNER/REPO>
 ```
 
 ### Lane 2 — Sherlock Holmes (review)
@@ -243,29 +215,7 @@ for each item in items:
 Dispatch command:
 
 ```bash
-ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
-CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.holmes.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
-EFFORT=$(jq -r '.agents.holmes.effort // empty' "$CONFIG" 2>/dev/null || true)
-FALLBACK=$(jq -r '.agents.holmes.fallback // empty' "$CONFIG" 2>/dev/null || true)
-BUDGET=$(jq -r '.agents.holmes.maxBudgetUsd // empty' "$CONFIG" 2>/dev/null || true)
-# Reprieve: a human re-activated this previously-escalated item (pre-flight said REPRIEVE), so they've
-# accepted the cost — raise the cap for this one run. Inert (REPRIEVE unset → normal) on ordinary ticks.
-if [ "${REPRIEVE:-0}" = 1 ] && [ -n "$BUDGET" ]; then
-  MULT=$(jq -r '.agents.holmes.reprieveBudgetMultiplier // 3' "$CONFIG" 2>/dev/null || echo 3)
-  BUDGET=$(awk -v b="$BUDGET" -v m="$MULT" 'BEGIN{printf "%.2f", b*m}')
-fi
-export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
-nohup claude -p --agent workbench-dev-team:holmes \
-  --model "$MODEL" \
-  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
-  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
-  ${BUDGET:+--max-budget-usd} ${BUDGET:+"$BUDGET"} \
-  --dangerously-skip-permissions \
-  "Item ID: $ID" \
-  > "$HOME/.claude-workbench/dev-team-logs/holmes-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
-echo $! > "$HOME/.claude-workbench/dev-team-logs/holmes-$ID.lock"   # in-flight lock: the pre-flight SKIPs this item while this PID lives
-disown
+bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" holmes <ITEM_ID>
 ```
 
 ### Lane 3 — Dr. Watson (development)
@@ -283,37 +233,15 @@ if items is non-empty:
 Dispatch command (note the budget cap):
 
 ```bash
-ID=<ITEM_ID>  # ← the ONLY line you edit: the item's `id` field
-CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-MODEL=$(jq -r '.agents.watson.model // "opus"' "$CONFIG" 2>/dev/null || echo "opus")
-EFFORT=$(jq -r '.agents.watson.effort // empty' "$CONFIG" 2>/dev/null || true)
-FALLBACK=$(jq -r '.agents.watson.fallback // empty' "$CONFIG" 2>/dev/null || true)
-BUDGET=$(jq -r '.agents.watson.maxBudgetUsd // 10.00' "$CONFIG" 2>/dev/null || echo "10.00")
-# Reprieve: a human re-activated this previously-escalated item (pre-flight said REPRIEVE), so they've
-# accepted the cost — raise the cap for this one run. Inert (REPRIEVE unset → normal) on ordinary ticks.
-if [ "${REPRIEVE:-0}" = 1 ]; then
-  MULT=$(jq -r '.agents.watson.reprieveBudgetMultiplier // 3' "$CONFIG" 2>/dev/null || echo 3)
-  BUDGET=$(awk -v b="$BUDGET" -v m="$MULT" 'BEGIN{printf "%.2f", b*m}')
-fi
-export CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
-nohup claude -p --agent workbench-dev-team:watson \
-  --model "$MODEL" \
-  ${EFFORT:+--effort} ${EFFORT:+"$EFFORT"} \
-  ${FALLBACK:+--fallback-model} ${FALLBACK:+"$FALLBACK"} \
-  --dangerously-skip-permissions \
-  --max-budget-usd "$BUDGET" \
-  "Item ID: $ID" \
-  > "$HOME/.claude-workbench/dev-team-logs/watson-$ID-$(date +%Y%m%d-%H%M%S).log" 2>&1 &
-echo $! > "$HOME/.claude-workbench/dev-team-logs/watson-$ID.lock"   # in-flight lock: the pre-flight SKIPs this item while this PID lives
-disown
+bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <ITEM_ID>
 ```
 
 Watson is single-track: the server returns at most one item, and Watson's own `/tmp/watson.lock` prevents a second Watson from stomping on a currently-running one.
 
 ## Rules
 
-- **Fire-and-forget.** Every dispatch goes into the background with `nohup ... &` + `disown`. Never wait for an agent to complete — Watson alone can run for hours.
-- **Copy dispatch blocks byte-for-byte.** The only line you edit is the leading assignment (`ID=` or `REPO=`). Everything below it — the flags, the positional `"Item ID: $ID"` prompt, the log redirect — is pasted verbatim. The positional prompt is the agent's entire task: drop or reword it and the agent boots with no work, burns a process, and exits. Never reconstruct a dispatch command from memory.
+- **Fire-and-forget.** `dispatch-agent.sh` backgrounds every run with `nohup ... &` + `disown` and returns immediately. Never wait for an agent to complete — Watson alone can run for hours.
+- **Copy the dispatch command byte-for-byte.** The only thing you substitute is the trailing target — the item's `id`, or `owner/repo` for a Lestrade sweep. The path, the quoting, and the agent token are pasted verbatim: the command is matched against a `permissions.allow` prefix rule, and any reformatting drops it back under the auto-mode classifier, which refuses the spawn nondeterministically. Never reconstruct a dispatch command from memory.
 - **One Bash call per dispatch.** Don't batch multiple dispatches into one shell command — each needs its own log file and backgrounding.
 - **ITEM_ID is the `id` field** (`project_items.id`) of the item the lane tool returned — never `issue_number` or `pr_number`. Mixing them up dispatches an agent at a nonexistent item.
 - **No reasoning about item contents.** You decide *which agent* based on *which tool returned the item*, not on item fields. That logic lives server-side. The lone exception is the **circuit breaker**, which reads an item's own **run logs** and escalation **marker** (not its content) to decide dispatch / reprieve / escalate.
@@ -330,5 +258,5 @@ Watson is single-track: the server returns at most one item, and Watson's own `/
 ## Failure modes
 
 - **MCP tool fails** — if any of the three list tools returns an error, log it, skip that lane, continue with the others. Do not retry in-process (the next tick retries naturally).
-- **Dispatch command fails** — `nohup ... &` should never fail at the shell level. If it does (rare — usually a missing binary), log and continue.
+- **Dispatch command fails** — `dispatch-agent.sh` exits non-zero only on a bad argument (unknown agent, non-numeric item id, a sweep target on a non-Lestrade lane) or a missing script. Log the exit code and the lane, skip that item, and continue with the rest — a re-dispatch on the next tick is free, a wedged tick is not.
 - **The Index unreachable** — all three tools will fail. Output `the-index unreachable — skipping this tick` and exit cleanly.
