@@ -70,7 +70,7 @@ The circuit breaker stops that. **Before each per-item dispatch in every lane**,
 
 - **Human re-activation wins (any lane).** Once the breaker escalates an item it drops a marker; if that item later reappears in its lane, a human must have moved it back, and their intervention **overrides** the breaker. The pre-flight prints `REPRIEVE` — one fresh run, dispatched with a **raised budget** (a re-activated review is usually one that was too big for the normal cap) — instead of re-escalating on the same stale logs. This is the fix for the failure mode where a manually re-requested review bounced straight back out to `Escalated` without Holmes ever running. Each human touch buys exactly one real attempt; if it wedges again, escalation starts from scratch.
 - **Content filter** (any lane, including Watson) — deterministic: the deliverable itself trips the output filter, so the run can *never* succeed and can never produce a PR to review. There is nothing to wait for — escalate on the first hit. This is the only generic case that can escalate a Watson-lane item, and it's the exact failure (#66) the breaker was built for.
-- **USD budget exceeded** (**Lestrade and Holmes lanes only**) — deterministic for a given workload and cap: re-running at the same budget hits the same wall. Escalate on the **first** hit rather than burning two more capped runs into it, so a human can raise `agents.<agent>.maxBudgetUsd` (or split the work) and move the item back — at which point the re-activation reprieve above dispatches it with a raised budget. On Watson this just retries (the dev lane never escalates pre-review).
+- **USD budget exceeded** (**Lestrade and Holmes lanes only**) — deterministic for a given workload and cap: re-running at the same budget hits the same wall. Escalate on the **first** hit rather than burning two more capped runs into it, so a human can raise `agents.<agent>.maxBudgetUsd` (or split the work) and move the item back — at which point the re-activation reprieve above dispatches it with a raised budget. On Watson this just retries (the dev lane never escalates pre-review). **On Holmes there is one exception: the workload may have changed since the kill.** If the dev lane logged a run on this item *after* the killed review, Watson has pushed to the branch and the next review is a different — usually much smaller — job, so the "same wall" premise does not hold and the item is dispatched instead. Lestrade has no such exception: triage runs before any Watson does.
 - **N identical fatal errors** (**Lestrade and Holmes lanes only**) — a transient guard for a run wedged on the same generic fatal where no review stage will ever catch it. It does **not** apply to Watson: a 529 or a partial isn't provably terminal, the work may yet reach a PR, and pulling it to `Escalated` before review is precisely the premature escalation the dev lane must avoid. On the Watson lane a generic fatal just retries on the next tick — escalation waits for Holmes.
 
 ```bash
@@ -139,7 +139,26 @@ elif tail -3 "$cb_latest" 2>/dev/null | grep -qF "$CB_BUDGET_SIG"; then
       echo DISPATCH                   # not enough strikes yet — the branch persists, let it resume
     fi
   else
-    printf 'ESCALATE\tthe run hit the configured USD budget cap before completing, so re-running at the same cap will hit the same wall — raise agents.%s.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve' "$AGENT"
+    # Holmes exception: "the same wall" holds only while the WORKLOAD is unchanged, and Watson
+    # regenerates Holmes's workload. After an AC dispute or a change-request bounce, Watson pushes a
+    # follow-up commit and the next review is a small diff, not a repeat of the job that died. So if
+    # the dev lane logged a run on this item AFTER the killed review, the premise fails and this is a
+    # different job — dispatch it. If that run also dies on the cap with no newer Watson log behind
+    # it, the next tick escalates normally, so at most one capped run is spent proving it.
+    #
+    # Observed on item 575 (phpcs-rules#375): the review was killed at 08:15 having ALREADY published
+    # its verdict — the cap cut the memory write-back tail, not the review. Watson pushed the
+    # adjudicated follow-up at 10:16, and the 10:22 tick escalated an item whose pending review was a
+    # comment-only diff, on a log from a round that had finished its work two hours earlier.
+    #
+    # Lestrade is excluded deliberately: triage runs before any Watson does, so a newer dev-lane log
+    # cannot mean a triage item's workload changed.
+    cb_newer_watson=$(ls -t "$LOGDIR/watson-$ID-"*.log 2>/dev/null | head -1)
+    if [ "$AGENT" = holmes ] && [ -n "$cb_newer_watson" ] && [ "$cb_newer_watson" -nt "$cb_latest" ]; then
+      echo DISPATCH                     # the dev lane moved this item on — not the same wall
+    else
+      printf 'ESCALATE\tthe run hit the configured USD budget cap before completing, so re-running at the same cap will hit the same wall — raise agents.%s.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve' "$AGENT"
+    fi
   fi
 elif [ "$AGENT" = watson ]; then
   # Dev lane, generic (non-content-filter) fatal. Watson NEVER escalates here: a 529, a

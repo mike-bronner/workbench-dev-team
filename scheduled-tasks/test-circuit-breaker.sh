@@ -135,6 +135,30 @@ mklog "$d" watson 304 202606210820 "Budget cap reached mid-issue. The PR stays a
 mklog "$d" watson 304 202606210840 "Budget cap reached mid-issue. The PR stays a draft: 8 of 9 files done."
 expect "watson graceful wind-downs -> dispatch (never escalate)" "DISPATCH" "$(run "$d" watson 304)"
 
+# 11e. Holmes budget kill, but the DEV LANE logged a run on this item afterwards -> DISPATCH. Watson
+#      regenerates Holmes's workload: a follow-up commit leaves the next review a small diff, not a
+#      repeat of the job that died, so the "same wall" premise fails. Regression for item 575
+#      (phpcs-rules#375), escalated on a log from a review round that had finished two hours earlier.
+d="$WORK/case11e"; mkdir -p "$d"
+mklog "$d" holmes 575 202608280815 "Error: Exceeded USD budget (7)"
+mklog "$d" watson 575 202608281016 "Follow-up commit 856d018 pushed. PR ready for re-review."
+expect "holmes budget death + newer watson run -> dispatch" "DISPATCH" "$(run "$d" holmes 575)"
+
+# 11f. The same fixture with the watson log made OLDER than the kill -> ESCALATE. Pins the mtime
+#      COMPARISON rather than the mere existence of a dev-lane log: without it, any item Watson had
+#      ever touched would become permanently unescalatable.
+d="$WORK/case11f"; mkdir -p "$d"
+mklog "$d" watson 575 202608280700 "Implementation pushed. Moving to In Review."
+mklog "$d" holmes 575 202608280815 "Error: Exceeded USD budget (7)"
+expect "holmes budget death + older watson run -> escalate" "ESCALATE" "$(run "$d" holmes 575)"
+
+# 11g. Lestrade is excluded from the exception -> ESCALATE even with a newer watson log. Triage runs
+#      before any Watson does, so a newer dev-lane log cannot mean a triage item's workload changed.
+d="$WORK/case11g"; mkdir -p "$d"
+mklog "$d" lestrade 575 202608280815 "Error: Exceeded USD budget (7)"
+mklog "$d" watson 575 202608281016 "Follow-up commit pushed."
+expect "lestrade budget death + newer watson run -> escalate" "ESCALATE" "$(run "$d" lestrade 575)"
+
 # 12. Marker also resets the generic strike count -> REPRIEVE (re-activation after ANY escalation type).
 d="$WORK/case12"; mkdir -p "$d"
 mklog "$d" holmes 99 202606210800 "API Error: 529 overloaded"
