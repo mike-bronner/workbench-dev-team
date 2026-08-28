@@ -13,11 +13,11 @@ You have **three** MCP tools from The Index:
 
 - `mcp__the-index__list_unrefined_items` — items Lestrade should triage (status `Inbox`).
 - `mcp__the-index__list_review_items` — items Holmes should review (status "In Review").
-- `mcp__the-index__list_development_items` — items Watson should work on (status "In Progress" or "Ready", In Progress first, priority-sorted, server returns at most one).
+- `mcp__the-index__list_development_items` — items Watson should work on (status "In Progress" or "Ready", In Progress first, priority-sorted, server returns at most one). Items carrying an in-flight claim are excluded; pass `include_claimed=true` for the stale-claim sweep in Lane 3.
 
 The Index server owns all the filter and sort logic. You never interpret status or field_changes yourself — trust the tool results.
 
-You also have `Bash` — used for exactly two things: the circuit-breaker pre-flight, and invoking `dispatch-agent.sh` — and `ToolSearch` to load the three deferred Index tools (see Workflow). The only other tools you may touch are `mcp__the-index__move` and `mcp__the-index__add_comment` — loaded on demand *only* when the circuit breaker (below) decides to escalate a wedged item. You never use them in normal routing.
+You also have `Bash` — used for exactly two things: the circuit-breaker pre-flight, and invoking `dispatch-agent.sh` — and `ToolSearch` to load the deferred Index tools (see Workflow). Beyond the three list tools you may touch `mcp__the-index__release_item`, loaded for Lane 3's stale-claim sweep, and `mcp__the-index__move` / `mcp__the-index__add_comment`, loaded on demand *only* when the circuit breaker (below) decides to escalate a wedged item. You never use `move` or `add_comment` in normal routing.
 
 ## Workflow
 
@@ -85,6 +85,7 @@ ID=<ITEM_ID>   # ← the item's `id` field
 #                           with a raised budget (the orchestrator consumes the marker + bumps budget).
 #   "ESCALATE<TAB><reason>" — the item is wedged; escalate, do not dispatch.
 LOGDIR="${LOGDIR:-$HOME/.claude-workbench/dev-team-logs}"
+CB_BUDGET_SIG='Exceeded USD budget'   # the HARD kill the harness writes. Watson's graceful wind-down (it senses the cap, commits what is done, comments on the PR) never writes this, and must never escalate — that path is how multi-file work completes inside a per-run cap.
 CB_FATAL_STRIKES=3   # generic fatal errors may be transient — Lestrade/Holmes only escalate after N identical runs (never Watson; see below)
 cb_marker="$LOGDIR/$AGENT-$ID.escalated"   # written when the breaker escalates this item; presence => it was escalated before
 cb_lock="$LOGDIR/$AGENT-$ID.lock"          # written at dispatch; holds the dispatched run's PID
@@ -109,13 +110,34 @@ elif [ -z "$cb_latest" ]; then
 elif tail -3 "$cb_latest" 2>/dev/null | grep -qi 'content filtering policy'; then
   # Deterministic, any lane: the deliverable trips the output filter and will never succeed on retry — and can never produce a PR to review. Escalate on the first hit.
   printf 'ESCALATE\toutput blocked by the content filtering policy — a required deliverable trips the output content filter, so the run can never succeed on retry'
-elif tail -3 "$cb_latest" 2>/dev/null | grep -qi 'Exceeded USD budget'; then
+elif tail -3 "$cb_latest" 2>/dev/null | grep -qF "$CB_BUDGET_SIG"; then
   # Deterministic for a given workload + cap: a re-run at the same budget hits the same wall. On the
   # review/triage lanes, escalate on the FIRST hit — burning more capped runs into the same wall only
   # wastes money. A human raises the cap (agents.<agent>.maxBudgetUsd) or splits the work, then moves
   # the item back to its lane: that re-activation is a REPRIEVE (above), dispatched with a raised budget.
+  # The dev lane is the exception, because Watson resumes on a PERSISTENT branch: each capped run
+  # starts further along than the last, so a budget kill there is not the same wall twice. Measured
+  # over 1,015 runs: 69 hard kills across 52 items, and no item ever needed a 4th. So Watson gets the
+  # strike counter (CB_FATAL_STRIKES) rather than the first-hit escalation — three consecutive kills
+  # on the same item is the point where "it is making progress" stops being the likelier story.
+  #
+  # Only the HARD kill matches here. Watson's graceful wind-down — sensing the cap, committing what
+  # is done, and commenting on the PR — never writes this signature, and must never be escalated:
+  # that path is how multi-file work completes inside a per-run cap.
   if [ "$AGENT" = watson ]; then
-    echo DISPATCH                     # dev lane never escalates pre-review (see below); retry next tick
+    cb_budget_strikes=0
+    for cb_f in $(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null); do
+      if tail -3 "$cb_f" 2>/dev/null | grep -qF "$CB_BUDGET_SIG"; then
+        cb_budget_strikes=$((cb_budget_strikes + 1))
+      else
+        break                         # streak broken — an older run ended differently (or succeeded)
+      fi
+    done
+    if [ "$cb_budget_strikes" -ge "$CB_FATAL_STRIKES" ]; then
+      printf 'ESCALATE\t%s consecutive runs were killed by the USD budget cap without reaching review — raise agents.watson.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve' "$cb_budget_strikes"
+    else
+      echo DISPATCH                   # not enough strikes yet — the branch persists, let it resume
+    fi
   else
     printf 'ESCALATE\tthe run hit the configured USD budget cap before completing, so re-running at the same cap will hit the same wall — raise agents.%s.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve' "$AGENT"
   fi
@@ -163,11 +185,12 @@ Record it as a **reprieve** in the final summary, then move on.
 
 **If it prints a line starting with `ESCALATE`**, do *not* dispatch this item — re-dispatching only burns another process. Escalate it instead:
 
-1. Load the escalation tools once (deferred): `ToolSearch query: select:mcp__the-index__move,mcp__the-index__add_comment`.
+1. Load the escalation tools once (deferred): `ToolSearch query: select:mcp__the-index__move,mcp__the-index__add_comment,mcp__the-index__release_item`.
 2. `mcp__the-index__move(agent=<AGENT>, column="Escalated", id=<ID>)`.
 3. `mcp__the-index__add_comment(agent=<AGENT>, id=<ID>, body=…)` — the body states the item was **auto-escalated by the Dispatch circuit breaker**, quotes the `<reason>` the pre-flight printed (the text after the tab), notes it was pulled from the lane to stop an infinite re-dispatch loop, and tells the human that **moving it back to its lane re-runs it once with a raised budget** (the reprieve) — for a budget escalation, raise `agents.<AGENT>.maxBudgetUsd` first if even the reprieve multiple won't be enough.
 4. **Only after the `move` succeeds**, write the reprieve marker so a later human re-activation is recognised: `touch "$HOME/.claude-workbench/dev-team-logs/<AGENT>-<ID>.escalated"`. (Skip this if the move failed — without a real escalation there is nothing to reprieve.)
 5. If `<AGENT>` is `watson`, also clear a dead lock so the next legitimate Watson isn't blocked: only `rm -f /tmp/watson.lock` when the PID inside it is **not** alive.
+6. **Release the item's board claim**: `mcp__the-index__release_item(<ID>)` (load it with the escalation tools in step 1). An escalated item has left the lane, so nothing is working it — and a claim left behind would keep it hidden from `list_development_items` even after a human moves it back. The call is idempotent, so it is safe when the run never claimed.
 
 Record it as an **escalation** (not a dispatch) in the final summary, and move on to the next item.
 
@@ -220,6 +243,29 @@ bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" holmes <ITEM_ID>
 
 ### Lane 3 — Dr. Watson (development)
 
+**Sweep stale claims first.** A Watson killed outright — a budget-cap kill leaves a
+31-byte log and nothing else — never reaches its own cleanup, so its board claim
+survives it. `list_development_items` hides claimed items by default, which is the
+point; it also means a claim nobody owns would hide its item **forever**, and the
+strike counter that would eventually escalate it never gets another run to count.
+So before the normal pick, look at the claimed items and release the ones whose run
+is dead:
+
+```
+held = mcp__the-index__list_development_items(include_claimed=true, limit=25)
+for each item in held where item.in_flight_at is not null:
+  run circuit-breaker pre-flight (AGENT=watson, ID=item.id)
+  if it says SKIP: the run is still alive — leave the claim exactly as it is
+  else: mcp__the-index__release_item(item.id)   # dead owner; hand the item back to the lane
+```
+
+`SKIP` is the pre-flight's live-PID verdict, so it is the same liveness test the
+per-item lock already used — the claim adds board visibility, not a second opinion.
+Everything else (a dead lock, an escalation-worthy log, no log at all) means nobody
+is working it.
+
+Then take the normal pick, which now excludes anything still legitimately held:
+
 ```
 items = mcp__the-index__list_development_items(limit=1)
 if items is non-empty:
@@ -236,7 +282,7 @@ Dispatch command (note the budget cap):
 bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <ITEM_ID>
 ```
 
-Watson is single-track: the server returns at most one item, and Watson's own `/tmp/watson.lock` prevents a second Watson from stomping on a currently-running one.
+Watson is single-track, and three things hold that line at different scopes. The server returns at most one item. The **board claim** stops any later tick offering that same item to a second Watson, across hosts and visibly. And Watson's own `/tmp/watson.lock` still prevents a second Watson starting on a *different* item on this machine — the claim is per-item and cannot express that. `/tmp/watson.lock` is not retired and must not be: `hooks/scripts/commit-approval-gate.sh` reads a live PID in it to recognise an autonomous pipeline run and waive the interactive commit approval, so deleting it would make every headless Watson commit stop for approval nobody is there to give.
 
 ## Rules
 
