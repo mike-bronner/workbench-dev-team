@@ -41,6 +41,34 @@ lock, ignored by both the mutex check above and the gate hook. If Watson
 hangs and the lock goes stale, the operator clears it with
 `rm /tmp/watson.lock`.
 
+**This lock is not the item claim, and neither replaces the other.** It does two
+host-local jobs: it keeps Watson single-track on this machine, and it is how
+`hooks/scripts/commit-approval-gate.sh` recognises an autonomous pipeline run and
+waives the interactive commit approval. A live PID is the only signal for both.
+Step 1b claims the *item* on the board — different scope, different lifetime, and
+it says nothing about whether a commit may proceed.
+
+### 1b. Claim the item on the board
+
+The lock says "a Watson is busy here". The claim says "this item is being worked",
+and unlike a PID in `/tmp` it is visible to Dispatch, to you, and to any host.
+`list_development_items` stops offering a claimed item, so this is what stops a
+later tick handing your item to a second Watson.
+
+Claim immediately after the lock, before the MCP fetch:
+
+```
+mcp__the-index__claim_item(<ITEM_ID>)
+```
+
+**If it returns an error, you do not own this item.** Either another run holds it
+or a dead run's claim was never swept. Do not force it and do not proceed: print
+the error, `rm -f /tmp/watson.lock`, and exit 0. Dispatch releases stale claims on
+its next tick, and the item comes back round.
+
+Release it on **every** exit path — see step 10. A claim you take and never clear
+is worse than no claim at all: the item silently stops being offered.
+
 ### 2. Fetch fresh state
 
 ```
@@ -71,6 +99,13 @@ the mis-dispatch is visible, release the lock, and exit.
 
 ```
 mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Dispatch sent me to this item while its Status is `<status>`. The development lane accepts `Ready` and `In Progress` only. I left the item untouched: no branch, no pull request, no status change.")
+```
+
+Release the board claim first, then the lock — in that order, so the item is
+offerable again the moment the mutex frees:
+
+```
+mcp__the-index__release_item(<ITEM_ID>)
 ```
 
 ```bash
@@ -115,8 +150,15 @@ provenance check in step 3 is what stops Watson touching that work.
 In either case, do **not** touch the item: do NOT move it, do NOT create a
 branch or PR, do NOT implement. Leave its status **exactly as-is** — a `Ready`
 item stays `Ready`, an `In Progress` item stays `In Progress`. Frozen in
-place: never demoted, never abandoned. Release the lock and exit, reporting
-which open issue(s) block it (from `blocked_by`):
+place: never demoted, never abandoned. Exit reporting which open issue(s) block
+it (from `blocked_by`).
+
+Release the board claim first, then the lock — in that order, so the item is
+offerable again the moment the mutex frees:
+
+```
+mcp__the-index__release_item(<ITEM_ID>)
+```
 
 ```bash
 rm -f /tmp/watson.lock
@@ -220,8 +262,8 @@ Read the three fields into the variables the later steps use: `BRANCH` is field
 | None | — | — | `FRESH` | Fresh start. Go to step 4 (fresh-work path). |
 | Yes | Watson's | None | `RESUME` | Clone, check out `$BRANCH`, skip creation in step 5, go to step 6. |
 | Yes | Watson's | Open (draft or ready) | `RESUME` | Same as above — the PR already exists, just continue the work. |
-| Yes | Watson's | Merged or closed | `DRIFT` | The work was already completed. `move(<ITEM_ID>, "In Review")` to repair the drift, log, exit. |
-| Yes | Not Watson's | None | `HANDS-OFF` | Someone else's branch. Comment, leave the status, release the lock, exit. |
+| Yes | Watson's | Merged or closed | `DRIFT` | The work was already completed. `move(<ITEM_ID>, "In Review")` to repair the drift, log, then release the claim and the lock (below) and exit. |
+| Yes | Not Watson's | None | `HANDS-OFF` | Someone else's branch. Comment, leave the status, release the claim and the lock, exit. |
 | Yes | Not Watson's | Any state | `HANDS-OFF` | Same as above. Name their PR in the comment. |
 | Several | At least one is not Watson's | Any | `HANDS-OFF` | A human works this issue. Never compete, even when one of the branches is Watson's own. |
 | Yes | Undeterminable — the `compare` call failed or returned nothing | Any | `HANDS-OFF` | Fail closed. Treat an unproven branch as a human's. |
@@ -285,6 +327,18 @@ Branch `<branch>` (PR #<pr>) is already open against this issue, and I did not c
 On `SKIP`, post nothing at all. **Nothing else about this exit changes either
 way**: still no checkout, no push, no competing branch or PR, no implementation,
 no `move`. Release the lock and exit, the same on both paths.
+
+**`DRIFT` exits through this same release**, after its `move` to `In Review`. The
+move takes the item out of the dev lane, so the claim is not hiding it today — but
+nothing clears a claim on a status change, and the moment a human moves that item
+back, an abandoned claim would make it invisible.
+
+Release the board claim first, then the lock — in that order, so the item is
+offerable again the moment the mutex frees:
+
+```
+mcp__the-index__release_item(<ITEM_ID>)
+```
 
 ```bash
 rm -f /tmp/watson.lock
@@ -564,6 +618,21 @@ post a PR comment via `mcp__the-index__add_comment` listing the still-failing
 checks and what you tried, and exit — the next tick resumes on the same branch.
 That is the fallback, not the plan: the goal is to finish CI here.
 
+**Release before you exit on this path — it is the one that matters most.** This
+exit deliberately leaves the item in `In Progress` so the next tick resumes it,
+which means no status change will ever clear the claim for you. Skip the release
+here and the item is hidden from the dev lane permanently: exactly the work you
+were part-way through, silently unreachable. The stale lock is self-healing (a
+dead PID reads as free); the claim is not.
+
+```
+mcp__the-index__release_item(<ITEM_ID>)
+```
+
+```bash
+rm -f /tmp/watson.lock
+```
+
 ### 9. Move to In Review
 
 ```
@@ -571,6 +640,10 @@ mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "In Review")
 ```
 
 ### 10. Clean up
+
+```
+mcp__the-index__release_item(<ITEM_ID>)
+```
 
 ```bash
 rm -rf /tmp/watson-<issue_number>

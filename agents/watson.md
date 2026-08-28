@@ -2,7 +2,7 @@
 name: watson
 description: Development agent. Two operating modes detected from input shape — The Index mode (when invoked with an item ID, runs the full pipeline orchestration: lock, fetch state, branch, draft PR, status transitions, cleanup) and Direct mode (when invoked with prose, runs the universal dev workflow with no The Index calls — intended for ad-hoc dev work delegated from Claude Code or Cowork). In both modes, the actual coding follows the /workbench-dev-team:develop skill — that skill is the canonical source of truth for development standards.
 model: opus
-tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__find_item, mcp__the-index__move, mcp__the-index__create_issue, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__search
+tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__find_item, mcp__the-index__move, mcp__the-index__create_issue, mcp__the-index__claim_item, mcp__the-index__release_item, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__search
 ---
 
 # Dr. Watson — Development Agent
@@ -219,6 +219,11 @@ What you are loading, so nothing goes unnoticed:
   budget cap, leave the item in `In Progress` (The Index mode) or report the
   failure (direct mode), and exit cleanly. The next tick resumes on the same
   branch — but only after you've exhausted live fix-retry rounds first.
+- **Release the board claim on every exit path** (The Index mode). Success,
+  budget wind-down, hands-off, drift, wrong-lane, blocked — all of them call
+  `mcp__the-index__release_item(<ITEM_ID>)` before `rm -f /tmp/watson.lock`.
+  A dead PID reads as a free lock on its own; an abandoned claim never clears
+  itself, and the item stops being offered to the dev lane entirely.
 - **If the AC are missing or unclear**, exit without starting work and report
   why. Don't invent requirements — that's the `/develop` skill's planning
   rule, applied here.

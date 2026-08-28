@@ -97,10 +97,43 @@ d="$WORK/case10"; mkdir -p "$d"
 mklog "$d" holmes 300 202606210800 "Error: Exceeded USD budget (7)"
 expect "holmes budget death (1 hit) -> escalate" "ESCALATE" "$(run "$d" holmes 300)"
 
-# 11. Budget exceeded on the Watson lane -> DISPATCH (the dev lane never escalates pre-review).
+# 11. Budget exceeded on the Watson lane -> DISPATCH while under the strike count. Watson resumes on
+#     a persistent branch, so one capped run is progress, not a wall.
 d="$WORK/case11"; mkdir -p "$d"
 mklog "$d" watson 300 202606210800 "Error: Exceeded USD budget (10)"
-expect "watson budget death -> dispatch (no pre-review escalation)" "DISPATCH" "$(run "$d" watson 300)"
+expect "watson budget death (1 strike) -> dispatch" "DISPATCH" "$(run "$d" watson 300)"
+
+# 11a. Two strikes is still under the floor -> DISPATCH.
+d="$WORK/case11a"; mkdir -p "$d"
+mklog "$d" watson 301 202606210800 "Error: Exceeded USD budget (10)"
+mklog "$d" watson 301 202606210820 "Error: Exceeded USD budget (10)"
+expect "watson budget death (2 strikes) -> dispatch" "DISPATCH" "$(run "$d" watson 301)"
+
+# 11b. Three consecutive budget kills -> ESCALATE. Measured ceiling across 1,015 runs was 3; a 4th
+#      means the work is not converging inside the cap and wants a human.
+d="$WORK/case11b"; mkdir -p "$d"
+mklog "$d" watson 302 202606210800 "Error: Exceeded USD budget (10)"
+mklog "$d" watson 302 202606210820 "Error: Exceeded USD budget (10)"
+mklog "$d" watson 302 202606210840 "Error: Exceeded USD budget (10)"
+expect "watson budget death (3 strikes) -> escalate" "ESCALATE" "$(run "$d" watson 302)"
+
+# 11c. Streak-break boundary: the count is CONSECUTIVE-from-newest, so a clean run resets it. Three
+#      budget kills total, but the streak from the newest is 1 -> DISPATCH. Three kills with no
+#      break would escalate (11b), so this pins the reset itself, not merely the total.
+d="$WORK/case11c"; mkdir -p "$d"
+mklog "$d" watson 303 202606210800 "Error: Exceeded USD budget (10)"
+mklog "$d" watson 303 202606210820 "Error: Exceeded USD budget (10)"
+mklog "$d" watson 303 202606210840 "done: pushed 4 commits, CI green"
+mklog "$d" watson 303 202606210900 "Error: Exceeded USD budget (10)"
+expect "watson budget kills split by a clean run -> dispatch" "DISPATCH" "$(run "$d" watson 303)"
+
+# 11d. The graceful wind-down must NEVER escalate: it does not write the harness kill signature, and
+#      it is how multi-file work completes inside a per-run cap. Three of them in a row -> DISPATCH.
+d="$WORK/case11d"; mkdir -p "$d"
+mklog "$d" watson 304 202606210800 "Budget cap reached mid-issue. The PR stays a draft: 6 of 9 files done."
+mklog "$d" watson 304 202606210820 "Budget cap reached mid-issue. The PR stays a draft: 8 of 9 files done."
+mklog "$d" watson 304 202606210840 "Budget cap reached mid-issue. The PR stays a draft: 8 of 9 files done."
+expect "watson graceful wind-downs -> dispatch (never escalate)" "DISPATCH" "$(run "$d" watson 304)"
 
 # 12. Marker also resets the generic strike count -> REPRIEVE (re-activation after ANY escalation type).
 d="$WORK/case12"; mkdir -p "$d"
