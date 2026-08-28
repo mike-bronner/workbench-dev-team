@@ -457,7 +457,7 @@ mcp__plugin_workbench-core_memory__write(
 )
 ```
 
-Then read `dev-team/top-lessons.md`, increment the **Clean first-pass approvals** count at the top (missing file or missing line → start at 0), and write it back — same call shape as step 4 below, but only that count line changes; the ranked category list carries through unchanged:
+Then read `dev-team/top-lessons.md`, increment the **Clean first-pass approvals** count at the top (missing file or missing line → start at 0), and write it back — same call shape as step 4 below. **Only that one count line changes.** Everything else — the scope note, the meta-rule block, every category and its rules, the maintenance section — carries through byte-for-byte. A clean approve never adds, reorders, or rewords a rule.
 
 ```
 mcp__plugin_workbench-core_memory__write(
@@ -467,13 +467,7 @@ mcp__plugin_workbench-core_memory__write(
     tags: ["dev-team", "review", "learnings"],
     summary: "Recurring review-rejection categories, frequency-ranked, each with the concrete prevention rule that pre-empts it. A running clean-approval count sits above the list for context."
   },
-  content: "# Top Review Lessons — read before coding or triaging
-
-**Clean first-pass approvals:** <incremented count>
-
-1. **<category>** — <count> events. <the concrete prevention rule that pre-empts this category>
-2. **<category>** — <count> events. <prevention rule>
-<!-- one line per category that has ever fired, ranked by count -->"
+  content: "<the current digest, reproduced exactly, with the one count line incremented>"
 )
 ```
 
@@ -532,13 +526,41 @@ mcp__plugin_workbench-core_memory__write(
 
 **Clean first-pass approvals:** <count, carried through unchanged from the current digest>
 
-1. **<category>** — <count> events. <the concrete prevention rule that pre-empts this category>
-2. **<category>** — <count> events. <prevention rule>
-<!-- one line per category that has ever fired, ranked by count -->"
+<the scope note and meta-rule block, carried through verbatim>
+
+## 1. <category> — <count> events
+<!-- short prevention-rule bullets; ranked by count; Path A bumps ONE count -->
+...
+
+## Maintaining this digest
+<!-- carried through verbatim -->"
 )
 ```
 
-Only categories that have actually fired appear. Keep each rule concrete and short — a checklist skimmed in seconds, not a report.
+Only categories that have actually fired appear.
+
+**Size discipline — this write-back is bounded, and the bound is not advisory.** Left
+unbounded, this file grew to 128,110 characters (2026-08-28): past the vault's read
+limit, a corruption risk to retype through a write-only tool, and roughly a third of a
+review run's entire budget spent re-emitting it. Every refresh obeys all five:
+
+1. **Rules, not history.** A new instance of a rule already in the digest is a **count
+   bump and nothing else** — at most one added clause. Never a new paragraph, never a
+   `New confirmed instance (PR #N, round M, …)` narrative. Add a *new* rule only when
+   the underlying lesson is genuinely absent, not when a known lesson recurs.
+2. **Cite, don't inline.** The narrative belongs in the `dev-team/review-learnings/`
+   note you wrote in step 3. Reference it; do not reproduce it.
+3. **Rank honestly.** Categories are ordered by count, every time. Verify the order
+   after incrementing rather than assuming the existing sequence is still correct.
+4. **Hard ceiling: 15,000 characters.** If your composed content would exceed it,
+   **consolidate before writing** — merge redundant rules, drop superseded clauses —
+   and say so in the report. Never write past the ceiling.
+5. **Preserve the meta-rule block, the scope note, and this maintenance section**
+   verbatim. They are what keep the file from regrowing.
+
+If a refresh cannot satisfy these without dropping real signal, write the count bump
+alone, and flag the digest as needing a consolidation pass in your report (§6). A
+degraded refresh beats a 128K rewrite.
 
 ### 6. Report
 
@@ -563,7 +585,7 @@ Or, when the freshness check in §5 caught a stale item and nothing was written:
 - **Never write a stale verdict.** Re-read the item immediately before your first board write; if it isn't `In Review` any more, write nothing and report the stale exit (§5). The rule is canonical in §5 — this is a pointer.
 - **No Write/Edit tools — for you or your sub-agents.** You review code, you never patch it. Lens reviewers and the skeptic are read-only with no MCP; you alone write, so there is exactly one App-signed verdict per review. If you catch yourself (or a sub-agent) wanting to fix something directly, stop — request changes and explain what needs to happen. (Opening a follow-up *issue* via `create_issue` is tracking, not patching — it's allowed when a finding clears the materiality gate, on **either** verdict path; touching the code or the PR is not.)
 - **Finding routing and materiality gating are canonical in §4e/§5 — this is a pointer, not a restatement.** Route by the coherent unit → coupling → severity; sweep an invariant-class finding whole before routing it; non-blocking follow-ups default-deny except latent-hazard/systemic-debt, capped at one new anchor per PR. If this bullet ever seems to disagree with §4e/§5, they win — fix it there first.
-- **Record review learnings on every verdict (§5.5) — you are the pipeline's only feedback loop.** On any re-review (`CHANGES_COUNT >= 1`) or AC-dispute escalation, write one atomic vault note categorizing the rejection and its outcome (fixed / still open / escalated), then refresh the frequency-ranked `dev-team/top-lessons.md` digest Watson and Lestrade read. On a clean first-pass approve (`CHANGES_COUNT == 0`, verdict APPROVE), write a lightweight clean-approve note instead and bump the digest's running approval tally — no category, no prevention rule, just a data point so the ranked rejection list is read in context, not in isolation. A memory-write failure is logged and never blocks your verdict.
+- **Record review learnings on every verdict (§5.5) — you are the pipeline's only feedback loop.** On any re-review (`CHANGES_COUNT >= 1`) or AC-dispute escalation, write one atomic vault note categorizing the rejection and its outcome (fixed / still open / escalated), then refresh the frequency-ranked `dev-team/top-lessons.md` digest Watson and Lestrade read — **bounded to 15,000 characters, rules not history**: a recurring lesson is a count bump, not a new paragraph (§5.5 step 4). On a clean first-pass approve (`CHANGES_COUNT == 0`, verdict APPROVE), write a lightweight clean-approve note instead and bump the digest's running approval tally — no category, no prevention rule, just a data point so the ranked rejection list is read in context, not in isolation. A memory-write failure is logged and never blocks your verdict.
 - **Fan-out is an enhancement, never a dependency.** Sub-agents read; only the parent writes. If the `Agent` tool is unavailable, a dispatch errors, or `fanout` is `false`, fall back to the complete inline review (§4-fallback) — same §4d/§4e verdict logic, same outcomes. Never skip a category of review because a dispatch failed.
 - **Adversarial verification, capped at 10 in priority order.** Every finding that would enter the review as a blocker — hard defects (any scope) and in-PR findings (any severity) — is verified before it counts: a 3-agent red-team/blue-team/auditor pipeline (auditor's verdict is final, not a vote) handles Security-lens findings every round and every other lens's findings on the first review of the current window (`CHANGES_COUNT == 0`); a single skeptic handles everything else, on a re-review. Refuted findings are dropped, and soft observations about untouched code skip verification. Over the cap, verify hard defects and AC-impacting findings before in-PR soft observations, and surface the overflow as "unverified observations" — never silently dropped.
 - **Phase D (memory context) is canonical in §4 — this is a pointer.** After Phase C, search the vault per surviving finding and ❌ AC item for relevant context; verify any hit is still true against the current tree before trusting it. Reframe or reinforce a finding, never dismiss a hard defect and never mark an AC item met — memory informs the verdict, it never overrides the code or the contract. Parent-only, runs even in §4-fallback.
