@@ -1,3 +1,6 @@
 # Claude Code ephemeral agent worktrees
 .claude/worktrees/
 memory/
+
+# gh CLI machine state — never publish (contains a device identifier)
+.local/

@@ -92,7 +92,7 @@ Per-agent model, effort, fallback chain, and budget caps live in a single file, 
 {
   "agents": {
     "lestrade": { "model": "sonnet", "effort": "high", "fallback": "haiku" },
-    "holmes": { "model": "opus", "effort": "xhigh", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 7.00, "fallback": "sonnet" },
+    "holmes": { "model": "opus", "effort": "high", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
     "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
 }
@@ -220,7 +220,7 @@ Two ways to invoke the same agents, same definitions:
 ## Risks and limitations
 
 - **Local execution.** Dispatch runs on your Mac. If the host is off, no work moves. Fine for home/dev setups; move Dispatch to an always-on box if you need 24/7 coverage.
-- **Budget caps.** `--max-budget-usd 10.00` limits Watson's per-run spend; Holmes carries an optional cap too (default `7.00`), since its lens fan-out is the only uncapped, multi-agent lane. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes. (The $10 figure was originally sized for Fable's 2× Opus pricing; on Opus it now buys roughly twice the tokens per run.)
+- **Budget caps.** `--max-budget-usd 10.00` limits Watson's per-run spend; Holmes carries an optional cap too (default `10.00`), since its lens fan-out is the only uncapped, multi-agent lane — measured over 50 fan-out reviews, a review's mean cost is ~$7.33 with a long tail past $17 when Phase C verification fires, so a cap at $7 sat below the median and killed roughly a quarter of runs mid-review. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes. (The $10 figure was originally sized for Fable's 2× Opus pricing; on Opus it now buys roughly twice the tokens per run.)
 - **The Index must be reachable.** If the MCP server is down, all three list tools fail and Dispatch logs `the-index unreachable` and exits cleanly. The next tick retries.
 - **OAuth token lifetime.** The Index issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
 

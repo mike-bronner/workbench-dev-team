@@ -14,6 +14,13 @@ Section markers (§3, §4d, §4e, §5) point back into `agents/holmes.md`. Phase
 
 Dispatch **four** read-only lens reviewers in a **single message** (multiple `Agent` calls), each on `LENS_MODEL` (your model if unset). Each is **blind to the others** (no shared findings), each is **read-only** (no MCP, no Write/Edit), and each prompt is **fully self-contained** — it carries the clone path `/tmp/holmes-<issue_number>`, the PR number, the **AC text pasted verbatim**, and the standing instruction that **the repo's conventions win over the reviewer's preferences**. Each lens returns structured findings — one per row: `{ claim, location (file:line), severity (blocker | note), scope (in-pr | general), evidence }`. **`severity`** is the finding's intrinsic seriousness — a correctness, security, or test defect is a `blocker`; anything softer (a refactor, a duplication, a minor improvement) is a `note`. **`scope`** is locality — `in-pr` if the finding's location falls on a line this PR added or modified, `general` if it's about code the PR left untouched. The lens reports both facts; **you** (the parent) route them by the §4e matrix. To judge scope, the lens checks each `file:line` against `gh pr diff <PR_NUM>` in the checkout.
 
+**Reading discipline — the fan-out's cost lives here.** Four lenses each walk the same checkout independently, so on a repo with multi-thousand-line files that redundancy — not your own reasoning — is what exhausts a review's budget. Measured: on a 20K-line-file repo the four lenses accounted for ~85% of a killed review's spend, and 96% of its token volume, while the parent's share was ~$1. Carry the four rules below **verbatim** in every lens prompt:
+
+- **Grep before you read.** Locate the relevant lines with `grep -n` or `gh pr diff`, then read the window around them. Never open a file whole to discover whether it matters.
+- **Read in windows, not in files.** Take at most ~400 lines per read, and stop as soon as the lens's question is answered. If you find yourself paging through a file, that is a signal to grep it instead — a file too large to window is a *finding about the file*, not a licence to read it.
+- **Start from the diff, not the tree.** `gh pr diff <PR_NUM>` is the map. Untouched code enters scope only when a diff line leads there.
+- **Aim to finish inside ~25 tool calls.** A lens answers one question; it is not a general audit. Breadth is the parent's job, and it buys breadth by running four of you — if you are past 25 calls and still exploring, report what you have with what is still unresolved rather than continuing.
+
 The four lenses:
 
 1. **AC conformance lens** — for *each* AC checkbox, return one of: **met** (the implementation satisfies the criterion's *intent* — including when it does so by a different mechanism than the literal wording anticipated, as long as it drops nothing the criterion cared about and the result is equal or better) / **not met** (the intent is missing, weakened, or traded away) / **the AC item itself looks defective** (wrong, imprecise, impossible, or contradicted by the codebase), each with file:line evidence. When a criterion is met by a *divergence* from its wording, say so explicitly and cite the divergence — so the parent can confirm it's a genuine improvement and not a quietly dropped requirement. It does not decide the verdict — it reports per-criterion status for you to apply in §4d.
@@ -33,6 +40,16 @@ Acceptance criteria (verbatim — never amend or reinterpret):
 
 The repo's existing conventions win over your personal preferences. Do not flag
 style that matches the repo's patterns.
+
+Reading discipline (these bound the review's cost — follow them):
+- Grep before you read: find lines with `grep -n` or `gh pr diff`, then read the
+  window around them. Never open a file whole to see whether it matters.
+- Read at most ~400 lines per read, and stop once your question is answered. A
+  file too large to window is a finding about the file, not a reason to read it.
+- Start from the diff, not the tree. Untouched code is in scope only when a diff
+  line leads there.
+- Aim to finish inside ~25 tool calls. You answer ONE question, not a general
+  audit. Past 25, report what you have and name what is still unresolved.
 
 Your lens: <one lens's task, from the list above>.
 

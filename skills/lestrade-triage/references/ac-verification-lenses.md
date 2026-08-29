@@ -15,7 +15,7 @@ The AC from steps 4/4.5 is the rubric Holmes will parse literally and Watson wil
 
 1. **Malicious-compliance lens** — for each checkbox, try to describe a concrete implementation that satisfies its literal wording while missing the issue's actual intent. Report the checkbox and the gap, or "no gap found."
 2. **Testability lens** — for each checkbox, judge whether a reviewer or test suite could objectively determine met/not-met. Flag anything vague, subjective, or unfalsifiable, with a concrete rewrite.
-3. **Completeness lens** — read the issue title, body, and comments (and enough of the repo to ground it); check whether the AC covers everything the issue actually asks for and doesn't invent scope beyond it. Flag drops and unwarranted additions.
+3. **Completeness lens** — read the issue title, body, and comments (and enough of the repo to ground it); check whether the AC covers everything the issue actually asks for and doesn't invent scope beyond it. Flag drops and unwarranted additions — **including a criterion that pins an implementation the issue never asked for.** An over-specified mechanism is an addition: it will grade a better implementation as non-conformant, so report it with an outcome-terms rewrite.
 4. **Edge-case lens** — for the coherent unit of work (not just the literal checkboxes), check whether error paths, boundary conditions, and failure modes implied by the issue are represented. Flag gaps.
 
 Prompt skeleton for each lens (fill the bracketed parts; vary only the lens-specific task):

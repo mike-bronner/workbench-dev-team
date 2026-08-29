@@ -143,13 +143,18 @@ Read relevant source paths via `gh api repos/<repo>/contents/<path>` based on wh
 
 ### 4. Generate acceptance criteria
 
-Before writing, check what past AC has gotten wrong: `mcp__plugin_workbench-core_memory__read("dev-team/top-lessons.md")`. If **ac-not-met** or **escalation** appears with a meaningful count, that's this pipeline's own history telling you triage keeps under-specifying or leaving criteria disputable — write extra-concrete, unambiguous criteria here to preempt the same outcome. Missing or empty digest → nothing recorded yet, proceed normally.
+Before writing, check what past AC has gotten wrong: `mcp__plugin_workbench-core_memory__read("dev-team/top-lessons.md")`. If **ac-not-met** or **escalation** appears with a meaningful count, that's this pipeline's own history telling you triage keeps under-specifying or leaving criteria disputable — write extra-concrete, unambiguous criteria here to preempt a repeat — concrete about the **outcome**, never by pinning an implementation, which only trades one failure mode for another. Missing or empty digest → nothing recorded yet, proceed normally.
 
-Write specific, testable AC as a markdown checklist, then hand it to The Index — pass only the `- [ ]` lines, **no `## Acceptance Criteria` heading** (the server adds it):
+Write **outcome-focused**, testable AC as a markdown checklist. Each criterion states **what must be true when the work is done** — the observable behaviour or guarantee a reviewer can check — not **how** to make it true. Name a mechanism only when the mechanism genuinely *is* the requirement (a mandated protocol, library, or file location); if the issue would be equally satisfied by a different implementation, the criterion must be equally satisfied by it. **"Testable" means falsifiable, not prescriptive** — an AC that pins the implementation grades a *better* implementation as non-conformant, which is the most expensive defect this step can ship: Watson builds the right thing a better way and Holmes bounces it.
+
+- `- [ ] Env vars resolve through the parsed-declaration path` — mechanism ❌
+- `- [ ] A renamed env var resolves to its declaration site` — outcome ✅
+
+Then hand it to The Index — pass only the `- [ ]` lines, **no `## Acceptance Criteria` heading** (the server adds it):
 
 ```
-mcp__the-index__set_acceptance_criteria(<ITEM_ID>, agent: "lestrade", "- [ ] Specific testable requirement 1
-- [ ] Specific testable requirement 2
+mcp__the-index__set_acceptance_criteria(<ITEM_ID>, agent: "lestrade", "- [ ] Observable outcome 1, stated so a reviewer can falsify it
+- [ ] Observable outcome 2
 - [ ] Edge case handling
 - [ ] Test coverage requirement")
 ```
