@@ -208,8 +208,7 @@ Record it as a **reprieve** in the final summary, then move on.
 2. `mcp__the-index__move(agent=<AGENT>, column="Escalated", id=<ID>)`.
 3. `mcp__the-index__add_comment(agent=<AGENT>, id=<ID>, body=…)` — the body states the item was **auto-escalated by the Dispatch circuit breaker**, quotes the `<reason>` the pre-flight printed (the text after the tab), notes it was pulled from the lane to stop an infinite re-dispatch loop, and tells the human that **moving it back to its lane re-runs it once with a raised budget** (the reprieve) — for a budget escalation, raise `agents.<AGENT>.maxBudgetUsd` first if even the reprieve multiple won't be enough.
 4. **Only after the `move` succeeds**, write the reprieve marker so a later human re-activation is recognised: `touch "$HOME/.claude-workbench/dev-team-logs/<AGENT>-<ID>.escalated"`. (Skip this if the move failed — without a real escalation there is nothing to reprieve.)
-5. If `<AGENT>` is `watson`, also clear a dead lock so the next legitimate Watson isn't blocked: only `rm -f /tmp/watson.lock` when the PID inside it is **not** alive.
-6. **Release the item's board claim**: `mcp__the-index__release_item(<ID>)` (load it with the escalation tools in step 1). An escalated item has left the lane, so nothing is working it — and a claim left behind would keep it hidden from `list_development_items` even after a human moves it back. The call is idempotent, so it is safe when the run never claimed.
+5. **Release the item's board claim**: `mcp__the-index__release_item(<ID>)` (load it with the escalation tools in step 1). An escalated item has left the lane, so nothing is working it — and a claim left behind would keep it hidden from `list_development_items` even after a human moves it back. The call is idempotent, so it is safe when the run never claimed.
 
 Record it as an **escalation** (not a dispatch) in the final summary, and move on to the next item.
 
@@ -301,7 +300,9 @@ Dispatch command (note the budget cap):
 bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <ITEM_ID>
 ```
 
-Watson is single-track, and three things hold that line at different scopes. The server returns at most one item. The **board claim** stops any later tick offering that same item to a second Watson, across hosts and visibly. And Watson's own `/tmp/watson.lock` still prevents a second Watson starting on a *different* item on this machine — the claim is per-item and cannot express that. `/tmp/watson.lock` is not retired and must not be: `hooks/scripts/commit-approval-gate.sh` reads a live PID in it to recognise an autonomous pipeline run and waive the interactive commit approval, so deleting it would make every headless Watson commit stop for approval nobody is there to give.
+Watson is serialized per item, not per host. The server returns at most one item per tick, and the **board claim** stops any later tick offering that same item to a second Watson, across hosts and visibly. Two Watsons on two *different* items are fine and expected — each gets its own clone, and neither can see the other's work. Nothing here caps how many run at once.
+
+There is no `/tmp/watson.lock` any more, and reintroducing one would be a regression. It capped the whole host at one Watson, and its live PID also told `hooks/scripts/commit-approval-gate.sh` to waive commit approval for every process on the machine, interactive sessions included. `bin/dispatch-agent.sh` now exports `WORKBENCH_DEV_TEAM_PIPELINE=1` onto the agent it spawns, which carries that signal to exactly the right process and no others.
 
 ## Rules
 

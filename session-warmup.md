@@ -6,7 +6,7 @@ For any code implementation, bug fix, refactor, or test-writing — manual or ag
 
 For any git commit message — manual, scripted, or agent-driven — use the `/workbench-dev-team:git-commit` skill. It enforces Conventional Commits + Gitmoji format with full type/emoji references. This applies universally, not just to dev-team automation.
 
-**Commit approval gate — non-negotiable.** Never run `git commit` without explicit human approval of that specific commit: present the diff and the proposed message, then wait for an explicit yes. One approval covers one commit. A plugin `PreToolUse` hook enforces this at the harness level (forced permission prompt on every `git commit`); the only exemption is the autonomous Index pipeline, where board dispatch is the approval and Holmes review + human PR merge is the gate. Never set `WORKBENCH_DEV_TEAM_PIPELINE=1` or create `/tmp/watson.lock` to skip approval in interactive work.
+**Commit approval gate — non-negotiable.** Never run `git commit` without explicit human approval of that specific commit: present the diff and the proposed message, then wait for an explicit yes. One approval covers one commit. A plugin `PreToolUse` hook enforces this at the harness level (forced permission prompt on every `git commit`); the only exemption is the autonomous Index pipeline, where board dispatch is the approval and Holmes review + human PR merge is the gate. The pipeline is recognized by `WORKBENCH_DEV_TEAM_PIPELINE=1`, which the dispatcher exports onto the agent it spawns. Never set that variable yourself to skip approval in interactive work.
 
 ## Dev-team delegation
 

@@ -1,5 +1,5 @@
 {
-  "description": "Commit approval gate — every git commit requires explicit human approval. Carve-out: autonomous Index-pipeline runs (live /tmp/watson.lock or WORKBENCH_DEV_TEAM_PIPELINE=1).",
+  "description": "Commit approval gate — every git commit requires explicit human approval. Carve-out: autonomous Index-pipeline runs, marked by WORKBENCH_DEV_TEAM_PIPELINE=1 on the process bin/dispatch-agent.sh spawns.",
   "hooks": {
     "PreToolUse": [
       {

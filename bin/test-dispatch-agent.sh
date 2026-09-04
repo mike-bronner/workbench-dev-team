@@ -22,9 +22,13 @@ pass=0; fail=0
 mkcfg() { printf '%s' "$2" > "$WORK/$1.json"; printf '%s' "$WORK/$1.json"; }
 
 # run <config> <agent> <target> -> echoes dry-run output (stdout+stderr)
+#
+# WORKBENCH_DEV_TEAM_PIPELINE is unset for every run. The pipeline assertions
+# below therefore prove the script sets the flag itself, rather than inheriting
+# it from the shell that ran this suite.
 run() {
   DISPATCH_CONFIG="$1" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
-    bash "$SCRIPT" "$2" "$3" 2>&1
+    env -u WORKBENCH_DEV_TEAM_PIPELINE bash "$SCRIPT" "$2" "$3" 2>&1
 }
 
 # rc <config> <agent> <target> -> echoes the exit code
@@ -82,6 +86,22 @@ out=$(run "$FULL" lestrade mike-bronner/phpcs-rules)
 expect_has  "sweep prompt"       "Repo sweep: mike-bronner/phpcs-rules" "$out"
 expect_has  "sweep log slug"     "lestrade-sweep-mike-bronner-phpcs-rules-" "$out"
 expect_has  "sweep takes no lock" "lock=none"          "$out"
+
+echo "— pipeline carve-out"
+# Every dispatch is headless, so every dispatch must carry the flag the
+# commit-approval gate reads. A lane that misses it deadlocks at its first
+# commit on a permission prompt no human will ever see.
+for agent in lestrade holmes watson; do
+  expect_has "$agent dispatch is flagged as pipeline" "pipeline=1" "$(run "$FULL" "$agent" 7)"
+done
+expect_has "sweep dispatch is flagged as pipeline" "pipeline=1" \
+  "$(run "$FULL" lestrade mike-bronner/phpcs-rules)"
+# The script sets the flag, it does not pass through what it inherited. A stray
+# WORKBENCH_DEV_TEAM_PIPELINE=0 in the caller's environment must not disarm the
+# carve-out and strand the lane on a prompt nobody can answer.
+out=$(DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
+  WORKBENCH_DEV_TEAM_PIPELINE=0 bash "$SCRIPT" watson 7 2>&1)
+expect_has "an inherited 0 cannot disarm the carve-out" "pipeline=1" "$out"
 
 echo "— config resolution"
 out=$(run "$FULL" lestrade 7)

@@ -8,17 +8,6 @@ GATE="$(cd "$(dirname "$0")" && pwd)/commit-approval-gate.sh"
 PASS=0
 FAIL=0
 
-# Isolate the Watson-lock carve-out from the real /tmp/watson.lock. Point the
-# gate at a temp path this test owns, so a concurrent pipeline run holding a
-# live /tmp/watson.lock can neither leak into the "expected ask" cases nor get
-# clobbered by this test. mktemp -u yields an unused name (absent → no carve-out
-# until we deliberately create it below).
-WORKBENCH_DEV_TEAM_WATSON_LOCK="$(mktemp -u "${TMPDIR:-/tmp}/watson-lock-test.XXXXXX")"
-export WORKBENCH_DEV_TEAM_WATSON_LOCK
-DECOY_LOCK=""
-cleanup() { rm -f "$WORKBENCH_DEV_TEAM_WATSON_LOCK" "$DECOY_LOCK" 2>/dev/null; }
-trap cleanup EXIT
-
 run_case() {
   local desc="$1" cmd="$2" expect="$3"  # expect: ask | silent
   local payload output verdict
@@ -58,44 +47,62 @@ run_case "unrelated command"                      'ls -la'                      
 run_case "echo containing the words"              'echo "git commit is gated"'                     silent
 run_case "git diff"                               'git diff --staged'                              silent
 
-echo "Carve-outs:"
+echo "Carve-out — the dispatcher's env flag, and nothing else:"
 payload=$(python3 -c 'import json; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m \"z\""}}))')
-output=$(printf '%s' "$payload" | WORKBENCH_DEV_TEAM_PIPELINE=1 "$GATE")
-if [ -z "$output" ]; then
-  PASS=$((PASS + 1)); echo "  ✅ WORKBENCH_DEV_TEAM_PIPELINE=1 bypasses the gate"
-else
-  FAIL=$((FAIL + 1)); echo "  ❌ WORKBENCH_DEV_TEAM_PIPELINE=1 should bypass the gate"
-fi
 
-echo "$$" > "$WORKBENCH_DEV_TEAM_WATSON_LOCK"  # this test's live PID simulates a running Watson
-output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
-if [ -z "$output" ]; then
-  PASS=$((PASS + 1)); echo "  ✅ live watson.lock bypasses the gate"
-else
-  FAIL=$((FAIL + 1)); echo "  ❌ live watson.lock should bypass the gate"
-fi
-echo "999999" > "$WORKBENCH_DEV_TEAM_WATSON_LOCK"  # dead PID -> stale lock must NOT bypass
-output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
-if printf '%s' "$output" | grep -q '"permissionDecision": *"ask"'; then
-  PASS=$((PASS + 1)); echo "  ✅ stale watson.lock does NOT bypass the gate"
-else
-  FAIL=$((FAIL + 1)); echo "  ❌ stale watson.lock must not bypass the gate"
-fi
-rm -f "$WORKBENCH_DEV_TEAM_WATSON_LOCK"  # configured lock absent again
+# expect_flag <description> <value|UNSET> <ask|silent>
+expect_flag() {
+  local desc="$1" value="$2" expect="$3" out verdict
+  if [ "$value" = UNSET ]; then
+    out=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
+  else
+    out=$(printf '%s' "$payload" | WORKBENCH_DEV_TEAM_PIPELINE="$value" "$GATE")
+  fi
+  if printf '%s' "$out" | grep -q '"permissionDecision": *"ask"'; then verdict=ask; else verdict=silent; fi
+  if [ "$verdict" = "$expect" ]; then
+    PASS=$((PASS + 1)); echo "  ✅ $desc"
+  else
+    FAIL=$((FAIL + 1)); echo "  ❌ $desc — expected $expect, got $verdict"
+  fi
+}
 
-# Isolation guarantee: only the configured lock path is consulted. A live lock
-# at a DIFFERENT path (standing in for a real /tmp/watson.lock held by a
-# concurrent pipeline run) must NOT bypass the gate — proving the override is
-# honored and that this test no longer depends on, or clobbers, the real lock.
-DECOY_LOCK="$(mktemp "${TMPDIR:-/tmp}/watson-decoy.XXXXXX")"
-echo "$$" > "$DECOY_LOCK"  # live PID at a path the gate is NOT pointed at
-output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
-if printf '%s' "$output" | grep -q '"permissionDecision": *"ask"'; then
-  PASS=$((PASS + 1)); echo "  ✅ live lock at another path does NOT bypass (isolation holds)"
-else
-  FAIL=$((FAIL + 1)); echo "  ❌ a foreign live lock leaked into the gate"
+expect_flag "WORKBENCH_DEV_TEAM_PIPELINE=1 bypasses the gate" 1      silent
+expect_flag "an absent flag gates the commit"                 UNSET  ask
+# Everything that is not the literal 1 gates. The carve-out fails closed, so a
+# typo, a leftover value, or a shell that exports an empty string all keep the
+# prompt rather than silently waiving approval.
+expect_flag "an explicit 0 gates the commit"                  0      ask
+expect_flag "an empty flag gates the commit"                  ""     ask
+expect_flag "'true' does not bypass"                          true   ask
+expect_flag "'yes' does not bypass"                           yes    ask
+expect_flag "'01' does not bypass"                            01     ask
+
+# Regression guard for the leak this carve-out replaced. The gate used to go
+# silent whenever /tmp/watson.lock held a live PID — a host-wide answer to a
+# per-process question, which waived approval for every concurrent interactive
+# session while a scheduled run held it. Nothing on disk may bypass the gate now.
+# Any pre-existing lock is saved and put back, so a live pipeline run loses nothing.
+REAL_LOCK=/tmp/watson.lock
+SAVED_LOCK=""
+restore_lock() {
+  if [ -n "$SAVED_LOCK" ]; then
+    cat "$SAVED_LOCK" > "$REAL_LOCK"
+    rm -f "$SAVED_LOCK"
+    SAVED_LOCK=""
+  else
+    rm -f "$REAL_LOCK"
+  fi
+}
+if [ -e "$REAL_LOCK" ]; then
+  SAVED_LOCK="$(mktemp "${TMPDIR:-/tmp}/watson-lock-saved.XXXXXX")"
+  cat "$REAL_LOCK" > "$SAVED_LOCK"
 fi
-rm -f "$DECOY_LOCK"; DECOY_LOCK=""
+# The trap covers an interrupt between the write and the restore below.
+trap restore_lock EXIT
+echo "$$" > "$REAL_LOCK"  # a live PID: the exact condition that used to bypass
+expect_flag "a live /tmp/watson.lock no longer bypasses"      UNSET  ask
+restore_lock
+trap - EXIT
 
 echo "hooks.json wiring survives a space in the plugin path:"
 # The harness expands ${CLAUDE_PLUGIN_ROOT} inside the hooks.json `command`

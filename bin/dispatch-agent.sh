@@ -15,9 +15,13 @@
 #   dispatch-agent.sh holmes   <item-id>        # review one item
 #   dispatch-agent.sh watson   <item-id>        # develop one item
 #
-# Environment:
+# Environment read:
 #   REPRIEVE=1          multiply the budget cap by reprieveBudgetMultiplier
 #   DISPATCH_DRY_RUN=1  print the command that would run; spawn nothing
+#
+# Environment set on the child:
+#   WORKBENCH_DEV_TEAM_PIPELINE=1   tells the commit-approval gate this run is
+#                                   the autonomous pipeline. See the export below.
 #
 # Exits non-zero on bad arguments only. A malformed or absent config never
 # blocks a dispatch — every knob falls back to the agent's default.
@@ -104,10 +108,24 @@ set -- --agent "workbench-dev-team:${AGENT}" --model "$MODEL"
 [ -n "$BUDGET" ]   && set -- "$@" --max-budget-usd "$BUDGET"
 set -- "$@" --dangerously-skip-permissions "$PROMPT"
 
+# Mark the child as the autonomous pipeline. `hooks/scripts/commit-approval-gate.sh`
+# reads this and lets the run's commits through: nobody is at the keyboard, and a
+# headless `ask` prompt auto-denies, so an ungated commit rule would deadlock every
+# scheduled run at its first commit. The approval chain here is board dispatch,
+# Holmes review, and the human's own PR merge.
+#
+# The dispatcher sets it, never the agent. It reaches exactly the process this
+# script spawns and its children, so an interactive session on the same machine
+# is untouched — the property the old host-wide /tmp/watson.lock could not offer.
+export WORKBENCH_DEV_TEAM_PIPELINE=1
+
 if [ "${DISPATCH_DRY_RUN:-0}" = 1 ]; then
   printf 'claude -p'; printf ' %s' "$@"; printf '\n'
   printf 'log=%s\n' "$LOG"
   printf 'lock=%s\n' "${LOCK:-none}"
+  # Read back the exported variable rather than restating the literal, so the
+  # dry run cannot claim a carve-out the real invocation does not set.
+  printf 'pipeline=%s\n' "${WORKBENCH_DEV_TEAM_PIPELINE:-unset}"
   exit 0
 fi
 

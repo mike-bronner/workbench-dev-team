@@ -10,52 +10,19 @@ Direct mode never uses this file.
 
 ---
 
-### 1. Acquire the lock — host-local mutex
+### 1. Claim the item on the board
 
-Because the `In Progress` lane can contain an item that a currently-running
-Watson is working on, **acquire `/tmp/watson.lock` at startup**. If the lock is held
-by a live PID, exit immediately without doing any work:
+**There is no host-wide mutex, and you must not build one.** A second Watson
+working a different item on this machine is normal and wanted — each run gets
+its own clone and its own board claim. Nothing here serializes Watson against
+Watson.
 
-```bash
-LOCK=/tmp/watson.lock
-if [ -f "$LOCK" ] && kill -0 "$(cat "$LOCK")" 2>/dev/null; then
-  echo "Watson busy (pid $(cat "$LOCK")) — exiting"
-  exit 0
-fi
-echo $PPID > "$LOCK"
-```
+The claim says "this item is being worked". Unlike a PID file in `/tmp` it is
+visible to Dispatch, to you, and to any host. `list_development_items` stops
+offering a claimed item, so this is what stops a later tick handing your item
+to a second Watson.
 
-Put this as the first thing you run. Do it before anything else, including
-the MCP fetch.
-
-**The lock must hold `$PPID`, never `$$`.** Every Bash tool call runs in its
-own short-lived shell: `$$` is that shell's PID, dead the moment the command
-returns, so a lock holding it fails every later liveness check — the mutex
-*and* the commit-gate carve-out. `$PPID` is the long-lived `claude` process
-hosting this run; it stays alive across all your tool calls. For the same
-reason, **never set an EXIT `trap` to remove the lock** — the trap fires when
-the tool-call shell exits, deleting the lock milliseconds after you wrote it.
-Release the lock explicitly (`rm -f /tmp/watson.lock`) in cleanup (step 10)
-and on every early exit. Crash-safety needs no trap: a dead PID is a stale
-lock, ignored by both the mutex check above and the gate hook. If Watson
-hangs and the lock goes stale, the operator clears it with
-`rm /tmp/watson.lock`.
-
-**This lock is not the item claim, and neither replaces the other.** It does two
-host-local jobs: it keeps Watson single-track on this machine, and it is how
-`hooks/scripts/commit-approval-gate.sh` recognises an autonomous pipeline run and
-waives the interactive commit approval. A live PID is the only signal for both.
-Step 1b claims the *item* on the board — different scope, different lifetime, and
-it says nothing about whether a commit may proceed.
-
-### 1b. Claim the item on the board
-
-The lock says "a Watson is busy here". The claim says "this item is being worked",
-and unlike a PID in `/tmp` it is visible to Dispatch, to you, and to any host.
-`list_development_items` stops offering a claimed item, so this is what stops a
-later tick handing your item to a second Watson.
-
-Claim immediately after the lock, before the MCP fetch:
+Claim first, before anything else, including the MCP fetch:
 
 ```
 mcp__the-index__claim_item(<ITEM_ID>)
@@ -63,8 +30,8 @@ mcp__the-index__claim_item(<ITEM_ID>)
 
 **If it returns an error, you do not own this item.** Either another run holds it
 or a dead run's claim was never swept. Do not force it and do not proceed: print
-the error, `rm -f /tmp/watson.lock`, and exit 0. Dispatch releases stale claims on
-its next tick, and the item comes back round.
+the error and exit 0. Dispatch releases stale claims on its next tick, and the
+item comes back round.
 
 Release it on **every** exit path — see step 10. A claim you take and never clear
 is worse than no claim at all: the item silently stops being offered.
@@ -95,21 +62,16 @@ before this point verifies that. Read `status` from step 2 and branch:
 In either failing case, do **not** touch the item: no `move`, no branch, no PR,
 no implementation. Leave its status **exactly as-is** — Watson never drags an
 item into its own lane to justify working it. Post one comment on the issue so
-the mis-dispatch is visible, release the lock, and exit.
+the mis-dispatch is visible, release the claim, and exit.
 
 ```
 mcp__the-index__add_comment(<ITEM_ID>, agent: "watson", body: "Dispatch sent me to this item while its Status is `<status>`. The development lane accepts `Ready` and `In Progress` only. I left the item untouched: no branch, no pull request, no status change.")
 ```
 
-Release the board claim first, then the lock — in that order, so the item is
-offerable again the moment the mutex frees:
+Release the board claim, so the item is offerable again:
 
 ```
 mcp__the-index__release_item(<ITEM_ID>)
-```
-
-```bash
-rm -f /tmp/watson.lock
 ```
 
 ```
@@ -153,15 +115,10 @@ item stays `Ready`, an `In Progress` item stays `In Progress`. Frozen in
 place: never demoted, never abandoned. Exit reporting which open issue(s) block
 it (from `blocked_by`).
 
-Release the board claim first, then the lock — in that order, so the item is
-offerable again the moment the mutex frees:
+Release the board claim, so the item is offerable again:
 
 ```
 mcp__the-index__release_item(<ITEM_ID>)
-```
-
-```bash
-rm -f /tmp/watson.lock
 ```
 
 ```
@@ -262,8 +219,8 @@ Read the three fields into the variables the later steps use: `BRANCH` is field
 | None | — | — | `FRESH` | Fresh start. Go to step 4 (fresh-work path). |
 | Yes | Watson's | None | `RESUME` | Clone, check out `$BRANCH`, skip creation in step 5, go to step 6. |
 | Yes | Watson's | Open (draft or ready) | `RESUME` | Same as above — the PR already exists, just continue the work. |
-| Yes | Watson's | Merged or closed | `DRIFT` | The work was already completed. `move(<ITEM_ID>, "In Review")` to repair the drift, log, then release the claim and the lock (below) and exit. |
-| Yes | Not Watson's | None | `HANDS-OFF` | Someone else's branch. Comment, leave the status, release the claim and the lock, exit. |
+| Yes | Watson's | Merged or closed | `DRIFT` | The work was already completed. `move(<ITEM_ID>, "In Review")` to repair the drift, log, then release the claim (below) and exit. |
+| Yes | Not Watson's | None | `HANDS-OFF` | Someone else's branch. Comment, leave the status, release the claim, exit. |
 | Yes | Not Watson's | Any state | `HANDS-OFF` | Same as above. Name their PR in the comment. |
 | Several | At least one is not Watson's | Any | `HANDS-OFF` | A human works this issue. Never compete, even when one of the branches is Watson's own. |
 | Yes | Undeterminable — the `compare` call failed or returned nothing | Any | `HANDS-OFF` | Fail closed. Treat an unproven branch as a human's. |
@@ -271,7 +228,7 @@ Read the three fields into the variables the later steps use: `BRANCH` is field
 **`HANDS-OFF` — the human owns it.** Do not check out that branch. Do not push
 to it. Do not open a competing branch or PR. Do not implement. Do not `move`
 the item; leave its status exactly as-is. Say so once on the issue, release the
-lock, and exit.
+claim, and exit.
 
 **Say it once per branch, not once per tick.** GitHub Projects' *Pull request
 linked to issue* workflow parks the issue in `In Progress` for the whole life of
@@ -326,22 +283,17 @@ Branch `<branch>` (PR #<pr>) is already open against this issue, and I did not c
 
 On `SKIP`, post nothing at all. **Nothing else about this exit changes either
 way**: still no checkout, no push, no competing branch or PR, no implementation,
-no `move`. Release the lock and exit, the same on both paths.
+no `move`. Release the claim and exit, the same on both paths.
 
 **`DRIFT` exits through this same release**, after its `move` to `In Review`. The
 move takes the item out of the dev lane, so the claim is not hiding it today — but
 nothing clears a claim on a status change, and the moment a human moves that item
 back, an abandoned claim would make it invisible.
 
-Release the board claim first, then the lock — in that order, so the item is
-offerable again the moment the mutex frees:
+Release the board claim, so the item is offerable again:
 
 ```
 mcp__the-index__release_item(<ITEM_ID>)
-```
-
-```bash
-rm -f /tmp/watson.lock
 ```
 
 ```
@@ -376,7 +328,11 @@ TYPE=feature   # set to fix or chore when the issue calls for it
 SLUG="$(echo '<title>' | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-50)"
 BRANCH="$TYPE/<issue_number>-$SLUG"
 
-CLONE=/tmp/watson-<issue_number>
+# The path carries the repo, not just the issue number. Two repos can each have
+# an issue #42, and with no host-wide lock two Watsons now run side by side — one
+# `rm -rf` would take the other's uncommitted work. <repo-slug> is the item's
+# `repo` with `/` written as `-`, e.g. mike-bronner-phpcs-rules.
+CLONE=/tmp/watson-<repo-slug>-<issue_number>
 rm -rf "$CLONE"
 gh repo clone <repo> "$CLONE"
 cd "$CLONE"
@@ -406,7 +362,7 @@ PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
 The `Fixes #<issue_number>` keyword in the body handles the issue↔PR link on
 merge — no separate linking step needed.
 
-On a resume: clone fresh (or reuse `/tmp/watson-<issue_number>` if it exists),
+On a resume: clone fresh (or reuse `/tmp/watson-<repo-slug>-<issue_number>` if it exists),
 check out `$BRANCH`, rebase onto the default branch, and continue.
 
 ### 6. Implement, test, commit
@@ -524,7 +480,7 @@ Then move the item:
 mcp__the-index__move(<ITEM_ID>, agent: "watson", column: "Inbox" | "Escalated" | "In Review")
 ```
 
-Then release the lock and **exit**. Do NOT implement, do NOT mark the PR ready,
+Then release the claim and **exit**. Do NOT implement, do NOT mark the PR ready,
 do NOT move to `In Review` with finished work, do NOT leave it `In Progress`. The
 draft PR + branch stay open; when the item comes back to you (Lestrade's
 sharper AC, Holmes's answer, or Mike's call), implement on the same branch.
@@ -622,15 +578,10 @@ That is the fallback, not the plan: the goal is to finish CI here.
 exit deliberately leaves the item in `In Progress` so the next tick resumes it,
 which means no status change will ever clear the claim for you. Skip the release
 here and the item is hidden from the dev lane permanently: exactly the work you
-were part-way through, silently unreachable. The stale lock is self-healing (a
-dead PID reads as free); the claim is not.
+were part-way through, silently unreachable. Nothing else clears it for you.
 
 ```
 mcp__the-index__release_item(<ITEM_ID>)
-```
-
-```bash
-rm -f /tmp/watson.lock
 ```
 
 ### 9. Move to In Review
@@ -646,12 +597,11 @@ mcp__the-index__release_item(<ITEM_ID>)
 ```
 
 ```bash
-rm -rf /tmp/watson-<issue_number>
-rm -f /tmp/watson.lock
+rm -rf /tmp/watson-<repo-slug>-<issue_number>
 ```
 
-The lock has no automatic release — if you exit early (busy, blocked,
-budget), remove it yourself on the way out.
+The claim has no automatic release — if you exit early (blocked, wrong lane,
+hands-off, budget), release it yourself on the way out.
 
 ### 11. Report
 

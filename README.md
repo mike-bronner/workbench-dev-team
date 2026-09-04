@@ -77,11 +77,13 @@ The skill also **routes GitHub actions to the right executor**. Two rules: (1) *
 1. **Prose** — the `develop` skill instructs the agent to present the staged diff and the proposed commit message, then wait for an explicit yes before committing. One approval covers one commit.
 2. **Machinery** — a plugin `PreToolUse` hook ([hooks/hooks.json](hooks/hooks.json) → [hooks/scripts/commit-approval-gate.sh](hooks/scripts/commit-approval-gate.sh)) detects `git commit` in any Bash invocation (compound commands, `-C`/`-c` flags, env prefixes included) and returns `permissionDecision: "ask"`, forcing the harness to prompt — even in auto-accept permission modes, even if the model forgot the prose.
 
-**Pipeline carve-out.** Headless `ask` prompts auto-deny, so an ungated rule would deadlock every scheduled Watson run at its first commit. The hook therefore allows commits through when the autonomous Index pipeline is demonstrably running: a live-PID `/tmp/watson.lock` (which Watson's Index mode acquires before any work) or `WORKBENCH_DEV_TEAM_PIPELINE=1` in the environment. In the pipeline, board dispatch is the approval and Holmes review + your PR merge is the human gate. A stale lock (dead PID) does **not** bypass.
+**Pipeline carve-out.** Headless `ask` prompts auto-deny, so an ungated rule would deadlock every scheduled run at its first commit. The hook therefore stays silent for one signal and one only: `WORKBENCH_DEV_TEAM_PIPELINE=1`, exported by [`bin/dispatch-agent.sh`](bin/dispatch-agent.sh) onto the `claude -p` process it spawns. In the pipeline, board dispatch is the approval and Holmes review + your PR merge is the human gate. Any other value — `0`, empty, `true`, absent — gates the commit.
 
-Known edge: while a scheduled Watson run is live, its lock also exempts concurrent interactive sessions on the same machine. The prose protocol still applies there; the window is the few minutes of a pipeline tick.
+The signal is per-process, and that is the whole point. It reaches the dispatched agent and its children, and nothing else. An interactive session running beside a scheduled tick never sees it, so it never inherits the carve-out.
 
-Tests: `hooks/scripts/test-commit-approval-gate.sh` (21 cases — detection, non-commit silence, carve-outs).
+This replaced a live-PID `/tmp/watson.lock` check, which answered "is a pipeline running on this host?" rather than "is this process the pipeline?" — and so exempted every concurrent interactive session for the life of a tick. That leak once let four unapproved commits land across two interactive Watsons. Dropping the lock made the gate stricter, not looser. Do not reintroduce a host-wide substitute, and note that the payload's `agent_type` is not a candidate: it is present for a scheduled and an interactively dispatched agent alike, so it cannot tell them apart.
+
+Tests: `hooks/scripts/test-commit-approval-gate.sh` (25 cases — detection, non-commit silence, the carve-out's exact-match semantics, and a regression guard proving a live `/tmp/watson.lock` no longer bypasses).
 
 ## Configuration — models, effort, fallback, budget
 
@@ -177,7 +179,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 ### Concurrency
 
 - **Inspector Lestrade and Sherlock Holmes** are idempotent within a tick. Status lanes (`null` and `In Review`) act as the serialization.
-- **Dr. Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A host-local PID mutex at `/tmp/watson.lock` prevents two Watsons from stepping on the same item. Released explicitly (`rm -f /tmp/watson.lock`) in cleanup and on every early exit — never via a shell `trap`, which would delete the lock the moment the tool-call shell returns.
+- **Dr. Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A per-item **board claim** (`claim_item` / `release_item`) is what stops two Watsons stepping on the same item: it is visible, it works across hosts, and `list_development_items` hides a claimed item. Watson releases it on every exit path, success or not — an abandoned claim hides the item from the lane for good. There is deliberately **no** host-wide lock, so two Watsons on two different items run side by side.
 - **Watson also refuses work that isn't his**, on two independent gates, both fail-closed and both leaving the item's status exactly as it found it. A **status gate** drops any item dispatched outside the `Ready`/`In Progress` lane (or with an unreadable status) — he never moves an item into his own lane to justify working it. A **provenance check** in resume detection means he only ever adopts a branch he created himself, identified by a `Watson-Branch: #<issue>` trailer on its start-of-work commit (PR authorship can't serve: he opens PRs with `gh` under your credentials, so his PRs and yours both read as you). Both gates exist because GitHub Projects' built-in *Pull request linked to issue* workflow flips a linked issue to `In Progress` seconds after **anyone** opens a branch-named PR — including yours, which is how a human's work-in-progress once got commits pushed onto it and, on a branch prefix the old matcher didn't know (`ci/`), got a duplicate PR opened beside it. The hands-off notice is posted once per branch (an `<!-- watson-hands-off: <branch> -->` marker on the issue tells him he has already said it) — that same Projects workflow parks the issue in `In Progress` for the whole life of your PR, so he is dispatched onto it every tick until you close it, and the notice would otherwise repeat every twenty minutes.
 
 ### Token cost
@@ -212,7 +214,7 @@ Two ways to invoke the same agents, same definitions:
 |---|---|
 | `claude mcp list` shows the-index as Failed to connect | Your OAuth token has probably expired or been revoked. Re-run `/workbench-dev-team:setup` to fetch a fresh token and re-register. |
 | Dispatch logs `the-index unreachable` | `curl https://the-index.mikebronner.dev/mcp` to check the endpoint. If 500, The Index has a middleware bug (should be 401). |
-| Watson stuck (process hung, `/tmp/watson.lock` stale) | `rm /tmp/watson.lock`. Next tick will resume. |
+| Watson stuck (process hung, item never re-offered) | The run died holding its board claim. `mcp__the-index__release_item(<item-id>)`, or move the item out of the lane and back. Next tick will resume. |
 | Agent not found | `claude agents` should list `workbench-dev-team:lestrade`, `:watson`, `:holmes`. If not, reinstall the plugin. |
 | Item stuck in `In Review` with no PR | Holmes couldn't find a PR for the issue. Check `gh pr list -R <repo> --search <issue>`. |
 | Scheduled task isn't firing | Check Claude Code's scheduled-tasks panel. The Mac must be awake (this is a local scheduler). |

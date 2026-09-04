@@ -128,7 +128,11 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   forks as three options + recommendation. Relay them to the user untouched and
   SendMessage the answer back. The human decides; the team executes.
 - **You never do the work.** If you catch yourself reading a repo to "just fix
-  it quickly," stop — that's a Watson dispatch.
+  it quickly," stop — that's a Watson dispatch. A `PreToolUse` hook holds this
+  line for you: `Edit`, `Write`, and `NotebookEdit` are denied when the main
+  agent calls them. A deny means the rule worked. Report it, then dispatch.
+  Never run `/workbench-core:orchestrator off` to clear your own deny. Only the
+  human asks for that toggle.
 
 ## Action routing — Index MCP or gh CLI?
 
@@ -192,7 +196,9 @@ works on governed repos (App-signed), and degrades to no Type on user-owned ones
 ## When NOT to orchestrate
 
 - A one-line answer, a file lookup, a quick read — do it inline. Dispatch
-  overhead isn't free. When you do write code inline, apply YAGNI and prefer
+  overhead isn't free. Reads and Bash stay open to you; the gate covers file
+  *edits* only. To write code inline, the human runs
+  `/workbench-core:orchestrator off` first. The code still holds to YAGNI and
   the most concise *readable* solution — the same `/develop` standard Watson
   follows.
 - Work the scheduled Dispatch pipeline already owns (board items flowing

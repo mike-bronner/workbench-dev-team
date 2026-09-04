@@ -6,29 +6,31 @@
 # tells the model to present the diff and proposed message BEFORE attempting
 # the commit; this hook is the harness-level backstop for when prose fails.
 #
-# Carve-out — the autonomous Index pipeline, where no human is present and
-# Holmes review + human PR merge is the approval gate:
-#   * WORKBENCH_DEV_TEAM_PIPELINE=1 in the environment, or
-#   * /tmp/watson.lock holding a live PID (Watson Index mode writes it first).
-#     The lock path defaults to /tmp/watson.lock and can be overridden with
-#     WORKBENCH_DEV_TEAM_WATSON_LOCK — the test suite uses this to isolate from
-#     (and avoid clobbering) a real lock held by a concurrent pipeline run.
+# Carve-out — the autonomous Index pipeline, and only that. The one signal is
+# WORKBENCH_DEV_TEAM_PIPELINE=1, exported by bin/dispatch-agent.sh onto the
+# `claude -p` process it spawns. There, no human is present to answer a prompt,
+# and board dispatch + Holmes review + the human's PR merge is the approval
+# chain instead.
+#
+# The signal is per-process on purpose. A file-existence check — the old
+# live-PID /tmp/watson.lock — answered "is a pipeline running on this host?",
+# not "is THIS process the pipeline?", so a scheduled run waived approval for
+# every concurrent interactive session on the same machine. That leak let four
+# unapproved commits land across two interactive Watsons. An inherited
+# environment variable cannot reach a session the dispatcher did not spawn.
+#
+# Do not reintroduce a host-wide or identity-shaped substitute. In particular
+# `agent_type` in the hook payload is present for BOTH a scheduled
+# `claude -p --agent watson` and an interactively dispatched one, so it cannot
+# tell them apart and would re-open the same hole.
 #
 # Exit 0 with no output = no opinion (normal permission flow applies).
 # Exit 0 with permissionDecision "ask" = harness must prompt the human.
 
 set -u
 
-# Pipeline carve-out: explicit env flag.
+# Pipeline carve-out: the dispatcher's flag, and nothing else.
 if [ "${WORKBENCH_DEV_TEAM_PIPELINE:-0}" = "1" ]; then
-  exit 0
-fi
-
-# Pipeline carve-out: live Watson lock (Index mode acquires it before any work).
-# Path overridable (WORKBENCH_DEV_TEAM_WATSON_LOCK) so tests don't depend on —
-# or clobber — a real /tmp/watson.lock a concurrent pipeline run may hold.
-WATSON_LOCK="${WORKBENCH_DEV_TEAM_WATSON_LOCK:-/tmp/watson.lock}"
-if [ -f "$WATSON_LOCK" ] && kill -0 "$(cat "$WATSON_LOCK" 2>/dev/null)" 2>/dev/null; then
   exit 0
 fi
 

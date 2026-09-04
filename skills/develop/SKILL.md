@@ -195,8 +195,9 @@ message in front of them when it appears.
 **Sole exception — the autonomous Index pipeline.** Scheduled Watson runs are
 headless; there, dispatching an item to the board is the approval, and Holmes
 review plus the human's PR merge is the gate. The hook recognizes the pipeline
-by a live `/tmp/watson.lock` or `WORKBENCH_DEV_TEAM_PIPELINE=1`. Never set
-that variable or create that lock to skip approval in interactive work.
+by `WORKBENCH_DEV_TEAM_PIPELINE=1`, which `bin/dispatch-agent.sh` exports onto
+the process it spawns. Never set that variable yourself to skip approval in
+interactive work.
 
 ### Message format and hygiene
 
