@@ -24,7 +24,8 @@
 #   5. It states the ask-back rule, and the bar that stops it firing on
 #      everything.
 # Then Watson's mode default, and a sweep over the sending docs: the template
-# governs every handoff, and no length figure survives anywhere near the brief.
+# governs every handoff, that rule carries its fan-out exemption in the same
+# section, and no length figure survives anywhere near the brief.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -84,7 +85,7 @@ for file in "$DIR"/*.md; do
 
   if [ ${#missing[@]} -eq 0 ]; then
     PASS=$((PASS + 1))
-    echo "  ✅ $agent — five slots, refusal, ask-back with its bar, both exemptions"
+    echo "  ✅ $agent — five slots, refusal, ask-back with its bar, both token exemptions"
   else
     fail_file "$agent — brief contract incomplete" "${missing[@]}"
   fi
@@ -127,6 +128,54 @@ if [ ${#handoff_problems[@]} -eq 0 ]; then
   echo "  ✅ scope — every brief doc states the template governs every handoff"
 else
   fail_file "brief scope narrowed to code work" "${handoff_problems[@]}"
+fi
+
+# The exemption that keeps the rule above honest, checked in the same section
+# the rule is stated in. A specialist's dispatch to its own workers is not a
+# handoff: the template governs the orchestrator boundary, and the parent holds
+# every fact those workers need. Unguarded, that carve-out is the half of the
+# pair nothing watches — a reader who meets "every handoff" with no exemption
+# beside it converts a lens prompt to slots and regresses the spend those
+# prompts are tuned for.
+#
+# Sectioned, never whole-file, and both halves are required. A whole-file grep
+# for "fan-out" is satisfied by holmes.md's review prose, which discusses one at
+# length and would hold this green with the exemption deleted. "orchestrator
+# boundary" is checked alongside it because a carve-out written as two agent
+# names is one a fourth agent does not inherit. A section runs from a heading of
+# any level to the next; fenced blocks are skipped so a `# ` comment inside one
+# cannot pose as a heading, and frontmatter — everything above the first heading
+# — is a summary, not a place a carve-out belongs.
+#
+# Each section is matched as one joined string rather than line by line. Prose
+# here wraps at 80 columns, so a line-scoped grep for a two-word phrase reddens
+# on the wrap and teaches the next author to fight the formatter.
+exempt_problems=()
+for doc in "${BRIEF_DOCS[@]}"; do
+  while IFS= read -r problem; do
+    [ -n "$problem" ] && exempt_problems+=("$(basename "$doc") — $problem")
+  done < <(awk '
+    /^```/ { fence = !fence; next }
+    fence  { next }
+    /^#+ / { head = $0; sub(/^#+ +/, "", head) }
+    head == "" { next }
+    { line = tolower($0); sub(/^[ \t]+/, "", line); body[head] = body[head] " " line }
+    END {
+      for (h in body) {
+        if (!index(body[h], "every handoff")) continue
+        if (!index(body[h], "fan-out"))
+          print "§ " h " states the every-handoff rule with no fan-out exemption beside it"
+        else if (!index(body[h], "orchestrator boundary"))
+          print "§ " h " exempts a fan-out without the orchestrator boundary that scopes it"
+      }
+    }' "$doc")
+done
+
+if [ ${#exempt_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ exemption — the fan-out carve-out sits with the rule, scoped to the orchestrator boundary"
+else
+  fail_file "the fan-out exemption is missing where the rule is stated" "${exempt_problems[@]}"
 fi
 
 # No length figure, anywhere near the brief. Length was only ever a proxy for

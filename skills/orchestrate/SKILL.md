@@ -123,9 +123,13 @@ suggest `/workbench-dev-team:setup`.
    `Repo:`, `Goal:`, `Context:`, `Constraints:`, `Done when:`, and nothing
    else — for Watson's Direct mode and for the read-only `Explore`, `Plan`,
    and `general-purpose` runs alike. Research is not exempt, and that is the
-   point. The only exceptions are the two machine-built tokens, which between
-   them are every Lestrade and Holmes dispatch: an Index-mode prompt is exactly
+   point. Two machine-built tokens are, and between them they are every
+   Lestrade and Holmes dispatch: an Index-mode prompt is exactly
    `Item ID: <n>`, and a sweep prompt is exactly `Repo sweep: <owner/repo>`.
+   So is a specialist's own fan-out. The rule governs the orchestrator
+   boundary, and workers a specialist spawns inside a task it already owns are
+   that specialist's implementation, briefed already by the parent that holds
+   their context.
 4. **Parallel when independent.** Multiple independent tasks → multiple Agent
    calls in a single message. Two Watsons touching the **same repo** → give
    each `isolation: "worktree"`.
@@ -171,6 +175,22 @@ rather than tidy: it is exactly what lets the gate below stop guessing whether a
 dispatch is code work. A template that applied only to work ending in a diff
 would need someone — a hook, or you at speed — to classify each prompt first,
 and that classification is the part that never worked.
+
+**One dispatch is not a handoff under this rule: a specialist's own fan-out.**
+The template governs the **orchestrator boundary** — a dispatch that leaves an
+orchestrator for a specialist. Workers a specialist spawns inside a task it
+already owns are that specialist's implementation, and they keep whatever
+prompt shape that agent's own reference files define. Three things put the line
+there. The measurement behind this template drew it already: of 622 dispatches
+over 14 days, the 422 that came from sessions which were themselves agent runs
+were counted as correct behaviour and excluded from what the rule governs.
+workbench-core's `delegation-gate.sh` draws the same line, exempting the calls
+a sub-agent makes, because a sub-agent is the destination that gate redirects
+work to. And a parent already holds every fact its own workers need, so
+`Context:` has nothing left to recover — those prompts are written against
+measured cost instead, and the reading discipline in them is carried verbatim
+for that reason. Read it as a boundary, never as a list of agents: a specialist
+that grows a fan-out later inherits the exemption with no edit here.
 
 Fill these five slots, in this order, under the names given, and send nothing
 else. No mode marker: Watson runs Direct mode by default and enters Index mode

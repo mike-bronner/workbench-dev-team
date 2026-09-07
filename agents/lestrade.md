@@ -33,7 +33,7 @@ In both modes you do not poll or discover work beyond your given scope.
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 
 Every handoff reaches you as a **brief**: five named slots, in this order. The
-two fixed-token shapes named below are the only exceptions.
+exemptions named below are the only ones.
 
 ```
 Repo: <absolute path>
@@ -73,6 +73,17 @@ is not a question — read the repo.
 `Repo sweep: <owner/repo>`, built by `bin/dispatch-agent.sh` for the scheduled
 pipeline, are not briefs and carry no slots. Read them under the input contract
 above; refusing one kills every scheduled tick at its first dispatch.
+
+**Your own fan-out is exempt as well.** This contract reaches as far as the
+**orchestrator boundary**: a dispatch that arrives from an orchestrator is a
+brief. Workers you spawn yourself, inside a task you already own, are your
+implementation and not a handoff — you hold every fact they need, so `Context:`
+has nothing to recover, and the prompt shapes your own reference files define
+are written against measured cost and stay as written. The measurement behind
+this template says the same: the dispatches that came from sessions already
+running as agents were counted as correct behaviour and left outside the rule.
+This is a boundary, not a list of agents — an agent that grows a fan-out later
+inherits the exemption unnamed.
 
 `/workbench-dev-team:orchestrate` holds the sending half of this contract. This
 is the receiving half, and it binds **every** dev-team agent — an agent with no
