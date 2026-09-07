@@ -25,13 +25,23 @@
 #      everything.
 # Then Watson's mode default, and a sweep over the sending docs: the template
 # governs every handoff, that rule carries its fan-out exemption in the same
-# section, and no length figure survives anywhere near the brief.
+# section, no YAML frontmatter description names a stale slot, and no length
+# figure survives anywhere near the brief.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 PASS=0
 FAIL=0
+
+# The five slots, in canonical order, written once. The template check and the
+# frontmatter check both read this array, so a rename lands here alone and
+# reddens every doc still carrying the old name. Two hand-kept copies of the
+# list is how a rename half-lands, which is the defect this array closes.
+SLOTS=(Workdir Goal Context Constraints "Done when")
+SLOTS_CSV="$(IFS=,; printf '%s' "${SLOTS[*]}")"     # Workdir,Goal,…
+SLOTS_ALT="$(IFS='|'; printf '%s' "${SLOTS[*]}")"   # Workdir|Goal|…
+SLOTS_SLASH="${SLOTS_CSV//,/ / }"                   # Workdir / Goal / …
 
 fail_file() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; shift; for m in "$@"; do echo "       • $m"; done; }
 
@@ -53,11 +63,11 @@ for file in "$DIR"/*.md; do
   # Reading the template also gets slot ORDER checked for free.
   template="$(printf '%s\n' "$section" | awk '/^```/{f=!f; next} f')"
   order="$(printf '%s\n' "$template" \
-    | grep -oE '^(Workdir|Goal|Context|Constraints|Done when):' | tr -d ':' | paste -sd, -)"
+    | grep -oE "^($SLOTS_ALT):" | tr -d ':' | paste -sd, -)"
 
   missing=()
-  [ "$order" = "Workdir,Goal,Context,Constraints,Done when" ] \
-    || missing+=("template slots are '${order:-none}', want 'Workdir,Goal,Context,Constraints,Done when'")
+  [ "$order" = "$SLOTS_CSV" ] \
+    || missing+=("template slots are '${order:-none}', want '$SLOTS_CSV'")
 
   printf '%s\n' "$section" | grep -Fq 'is not work you start' \
     || missing+=("no refusal: the section never says an incomplete brief is not started")
@@ -145,7 +155,10 @@ fi
 # names is one a fourth agent does not inherit. A section runs from a heading of
 # any level to the next; fenced blocks are skipped so a `# ` comment inside one
 # cannot pose as a heading, and frontmatter — everything above the first heading
-# — is a summary, not a place a carve-out belongs.
+# — is a summary, not a place a carve-out belongs. That exclusion belongs to
+# *this* check alone: slot names in frontmatter are checked below, because the
+# same skip read as a blanket one is what let two `description:` fields ship a
+# renamed slot.
 #
 # Each section is matched as one joined string rather than line by line. Prose
 # here wraps at 80 columns, so a line-scoped grep for a two-word phrase reddens
@@ -176,6 +189,37 @@ if [ ${#exempt_problems[@]} -eq 0 ]; then
   echo "  ✅ exemption — the fan-out carve-out sits with the rule, scoped to the orchestrator boundary"
 else
   fail_file "the fan-out exemption is missing where the rule is stated" "${exempt_problems[@]}"
+fi
+
+# Slot names in YAML frontmatter — the blind spot the check above leaves open.
+# Release 0.41.0 renamed the first slot from `Repo:` to `Workdir:` across every
+# fenced template, worked example, and prose list, and shipped with both
+# `description:` fields still naming `Repo`. A description is what a model reads
+# while *choosing* a skill or an agent, before it opens the file, so a stale slot
+# name there teaches the old name to precisely the reader who has not seen the
+# corrected template — and the brief written from it is one the workbench-core
+# gate refuses, because that gate matches the literal string.
+#
+# Enumerations only, and matched against the shared list above rather than a
+# second hand-kept copy. A ` / `-joined run of three or more slot-shaped names is
+# a slot list, and the only correct one is canonical in canonical order. Prose
+# outside the frontmatter is not this check's job: the per-agent checks already
+# read the slots off the fenced template, where order is checked too.
+slotlist_problems=()
+for doc in "${BRIEF_DOCS[@]}"; do
+  frontmatter="$(awk 'NR == 1 && $0 != "---" { exit } NR > 1 && /^---$/ { exit } NR > 1' "$doc")"
+  while IFS= read -r listing; do
+    [ -n "$listing" ] && [ "$listing" != "$SLOTS_SLASH" ] \
+      && slotlist_problems+=("$(basename "$doc") — frontmatter names the slots '$listing', want '$SLOTS_SLASH'")
+  done < <(printf '%s\n' "$frontmatter" \
+    | grep -oE '[A-Z][a-z]+( [a-z]+)?( / [A-Z][a-z]+( [a-z]+)?){2,}')
+done
+
+if [ ${#slotlist_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ frontmatter — every slot list in a description is canonical, in order"
+else
+  fail_file "a frontmatter description names the wrong slots" "${slotlist_problems[@]}"
 fi
 
 # No length figure, anywhere near the brief. Length was only ever a proxy for
