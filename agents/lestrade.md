@@ -36,9 +36,10 @@ Every handoff reaches you as a **brief**: five named slots, in this order. The
 exemptions named below are the only ones.
 
 ```
-Repo: <absolute path>
+Workdir: <absolute path>
 Goal: <the outcome, in terms of behavior — one or two sentences>
-Context: <prose: why the task exists, and what you cannot derive from the repo>
+Context: <prose: why the task exists, and what the agent cannot derive from
+         the working directory. As long as it needs to be.>
 Constraints:
 - <one hard limit, and the reason for it — one per bullet, or "none">
 Done when: <the observable condition that ends the task>

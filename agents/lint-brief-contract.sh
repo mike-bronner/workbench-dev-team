@@ -53,11 +53,11 @@ for file in "$DIR"/*.md; do
   # Reading the template also gets slot ORDER checked for free.
   template="$(printf '%s\n' "$section" | awk '/^```/{f=!f; next} f')"
   order="$(printf '%s\n' "$template" \
-    | grep -oE '^(Repo|Goal|Context|Constraints|Done when):' | tr -d ':' | paste -sd, -)"
+    | grep -oE '^(Workdir|Goal|Context|Constraints|Done when):' | tr -d ':' | paste -sd, -)"
 
   missing=()
-  [ "$order" = "Repo,Goal,Context,Constraints,Done when" ] \
-    || missing+=("template slots are '${order:-none}', want 'Repo,Goal,Context,Constraints,Done when'")
+  [ "$order" = "Workdir,Goal,Context,Constraints,Done when" ] \
+    || missing+=("template slots are '${order:-none}', want 'Workdir,Goal,Context,Constraints,Done when'")
 
   printf '%s\n' "$section" | grep -Fq 'is not work you start' \
     || missing+=("no refusal: the section never says an incomplete brief is not started")

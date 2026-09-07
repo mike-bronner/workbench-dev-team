@@ -120,7 +120,7 @@ suggest `/workbench-dev-team:setup`.
    takes effect immediately — never rely on frontmatter alone.
 3. **Every handoff is a brief.** Sub-agents have no memory of this
    conversation. Write the five slots defined below on every dispatch —
-   `Repo:`, `Goal:`, `Context:`, `Constraints:`, `Done when:`, and nothing
+   `Workdir:`, `Goal:`, `Context:`, `Constraints:`, `Done when:`, and nothing
    else — for Watson's Direct mode and for the read-only `Explore`, `Plan`,
    and `general-purpose` runs alike. Research is not exempt, and that is the
    point. Two machine-built tokens are, and between them they are every
@@ -146,7 +146,7 @@ Agent(
   model: "opus",                  // from config, not hardcoded
   run_in_background: true,
   description: "Expire stale cache entries",
-  prompt: "Repo: /Users/mike/Developer/bar
+  prompt: "Workdir: /Users/mike/Developer/bar
            Goal: Cached API responses expire instead of being served
            indefinitely after the upstream record changes.
            Context: A stale price was served for two days after the
@@ -198,10 +198,10 @@ only on an `Item ID: <n>` token, so a brief that carries no such token is
 already unambiguous.
 
 ```
-Repo: <absolute path>
+Workdir: <absolute path>
 Goal: <the outcome, in terms of behavior — one or two sentences>
 Context: <prose: why the task exists, and what the agent cannot derive from
-         the repo. As long as it needs to be.>
+         the working directory. As long as it needs to be.>
 Constraints:
 - <one hard limit, and the reason for it>
 - <one per bullet, or "none">
@@ -251,8 +251,9 @@ command at any length.
 Omitting these causes the opposite failure: an agent inventing requirements,
 which `/develop` tells it to refuse rather than guess.
 
-- **The repo path**, absolute. The sub-agent inherits no working directory from
-  this conversation.
+- **The working directory**, absolute. The sub-agent inherits none from this
+  conversation. It is often a repository, and does not have to be — a read-only
+  research dispatch may point at a directory that is not one.
 - **Hard constraints**: decisions the human already made, an interface that must
   not change, files that are out of bounds, a dependency ban, answers to forks
   already settled in chat.
@@ -283,7 +284,7 @@ acceptable by moving under it, and neither does a shell command.
 ❌ **Scripted** — most of it tells Watson what the repo already answers:
 
 ```
-Repo: /Users/mike/Developer/foo
+Workdir: /Users/mike/Developer/foo
 1. Open src/retry.ts and find the backoff loop.
 2. Set the base delay to 250ms and cap attempts at 5.
 3. Add tests to tests/unit/retry.test.ts with Vitest describe/it.
@@ -296,7 +297,7 @@ Repo: /Users/mike/Developer/foo
 less about how:
 
 ```
-Repo: /Users/mike/Developer/foo
+Workdir: /Users/mike/Developer/foo
 Goal: The HTTP client retries a failed request on capped exponential
 backoff instead of retrying immediately.
 Context: Immediate retries turned a partial upstream outage into a full
