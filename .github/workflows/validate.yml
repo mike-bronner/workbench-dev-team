@@ -1,0 +1,111 @@
+name: validate
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+jobs:
+  validate:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+
+      - name: plugin.json — valid JSON, required fields, semver version
+        run: |
+          set -euo pipefail
+          f=.claude-plugin/plugin.json
+          jq empty "$f"
+          for field in name version description author; do
+            jq -e ".${field}" "$f" > /dev/null \
+              || { echo "::error file=${f}::missing required field: ${field}"; exit 1; }
+          done
+          version=$(jq -r '.version' "$f")
+          if ! [[ "$version" =~ ^[0-9]+\.[0-9]+\.[0-9]+([-+][A-Za-z0-9.-]+)?$ ]]; then
+            echo "::error file=${f}::version '$version' is not semver"
+            exit 1
+          fi
+
+      - name: shellcheck every shipped script
+        run: |
+          set -euo pipefail
+          # PINNED, and matching workbench-core's pin. The runner image's
+          # shellcheck floats, and a developer's local copy does not track it:
+          # 0.11.0 does not raise SC2120 where an older build does, so the
+          # sibling plugin sat red across four releases while every local run
+          # reported clean. A lint gate that disagrees with the machine people
+          # actually run it on is not a gate. Bump this deliberately.
+          SC_VERSION=v0.11.0
+          curl -fsSL "https://github.com/koalaman/shellcheck/releases/download/${SC_VERSION}/shellcheck-${SC_VERSION}.linux.x86_64.tar.xz" \
+            | tar -xJf - -C /tmp
+          SHELLCHECK="/tmp/shellcheck-${SC_VERSION}/shellcheck"
+          "$SHELLCHECK" --version
+          # Tracked files only: .claude/worktrees/ is gitignored and holds
+          # ephemeral agent checkouts, whose stale copies are not ours to gate on.
+          mapfile -t scripts < <(git ls-files '*.sh')
+          printf '%s\n' "${scripts[@]}"
+          "$SHELLCHECK" --severity=warning -x "${scripts[@]}"
+
+      - name: bash -n on every shipped script
+        run: |
+          set -euo pipefail
+          fail=0
+          while IFS= read -r f; do
+            bash -n "$f" || { echo "::error file=${f}::syntax error"; fail=1; }
+          done < <(git ls-files '*.sh')
+          exit "$fail"
+
+      - name: test suite — shipped shell logic against fixtures
+        run: bash run-tests.sh tests
+
+      - name: markdown lints — prose and frontmatter only
+        run: bash run-tests.sh lints
+
+      - name: Frontmatter present on skills and agents
+        run: |
+          set -euo pipefail
+          fail=0
+          for f in skills/*/SKILL.md agents/*.md; do
+            [ -f "$f" ] || continue
+            if ! head -1 "$f" | grep -qx -- '---'; then
+              echo "::error file=${f}::missing opening frontmatter"
+              fail=1
+              continue
+            fi
+            if ! awk 'NR>1 && /^---$/ {print NR; exit}' "$f" | grep -qE '^[0-9]+$'; then
+              echo "::error file=${f}::missing closing frontmatter"
+              fail=1
+              continue
+            fi
+            fm=$(awk 'NR==1&&/^---$/ {on=1; next} on && /^---$/ {exit} on' "$f")
+            if ! echo "$fm" | grep -qE '^description:'; then
+              echo "::error file=${f}::frontmatter missing required field: description"
+              fail=1
+            fi
+          done
+          exit "$fail"
+
+      - name: CLAUDE_PLUGIN_ROOT references resolve
+        run: |
+          set -euo pipefail
+          fail=0
+          # Strip a trailing dot from each match: prose and comments routinely end
+          # a sentence right after a path, and the character class below would
+          # otherwise fold that final period into the path and report a spurious
+          # broken reference. No plugin path legitimately ends in a dot, so this
+          # is safe. (Deliberately no worked example here — this file is itself
+          # one of the tracked files swept below, so a literal sample path would
+          # be picked up and reported as broken.)
+          # Every tracked file, rather than a hand-listed set of directories: a
+          # new top-level directory must not be able to opt itself out of the check.
+          mapfile -t refs < <(git ls-files -z \
+            | xargs -0 grep -hoE '\$\{CLAUDE_PLUGIN_ROOT\}/[A-Za-z0-9_./-]+' 2>/dev/null \
+            | sed 's|${CLAUDE_PLUGIN_ROOT}/||; s|[.]*$||' \
+            | sort -u)
+          for r in "${refs[@]}"; do
+            if [ ! -e "$r" ]; then
+              echo "::error::broken reference: \${CLAUDE_PLUGIN_ROOT}/$r"
+              fail=1
+            fi
+          done
+          exit "$fail"

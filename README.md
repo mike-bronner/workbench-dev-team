@@ -212,6 +212,33 @@ Two ways to invoke the same agents, same definitions:
 - **Scheduled task panel.** Claude Code's scheduled-tasks panel shows the Dispatch task's run history and next-run time.
 - **Project board.** Items flow Inbox → Backlog → Ready → In Progress → In Review → Approved / Escalated. Status drift (items stuck in a column) is your canary.
 
+## Tests and CI
+
+`bash run-tests.sh` runs the whole suite from the repo root and exits non-zero if
+anything fails. Pass `tests` or `lints` to run one group.
+
+The two groups are named apart on purpose:
+
+- **`test-*.sh`** — five scripts that execute shipped shell logic and assert on
+  its behaviour. Two run a shipped `.sh` as a subprocess. Three extract the real
+  bash from between sentinel markers in a Markdown prompt and run it against
+  fixtures, so the test cannot drift from the logic it guards.
+- **`lint-*.sh`** — two scripts that grep English prose and YAML frontmatter in
+  the shipped Markdown. They guarantee nothing about behaviour, so they do not
+  call themselves tests.
+
+Every script sandboxes itself: `mktemp -d` with an `EXIT` trap, and an overridden
+`HOME` wherever the logic under test resolves config or log paths from it. A
+verdict that depends on the developer's real environment is not a verdict.
+
+[`.github/workflows/validate.yml`](.github/workflows/validate.yml) runs both
+groups on every pull request and on every push to `main`, alongside a
+`plugin.json` schema and semver check, `shellcheck` pinned to `v0.11.0`, `bash -n`
+syntax checks, a frontmatter sweep, and a `${CLAUDE_PLUGIN_ROOT}` reference
+check. The shellcheck pin matches the sibling `workbench-core` plugin: the runner
+image's copy floats, and a version disagreement between CI and a developer's
+machine once left `main` red for four releases while every local run read clean.
+
 ## Troubleshooting
 
 | Problem | Fix |
