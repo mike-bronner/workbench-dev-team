@@ -14,6 +14,12 @@ SNIPPET=$(mktemp)
 WORK=$(mktemp -d)
 trap 'rm -rf "$SNIPPET" "$WORK"' EXIT
 
+# The snippet falls back to LOGDIR="$HOME/.claude-workbench/dev-team-logs". Every
+# `run` below passes LOGDIR, but a case that ever forgot would read this machine's
+# real Dispatch logs and take its verdict from whatever the last live tick wrote.
+# A sandboxed HOME makes that impossible rather than merely unlikely.
+mkdir -p "$WORK/home"
+
 # Pull the snippet out from between the markers (exclusive of the marker lines).
 awk '/# >>> circuit-breaker-preflight >>>/{f=1;next} /# <<< circuit-breaker-preflight <<</{f=0} f' \
   "$SRC" > "$SNIPPET"
@@ -26,10 +32,12 @@ pass=0; fail=0
 mklog() {
   local dir="$1" agent="$2" id="$3" stamp="$4"; shift 4
   printf '%s\n' "$*" > "$dir/$agent-$id-$stamp.log"
-  touch -t "$stamp" "$dir/$agent-$id-$stamp.log"   # deterministic mtime for ls -t ordering
+  # `touch -t` reads the stamp in the local zone. TZ=UTC pins it, so every
+  # machine writes the same absolute mtime. Do not drop it.
+  TZ=UTC touch -t "$stamp" "$dir/$agent-$id-$stamp.log"   # deterministic mtime for ls -t ordering
 }
 # run <dir> <agent> <id> -> echoes the pre-flight verdict
-run() { LOGDIR="$1" AGENT="$2" ID="$3" bash "$SNIPPET"; }
+run() { LOGDIR="$1" AGENT="$2" ID="$3" HOME="$WORK/home" bash "$SNIPPET"; }
 # expect <name> <expected-prefix> <actual>
 expect() {
   case "$3" in
