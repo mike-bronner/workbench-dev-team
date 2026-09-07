@@ -1,5 +1,10 @@
 #!/bin/bash
-# Guards both halves of the brief contract. Run directly: ./test-brief-contract.sh
+# Guards both halves of the brief contract. Run directly: ./lint-brief-contract.sh
+#
+# A LINTER, not a test: every check below is a grep over English sentences in
+# the shipped Markdown. It executes none of the plugin's shell logic, so the
+# `lint-` prefix keeps it out of the suite's test loop and out of what the
+# suite claims to guarantee about behaviour.
 #
 # The sending rule lives in skills/orchestrate/SKILL.md, and a sending rule the
 # receiver never checks is the design that already failed. Over 14 days of real

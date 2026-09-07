@@ -1,5 +1,10 @@
 #!/bin/bash
-# Guards agent tool grants. Run directly: ./test-agent-tool-grants.sh
+# Guards agent tool grants. Run directly: ./lint-agent-tool-grants.sh
+#
+# A LINTER, not a test: it reads the shipped Markdown and compares frontmatter
+# against prose. It executes none of the plugin's shell logic, so the `lint-`
+# prefix keeps it out of the suite's test loop and out of what the suite claims
+# to guarantee about behaviour.
 #
 # A subagent's frontmatter `tools:` line is a STRICT allowlist — a tool the body
 # instructs the agent to call but the allowlist omits is silently unavailable at
