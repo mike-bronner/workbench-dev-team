@@ -87,7 +87,7 @@ The signal is per-process, and that is the whole point. It reaches the dispatche
 
 This replaced a live-PID `/tmp/watson.lock` check, which answered "is a pipeline running on this host?" rather than "is this process the pipeline?" — and so exempted every concurrent interactive session for the life of a tick. That leak once let four unapproved commits land across two interactive Watsons. Dropping the lock made the gate stricter, not looser. Do not reintroduce a host-wide substitute, and note that the payload's `agent_type` is not a candidate: it is present for a scheduled and an interactively dispatched agent alike, so it cannot tell them apart.
 
-Tests: `hooks/scripts/test-commit-approval-gate.sh` (25 cases — detection, non-commit silence, the carve-out's exact-match semantics, and a regression guard proving a live `/tmp/watson.lock` no longer bypasses).
+Tests: `hooks/scripts/test-commit-approval-gate.sh` (26 cases — detection, non-commit silence, the carve-out's exact-match semantics, and a two-part regression guard proving a live `watson.lock` no longer bypasses: one case plants a live lock in the gate's sandboxed temp dir and home, and one asserts the gate's source consults no lock file at all).
 
 ## Configuration — models, effort, fallback, budget
 
