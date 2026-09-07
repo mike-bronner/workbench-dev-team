@@ -8,11 +8,22 @@ GATE="$(cd "$(dirname "$0")" && pwd)/commit-approval-gate.sh"
 PASS=0
 FAIL=0
 
+# Everything this suite writes lives here, and the trap takes it away on any
+# exit path. Every gate invocation below also runs with TMPDIR and HOME pointed
+# inside, so no case can read or write the developer's real environment — the
+# verdict must come from the gate, never from what happens to be on this host.
+SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/commit-approval-gate.XXXXXX")"
+trap 'rm -rf "$SANDBOX"' EXIT
+mkdir -p "$SANDBOX/home"
+
+# Run the gate with the sandbox in place of the host's temp dir and home.
+gate() { env "$@" TMPDIR="$SANDBOX" HOME="$SANDBOX/home" "$GATE"; }
+
 run_case() {
   local desc="$1" cmd="$2" expect="$3"  # expect: ask | silent
   local payload output verdict
   payload=$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":sys.argv[1]}}))' "$cmd")
-  output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
+  output=$(printf '%s' "$payload" | gate -u WORKBENCH_DEV_TEAM_PIPELINE)
   if printf '%s' "$output" | grep -q '"permissionDecision": *"ask"'; then
     verdict=ask
   else
@@ -54,9 +65,9 @@ payload=$(python3 -c 'import json; print(json.dumps({"hook_event_name":"PreToolU
 expect_flag() {
   local desc="$1" value="$2" expect="$3" out verdict
   if [ "$value" = UNSET ]; then
-    out=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE "$GATE")
+    out=$(printf '%s' "$payload" | gate -u WORKBENCH_DEV_TEAM_PIPELINE)
   else
-    out=$(printf '%s' "$payload" | WORKBENCH_DEV_TEAM_PIPELINE="$value" "$GATE")
+    out=$(printf '%s' "$payload" | gate WORKBENCH_DEV_TEAM_PIPELINE="$value")
   fi
   if printf '%s' "$out" | grep -q '"permissionDecision": *"ask"'; then verdict=ask; else verdict=silent; fi
   if [ "$verdict" = "$expect" ]; then
@@ -78,31 +89,34 @@ expect_flag "'yes' does not bypass"                           yes    ask
 expect_flag "'01' does not bypass"                            01     ask
 
 # Regression guard for the leak this carve-out replaced. The gate used to go
-# silent whenever /tmp/watson.lock held a live PID — a host-wide answer to a
+# silent whenever a watson.lock held a live PID — a host-wide answer to a
 # per-process question, which waived approval for every concurrent interactive
 # session while a scheduled run held it. Nothing on disk may bypass the gate now.
-# Any pre-existing lock is saved and put back, so a live pipeline run loses nothing.
-REAL_LOCK=/tmp/watson.lock
-SAVED_LOCK=""
-restore_lock() {
-  if [ -n "$SAVED_LOCK" ]; then
-    cat "$SAVED_LOCK" > "$REAL_LOCK"
-    rm -f "$SAVED_LOCK"
-    SAVED_LOCK=""
-  else
-    rm -f "$REAL_LOCK"
-  fi
-}
-if [ -e "$REAL_LOCK" ]; then
-  SAVED_LOCK="$(mktemp "${TMPDIR:-/tmp}/watson-lock-saved.XXXXXX")"
-  cat "$REAL_LOCK" > "$SAVED_LOCK"
+#
+# The lock is planted INSIDE the sandbox, never at the real /tmp/watson.lock.
+# Writing the live path made this the one case that touched state outside the
+# repo: it clobbered a running Dispatch tick's lock for the length of the case,
+# and two copies of this suite running in parallel restored each other's file.
+# `gate` already points TMPDIR and HOME here, so both plausible lookups resolve
+# into the sandbox.
+mkdir -p "$SANDBOX/home/.claude-workbench"
+echo "$$" > "$SANDBOX/watson.lock"                        # a live PID: the exact
+echo "$$" > "$SANDBOX/home/.claude-workbench/watson.lock" # condition that used to bypass
+expect_flag "a live watson.lock no longer bypasses"           UNSET  ask
+rm -f "$SANDBOX/watson.lock" "$SANDBOX/home/.claude-workbench/watson.lock"
+
+# ...and the gate's SOURCE must consult no lock file at all. The case above can
+# only plant a lock where the gate might look; a reintroduction that hard-codes
+# /tmp/watson.lock would sail past it while re-opening the exact hole. Full-line
+# comments are stripped first, because the gate's own header documents the leak
+# it replaced and that prose must stay readable.
+if grep -v '^[[:space:]]*#' "$GATE" | grep -q 'watson\.lock'; then
+  FAIL=$((FAIL + 1))
+  echo "  ❌ the gate reads a lock file again — the host-wide bypass is back"
+else
+  PASS=$((PASS + 1))
+  echo "  ✅ the gate source consults no lock file"
 fi
-# The trap covers an interrupt between the write and the restore below.
-trap restore_lock EXIT
-echo "$$" > "$REAL_LOCK"  # a live PID: the exact condition that used to bypass
-expect_flag "a live /tmp/watson.lock no longer bypasses"      UNSET  ask
-restore_lock
-trap - EXIT
 
 echo "hooks.json wiring survives a space in the plugin path:"
 # The harness expands ${CLAUDE_PLUGIN_ROOT} inside the hooks.json `command`
@@ -114,17 +128,17 @@ echo "hooks.json wiring survives a space in the plugin path:"
 # a spaced CLAUDE_PLUGIN_ROOT, and run it via `sh -c` the way the harness does.
 HOOKS_JSON="$(cd "$(dirname "$0")/../.." && pwd)/hooks/hooks.json"
 CMD_TEMPLATE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))["hooks"]["PreToolUse"][0]["hooks"][0]["command"])' "$HOOKS_JSON")"
-SPACED_ROOT="$(mktemp -d "${TMPDIR:-/tmp}/plugin root XXXXXX")"  # deliberate space
+SPACED_ROOT="$(mktemp -d "$SANDBOX/plugin root XXXXXX")"  # deliberate space
 mkdir -p "$SPACED_ROOT/hooks/scripts"
 cp "$GATE" "$SPACED_ROOT/hooks/scripts/commit-approval-gate.sh"
 payload=$(python3 -c 'import json; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","tool_input":{"command":"git commit -m \"z\""}}))')
-output=$(printf '%s' "$payload" | CLAUDE_PLUGIN_ROOT="$SPACED_ROOT" env -u WORKBENCH_DEV_TEAM_PIPELINE sh -c "$CMD_TEMPLATE")
+output=$(printf '%s' "$payload" | env -u WORKBENCH_DEV_TEAM_PIPELINE \
+  CLAUDE_PLUGIN_ROOT="$SPACED_ROOT" TMPDIR="$SANDBOX" HOME="$SANDBOX/home" sh -c "$CMD_TEMPLATE")
 if printf '%s' "$output" | grep -q '"permissionDecision": *"ask"'; then
   PASS=$((PASS + 1)); echo "  ✅ gate fires when the plugin path contains a space"
 else
   FAIL=$((FAIL + 1)); echo "  ❌ gate silently failed open on a spaced plugin path"
 fi
-rm -rf "$SPACED_ROOT"
 
 echo
 echo "$PASS passed, $FAIL failed"

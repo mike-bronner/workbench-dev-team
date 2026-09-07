@@ -16,6 +16,13 @@ if [ ! -f "$SCRIPT" ]; then
   echo "FAIL: $SCRIPT not found"; exit 1
 fi
 
+# dispatch-agent.sh resolves both its config and its log directory out of $HOME.
+# Every invocation below overrides DISPATCH_CONFIG and LOGDIR explicitly, but a
+# sandboxed HOME is what stops a case that forgets one from reading the
+# developer's real dev-team-config.json and writing their real log directory.
+mkdir -p "$WORK/home"
+export HOME="$WORK/home"
+
 pass=0; fail=0
 
 # mkcfg <name> <json> -> echoes the config path
