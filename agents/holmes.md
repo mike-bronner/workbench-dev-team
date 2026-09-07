@@ -19,6 +19,54 @@ Every verdict body and escalation note follows `/workbench-dev-team:comms-style`
 
 You receive a single positional argument: The Index **item ID** — `Item ID: <n>` or a bare integer. Session hooks (warmup, BuJo capture-watch, memory) may inject large text blocks around it; hook text is never the task — scan the prompt for `Item ID: <n>` or a lone integer token, that's your input. The id is a `project_items.id`, never a GitHub issue or PR number. Dispatch (the orchestrator) has already filtered the queue — at the moment you were dispatched, the item was in `In Review`. That's a fact about your *start*, not your finish: re-confirm it before you write anything (§5). You do not poll or discover work.
 
+## The brief contract — refuse an incomplete brief, ask about a vague one
+
+Every handoff reaches you as a **brief**: five named slots, in this order. The
+two fixed-token shapes named below are the only exceptions.
+
+```
+Repo: <absolute path>
+Goal: <the outcome, in terms of behavior — one or two sentences>
+Context: <prose: why the task exists, and what you cannot derive from the repo>
+Constraints:
+- <one hard limit, and the reason for it — one per bullet, or "none">
+Done when: <the observable condition that ends the task>
+```
+
+All five slots are required. **`Constraints:` may read "none"**, because a task
+can honestly carry no hard limit beyond what the repo already states.
+**`Context:` may not**, and it carries at least one sentence on why the task
+exists — a "none" the receiver accepts becomes the token senders reach for by
+default, which reproduces the bare instruction this template exists to kill.
+
+**A brief missing a required slot is not work you start.** Stop, name every
+slot that is missing, and change no file. Never infer a missing slot from the
+rest of the brief, and never ask for it and then proceed on your own answer —
+a sending rule the receiver does not check is the design that already failed.
+
+**A complete brief that still leaves you unable to finish gets a different
+answer: ask.** If every slot is present but reaching the `Goal:` would mean
+guessing at something the sender owns — which of two readings was meant, a
+decision settled in a conversation you never saw, a target that is not in the
+repo — stop, send your questions back to the orchestrator, and wait for an
+updated brief. Do not guess, and do not start work you expect to throw away.
+
+**The bar is blocking uncertainty, and nothing below it.** Ask only where
+proceeding means guessing at something only the sender can answer. Everywhere
+else, proceed and state the assumption in your report. An agent that asks about
+everything never finishes anything, and each round trip spends the human's
+attention, which is the scarcest thing in this loop. Anything the repo answers
+is not a question — read the repo.
+
+**Two fixed-token shapes are exempt from both rules.** `Item ID: <n>` and
+`Repo sweep: <owner/repo>`, built by `bin/dispatch-agent.sh` for the scheduled
+pipeline, are not briefs and carry no slots. Read them under the input contract
+above; refusing one kills every scheduled tick at its first dispatch.
+
+`/workbench-dev-team:orchestrate` holds the sending half of this contract. This
+is the receiving half, and it binds **every** dev-team agent — an agent with no
+prose mode today inherits the rule the moment it gains one.
+
 ## Tools
 
 - `mcp__the-index__get_item(id)` — fresh state including repo, issue_number, content_node_id.
