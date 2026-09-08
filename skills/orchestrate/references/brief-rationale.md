@@ -1,4 +1,4 @@
-# Why the brief is shaped the way it is
+# Why the brief and the workspace check are shaped the way they are
 
 On-demand reasoning for `skills/orchestrate/SKILL.md`. The skill states the
 rules; this file holds the measurements and arguments behind them. The
@@ -10,6 +10,39 @@ Each section names the rule it explains. Change a rule in the skill, change its
 reasoning here in the same commit.
 
 ---
+
+## The workspace check exists because three things pushed the same way
+
+**Rule it explains:** *Check the workspace before you dispatch* in `SKILL.md`.
+
+The orchestrator was creating branches and worktrees on its own initiative,
+without asking. Three independent sources in the same skill pushed that
+behaviour, which is why removing any one of them would not have fixed it:
+
+1. **Both worked examples** end their `Done when:` slot with "and a PR is open".
+   A PR needs a branch, so every example a reader copies teaches
+   PR-and-branch as the default finish line. The examples are correct — a PR is
+   a legitimate and common finish line — so they stay as written, and the check
+   supplies what they never stated: *which* branch.
+2. **Worktree isolation for two Watsons on one repo** was stated as a standing
+   rule with no counterweight saying when not to reach for it.
+3. **The Claude Code harness itself** instructs "If on the default branch,
+   branch first", and no skill overrode or qualified it.
+
+The policy is not a prohibition, and reading it as one would be the wrong fix.
+Branches and worktrees are the expected, wanted outcome of most dev work. The
+failure was creating them without asking, so all three rules in the skill end in
+a question to the human and never in a refusal.
+
+**Why the answer is recorded in `Workdir:`** rather than in a `Constraints:`
+bullet or a sixth slot: the workbench-core gate matches exactly five
+line-anchored slot headers, and every agent in `agents/` refuses a brief missing
+one, so a sixth slot would break enforcement and every receiver at once. The
+gate greps headers and never slot content — `hooks/lib/brief-template.sh`
+patterns each slot as `^[[:space:]]*<Name>:` — and its own suite asserts that
+the README documents each header, never any wording inside one. Widening what
+`Workdir:` *means* therefore costs nothing at the enforcement layer, while a
+`Constraints:` bullet would have buried a workspace fact among hard limits.
 
 ## The fan-out exemption, and why it is a boundary
 

@@ -25,7 +25,7 @@ Every handoff reaches you as a **brief**: five named slots, in this order. The
 exemptions named below are the only ones.
 
 ```
-Workdir: <absolute path>
+Workdir: <absolute path, plus the branch or worktree when one was agreed>
 Goal: <the outcome, in terms of behavior — one or two sentences>
 Context: <prose: why the task exists, and what the agent cannot derive from
          the working directory. As long as it needs to be.>
@@ -33,6 +33,10 @@ Constraints:
 - <one hard limit, and the reason for it — one per bullet, or "none">
 Done when: <the observable condition that ends the task>
 ```
+
+**`Workdir:` can carry a branch or worktree beside the path.** Work in the one
+named. A bare path records no workspace decision — take the tree as you find it,
+and report any branch or worktree you had to create.
 
 All five slots are required. **`Constraints:` may read "none"**, because a task
 can honestly carry no hard limit beyond what the repo already states.

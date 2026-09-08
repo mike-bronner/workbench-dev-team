@@ -111,6 +111,41 @@ suggest `/workbench-dev-team:setup`.
   flags. Not your concern here, but it is the same config file — one edit moves
   both paths.
 
+## Check the workspace before you dispatch
+
+**Branches and worktrees are wanted. The human picks them.** Most dev work lands
+on a branch, and a PR is a normal finish line. What is not yours is creating the
+branch or the worktree unasked. Before any dispatch whose work ends in a commit,
+read the target tree (`git -C <workdir> status -sb`, `git worktree list`) and ask.
+
+Three cases, each ending in a question:
+
+- **On `main`, `master`, or `trunk`** — propose a branch name and ask before it
+  is created. The harness tells you to branch first on the default branch; that
+  is a reason to raise the branch, never a licence to cut it unasked.
+- **On a feature branch already carrying unrelated work** — name what is on it,
+  propose a branch off the base, and ask. Stacking this task on somebody's
+  half-finished one is the failure being prevented.
+- **Inside a worktree** — confirm it is the one meant for this task, and ask
+  when it is not.
+
+None of the three refuses a dispatch. Ask, take the answer, then dispatch.
+**Record the answer in `Workdir:`** — the branch or worktree beside the absolute
+path, `Workdir: /Users/mike/Developer/foo (branch: fix/retry-backoff)` — so no
+workspace choice is made inside a sub-agent the human never saw. A bare path
+stays valid, and means there was no workspace decision to record.
+
+**Two Watsons on one repo need separate worktrees.** Ask the same way, name each
+in its own brief, and pass `isolation: "worktree"` on the Agent call once the
+human has agreed. One working tree holds one branch, so two runs sharing it
+overwrite each other's edits.
+
+**A read-only dispatch decides no workspace.** `Explore`, `Plan`, and
+`general-purpose` write nothing, and take the tree as it stands.
+
+Why the check exists, and why the answer widens `Workdir:` instead of adding a
+slot: `references/brief-rationale.md`.
+
 ## Dispatch protocol
 
 1. **Background by default.** Every dispatch sets `run_in_background: true`.
@@ -136,7 +171,8 @@ Agent(
   model: "opus",                  // from config, not hardcoded
   run_in_background: true,
   description: "Expire stale cache entries",
-  prompt: "Workdir: /Users/mike/Developer/bar
+  prompt: "Workdir: /Users/mike/Developer/bar (branch: fix/cache-expiry,
+           off main — agreed in chat before dispatch)
            Goal: Cached API responses expire instead of being served
            indefinitely after the upstream record changes.
            Context: A stale price was served for two days after the
@@ -181,7 +217,7 @@ only on an `Item ID: <n>` token, so a brief that carries no such token is
 already unambiguous.
 
 ```
-Workdir: <absolute path>
+Workdir: <absolute path, plus the branch or worktree when one was agreed>
 Goal: <the outcome, in terms of behavior — one or two sentences>
 Context: <prose: why the task exists, and what the agent cannot derive from
          the working directory. As long as it needs to be.>
@@ -190,6 +226,11 @@ Constraints:
 - <one per bullet, or "none">
 Done when: <the observable condition that ends the task>
 ```
+
+**`Workdir:` is the absolute path, and the workspace when there is one to
+state** — the branch or worktree the human agreed to, written beside the path.
+A bare path carries no workspace decision and stays valid, which is most
+dispatches. The section above is where that decision gets made.
 
 **`Goal:` is the one bounded slot: one or two sentences, concise, measurable,
 achievable.** Everything downstream checks a result against it — the agent's own
@@ -272,7 +313,8 @@ Workdir: /Users/mike/Developer/foo
 less about how:
 
 ```
-Workdir: /Users/mike/Developer/foo
+Workdir: /Users/mike/Developer/foo (branch: fix/retry-backoff, off main —
+you were on main and agreed to the branch before this dispatch)
 Goal: The HTTP client retries a failed request on capped exponential
 backoff instead of retrying immediately.
 Context: Immediate retries turned a partial upstream outage into a full
@@ -293,9 +335,11 @@ full suite is green, and a PR is open.
 The scripted version pins the file, the runner, the command order, and the
 commit message. Watson reads all four out of the repo. The briefed version keeps
 what is genuinely upstream of the repo — the cap of 5, the frozen API, the
-dependency ban — and hands the rest back. Each of the three carries its reason,
-so none of them reads as arbitrary, and an arbitrary-looking limit is the kind a
-sub-agent negotiates with when the code makes it awkward.
+dependency ban, and the branch you agreed to — and hands the rest back. The
+branch is upstream of the repo like the rest of them: Watson cannot read which
+one you picked. Each of the three constraints carries its reason, so none of
+them reads as arbitrary, and an arbitrary-looking limit is the kind a sub-agent
+negotiates with when the code makes it awkward.
 
 ### The companion gate
 

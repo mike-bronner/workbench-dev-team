@@ -25,8 +25,9 @@
 #      everything.
 # Then Watson's mode default, and a sweep over the sending docs: the template
 # governs every handoff, that rule carries its fan-out exemption in the same
-# section, no YAML frontmatter description names a stale slot, and no length
-# figure survives anywhere near the brief.
+# section, no YAML frontmatter description names a stale slot, every `Workdir:`
+# template still carries the branch-or-worktree widening while a bare path stays
+# valid, and no length figure survives anywhere near the brief.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -220,6 +221,55 @@ if [ ${#slotlist_problems[@]} -eq 0 ]; then
   echo "  ✅ frontmatter — every slot list in a description is canonical, in order"
 else
   fail_file "a frontmatter description names the wrong slots" "${slotlist_problems[@]}"
+fi
+
+# What `Workdir:` means, kept the same in every doc that defines it. The slot
+# carries the absolute path AND the branch or worktree the human agreed to, so a
+# workspace decision is recorded where the sub-agent reads it — no sixth slot,
+# because the workbench-core gate matches exactly five line-anchored headers and
+# every agent refuses a brief missing one.
+#
+# Template lines only (`Workdir: <…>`), which is where the slot is *defined*. The
+# worked examples carry real paths and are instances, not definitions, and
+# session-warmup.md names the slots without defining any. A doc that reverts one
+# template to a bare path teaches half the contract to whoever reads that file,
+# which is the shape release 0.41.0 already shipped once with the old slot name.
+#
+# Fails closed on finding nothing: a renamed slot or a deleted template would
+# otherwise pass this check by leaving it with no line to inspect.
+workdir_problems=()
+workdir_templates=0
+for doc in "${BRIEF_DOCS[@]}"; do
+  while IFS= read -r line; do
+    [ -n "$line" ] || continue
+    workdir_templates=$((workdir_templates + 1))
+    printf '%s\n' "$line" | grep -Eq 'branch|worktree' \
+      || workdir_problems+=("$(basename "$doc") — template reads '$line', with no branch or worktree beside the path")
+  done < <(grep -hE '^Workdir: <' "$doc")
+done
+[ "$workdir_templates" -gt 0 ] \
+  || workdir_problems+=("no 'Workdir: <…>' template line anywhere — the slot is no longer defined")
+
+# The README documents the widened meaning too. It is what a human reads before
+# writing a brief by hand, and the bare-path allowance is the half that keeps
+# every existing brief valid.
+# Anchored on the sentence that *defines* the slot, never on any line mentioning
+# both words: the workspace paragraph a few lines below names `Workdir:` and a
+# branch too, and would hold this green with the definition itself reverted.
+# Prose or worked example satisfies it — both document the widening, and the
+# definition sentence carries them on one line, so nothing here tells them apart.
+# The regression it catches is the README dropping both.
+readme="$ROOT/README.md"
+grep -q '`Workdir:` is the absolute path.*\(branch\|worktree\)' "$readme" \
+  || workdir_problems+=("README.md — the Workdir definition no longer names a branch or worktree")
+grep -q 'bare path' "$readme" \
+  || workdir_problems+=("README.md — the bare-path allowance is gone; a Workdir with no branch must stay valid")
+
+if [ ${#workdir_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ workdir — every template carries the branch-or-worktree widening, bare paths still valid"
+else
+  fail_file "the Workdir slot's meaning has drifted between docs" "${workdir_problems[@]}"
 fi
 
 # No length figure, anywhere near the brief. Length was only ever a proxy for
