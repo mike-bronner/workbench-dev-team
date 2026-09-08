@@ -111,6 +111,41 @@ suggest `/workbench-dev-team:setup`.
   flags. Not your concern here, but it is the same config file — one edit moves
   both paths.
 
+## Check the workspace before you dispatch
+
+**Branches and worktrees are wanted. The human picks them.** Most dev work lands
+on a branch, and a PR is a normal finish line. What is not yours is creating the
+branch or the worktree unasked. Before any dispatch whose work ends in a commit,
+read the target tree (`git -C <workdir> status -sb`, `git worktree list`) and ask.
+
+Three cases, each ending in a question:
+
+- **On `main`, `master`, or `trunk`** — propose a branch name and ask before it
+  is created. The harness tells you to branch first on the default branch; that
+  is a reason to raise the branch, never a licence to cut it unasked.
+- **On a feature branch already carrying unrelated work** — name what is on it,
+  propose a branch off the base, and ask. Stacking this task on somebody's
+  half-finished one is the failure being prevented.
+- **Inside a worktree** — confirm it is the one meant for this task, and ask
+  when it is not.
+
+None of the three refuses a dispatch. Ask, take the answer, then dispatch.
+**Record the answer in `Workdir:`** — the branch or worktree beside the absolute
+path, `Workdir: /Users/mike/Developer/foo (branch: fix/retry-backoff)` — so no
+workspace choice is made inside a sub-agent the human never saw. A bare path
+stays valid, and means there was no workspace decision to record.
+
+**Two Watsons on one repo need separate worktrees.** Ask the same way, name each
+in its own brief, and pass `isolation: "worktree"` on the Agent call once the
+human has agreed. One working tree holds one branch, so two runs sharing it
+overwrite each other's edits.
+
+**A read-only dispatch decides no workspace.** `Explore`, `Plan`, and
+`general-purpose` write nothing, and take the tree as it stands.
+
+Why the check exists, and why the answer widens `Workdir:` instead of adding a
+slot: `references/brief-rationale.md`.
+
 ## Dispatch protocol
 
 1. **Background by default.** Every dispatch sets `run_in_background: true`.
@@ -119,23 +154,13 @@ suggest `/workbench-dev-team:setup`.
 2. **Model from config.** Always pass `model` from the config so a user edit
    takes effect immediately — never rely on frontmatter alone.
 3. **Every handoff is a brief.** Sub-agents have no memory of this
-   conversation. Write the five slots defined below on every dispatch —
-   `Workdir:`, `Goal:`, `Context:`, `Constraints:`, `Done when:`, and nothing
-   else — for Watson's Direct mode and for the read-only `Explore`, `Plan`,
-   and `general-purpose` runs alike. Research is not exempt, and that is the
-   point. Two machine-built tokens are, and between them they are every
-   Lestrade and Holmes dispatch: an Index-mode prompt is exactly
-   `Item ID: <n>`, and a sweep prompt is exactly `Repo sweep: <owner/repo>`.
-   So is a specialist's own fan-out. The rule governs the orchestrator
-   boundary, and workers a specialist spawns inside a task it already owns are
-   that specialist's implementation, briefed already by the parent that holds
-   their context.
-4. **Parallel when independent.** Multiple independent tasks → multiple Agent
-   calls in a single message. Two Watsons touching the **same repo** → give
-   each `isolation: "worktree"`.
-5. **Follow-ups via SendMessage.** Each dispatch returns an agent ID. To
-   redirect or query a running/completed agent, SendMessage that ID — do not
-   spawn a fresh agent to continue old work.
+   conversation, so send the five slots defined below and nothing else — for
+   Watson's Direct mode and for the read-only `Explore`, `Plan`, and
+   `general-purpose` runs alike. Research is not exempt, and that is the point.
+   Three shapes are exempt: the two machine-built tokens (`Item ID: <n>` and
+   `Repo sweep: <owner/repo>`, between them every Lestrade and Holmes
+   dispatch), and a specialist's own fan-out, which stays inside the
+   orchestrator boundary rather than crossing it.
 
 Example — ad-hoc dev work, config says Watson runs opus. The prompt is the
 five-slot brief, contract below:
@@ -146,7 +171,8 @@ Agent(
   model: "opus",                  // from config, not hardcoded
   run_in_background: true,
   description: "Expire stale cache entries",
-  prompt: "Workdir: /Users/mike/Developer/bar
+  prompt: "Workdir: /Users/mike/Developer/bar (branch: fix/cache-expiry,
+           off main — agreed in chat before dispatch)
            Goal: Cached API responses expire instead of being served
            indefinitely after the upstream record changes.
            Context: A stale price was served for two days after the
@@ -179,18 +205,11 @@ and that classification is the part that never worked.
 **One dispatch is not a handoff under this rule: a specialist's own fan-out.**
 The template governs the **orchestrator boundary** — a dispatch that leaves an
 orchestrator for a specialist. Workers a specialist spawns inside a task it
-already owns are that specialist's implementation, and they keep whatever
-prompt shape that agent's own reference files define. Three things put the line
-there. The measurement behind this template drew it already: of 622 dispatches
-over 14 days, the 422 that came from sessions which were themselves agent runs
-were counted as correct behaviour and excluded from what the rule governs.
-workbench-core's `delegation-gate.sh` draws the same line, exempting the calls
-a sub-agent makes, because a sub-agent is the destination that gate redirects
-work to. And a parent already holds every fact its own workers need, so
-`Context:` has nothing left to recover — those prompts are written against
-measured cost instead, and the reading discipline in them is carried verbatim
-for that reason. Read it as a boundary, never as a list of agents: a specialist
-that grows a fan-out later inherits the exemption with no edit here.
+already owns are that specialist's implementation, and they keep whatever prompt
+shape that agent's own reference files define. Read it as a boundary, never as a
+list of agents: a specialist that grows a fan-out later inherits the exemption
+with no edit here. The measurement and the two other reasons behind the line:
+`references/brief-rationale.md`.
 
 Fill these five slots, in this order, under the names given, and send nothing
 else. No mode marker: Watson runs Direct mode by default and enters Index mode
@@ -198,7 +217,7 @@ only on an `Item ID: <n>` token, so a brief that carries no such token is
 already unambiguous.
 
 ```
-Workdir: <absolute path>
+Workdir: <absolute path, plus the branch or worktree when one was agreed>
 Goal: <the outcome, in terms of behavior — one or two sentences>
 Context: <prose: why the task exists, and what the agent cannot derive from
          the working directory. As long as it needs to be.>
@@ -207,6 +226,11 @@ Constraints:
 - <one per bullet, or "none">
 Done when: <the observable condition that ends the task>
 ```
+
+**`Workdir:` is the absolute path, and the workspace when there is one to
+state** — the branch or worktree the human agreed to, written beside the path.
+A bare path carries no workspace decision and stays valid, which is most
+dispatches. The section above is where that decision gets made.
 
 **`Goal:` is the one bounded slot: one or two sentences, concise, measurable,
 achievable.** Everything downstream checks a result against it — the agent's own
@@ -225,26 +249,18 @@ around the part that mattered because nothing told it what the limit protects.
 **`Done when:` is an observable finish line** — a state you could check without
 asking the agent what it meant.
 
-**`Constraints:` may read "none". `Context:` may not.** These two sit that way
-round deliberately. A task can honestly have no hard limit beyond what the repo
-already states, so "none" there is a true answer. A task always has a reason for
-existing, so "none" there is never true — and a "none" the receiver accepts
-becomes the token senders reach for by default, which reproduces the bare
-instruction this whole template exists to kill. `Context:` carries at least one
-sentence on why the task exists.
+**`Constraints:` may read "none". `Context:` may not**, and `Context:` carries
+at least one sentence on why the task exists. The asymmetry is deliberate, and
+`references/brief-rationale.md` says why.
 
 Every slot is required, and every dev-team agent refuses a brief that drops one,
 naming what is missing (`agents/*.md`, the brief contract) — this is a receiving
 contract, not only a sending one.
 
-**There is no length limit.** Earlier versions of this template stated one, and
-it was measuring the wrong thing. Length was only ever a proxy for
-prescriptiveness, and a poor one: prose that honestly explains why a task exists
-outruns any figure worth setting, so the limit landed on the *why* — the single
-part of a brief that cannot be recovered by reading the repo. Prescriptiveness
-is attacked directly by the must-omit list below, and that list is the whole of
-the limit. Write the reasoning at whatever length it takes. Write no shell
-command at any length.
+**There is no length limit.** Write the reasoning at whatever length it takes,
+and write no shell command at any length. The must-omit list below is the whole
+of the limit; an earlier stated figure and why it went are in
+`references/brief-rationale.md`.
 
 ### Must carry — the sub-agent cannot derive these
 
@@ -297,7 +313,8 @@ Workdir: /Users/mike/Developer/foo
 less about how:
 
 ```
-Workdir: /Users/mike/Developer/foo
+Workdir: /Users/mike/Developer/foo (branch: fix/retry-backoff, off main —
+you were on main and agreed to the branch before this dispatch)
 Goal: The HTTP client retries a failed request on capped exponential
 backoff instead of retrying immediately.
 Context: Immediate retries turned a partial upstream outage into a full
@@ -318,9 +335,11 @@ full suite is green, and a PR is open.
 The scripted version pins the file, the runner, the command order, and the
 commit message. Watson reads all four out of the repo. The briefed version keeps
 what is genuinely upstream of the repo — the cap of 5, the frozen API, the
-dependency ban — and hands the rest back. Each of the three carries its reason,
-so none of them reads as arbitrary, and an arbitrary-looking limit is the kind a
-sub-agent negotiates with when the code makes it awkward.
+dependency ban, and the branch you agreed to — and hands the rest back. The
+branch is upstream of the repo like the rest of them: Watson cannot read which
+one you picked. Each of the three constraints carries its reason, so none of
+them reads as arbitrary, and an arbitrary-looking limit is the kind a sub-agent
+negotiates with when the code makes it awkward.
 
 ### The companion gate
 
@@ -331,19 +350,14 @@ dropped. It fails open rather than bricking a session, and it points back at
 this skill.
 
 - **It does not guess whether a dispatch is code work, and it does not decide
-  routing.** Prompt classifiers were built for that job and measured against
-  real dispatch traffic. The ones with usable recall were wrong about two calls
-  in three; the one that was usually right caught barely a quarter of the cases.
-  The misses were not tunable — a read-only audit names every file it inspects,
-  and a prose task names the source file it reads but never writes. Telling a
-  write target from a read target is a semantic judgement, and no shell script
-  makes it honestly. Requiring the template on *every* handoff is what let the
-  guessing go.
+  routing.** Classifiers were built for that job, measured against real dispatch
+  traffic, and were not good enough to keep. Requiring the template on *every*
+  handoff is what let the guessing go.
 - **Presence is all it checks, by design.** Whether the prose inside a slot is
   any good — whether `Goal:` states an outcome or a numbered implementation
-  script — is a judgement about substance, and it belongs to the receiving
-  agent, which is the one holding the repo and the brief together. The hook
-  regexes headers; the agent reads them.
+  script — belongs to the receiving agent, the one holding the repo and the
+  brief together. The hook regexes headers; the agent reads them. The recall
+  figures behind both bullets: `references/brief-rationale.md`.
 - **Neither slot order nor length is enforced there.** Order is worth keeping
   for readability, and refusing a well-formed brief over it would cost a real
   dispatch for nothing.
@@ -409,10 +423,11 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 - **You never do the work.** If you catch yourself reading a repo to "just fix
   it quickly," stop — that's a Watson dispatch, and so is that same fix handed
   to a generic agent. A `PreToolUse` hook holds this line for you: `Edit`,
-  `Write`, and `NotebookEdit` are denied when the main agent calls them. A deny
-  means the rule worked. Report it, then dispatch.
-  Never run `/workbench-core:orchestrator off` to clear your own deny. Only the
-  human asks for that toggle.
+  `Write`, and `NotebookEdit` are denied when the main agent calls them, and
+  reads and Bash stay open. A deny means the rule worked. Report it, then
+  dispatch. Never run `/workbench-core:orchestrator off` to clear your own deny
+  — only the human asks for that toggle, and only then does inline writing open
+  up.
 
 ## Action routing — Index MCP or gh CLI?
 
@@ -476,10 +491,10 @@ works on governed repos (App-signed), and degrades to no Type on user-owned ones
 ## When NOT to orchestrate
 
 - A one-line answer, a file lookup, a quick read — do it inline. Dispatch
-  overhead isn't free. Reads and Bash stay open to you; the gate covers file
-  *edits* only. To write code inline, the human runs
-  `/workbench-core:orchestrator off` first. The code still holds to YAGNI and
-  the most concise *readable* solution — the same `/develop` standard Watson
+  overhead isn't free, and reads and Bash stay open to you. Writing a file is
+  the delegation gate's business rather than this list's — see "You never do
+  the work" above. Code that does get written inline still holds to YAGNI and
+  the most concise *readable* solution, the same `/develop` standard Watson
   follows.
 - Work the scheduled Dispatch pipeline already owns (board items flowing
   through lanes) — leave it to the 20-minute tick unless the user asks for an
