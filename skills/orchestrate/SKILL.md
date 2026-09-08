@@ -119,23 +119,13 @@ suggest `/workbench-dev-team:setup`.
 2. **Model from config.** Always pass `model` from the config so a user edit
    takes effect immediately — never rely on frontmatter alone.
 3. **Every handoff is a brief.** Sub-agents have no memory of this
-   conversation. Write the five slots defined below on every dispatch —
-   `Workdir:`, `Goal:`, `Context:`, `Constraints:`, `Done when:`, and nothing
-   else — for Watson's Direct mode and for the read-only `Explore`, `Plan`,
-   and `general-purpose` runs alike. Research is not exempt, and that is the
-   point. Two machine-built tokens are, and between them they are every
-   Lestrade and Holmes dispatch: an Index-mode prompt is exactly
-   `Item ID: <n>`, and a sweep prompt is exactly `Repo sweep: <owner/repo>`.
-   So is a specialist's own fan-out. The rule governs the orchestrator
-   boundary, and workers a specialist spawns inside a task it already owns are
-   that specialist's implementation, briefed already by the parent that holds
-   their context.
-4. **Parallel when independent.** Multiple independent tasks → multiple Agent
-   calls in a single message. Two Watsons touching the **same repo** → give
-   each `isolation: "worktree"`.
-5. **Follow-ups via SendMessage.** Each dispatch returns an agent ID. To
-   redirect or query a running/completed agent, SendMessage that ID — do not
-   spawn a fresh agent to continue old work.
+   conversation, so send the five slots defined below and nothing else — for
+   Watson's Direct mode and for the read-only `Explore`, `Plan`, and
+   `general-purpose` runs alike. Research is not exempt, and that is the point.
+   Three shapes are exempt: the two machine-built tokens (`Item ID: <n>` and
+   `Repo sweep: <owner/repo>`, between them every Lestrade and Holmes
+   dispatch), and a specialist's own fan-out, which stays inside the
+   orchestrator boundary rather than crossing it.
 
 Example — ad-hoc dev work, config says Watson runs opus. The prompt is the
 five-slot brief, contract below:
@@ -179,18 +169,11 @@ and that classification is the part that never worked.
 **One dispatch is not a handoff under this rule: a specialist's own fan-out.**
 The template governs the **orchestrator boundary** — a dispatch that leaves an
 orchestrator for a specialist. Workers a specialist spawns inside a task it
-already owns are that specialist's implementation, and they keep whatever
-prompt shape that agent's own reference files define. Three things put the line
-there. The measurement behind this template drew it already: of 622 dispatches
-over 14 days, the 422 that came from sessions which were themselves agent runs
-were counted as correct behaviour and excluded from what the rule governs.
-workbench-core's `delegation-gate.sh` draws the same line, exempting the calls
-a sub-agent makes, because a sub-agent is the destination that gate redirects
-work to. And a parent already holds every fact its own workers need, so
-`Context:` has nothing left to recover — those prompts are written against
-measured cost instead, and the reading discipline in them is carried verbatim
-for that reason. Read it as a boundary, never as a list of agents: a specialist
-that grows a fan-out later inherits the exemption with no edit here.
+already owns are that specialist's implementation, and they keep whatever prompt
+shape that agent's own reference files define. Read it as a boundary, never as a
+list of agents: a specialist that grows a fan-out later inherits the exemption
+with no edit here. The measurement and the two other reasons behind the line:
+`references/brief-rationale.md`.
 
 Fill these five slots, in this order, under the names given, and send nothing
 else. No mode marker: Watson runs Direct mode by default and enters Index mode
@@ -225,26 +208,18 @@ around the part that mattered because nothing told it what the limit protects.
 **`Done when:` is an observable finish line** — a state you could check without
 asking the agent what it meant.
 
-**`Constraints:` may read "none". `Context:` may not.** These two sit that way
-round deliberately. A task can honestly have no hard limit beyond what the repo
-already states, so "none" there is a true answer. A task always has a reason for
-existing, so "none" there is never true — and a "none" the receiver accepts
-becomes the token senders reach for by default, which reproduces the bare
-instruction this whole template exists to kill. `Context:` carries at least one
-sentence on why the task exists.
+**`Constraints:` may read "none". `Context:` may not**, and `Context:` carries
+at least one sentence on why the task exists. The asymmetry is deliberate, and
+`references/brief-rationale.md` says why.
 
 Every slot is required, and every dev-team agent refuses a brief that drops one,
 naming what is missing (`agents/*.md`, the brief contract) — this is a receiving
 contract, not only a sending one.
 
-**There is no length limit.** Earlier versions of this template stated one, and
-it was measuring the wrong thing. Length was only ever a proxy for
-prescriptiveness, and a poor one: prose that honestly explains why a task exists
-outruns any figure worth setting, so the limit landed on the *why* — the single
-part of a brief that cannot be recovered by reading the repo. Prescriptiveness
-is attacked directly by the must-omit list below, and that list is the whole of
-the limit. Write the reasoning at whatever length it takes. Write no shell
-command at any length.
+**There is no length limit.** Write the reasoning at whatever length it takes,
+and write no shell command at any length. The must-omit list below is the whole
+of the limit; an earlier stated figure and why it went are in
+`references/brief-rationale.md`.
 
 ### Must carry — the sub-agent cannot derive these
 
@@ -331,19 +306,14 @@ dropped. It fails open rather than bricking a session, and it points back at
 this skill.
 
 - **It does not guess whether a dispatch is code work, and it does not decide
-  routing.** Prompt classifiers were built for that job and measured against
-  real dispatch traffic. The ones with usable recall were wrong about two calls
-  in three; the one that was usually right caught barely a quarter of the cases.
-  The misses were not tunable — a read-only audit names every file it inspects,
-  and a prose task names the source file it reads but never writes. Telling a
-  write target from a read target is a semantic judgement, and no shell script
-  makes it honestly. Requiring the template on *every* handoff is what let the
-  guessing go.
+  routing.** Classifiers were built for that job, measured against real dispatch
+  traffic, and were not good enough to keep. Requiring the template on *every*
+  handoff is what let the guessing go.
 - **Presence is all it checks, by design.** Whether the prose inside a slot is
   any good — whether `Goal:` states an outcome or a numbered implementation
-  script — is a judgement about substance, and it belongs to the receiving
-  agent, which is the one holding the repo and the brief together. The hook
-  regexes headers; the agent reads them.
+  script — belongs to the receiving agent, the one holding the repo and the
+  brief together. The hook regexes headers; the agent reads them. The recall
+  figures behind both bullets: `references/brief-rationale.md`.
 - **Neither slot order nor length is enforced there.** Order is worth keeping
   for readability, and refusing a well-formed brief over it would cost a real
   dispatch for nothing.
@@ -409,10 +379,11 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 - **You never do the work.** If you catch yourself reading a repo to "just fix
   it quickly," stop — that's a Watson dispatch, and so is that same fix handed
   to a generic agent. A `PreToolUse` hook holds this line for you: `Edit`,
-  `Write`, and `NotebookEdit` are denied when the main agent calls them. A deny
-  means the rule worked. Report it, then dispatch.
-  Never run `/workbench-core:orchestrator off` to clear your own deny. Only the
-  human asks for that toggle.
+  `Write`, and `NotebookEdit` are denied when the main agent calls them, and
+  reads and Bash stay open. A deny means the rule worked. Report it, then
+  dispatch. Never run `/workbench-core:orchestrator off` to clear your own deny
+  — only the human asks for that toggle, and only then does inline writing open
+  up.
 
 ## Action routing — Index MCP or gh CLI?
 
@@ -476,10 +447,10 @@ works on governed repos (App-signed), and degrades to no Type on user-owned ones
 ## When NOT to orchestrate
 
 - A one-line answer, a file lookup, a quick read — do it inline. Dispatch
-  overhead isn't free. Reads and Bash stay open to you; the gate covers file
-  *edits* only. To write code inline, the human runs
-  `/workbench-core:orchestrator off` first. The code still holds to YAGNI and
-  the most concise *readable* solution — the same `/develop` standard Watson
+  overhead isn't free, and reads and Bash stay open to you. Writing a file is
+  the delegation gate's business rather than this list's — see "You never do
+  the work" above. Code that does get written inline still holds to YAGNI and
+  the most concise *readable* solution, the same `/develop` standard Watson
   follows.
 - Work the scheduled Dispatch pipeline already owns (board items flowing
   through lanes) — leave it to the 20-minute tick unless the user asks for an
