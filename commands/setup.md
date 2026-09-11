@@ -557,6 +557,104 @@ fi
 Carry `ATTR_RESULT` (`suppressed` or `default (visible)`) into the Step 8
 summary.
 
+## Step 6.6 — Install the commit-approval command and its permission rules
+
+The commit-approval gate (`hooks/scripts/commit-approval-gate.sh`) denies every
+`git commit` in an interactive session that the human has not approved.
+`bin/approve-commit.sh` is how the approval arrives, and **this step is what lets it
+grant anything**: it installs that script at a stable path and adds the two
+`permissions.ask` rules covering it.
+
+The rules are the mechanism, not decoration. A `PreToolUse` hook can answer only
+allow / deny / ask, and its "ask" is *classifier-approvable* — under
+`permissions.defaultMode "auto"` the auto-mode classifier answers it and no human
+is prompted, which is why the gate never once stopped a commit before v0.44.0.
+A permission **rule** is evaluated before the classifier in every mode, so
+running a command a rule names does produce a real prompt. The human answering
+that prompt is the approval.
+
+**Do not "simplify" this by putting `Bash(git commit:*)` in the ask list.** An
+ask rule always prompts, a headless `claude -p` run has nobody to answer, and the
+pipeline would die at its first commit. workbench-core's rails exclude it for
+that reason, and `hooks/test-permissions.sh` there asserts the absence.
+
+Run it from anywhere:
+
+```bash
+# >>> commit-approval-install >>>
+set -u
+REGISTRY="$HOME/.claude/plugins/installed_plugins.json"
+PLUGIN_KEY="workbench-dev-team@claude-workbench"
+APPROVE_ROOT=""
+
+# Registry first, running root second — the same stale-snapshot trap Step 7a
+# documents in full. `$CLAUDE_PLUGIN_ROOT` in a resumed session can be weeks old.
+if [ -f "$REGISTRY" ] && jq empty "$REGISTRY" 2>/dev/null; then
+  CAND=$(jq -r --arg key "$PLUGIN_KEY" '
+    (.plugins[$key] // [])
+    | map(select((.enabled != false) and ((.installPath // "") != "")))
+    | sort_by((.version // "0") | split(".") | map(tonumber? // 0))
+    | (last // {}).installPath // empty' "$REGISTRY" 2>/dev/null || true)
+  if [ -n "$CAND" ] && [ -f "$CAND/bin/approve-commit.sh" ]; then APPROVE_ROOT="$CAND"; fi
+fi
+if [ -z "$APPROVE_ROOT" ] && [ -f "${CLAUDE_PLUGIN_ROOT:-}/bin/approve-commit.sh" ]; then
+  APPROVE_ROOT="$CLAUDE_PLUGIN_ROOT"
+  echo "⚠  Installing approve-commit.sh from the running plugin root — a resumed session's copy can be stale."
+fi
+if [ -z "$APPROVE_ROOT" ]; then
+  echo "❌ Could not locate bin/approve-commit.sh in the installed or running plugin root."
+  echo "   Re-install or update the plugin, then re-run /workbench-dev-team:setup."
+  exit 1
+fi
+
+# Prove the shipped script before installing it. An approval command that
+# misbehaves is worse than none: it is the only thing standing between an agent
+# and an unreviewed commit.
+if ! bash "$APPROVE_ROOT/bin/test-approve-commit.sh" >/dev/null 2>&1; then
+  echo "❌ bin/test-approve-commit.sh FAILED — refusing to install it."
+  echo "   Re-run it directly for the detail:  bash $APPROVE_ROOT/bin/test-approve-commit.sh"
+  exit 1
+fi
+
+mkdir -p "$HOME/.claude-workbench/bin"
+install -m 755 "$APPROVE_ROOT/bin/approve-commit.sh" "$HOME/.claude-workbench/bin/approve-commit.sh"
+
+SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+cp "$SETTINGS" "$SETTINGS.bak-approve-$(date +%Y%m%d-%H%M%S)"
+# Additive, like every other settings write in this command: both spellings are
+# added, every other key is left exactly as it was.
+jq --arg abs "Bash(bash $HOME/.claude-workbench/bin/approve-commit.sh:*)" \
+   --arg home 'Bash(bash "$HOME/.claude-workbench/bin/approve-commit.sh":*)' \
+   '.permissions.ask = ((.permissions.ask // []) + [$abs, $home] | unique)' \
+   "$SETTINGS" > "$SETTINGS.tmp" \
+  && jq empty "$SETTINGS.tmp" \
+  && mv "$SETTINGS.tmp" "$SETTINGS" \
+  || { rm -f "$SETTINGS.tmp"; echo "❌ Could not update $SETTINGS — no commit can be approved until the rules are there."; exit 1; }
+
+# End-to-end check: the installed copy must see its own rules. It refuses for
+# one of two reasons, and only one of them is the healthy one.
+CHECK=$(bash "$HOME/.claude-workbench/bin/approve-commit.sh" 0000000000000000 2>&1 || true)
+case "$CHECK" in
+  *"no commit is waiting"*)
+    echo "✅ Commit approval installed: $HOME/.claude-workbench/bin/approve-commit.sh, rules in $SETTINGS" ;;
+  *"permission rules"*)
+    echo "❌ approve-commit.sh cannot see its permission rules in $SETTINGS. Interactive commits stay blocked."
+    exit 1 ;;
+  *)
+    echo "⚠  approve-commit.sh answered unexpectedly: $CHECK"
+    exit 1 ;;
+esac
+# <<< commit-approval-install <<<
+```
+
+**If this block exits non-zero, say so plainly in the Step 8 summary:
+interactive `git commit` is blocked until it succeeds.** That is the gate failing
+closed, which is the designed direction — an approval command that cannot prompt
+must not approve — but the human has to know the remedy is re-running setup. The
+scheduled pipeline is untouched either way: it carries
+`WORKBENCH_DEV_TEAM_PIPELINE=1`, and the gate exits before any of this.
+
 ## Step 7 — Register the scheduled Dispatch task
 
 Skip this step entirely if `REGISTER_SCHEDULE` from Step 1 was "Skip".

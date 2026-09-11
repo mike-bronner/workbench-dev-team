@@ -187,10 +187,30 @@ commit.** Before any commit:
    commit (or an explicitly enumerated batch) for its own approval.
 
 This is enforced at the harness level too: a plugin `PreToolUse` hook
-(`hooks/scripts/commit-approval-gate.sh`) forces a permission prompt on every
-`git commit`, regardless of permission mode. The prose protocol above is what
-makes that prompt meaningful — the human must already have the diff and
-message in front of them when it appears.
+(`hooks/scripts/commit-approval-gate.sh`) **denies** every `git commit` an
+interactive session has not had approved, regardless of permission mode. The
+denial is not a wall, it is the next step, and it prints one:
+
+```
+bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"
+```
+
+Run that command *after* doing steps 1–3 above, never before. Permission rules
+cover it, so the harness raises a real prompt the human must answer, and their
+answer is the approval. Then run the same `git commit` again — the same one:
+the approval is bound to that exact command, to your agent, and to this session,
+it is spent by the commit that uses it, and it expires in 15 minutes.
+
+Two rules about the command itself. Run it **exactly** as the denial prints it,
+because a different spelling is not covered by the rules and prompts nobody.
+And never run it before the human has seen the diff and the message: the prompt
+asks them to approve a commit, and only your output tells them what is in it.
+
+If it refuses — missing permission rules, or an id with no waiting commit —
+report that and stop. `/workbench-dev-team:setup` installs the command and its
+rules; until it has run, no commit can be approved. That is the gate failing
+closed, which is the designed direction. Never edit the gate, never set
+`WORKBENCH_DEV_TEAM_PIPELINE`, and never write an approval record by hand.
 
 **Sole exception — the autonomous Index pipeline.** Scheduled Watson runs are
 headless; there, dispatching an item to the board is the approval, and Holmes

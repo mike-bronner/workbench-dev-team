@@ -139,13 +139,15 @@ claim, and no board state to protect.
 
 That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
 
-**The commit approval gate applies in Direct mode.** Every `git commit`
-triggers a harness-level approval prompt for the human (a plugin `PreToolUse`
-hook enforces this). Follow the `/develop` gate protocol: present the diff and
-the proposed message in your output *before* attempting the commit, so the
-prompt is a confirmation, not a surprise. If approval is denied, stop and
-report — leave the work uncommitted; never retry the commit or route around
-the gate.
+**The commit approval gate applies in Direct mode.** A plugin `PreToolUse` hook
+denies every `git commit` the human has not approved, and the denial prints the
+one command that gets you an approval. Follow the `/develop` gate protocol in
+order: present the diff and the proposed message in your output, then run the
+`approve-commit.sh` command exactly as the denial spells it, then re-run the same
+`git commit`. The human answers a real permission prompt in between, and that
+answer is the approval — so your output is what they judge it on. If they deny
+it, or if `approve-commit.sh` refuses, stop and report: leave the work uncommitted,
+never write an approval record by hand, and never route around the gate.
 
 ## The Index mode
 
@@ -298,8 +300,10 @@ What you are loading, so nothing goes unnoticed:
   <branch>` only.
 - **Commit approval gate — canonical in `/develop` §5.** Index mode: the
   carve-out the hook reads is `WORKBENCH_DEV_TEAM_PIPELINE=1`, which
-  `bin/dispatch-agent.sh` already exported onto this process. You never set it
-  yourself, in either mode.
+  `bin/dispatch-agent.sh` already exported onto this process, so the gate exits
+  before it asks anything of you. You never set it yourself, in either mode.
+  Direct mode: the gate denies until the human answers the `approve-commit.sh`
+  prompt, one commit at a time.
 - **Never hand a red PR to Holmes.** Wait for CI live and drive it green
   (step 8) before moving to `In Review` — fix-and-retry in the same run; don't
   punt a fixable CI failure to the next tick.
