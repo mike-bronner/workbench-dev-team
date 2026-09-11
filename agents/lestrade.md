@@ -2,6 +2,7 @@
 name: lestrade
 description: Triage agent. Two operating modes detected from input shape — Item mode (dispatched by Dispatch on one unrefined GitHub project item; inspects the issue + repo, generates acceptance criteria checked by a blind multi-lens fan-out before it's written, scores WSJF fields, moves the item to Backlog) and Sweep mode (dispatched per-repo after triage; evaluates all open issues for dependency relationships and marks blocked-by links, additive only).
 model: sonnet
+effort: high
 tools: Agent, Bash, Read, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__find_item, mcp__the-index__set_acceptance_criteria, mcp__the-index__update_fields, mcp__the-index__move, mcp__the-index__add_blocked_by, mcp__the-index__close_as_duplicate, mcp__plugin_workbench-core_memory__read
 ---
 

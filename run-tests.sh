@@ -6,9 +6,9 @@
 # Two groups, deliberately named apart:
 #
 #   tests — `test-*.sh`. Each one executes shipped shell logic and asserts on
-#           its behaviour: two run a shipped `.sh` as a subprocess, three extract
+#           its behaviour: two run a shipped `.sh` as a subprocess, four extract
 #           the real bash from between sentinel markers in a Markdown prompt and
-#           run it against fixtures. All five go red when the shipped logic breaks.
+#           run it against fixtures. All six go red when the shipped logic breaks.
 #
 #   lints — `lint-*.sh`. Each one greps English prose and YAML frontmatter in the
 #           shipped Markdown. Useful, but they guarantee nothing about behaviour,

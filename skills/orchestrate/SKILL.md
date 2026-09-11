@@ -100,16 +100,22 @@ suggest `/workbench-dev-team:setup`.
 
 - **Interactive (this skill):** pass the config's `model` as the Agent tool's
   per-invocation `model` parameter — it overrides the agent's frontmatter.
-  The Agent tool has **no per-invocation effort parameter**; interactive
-  sub-agents inherit the session's effort level — a config `effort` above
-  the session's (e.g. Watson's `xhigh`) only lands on the scheduled path.
-  `maxBudgetUsd` and `fallback` are CLI-only — neither applies to interactive
-  dispatch (the Agent tool has no budget or fallback-model parameter; a model
-  error on this path surfaces immediately for the human to handle).
+  The Agent tool still has **no per-invocation effort parameter**, so there is
+  nothing to pass for `effort` and nothing you need to do about it: the
+  configured value is already on the agent's frontmatter, which is where the
+  harness reads effort from when it spawns a sub-agent.
+  `/workbench-dev-team:setup` puts it there (Step 6a). Watson's `xhigh` does
+  reach this path. **After editing the config, re-run setup** — the scheduled
+  path re-reads the file every tick, while this one keeps the last stamped
+  value until setup runs again. `maxBudgetUsd` and `fallback` have no such
+  route and stay CLI-only — neither applies to interactive dispatch (the Agent
+  tool has no budget or fallback-model parameter; a model error on this path
+  surfaces immediately for the human to handle).
 - **Scheduled (Dispatch):** the `model`, `effort`, `fallback`, and budget knobs
   are passed as `--model`, `--effort`, `--fallback-model`, and `--max-budget-usd`
-  flags. Not your concern here, but it is the same config file — one edit moves
-  both paths.
+  flags. Not your concern here, but it is the same config file — one edit still
+  moves both paths: this one on the next tick, the interactive one at the next
+  setup run.
 
 ## Check the workspace before you dispatch
 

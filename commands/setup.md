@@ -247,10 +247,12 @@ fi
 ```
 
 The config is the single source of truth for per-agent model, effort, fallback,
-and budget caps, read by both dispatch paths: the scheduled Dispatch task passes
-`--model` / `--effort` / `--fallback-model` / `--max-budget-usd` from it, and the
+and budget caps, and both dispatch paths take their values from it: the scheduled
+Dispatch task passes `--model` / `--effort` / `--fallback-model` /
+`--max-budget-usd` from it on every tick, and the
 `/workbench-dev-team:orchestrate` skill reads it for interactive sub-agent
-dispatch. Setup never overwrites an existing config — the user's edits stick
+dispatch. The two paths reach `effort` differently, which is what Step 6a below
+is for. Setup never overwrites an existing config — the user's edits stick
 across plugin updates and re-runs. All three agents run effort-capable models:
 `xhigh` for the long-horizon agentic roles (Watson's development runs, Holmes's
 reviews), `high` for Lestrade's bounded triage — note `xhigh` is not supported on
@@ -265,6 +267,155 @@ so a dispatch degrades to the next model when the primary is overloaded or
 unavailable — e.g. a retired model — instead of failing. `maxBudgetUsd` caps a
 run's spend: Watson defaults to `10.00`, Holmes's is optional and applied only
 when set, and both default cleanly when absent.
+
+### 6a. Stamp the configured effort into the agent frontmatter
+
+The scheduled path reads `effort` off this config on every tick. **The interactive
+path cannot.** The Agent tool exposes a per-invocation `model` parameter and no
+effort parameter, so a sub-agent dispatched from a live conversation takes its
+effort from its own definition — which is to say, from frontmatter. Leave the
+frontmatter silent and every interactive Watson, Holmes, and Lestrade runs at
+whatever effort the calling session happens to sit at, while the config knob
+appears to be set.
+
+So the config stays canonical for the *value* and this step copies it into the
+*place the interactive dispatch reads*. One edit still moves both paths, and
+re-running setup is what re-synchronises them: **edit the config and the
+scheduled path changes on the next tick, while interactive dispatch keeps the
+last stamped value until setup runs again.**
+
+The block writes the installed plugin's `agents/*.md`, resolved the same way
+Step 7a resolves the orchestrator and for the same reason. Agents are
+discovered from that directory rather than listed here, so a fourth agent is
+stamped the day it ships:
+
+```bash
+# >>> agent-effort-stamp >>>  (markers used by agents/test-effort-stamp.sh — keep them)
+# Inputs:  STAMP_ROOT      (optional) plugin root holding agents/*.md. Resolved
+#                          from the install registry when unset.
+#          DEVTEAM_CONFIG  (optional) the shared agent config. Defaults to
+#                          ~/.claude-workbench/dev-team-config.json.
+# Prints:  one line per agent file, and "⚠ …" for anything it refuses to write.
+# Exits:   1 only when no plugin root resolves — nothing was stamped, and saying
+#          so is the whole point. A refused value or an unreadable config warns
+#          and returns 0: neither is worth aborting setup over, and both leave
+#          the shipped defaults in place.
+STAMP_ROOT="${STAMP_ROOT:-}"
+STAMP_CFG="${DEVTEAM_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
+STAMP_REGISTRY="$HOME/.claude/plugins/installed_plugins.json"
+STAMP_WARNED=0
+
+# Resolve the INSTALLED root, never $CLAUDE_PLUGIN_ROOT first. In a resumed
+# session that variable names a frozen snapshot (Step 7a explains why), and
+# stamping it writes effort into a copy no later session ever loads. Same
+# registry query as Step 7a, probing agents/ instead of the orchestrator.
+if [ -z "$STAMP_ROOT" ] && [ -f "$STAMP_REGISTRY" ] && jq empty "$STAMP_REGISTRY" 2>/dev/null; then
+  STAMP_CAND=$(jq -r --arg key "workbench-dev-team@claude-workbench" '
+    (.plugins[$key] // [])
+    | map(select((.enabled != false) and ((.installPath // "") != "")))
+    | sort_by((.version // "0") | split(".") | map(tonumber? // 0))
+    | last // empty
+    | .installPath // empty
+  ' "$STAMP_REGISTRY" 2>/dev/null || true)
+  if [ -n "$STAMP_CAND" ] && [ -d "$STAMP_CAND/agents" ]; then
+    STAMP_ROOT="$STAMP_CAND"
+  fi
+fi
+
+if [ -z "$STAMP_ROOT" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/agents" ]; then
+  STAMP_ROOT="$CLAUDE_PLUGIN_ROOT"
+  echo "⚠  Could not resolve an install path from $STAMP_REGISTRY — stamping the running"
+  echo "   plugin root ($STAMP_ROOT). If this session's copy is frozen, later sessions load"
+  echo "   agent files this step never touched. Re-run setup from a fresh session."
+fi
+
+if [ -z "$STAMP_ROOT" ]; then
+  echo "❌ Could not locate the plugin's agents/ directory — neither $STAMP_REGISTRY nor"
+  echo "   \$CLAUDE_PLUGIN_ROOT resolved a readable copy. Re-install or update the plugin,"
+  echo "   then re-run /workbench-dev-team:setup."
+  exit 1
+fi
+
+if [ ! -f "$STAMP_CFG" ] || ! jq empty "$STAMP_CFG" 2>/dev/null; then
+  echo "⚠  $STAMP_CFG is missing or not valid JSON — leaving the shipped effort defaults"
+  echo "   in $STAMP_ROOT/agents/ untouched. Fix the file, then re-run setup."
+  exit 0
+fi
+
+# The harness's own effort enum, plus the integer form its frontmatter schema
+# documents. Anything else is normalized to "no override" when the agent loads,
+# so writing it would configure nothing while looking configured. `xhigh` is
+# valid here even though the schema's field description omits it: the runtime
+# check is the enum, and the field is typed as a plain string.
+stamp_effort_valid() {
+  case "$1" in
+    low|medium|high|xhigh|max) return 0 ;;
+    ''|*[!0-9]*)               return 1 ;;
+    *)                         return 0 ;;
+  esac
+}
+
+for STAMP_FILE in "$STAMP_ROOT"/agents/*.md; do
+  [ -f "$STAMP_FILE" ] || continue
+  STAMP_AGENT=$(basename "$STAMP_FILE" .md)
+
+  if ! head -1 "$STAMP_FILE" | grep -qx -- '---' \
+     || ! awk 'NR>1 && $0=="---" {ok=1; exit} END {exit !ok}' "$STAMP_FILE"; then
+    echo "⚠  $STAMP_AGENT — frontmatter fences missing or unterminated, skipped"
+    STAMP_WARNED=$((STAMP_WARNED + 1))
+    continue
+  fi
+
+  # Lower-cased first, because the harness lower-cases before it checks the enum.
+  # Validating the raw string would reject a `High` the runtime accepts happily,
+  # and this step's rejection is silent downgrade rather than a visible error.
+  STAMP_VALUE=$(jq -r --arg a "$STAMP_AGENT" '.agents[$a].effort // empty' "$STAMP_CFG" 2>/dev/null || true)
+  STAMP_VALUE=$(printf '%s' "$STAMP_VALUE" | tr '[:upper:]' '[:lower:]')
+
+  if [ -n "$STAMP_VALUE" ] && ! stamp_effort_valid "$STAMP_VALUE"; then
+    echo "⚠  $STAMP_AGENT — config effort '$STAMP_VALUE' is not low|medium|high|xhigh|max or an"
+    echo "   integer. Refusing to write it; removing any stale effort line instead."
+    STAMP_VALUE=""
+    STAMP_WARNED=$((STAMP_WARNED + 1))
+  fi
+
+  # Rewrite the frontmatter only. Drop every existing `effort:` line first, then
+  # put the configured one back directly after `model:`. Dropping first is what
+  # makes a re-run idempotent AND makes a deleted config key actually delete the
+  # line — without it the two paths drift apart silently, which is the whole
+  # defect this step exists to close.
+  STAMP_TMP="${STAMP_FILE}.stamp.$$"
+  if awk -v val="$STAMP_VALUE" '
+        NR==1 && $0=="---" { print; fm=1; next }
+        fm && $0=="---"    { if (val != "" && !done) print "effort: " val
+                             print; fm=0; next }
+        fm && /^effort:/   { next }
+        fm && /^model:/    { print
+                             if (val != "") { print "effort: " val; done=1 }
+                             next }
+                           { print }
+      ' "$STAMP_FILE" > "$STAMP_TMP" && [ -s "$STAMP_TMP" ]; then
+    mv "$STAMP_TMP" "$STAMP_FILE"
+    echo "✅ $STAMP_AGENT — effort: ${STAMP_VALUE:-(none — inherits the session)}"
+  else
+    # Never leave a truncated agent definition behind: keep the original.
+    rm -f "$STAMP_TMP"
+    echo "⚠  $STAMP_AGENT — frontmatter rewrite failed, left untouched"
+    STAMP_WARNED=$((STAMP_WARNED + 1))
+  fi
+done
+
+if [ "$STAMP_WARNED" -gt 0 ]; then
+  echo "⚠  $STAMP_WARNED agent file(s) did not take a configured effort — see above."
+fi
+echo "Agent effort stamped from $STAMP_CFG into $STAMP_ROOT/agents/"
+# <<< agent-effort-stamp <<<
+```
+
+A plugin update replaces `agents/*.md` with the shipped copies, so it resets
+every stamp to the shipped defaults. That is why the skill's own description
+says to re-run setup after an update — a user whose config matches the defaults
+loses nothing, and one who edited it gets their values back on the re-run.
 
 ## Step 6.5 — Choose commit attribution behavior
 
@@ -773,6 +924,9 @@ Print a clean summary block:
 
   Agents:           Lestrade (Sonnet), Holmes (Opus, $7 cap), Watson (Opus, $10 cap)
                     — models/effort/fallback/budget editable in the agent config
+                    — effort also stamped into {STAMP_ROOT}/agents/*.md (Step 6a),
+                      which is what interactive dispatch reads: re-run setup
+                      after editing the config to move that path too
 
   Verify in Claude Code's scheduled-tasks panel that Dispatch shows Sonnet —
   Step 7d's patch isn't a supported API and can silently stop working.
@@ -781,8 +935,10 @@ Print a clean summary block:
 
 Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
 choice (`suppressed` or `default (visible)`), fill `{PATCHED}` from Step 7d's
-count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a and
-`{BODY_LINES}`/`{BODY_LANES}` from Step 7a-bis's success line,
+count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a,
+`{BODY_LINES}`/`{BODY_LANES}` from Step 7a-bis's success line, and
+`{STAMP_ROOT}` from Step 6a's closing line — Step 6a runs whether or not the
+schedule was registered, so that one is always available,
 and adjust the scheduled-task, prompt-source and router-model lines if
 registration was skipped or the patch found nothing.
 

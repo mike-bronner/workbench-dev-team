@@ -108,12 +108,12 @@ Per-agent model, effort, fallback chain, and budget caps live in a single file, 
 
 Both dispatch paths read it:
 
-- **Scheduled (Dispatch)** passes `--model`, `--effort` (only when set), `--fallback-model` (only when set), and `--max-budget-usd` on each `claude -p` invocation. CLI flags override agent frontmatter (verified empirically), so a config edit takes effect on the next tick — no plugin files to touch.
-- **Interactive (`orchestrate`)** passes the config's `model` as the Agent tool's per-invocation model override. The Agent tool has no per-invocation effort, budget, or fallback parameter — interactive sub-agents inherit the session's effort level, and `maxBudgetUsd`/`fallback` apply to the scheduled path only (a model error there surfaces immediately for you to handle).
+- **Scheduled (Dispatch)** passes `--model`, `--effort` (only when set), `--fallback-model` (only when set), and `--max-budget-usd` on each `claude -p` invocation. CLI flags override agent frontmatter (verified empirically), so a config edit takes effect on the next tick with no plugin files to touch — on this path. The interactive one below is the exception.
+- **Interactive (`orchestrate`)** passes the config's `model` as the Agent tool's per-invocation model override. The Agent tool has no per-invocation effort, budget, or fallback parameter, so `effort` reaches this path through the agent definition instead: setup stamps the configured value into each agent's frontmatter, and the harness reads it there when it spawns the sub-agent. `maxBudgetUsd`/`fallback` have no equivalent route and stay scheduled-path only (a model error there surfaces immediately for you to handle).
 
 Holmes also carries two optional review knobs: `fanout` (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run on. Both default cleanly when absent. The optional `fallback` knob (any agent) is a comma-separated model list handed to `--fallback-model`, so a dispatch degrades to the next model when the primary is overloaded or unavailable — e.g. a retired model — instead of failing; `maxBudgetUsd` caps per-run spend (Watson defaults to `10.00`; Holmes's is optional). All default cleanly when absent.
 
-The agent definitions carry matching frontmatter defaults (`model: sonnet|opus`), so direct Agent-tool dispatch without the skill still lands on the right model. `effort` is deliberately **not** in frontmatter: frontmatter effort would override the session level — including Dispatch's `--effort` flag — turning the config knob into a no-op. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
+The agent definitions carry matching frontmatter defaults (`model: sonnet|opus`, `effort: high|xhigh`), so a direct Agent-tool dispatch without the skill still lands on the right model *and* the right effort. Setup's Step 6a rewrites that `effort` line from this config on every run — and removes it when the config names no effort, so the frontmatter stays silent in exactly the case where Dispatch omits `--effort`. **Edit the config, then re-run `/workbench-dev-team:setup`:** the scheduled path re-reads the file on the next tick, but interactive dispatch reads the stamp, and a plugin update resets it to the shipped defaults. Missing file, missing key, or malformed JSON all fall back to the defaults above; dispatch never blocks on config problems.
 
 ## Setup
 
@@ -221,11 +221,11 @@ anything fails. Pass `tests` or `lints` to run one group.
 
 The two groups are named apart on purpose:
 
-- **`test-*.sh`** — five scripts that execute shipped shell logic and assert on
-  its behaviour. Two run a shipped `.sh` as a subprocess. Three extract the real
+- **`test-*.sh`** — six scripts that execute shipped shell logic and assert on
+  its behaviour. Two run a shipped `.sh` as a subprocess. Four extract the real
   bash from between sentinel markers in a Markdown prompt and run it against
   fixtures, so the test cannot drift from the logic it guards.
-- **`lint-*.sh`** — two scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — four scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests.
 
