@@ -1,9 +1,56 @@
 #!/bin/bash
 # Commit approval gate (PreToolUse, matcher: Bash).
 #
-# Refuses every `git commit` that the human has not approved. The /develop skill
-# tells the model to present the diff and proposed message BEFORE attempting the
-# commit; this hook is the harness-level backstop for when prose fails.
+# Three lanes, decided in this order. Only two of them may write history.
+#
+#   1. The scheduled Index pipeline — WORKBENCH_DEV_TEAM_PIPELINE=1, exported by
+#      bin/dispatch-agent.sh onto the `claude -p` process it spawns. Silent.
+#      Nobody is at the keyboard there, and board dispatch + Holmes review + the
+#      human's own PR merge is the approval chain instead.
+#   2. A sub-agent without that flag — the payload carries a non-empty agent_id.
+#      REFUSED, for every command that commits, merges, or pushes, and offered no
+#      approval path whatsoever. It hands the work back to the session that
+#      dispatched it, as an uncommitted working tree.
+#   3. A foreground session — the payload's agent_id is empty. `git commit` needs
+#      an approval the human answered a prompt for, minutes earlier. Merge and
+#      push are the human's own business there, and this gate has no opinion.
+#
+# WHY LANE 2 EXISTS. Lane 3's approval arrives by a second route:
+# bin/approve-commit.sh, installed by /workbench-dev-team:setup at
+# $HOME/.claude-workbench/bin/ and covered by permissions.ask rules. A permission
+# RULE is evaluated before the auto-mode classifier in every mode, so running
+# that command does force a real prompt, and the human answering it is the
+# approval. approve-commit.sh refuses to grant anything unless those rules are
+# present, so a half-finished setup fails closed.
+#
+# That reasoning holds in a foreground session and fails in a sub-agent. The
+# sub-agent's request meta records requestShape "background" and
+# requestNonInteractive true: no human is attached, so the ask resolves with
+# nobody answering it. The approval command is a Bash command, and the sub-agent
+# holds Bash — so the agent was both the requester and the approver. Measured
+# across every transcript on this machine in the gate's first day: 48 sub-agent
+# self-approvals, median 3.4 seconds between the denial and the approval, and 17
+# unapproved commits on main out of one run alone. Three seconds is not a human
+# reading a diff.
+#
+# So lane 2 is not offered a path. Its denial prints no request id and no
+# command, and it writes no pending record for one to spend. The check also runs
+# BEFORE any approval record is read, so a record planted by hand buys nothing
+# either.
+#
+# THE LANE SIGNAL IS agent_id, AND NOTHING ELSE. The harness supplies it, not the
+# command, so an agent cannot forge its absence. It is non-empty for every
+# sub-agent and empty for a main session. `agent_type` must never be substituted:
+# it is present for BOTH a scheduled `claude -p --agent watson` and an
+# interactively dispatched one, so it cannot tell them apart and would re-open
+# the hole this lane closes.
+#
+# WHAT LANE 2 MATCHES is a rule, not a list: every git verb that writes a commit,
+# integrates another history, or publishes one, plus `gh pr merge`. GATED_GIT
+# below is that rule's current membership and the only place it is enumerated —
+# a verb belongs there when it satisfies the rule, and prose elsewhere states the
+# rule rather than copying the list. Matching `git commit` alone is what left
+# merge and push open: a list, one verb wide.
 #
 # The verdict is "deny", and that is the whole point. The gate used to return
 # "ask" and never stopped a single commit: a hook's "ask" is classifier-
@@ -12,42 +59,24 @@
 # pair "ask" with a classifierApprovable:false marker that hooks cannot set. Of
 # the three verdicts a hook can return, only "deny" binds.
 #
-# Approval therefore arrives by a second route: bin/approve-commit.sh, installed by
-# /workbench-dev-team:setup at $HOME/.claude-workbench/bin/ and covered by
-# permissions.ask rules. A permission RULE is evaluated before the classifier in
-# every mode, so running that command does force a real prompt. The human
-# answering it is the approval. approve-commit.sh refuses to grant anything unless
-# those rules are present, so a half-finished setup fails closed.
-#
 # One approval covers one commit. The gate keys each request by session, agent,
 # and the exact command text, and deletes the record the moment it lets a commit
 # through. A second commit — or the same commit a second time — starts over.
 #
-# Carve-out — the autonomous Index pipeline, and only that. The one signal is
-# WORKBENCH_DEV_TEAM_PIPELINE=1, exported by bin/dispatch-agent.sh onto the
-# `claude -p` process it spawns. There, no human is present to answer a prompt,
-# and board dispatch + Holmes review + the human's PR merge is the approval
-# chain instead.
-#
-# The signal is per-process on purpose. A file-existence check — the old
+# The pipeline signal is per-process on purpose. A file-existence check — the old
 # live-PID /tmp/watson.lock — answered "is a pipeline running on this host?",
 # not "is THIS process the pipeline?", so a scheduled run waived approval for
 # every concurrent interactive session on the same machine. That leak let four
 # unapproved commits land across two interactive Watsons. An inherited
-# environment variable cannot reach a session the dispatcher did not spawn.
+# environment variable cannot reach a session the dispatcher did not spawn. Do
+# not reintroduce a host-wide or identity-shaped substitute.
 #
-# Do not reintroduce a host-wide or identity-shaped substitute. In particular
-# `agent_type` in the hook payload is present for BOTH a scheduled
-# `claude -p --agent watson` and an interactively dispatched one, so it cannot
-# tell them apart and would re-open the same hole. The approval records this
-# gate writes carry the same discipline: the session id and the agent id are
-# both in the key, so an approval granted to one agent is unusable by any other
-# agent, in any other session, for any other command.
-#
-# What this gate is NOT: a defence against an agent that sets out to defeat it.
-# The approval record is a file, and anything holding Bash can write a file.
-# What it does guarantee is that an unapproved commit cannot happen SILENTLY —
-# the sanctioned path runs through a prompt the human answers.
+# What this gate is NOT: anti-evasion machinery. It reads the command the agent
+# asked to run, so a verb hidden inside `bash -c` or written by a script is not
+# its subject, and in lane 3 the approval record is a file that anything holding
+# Bash can write. What it does guarantee: a sub-agent's commit, merge, or push
+# is refused outright with no path back, and a foreground commit cannot happen
+# SILENTLY, because the sanctioned path runs through a prompt the human answers.
 #
 # Exit 0 with no output = no opinion (normal permission flow applies).
 # Exit 0 with permissionDecision "deny" = the harness refuses the call.
@@ -109,41 +138,100 @@ command = payload.get("tool_input", {}).get("command", "") or ""
 # git options that consume the following token as a value, so the
 # subcommand search must skip both.
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
+GH_OPTS_WITH_ARG = {"-R", "--repo"}
+
+# Every git subcommand that writes a commit (commit, revert, cherry-pick, am),
+# integrates another history (merge, rebase, pull), or publishes one (push). The
+# rule is the membership test — add a verb here when it does one of those three,
+# and note that `git pull` qualifies because it merges.
+GATED_GIT = {"commit", "revert", "cherry-pick", "am", "merge", "rebase", "pull", "push"}
+
+# The gh equivalent. Matched on its first two positionals, so `gh pr view` and
+# `gh pr comment` are untouched.
+GATED_GH = {("pr", "merge")}
 
 
-def is_git_commit(cmd: str) -> bool:
-    # Split into pipeline/list segments; a commit can hide in any of them.
+def leading_positionals(tokens: list, opts_with_arg: set, want: int) -> list:
+    """The first `want` non-option tokens, skipping flags and their values."""
+    found = []
+    i = 0
+    while i < len(tokens) and len(found) < want:
+        tok = tokens[i]
+        if tok.split("=", 1)[0] in opts_with_arg and "=" not in tok:
+            i += 2
+        elif tok.startswith("-"):
+            i += 1
+        else:
+            found.append(tok)
+            i += 1
+    return found
+
+
+def gated_commands(cmd: str) -> list:
+    """Every commit/merge/push command this call runs, in the order they run.
+
+    All of them, never just the first: `git push && git commit -m x` is a commit
+    as much as it is a push, and lane 3 gates on the commit being in there
+    anywhere.
+    """
+    actions = []
+    # Split into pipeline/list segments; a command can hide in any of them.
     for segment in re.split(r"\|\||&&|[|;\n&]", cmd):
         tokens = segment.strip().split()
         # Drop leading env assignments and command/builtin wrappers.
         while tokens and (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]) or tokens[0] in ("command", "builtin", "exec")):
             tokens.pop(0)
-        if not tokens or tokens[0] != "git":
+        if not tokens:
             continue
-        i = 1
-        while i < len(tokens):
-            tok = tokens[i]
-            base = tok.split("=", 1)[0]
-            if base in GIT_OPTS_WITH_ARG and "=" not in tok:
-                i += 2
-            elif tok.startswith("-"):
-                i += 1
-            else:
-                if tok == "commit":
-                    return True
-                break  # some other git subcommand
-    return False
+        hit = ""
+        if tokens[0] == "git":
+            found = leading_positionals(tokens[1:], GIT_OPTS_WITH_ARG, 1)
+            if found and found[0] in GATED_GIT:
+                hit = "git " + found[0]
+        elif tokens[0] == "gh":
+            found = tuple(leading_positionals(tokens[1:], GH_OPTS_WITH_ARG, 2))
+            if found in GATED_GH:
+                hit = "gh " + " ".join(found)
+        if hit and hit not in actions:
+            actions.append(hit)
+    return actions
 
 
-if not is_git_commit(command):
+actions = gated_commands(command)
+if not actions:
     sys.exit(0)
 
-# From here on the call IS a commit, and every exit is a verdict. Anything the
-# gate cannot establish — a session it cannot name, a directory it cannot write
-# — ends in a denial, never in silence.
+# From here on the call writes or publishes history, and every exit is a verdict.
+# Anything the gate cannot establish — a session it cannot name, a directory it
+# cannot write — ends in a denial, never in silence.
 
 session_id = str(payload.get("session_id") or "")
 agent_id = str(payload.get("agent_id") or "")
+
+# Lane 2. Before the record is read, so a planted approval cannot be spent, and
+# before one is written, so no id exists for the agent to approve.
+if agent_id:
+    deny(
+        f"🔒 Commit approval gate (workbench-dev-team): `{actions[0]}` is refused. "
+        f"This call comes from a sub-agent (agent {agent_id[:8]}) that carries no "
+        "pipeline flag, so no human is reachable to approve it. There is no "
+        "approval command for you to run, by design: any command you can run "
+        "yourself is not an approval.\n\n"
+        "Hand the work back instead. Leave the tree uncommitted, and report the "
+        "diff and the proposed commit message to the session that dispatched "
+        "you. That session commits it, where a prompt does reach a human.\n\n"
+        "A sub-agent does not commit, does not merge, and does not push. The two "
+        "lanes that do are the scheduled Index pipeline, which "
+        "bin/dispatch-agent.sh marks with WORKBENCH_DEV_TEAM_PIPELINE=1, and the "
+        "foreground session. An Index item dispatched from a conversation lands "
+        "here too: re-dispatch it through bin/dispatch-agent.sh, which sets that "
+        "flag. Never set the flag yourself, and never write an approval record "
+        "by hand."
+    )
+
+# Lane 3. Merge and push are the human's own, as they have always been here.
+if "git commit" not in actions:
+    sys.exit(0)
 
 if not session_id:
     deny(
@@ -154,8 +242,10 @@ if not session_id:
     )
 
 # The key answers "is THIS commit, by THIS agent, in THIS session approved?" and
-# no broader question. Two agents in one session never share an approval, and
-# editing the command voids the one it already has.
+# no broader question, so editing the command voids the approval it already has.
+# The agent component is moot in practice now — lane 2 turned back every caller
+# with an agent id — and it stays in the key anyway, so a record can never be
+# reused across identities.
 request_id = hashlib.sha256(
     "\x1f".join([session_id, agent_id, command]).encode("utf-8", "surrogatepass")
 ).hexdigest()[:16]

@@ -30,10 +30,17 @@ STATE="$SANDBOX/home/.claude-workbench/commit-approvals"
 # Run the gate with the sandbox in place of the host's temp dir and home.
 gate() { env -u WORKBENCH_COMMIT_APPROVAL_DIR "$@" TMPDIR="$SANDBOX" HOME="$SANDBOX/home" "$GATE"; }
 
-# payload <command> [session-id] [agent-id]
+# payload <command> [session-id] [agent-id] [agent-type]
+# agent_type is carried only so a case can prove the gate ignores it; it is
+# omitted from the payload entirely when empty, which is the common shape.
 payload() {
-  python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":sys.argv[2],"agent_id":sys.argv[3],"tool_input":{"command":sys.argv[1]}}))' \
-    "$1" "${2-session-A}" "${3-}"
+  python3 -c '
+import json, sys
+body = {"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": sys.argv[2],
+        "agent_id": sys.argv[3], "tool_input": {"command": sys.argv[1]}}
+if sys.argv[4]:
+    body["agent_type"] = sys.argv[4]
+print(json.dumps(body))' "$1" "${2-session-A}" "${3-}" "${4-}"
 }
 
 # Build the payload first, then feed it with printf. Piping the generator
@@ -113,7 +120,6 @@ run_case "empty commit (watson scaffold)"         'git commit --allow-empty -m "
 echo "Non-commits stay silent:"
 run_case "git status"                             'git status'                                     silent
 run_case "git log mentioning commit"              'git log --oneline | grep commit'                silent
-run_case "git push"                               'git push origin main'                           silent
 run_case "git add only"                           'git add -A'                                     silent
 run_case "unrelated command"                      'ls -la'                                         silent
 run_case "echo containing the words"              'echo "git commit is gated"'                     silent
@@ -167,20 +173,127 @@ OUT=$(ask_gate "$CMD" "session-B" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
 check "the same command in another session is still denied" "$(verdict_of "$OUT")" deny
 
 OUT=$(ask_gate "$CMD" "session-A" "agent-2" -u WORKBENCH_DEV_TEAM_PIPELINE)
-check "the same command from another agent is still denied" "$(verdict_of "$OUT")" deny
+check "a sub-agent cannot spend the foreground's approval" "$(verdict_of "$OUT")" deny
 
 OUT=$(ask_gate "$CMD" "session-A" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
-check "the agent that was approved still gets through" "$(verdict_of "$OUT")" silent
+check "the session that was approved still gets through" "$(verdict_of "$OUT")" silent
 
-# Two agents in one session are the shape that once let four unapproved commits
-# land. Each holds its own id, so one agent's approval is invisible to the other.
-ID_ONE=$(request_id "$CMD" "session-C" "agent-1")
-ID_TWO=$(request_id "$CMD" "session-C" "agent-2")
-if [ -n "$ID_ONE" ] && [ "$ID_ONE" != "$ID_TWO" ]; then
-  ok "two agents in one session get separate request ids"
+echo "Lane 2 — a sub-agent is refused, whatever it asked to run:"
+# Every case below carries a non-empty agent_id, which is the harness's own
+# marker for a sub-agent and the only signal this lane reads.
+sub_case() { # sub_case <desc> <command> <deny|silent>
+  local out
+  out=$(ask_gate "$2" "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)
+  check "$1" "$(verdict_of "$out")" "$3"
+}
+
+sub_case "a commit"                               'git commit -m "feat: x"'                        deny
+sub_case "a merge"                                'git merge origin/main'                          deny
+sub_case "a rebase"                               'git rebase main'                                deny
+sub_case "a pull, which merges"                   'git pull --rebase origin main'                  deny
+sub_case "a cherry-pick"                          'git cherry-pick abc1234'                        deny
+sub_case "a revert"                               'git revert abc1234'                             deny
+sub_case "an am"                                  'git am /tmp/patch.mbox'                         deny
+sub_case "a push"                                 'git push origin feature'                        deny
+sub_case "a force push"                           'git push --force-with-lease origin feature'     deny
+sub_case "a gh pr merge"                          'gh pr merge 42 --squash'                        deny
+sub_case "a gh pr merge with a repo flag"         'gh -R owner/name pr merge 42'                   deny
+sub_case "a commit hidden behind a push"          'git push && git commit -m "z"'                  deny
+sub_case "a commit in a -C clone"                 'git -C /tmp/clone commit -m "z"'                deny
+
+# Reads and the rest of gh stay open — a sub-agent that cannot inspect its own
+# work cannot write the report it is being told to hand back.
+sub_case "git status is untouched"                'git status'                                     silent
+sub_case "git diff is untouched"                  'git diff --staged'                              silent
+sub_case "gh pr view is untouched"                'gh pr view 42 --comments'                       silent
+sub_case "gh pr comment is untouched"             'gh pr comment 42 --body hi'                      silent
+sub_case "gh pr create is untouched"              'gh pr create --draft --title x --body y'        silent
+
+echo "...and it is offered nothing it could run to clear that denial:"
+SUB_OUT=$(ask_gate 'git commit -m "feat: x"' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)
+SUB_REASON=$(reason_of "$SUB_OUT")
+case "$SUB_REASON" in
+  *approve-commit.sh*) bad "the sub-agent denial prints the approval command — it can run that itself" ;;
+  *) ok "the sub-agent denial names no approval command" ;;
+esac
+if printf '%s' "$SUB_REASON" | grep -qE '[0-9a-f]{16}'; then
+  bad "the sub-agent denial carries a request id — that is half an approval"
 else
-  bad "two agents in one session share a request id"
+  ok "the sub-agent denial carries no request id"
 fi
+case "$SUB_REASON" in
+  *"Hand the work back"*) ok "...and it says to hand the work back instead" ;;
+  *) bad "the sub-agent denial does not say to hand the work back" ;;
+esac
+
+# A pending record is what approve-commit.sh flips, and lane 2 writes none — so
+# there is nothing for any later call to spend. The gate prints no id for a
+# sub-agent, so the suite computes the key itself, and confirms its arithmetic
+# against an id the gate DID print before trusting it anywhere below.
+computed_id() { # computed_id <session> <agent> <command>
+  python3 -c 'import hashlib,sys; print(hashlib.sha256("\x1f".join(sys.argv[1:4]).encode("utf-8","surrogatepass")).hexdigest()[:16])' "$1" "$2" "$3"
+}
+PLANT_CMD='git commit -m "feat: the planted approval"'
+check "the suite computes the gate's own request id" \
+  "$(computed_id "session-A" "" "$PLANT_CMD")" "$(request_id "$PLANT_CMD" "session-A" "")"
+
+mkdir -p "$STATE"
+TRACE_CMD='git commit -m "feat: leaves no trace"'
+BEFORE=$(find "$STATE" -type f | wc -l | tr -d ' ')
+ask_gate "$TRACE_CMD" "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE >/dev/null
+AFTER=$(find "$STATE" -type f | wc -l | tr -d ' ')
+check "the sub-agent denial leaves the record directory as it found it" "$AFTER" "$BEFORE"
+if [ -e "$STATE/$(computed_id "session-S" "agent-sub" "$TRACE_CMD")" ]; then
+  bad "the sub-agent denial wrote a pending record under its own key"
+else
+  ok "the sub-agent denial writes no pending record for its own command"
+fi
+
+# The order of the checks is load-bearing too: lane 2 has to come BEFORE the
+# record is read, or an agent holding Bash writes its own approval and spends it.
+SUB_ID=$(computed_id "session-S" "agent-sub" "$PLANT_CMD")
+python3 - "$STATE/$SUB_ID" "$PLANT_CMD" <<'PY'
+import json, sys, time
+path, command = sys.argv[1], sys.argv[2]
+with open(path, "w") as handle:
+    json.dump({"status": "approved", "approved_at": time.time(), "command": command,
+               "session_id": "session-S", "agent_id": "agent-sub"}, handle)
+PY
+OUT=$(ask_gate "$PLANT_CMD" "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "a hand-written approval buys a sub-agent nothing" "$(verdict_of "$OUT")" deny
+rm -f "$STATE/$SUB_ID"
+
+echo "...and agent_id is the signal, never agent_type:"
+# agent_type cannot answer this question. It is present for a scheduled
+# `claude -p --agent watson` and an interactively dispatched one alike, and
+# absent for a generic sub-agent that has no named type — so a gate keyed on it
+# would both misread the pipeline and wave the generic sub-agent through. Two
+# payload shapes pin the right signal.
+OUT=$(printf '%s' "$(payload 'git commit -m "feat: x"' session-T "agent-generic" "")" \
+  | gate -u WORKBENCH_DEV_TEAM_PIPELINE)
+# The verdict alone cannot tell the two lanes apart — both deny an unapproved
+# commit. The absence of a request id in the reason is what says it was lane 2.
+if [ "$(verdict_of "$OUT")" = deny ] && ! reason_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
+  ok "a sub-agent with no agent_type is refused with no path out"
+else
+  bad "a sub-agent with no agent_type was handed the foreground's approval path"
+fi
+
+OUT=$(printf '%s' "$(payload 'git commit -m "feat: x"' session-T "" "workbench-dev-team:watson")" \
+  | gate -u WORKBENCH_DEV_TEAM_PIPELINE)
+if reason_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
+  ok "a foreground session carrying an agent_type still gets the approval path"
+else
+  bad "an agent_type sent the foreground session down the sub-agent lane"
+fi
+
+echo "Lane 3 — the foreground session keeps the behaviour it has today:"
+run_case "a merge is not this gate's business"    'git merge origin/main'                          silent
+run_case "nor a rebase"                           'git rebase main'                                silent
+run_case "nor a pull"                             'git pull --rebase origin main'                  silent
+run_case "nor a push"                             'git push origin main'                           silent
+run_case "nor gh pr merge"                        'gh pr merge 42 --squash'                        silent
+run_case "a commit behind a push is still caught" 'git push && git commit -m "z"'                  deny
 
 echo "Fail-closed paths:"
 # Each of these asserts the REASON as well as the verdict. Both branches end in
@@ -254,6 +367,21 @@ chmod 000 "$STATE"
 OUT=$(ask_gate "$PIPE_CMD" EMPTY "" WORKBENCH_DEV_TEAM_PIPELINE=1)
 check "the pipeline commits with no session id and no writable state" "$(verdict_of "$OUT")" silent
 chmod 755 "$STATE"
+
+# Every scheduled run IS an agent run, so lane 1 has to outrank lane 2 — and it
+# does, by being checked first. A regression that ordered them the other way
+# would deadlock every tick at its first commit, which is the whole reason the
+# carve-out exists.
+pipe_case() { # pipe_case <desc> <command>
+  local out
+  out=$(ask_gate "$2" "session-P" "agent-watson" WORKBENCH_DEV_TEAM_PIPELINE=1)
+  check "the flagged pipeline still runs $1 as an agent" "$(verdict_of "$out")" silent
+}
+
+pipe_case "a commit"      'git commit -m "chore: pipeline"'
+pipe_case "a push"        'git push origin watson/42'
+pipe_case "a merge"       'git merge origin/main'
+pipe_case "a gh pr merge" 'gh pr merge 42 --squash'
 
 # Regression guard for the leak this carve-out replaced. The gate used to go
 # silent whenever a watson.lock held a live PID — a host-wide answer to a

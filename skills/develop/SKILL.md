@@ -174,8 +174,30 @@ flag it — don't guess.
 
 ### 🔒 Commit approval gate — non-negotiable
 
-**Never run `git commit` without explicit human approval for that specific
-commit.** Before any commit:
+**Which lane you are running in decides what you may do at all.** A plugin
+`PreToolUse` hook (`hooks/scripts/commit-approval-gate.sh`) sorts every Bash
+call into one of three, and its verdict is `deny`, in every permission mode.
+
+**You are a sub-agent → you do not commit, merge, or push.** The hook refuses
+every git verb that writes a commit, integrates another history, or publishes
+one, plus `gh pr merge`. **No approval command is offered to you, and that is
+deliberate — anything you can run yourself is not an approval.** The denial
+carries no request id, writes no pending record, and ignores any record you
+might write by hand, so there is no route to find. Do not go looking for one.
+
+**Hand the work back instead**, in your final report:
+
+1. Leave the working tree **uncommitted**, exactly as your change left it.
+2. Summarize the diff — files touched and what changed in each.
+3. Give the **proposed commit message**, formatted via the
+   `/workbench-dev-team:git-commit` skill.
+
+The session that dispatched you commits it. A prompt reaches a human there, and
+reaching a human is the entire point.
+
+**You are the foreground session → every `git commit` needs the human's
+explicit approval for that specific commit.** Merge and push are the human's own
+and are not gated. Before any commit:
 
 1. **Show the diff** that will be committed — the human reviews the actual
    change, not your summary of it.
@@ -186,10 +208,7 @@ commit.** Before any commit:
    One approval covers one commit — for multi-commit work, present each
    commit (or an explicitly enumerated batch) for its own approval.
 
-This is enforced at the harness level too: a plugin `PreToolUse` hook
-(`hooks/scripts/commit-approval-gate.sh`) **denies** every `git commit` an
-interactive session has not had approved, regardless of permission mode. The
-denial is not a wall, it is the next step, and it prints one:
+The denial here is not a wall, it is the next step, and it prints one:
 
 ```
 bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"
@@ -212,12 +231,18 @@ rules; until it has run, no commit can be approved. That is the gate failing
 closed, which is the designed direction. Never edit the gate, never set
 `WORKBENCH_DEV_TEAM_PIPELINE`, and never write an approval record by hand.
 
-**Sole exception — the autonomous Index pipeline.** Scheduled Watson runs are
-headless; there, dispatching an item to the board is the approval, and Holmes
-review plus the human's PR merge is the gate. The hook recognizes the pipeline
-by `WORKBENCH_DEV_TEAM_PIPELINE=1`, which `bin/dispatch-agent.sh` exports onto
-the process it spawns. Never set that variable yourself to skip approval in
-interactive work.
+**You are the autonomous Index pipeline → commit and push unattended.**
+Scheduled runs are headless; there, dispatching an item to the board is the
+approval, and Holmes review plus the human's PR merge is the gate. The hook
+recognizes the pipeline by `WORKBENCH_DEV_TEAM_PIPELINE=1`, which
+`bin/dispatch-agent.sh` exports onto the process it spawns, and it checks that
+first — so a scheduled agent commits and pushes freely while an unflagged one
+cannot. Never set that variable yourself. An Index item you want built from a
+conversation is dispatched with
+`bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>`, which
+sets the flag for you. The Agent tool cannot set it, so an Index-mode run
+spawned that way is a sub-agent like any other, and is refused at its first
+commit.
 
 ### Message format and hygiene
 

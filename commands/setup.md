@@ -560,7 +560,7 @@ summary.
 ## Step 6.6 — Install the commit-approval command and its permission rules
 
 The commit-approval gate (`hooks/scripts/commit-approval-gate.sh`) denies every
-`git commit` in an interactive session that the human has not approved.
+`git commit` in a foreground session that the human has not approved.
 `bin/approve-commit.sh` is how the approval arrives, and **this step is what lets it
 grant anything**: it installs that script at a stable path and adds the two
 `permissions.ask` rules covering it.
@@ -572,6 +572,14 @@ is prompted, which is why the gate never once stopped a commit before v0.44.0.
 A permission **rule** is evaluated before the classifier in every mode, so
 running a command a rule names does produce a real prompt. The human answering
 that prompt is the approval.
+
+**This lane is the foreground session's, and only that.** A sub-agent's request
+is background and non-interactive, so the same rule prompts nobody there — which
+is how 48 sub-agent self-approvals landed in the gate's first day, a median 3.4
+seconds after each denial. Since v0.45.0 the gate refuses a sub-agent's commit,
+merge, and push outright, issues it no request id, and writes it no record, so
+nothing installed here can approve anything for one. A sub-agent hands its work
+back uncommitted instead.
 
 **Do not "simplify" this by putting `Bash(git commit:*)` in the ask list.** An
 ask rule always prompts, a headless `claude -p` run has nobody to answer, and the
@@ -648,12 +656,14 @@ esac
 # <<< commit-approval-install <<<
 ```
 
-**If this block exits non-zero, say so plainly in the Step 8 summary:
-interactive `git commit` is blocked until it succeeds.** That is the gate failing
-closed, which is the designed direction — an approval command that cannot prompt
-must not approve — but the human has to know the remedy is re-running setup. The
-scheduled pipeline is untouched either way: it carries
-`WORKBENCH_DEV_TEAM_PIPELINE=1`, and the gate exits before any of this.
+**If this block exits non-zero, say so plainly in the Step 8 summary: the
+foreground session's `git commit` is blocked until it succeeds.** That is the
+gate failing closed, which is the designed direction — an approval command that
+cannot prompt must not approve — but the human has to know the remedy is
+re-running setup. The scheduled pipeline is untouched either way: it carries
+`WORKBENCH_DEV_TEAM_PIPELINE=1`, and the gate exits before any of this. Sub-agent
+dispatches are untouched too, for the opposite reason — they have no commit path
+to lose.
 
 ## Step 7 — Register the scheduled Dispatch task
 

@@ -17,6 +17,16 @@
 # at a stable path and adds two permissions.ask rules covering it. Running it is
 # the act the human is prompted on, and their answer is the approval.
 #
+# THIS SERVES THE FOREGROUND SESSION, AND ONLY THAT. The reasoning above holds
+# where a human is attached to answer the prompt, and it fails in a sub-agent:
+# the sub-agent's request is background and non-interactive, so the ask resolves
+# with nobody answering it, and the agent holds the Bash that runs this command.
+# It was measured doing exactly that 48 times in the gate's first day, a median
+# 3.4 seconds after each denial. So the gate no longer offers a sub-agent this
+# route at all: it refuses a sub-agent's commit, merge, and push outright, prints
+# no request id, and writes no pending record. There is nothing here for one to
+# approve. A sub-agent hands its work back uncommitted instead.
+#
 # Two refusals keep that story honest, and both fail closed:
 #
 #   1. If the ask rules are absent from settings, running this command prompts
@@ -26,10 +36,10 @@
 #
 # What is left uncovered, stated plainly: an invocation spelled differently from
 # the rules (`sh <path>`, or the path without the `bash` prefix) is not matched
-# by them and is not prompted, and anything holding Bash can write the approval
-# record directly. This is a protocol gate. It makes an unapproved commit
-# impossible to perform SILENTLY; it is not a barrier against an agent that sets
-# out to defeat it.
+# by them and is not prompted, and in the foreground session anything holding
+# Bash can write the approval record directly. This is a protocol gate for that
+# lane. It makes an unapproved foreground commit impossible to perform SILENTLY;
+# it is not a barrier against a main agent that sets out to defeat it.
 #
 # The scheduled Index pipeline never runs this command. The gate exits before
 # any of it when WORKBENCH_DEV_TEAM_PIPELINE=1, so the headless lane keeps

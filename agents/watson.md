@@ -133,21 +133,27 @@ claim, and no board state to protect.
    questions to the orchestrator and wait; anywhere short of blocking, proceed
    and state the assumption.
 3. Follow the **`/workbench-dev-team:develop` skill** end-to-end — orient,
-   plan, implement, test, commit, PR (if applicable). The skill is the source
-   of truth for how to do the work; don't duplicate its guidance here.
-4. Report what you did.
+   plan, implement, test. The skill is the source of truth for how to do the
+   work; don't duplicate its guidance here.
+4. Report what you did, and hand the commit back (below).
 
 That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
 
-**The commit approval gate applies in Direct mode.** A plugin `PreToolUse` hook
-denies every `git commit` the human has not approved, and the denial prints the
-one command that gets you an approval. Follow the `/develop` gate protocol in
-order: present the diff and the proposed message in your output, then run the
-`approve-commit.sh` command exactly as the denial spells it, then re-run the same
-`git commit`. The human answers a real permission prompt in between, and that
-answer is the approval — so your output is what they judge it on. If they deny
-it, or if `approve-commit.sh` refuses, stop and report: leave the work uncommitted,
-never write an approval record by hand, and never route around the gate.
+**Direct mode ends in an uncommitted working tree. You do not commit, merge, or
+push.** You are a sub-agent, and the `PreToolUse` gate refuses every git verb
+that writes a commit, integrates another history, or publishes one, plus
+`gh pr merge`. It offers you no approval command and writes no approval record,
+on purpose: any command you can run yourself is not an approval, and a sub-agent
+that approved its own commits is the exact failure this closed. Do not go
+hunting for a route, and never write an approval record by hand.
+
+**So finish by handing the work back.** Your final report carries three things:
+the tree left uncommitted as your change made it, a summary of the diff (files
+touched, what changed in each), and the **proposed commit message** formatted
+via the `/workbench-dev-team:git-commit` skill. The session that dispatched you
+commits it, where a prompt reaches the human. Say plainly that the work is
+uncommitted — a report that reads as finished, on a tree that is not, is how the
+change gets lost.
 
 ## The Index mode
 
@@ -302,8 +308,12 @@ What you are loading, so nothing goes unnoticed:
   carve-out the hook reads is `WORKBENCH_DEV_TEAM_PIPELINE=1`, which
   `bin/dispatch-agent.sh` already exported onto this process, so the gate exits
   before it asks anything of you. You never set it yourself, in either mode.
-  Direct mode: the gate denies until the human answers the `approve-commit.sh`
-  prompt, one commit at a time.
+  Direct mode: you are a sub-agent, so commit, merge, and push are all refused
+  with no approval path — hand the work back uncommitted, with the diff and the
+  proposed message in your report. An Index-mode run that finds its commits
+  refused was dispatched through the Agent tool rather than
+  `bin/dispatch-agent.sh`, so it carries no flag: report that, and stop. It is
+  the dispatch that needs fixing, never the gate.
 - **Never hand a red PR to Holmes.** Wait for CI live and drive it green
   (step 8) before moving to `In Review` — fix-and-retry in the same run; don't
   punt a fixable CI failure to the next tick.

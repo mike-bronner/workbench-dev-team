@@ -55,22 +55,24 @@ with open(path, "w") as handle:
 PY
 }
 
-# Ask the real gate for a verdict on a command, with HOME in the sandbox.
-gate_verdict() { # gate_verdict <command> -> deny | silent
-  local body out
-  body=$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"session-A","agent_id":"","tool_input":{"command":sys.argv[1]}}))' "$1")
-  out=$(printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE -u WORKBENCH_COMMIT_APPROVAL_DIR \
-    -u WORKBENCH_SETTINGS_FILE HOME="$HOME_DIR" TMPDIR="$SANDBOX" "$GATE")
-  if printf '%s' "$out" | grep -q '"permissionDecision": *"deny"'; then echo deny; else echo silent; fi
+# Ask the real gate about a command, with HOME in the sandbox. The second
+# argument is the payload's agent_id — empty (the default) is a foreground
+# session, and any value is a sub-agent.
+gate_answer() { # gate_answer <command> [agent-id]
+  local body
+  body=$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"session-A","agent_id":sys.argv[2],"tool_input":{"command":sys.argv[1]}}))' "$1" "${2-}")
+  printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE -u WORKBENCH_COMMIT_APPROVAL_DIR \
+    -u WORKBENCH_SETTINGS_FILE HOME="$HOME_DIR" TMPDIR="$SANDBOX" "$GATE"
+}
+
+gate_verdict() { # gate_verdict <command> [agent-id] -> deny | silent
+  if gate_answer "$@" | grep -q '"permissionDecision": *"deny"'; then echo deny; else echo silent; fi
 }
 
 # The id the gate prints when it refuses a command, which is what a caller pastes.
-gate_request_id() { # gate_request_id <command>
-  local body out
-  body=$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"session-A","agent_id":"","tool_input":{"command":sys.argv[1]}}))' "$1")
-  out=$(printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE -u WORKBENCH_COMMIT_APPROVAL_DIR \
-    -u WORKBENCH_SETTINGS_FILE HOME="$HOME_DIR" TMPDIR="$SANDBOX" "$GATE")
-  printf '%s' "$out" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' \
+gate_request_id() { # gate_request_id <command> [agent-id]
+  gate_answer "$@" \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' \
     | grep -oE '[0-9a-f]{16}' | head -1
 }
 
@@ -148,6 +150,34 @@ expect_status "a true subject is approved" 0 "$STATUS"
 case "$OUT" in *"$CMD"*) ok "...and the approval echoes the command it covers" ;; *) bad "the approval does not echo the command" ;; esac
 if [ "$(gate_verdict "$CMD")" = silent ]; then ok "...and the gate lets that commit through"; else bad "the gate still denied the approved commit"; fi
 if [ "$(gate_verdict "$CMD")" = deny ]; then ok "...once, and only once"; else bad "the approval survived the commit it covered"; fi
+
+echo "A sub-agent has nothing here to approve, and nobody else's to spend:"
+# The reason this command exists is a prompt a human answers. A sub-agent has no
+# human attached, so the gate refuses it outright and issues it no id — there is
+# no argument it could pass this script that names a waiting commit of its own.
+SUB_CMD='git commit -m "feat: ✨ From a sub-agent."'
+SUB_ID=$(gate_request_id "$SUB_CMD" "agent-sub")
+if [ -z "$SUB_ID" ]; then
+  ok "a refused sub-agent is issued no request id"
+else
+  bad "the gate issued a sub-agent the request id $SUB_ID"
+fi
+
+# The one id that does exist for that command belongs to the foreground session.
+# Approving it is legitimate, and it still does the sub-agent no good.
+ID=$(gate_request_id "$SUB_CMD")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "the foreground can approve that same command" 0 "$STATUS"
+if [ "$(gate_verdict "$SUB_CMD" "agent-sub")" = deny ]; then
+  ok "...and the sub-agent is refused anyway"
+else
+  bad "the sub-agent spent an approval granted to the foreground"
+fi
+if [ "$(gate_verdict "$SUB_CMD")" = silent ]; then
+  ok "...while the foreground's own approval survived that attempt"
+else
+  bad "the sub-agent's attempt burned the foreground's approval"
+fi
 
 echo "The subject is optional, and an approval covers only its own command:"
 ID=$(gate_request_id "$CMD")

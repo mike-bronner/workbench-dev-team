@@ -167,6 +167,22 @@ slot: `references/brief-rationale.md`.
    `Repo sweep: <owner/repo>`, between them every Lestrade and Holmes
    dispatch), and a specialist's own fan-out, which stays inside the
    orchestrator boundary rather than crossing it.
+4. **A Watson Index-mode run goes through the dispatcher, never the Agent
+   tool.** That run ends in commits and pushes, and the commit-approval gate
+   refuses both to any sub-agent whose process does not carry
+   `WORKBENCH_DEV_TEAM_PIPELINE=1`. The Agent tool cannot set an environment
+   variable on the agent it spawns. `bin/dispatch-agent.sh` exports it, and
+   takes the same item id:
+
+   ```bash
+   bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>
+   ```
+
+   It reads the same config — model, effort, fallback, budget — backgrounds the
+   run, and prints the log path. Track it from that log rather than from a
+   completion notification, and keep the roster line updated from it. The Agent
+   tool stays right for everything that writes no commit: Watson's Direct mode,
+   Lestrade, Holmes, and every read-only dispatch.
 
 Example — ad-hoc dev work, config says Watson runs opus. The prompt is the
 five-slot brief, contract below:
@@ -383,6 +399,20 @@ this skill.
 - **A refusal means the rule worked.** Report it, then re-dispatch. Never route
   around a gate — only the human lifts one.
 
+### Direct-mode work comes back uncommitted
+
+**Watson's Direct mode ends in a working tree, not a commit.** The commit
+approval gate refuses a sub-agent every commit, merge, and push, and offers it
+no approval path — anything the agent can run itself is not an approval. So its
+report carries a diff summary and a proposed commit message instead, and the
+tree is left as the change made it.
+
+**Committing it is yours.** Show the human the diff and that message, run the
+approval command the gate's own denial prints, and commit once they have
+answered the prompt. Never send the agent back to try again, and never grant it
+an approval by any route: the prompt is the whole mechanism, and only a
+foreground session can raise one.
+
 ### When a brief comes back
 
 An agent hands a brief back for two different reasons, and they need different
@@ -480,7 +510,7 @@ To dispatch Lestrade or Holmes you also need the **item ID** for the issue/PR:
 | "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review | Wants a GitHub review artifact → review inline, post via `gh pr review` as the user, after confirming. Conversational opinion → verdict in chat, nothing posted. **Unclear which → ask.** |
 | "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
-| "implement / fix / build X" | Item exists → **Watson** Index mode (`Item ID: <n>`). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the five-slot brief) |
+| "implement / fix / build X" | Item exists → **Watson** Index mode, dispatched with `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>` (the Agent tool cannot give that run its pipeline flag). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the five-slot brief, via the Agent tool; the diff comes back uncommitted) |
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
 | "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool). Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
