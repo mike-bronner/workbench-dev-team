@@ -8,6 +8,13 @@ list, the verification tracks, the caps, and every sub-agent prompt skeleton.
 Section markers (§3, §4d, §4e, §5) point back into `agents/holmes.md`. Phase A
 (evidence setup) and the verdict logic (§4d/§4e) live there, not here.
 
+**Every skeleton below words its evidence-room line identically, on purpose.**
+Local mode (`local-review.md` §L4) swaps that one line for the human's working
+directory, and it matches on the literal text — a skeleton that words the line
+its own way is one the substitution silently misses, leaving that sub-agent
+pointed at a scratch clone Local mode never creates. Add a sixth skeleton and it
+carries the same line verbatim.
+
 ---
 
 #### Phase B — fan out four blind lens reviewers (parallel)
@@ -16,7 +23,7 @@ Dispatch **four** read-only lens reviewers in a **single message** (multiple `Ag
 
 **Reading discipline — the fan-out's cost lives here.** Four lenses each walk the same checkout independently, so on a repo with multi-thousand-line files that redundancy — not your own reasoning — is what exhausts a review's budget. Measured: on a 20K-line-file repo the four lenses accounted for ~85% of a killed review's spend, and 96% of its token volume, while the parent's share was ~$1. Carry the four rules below **verbatim** in every lens prompt:
 
-- **Grep before you read.** Locate the relevant lines with `grep -n` or `gh pr diff`, then read the window around them. Never open a file whole to discover whether it matters.
+- **Grep before you read.** Locate the relevant lines with `grep -n` or `gh pr diff <PR_NUM>`, then read the window around them. Never open a file whole to discover whether it matters.
 - **Read in windows, not in files.** Take at most ~400 lines per read, and stop as soon as the lens's question is answered. If you find yourself paging through a file, that is a signal to grep it instead — a file too large to window is a *finding about the file*, not a licence to read it.
 - **Start from the diff, not the tree.** `gh pr diff <PR_NUM>` is the map. Untouched code enters scope only when a diff line leads there.
 - **Aim to finish inside ~25 tool calls.** A lens answers one question; it is not a general audit. Breadth is the parent's job, and it buys breadth by running four of you — if you are past 25 calls and still exploring, report what you have with what is still unresolved rather than continuing.
@@ -42,8 +49,8 @@ The repo's existing conventions win over your personal preferences. Do not flag
 style that matches the repo's patterns.
 
 Reading discipline (these bound the review's cost — follow them):
-- Grep before you read: find lines with `grep -n` or `gh pr diff`, then read the
-  window around them. Never open a file whole to see whether it matters.
+- Grep before you read: find lines with `grep -n` or `gh pr diff <PR_NUM>`, then
+  read the window around them. Never open a file whole to see whether it matters.
 - Read at most ~400 lines per read, and stop once your question is answered. A
   file too large to window is a finding about the file, not a reason to read it.
 - Start from the diff, not the tree. Untouched code is in scope only when a diff
@@ -80,7 +87,7 @@ A fresh **skeptic** sub-agent (read-only, `LENS_MODEL`, blind to the lens that r
 
 ```
 You are an adversarial verifier. Read-only, no write tools, no patching.
-Checkout (do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
 A reviewer claims the following BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -99,7 +106,7 @@ Dispatch the attacker and defender **in parallel** (single message, two `Agent` 
 
 ```
 You are a red-team attacker. Read-only, no write tools, no patching.
-Checkout (do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -111,7 +118,7 @@ this claim is real and reachable. Return exactly one of:
 
 ```
 You are a blue-team defender. Read-only, no write tools, no patching.
-Checkout (do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -127,7 +134,7 @@ Once both return, dispatch the **auditor** with both reports attached:
 ```
 You are the auditor. Read-only, no write tools, no patching. You did not write
 either report below — weigh them against the tree yourself, don't just trust them.
-Checkout (do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
 Claim: <claim>   location: <file:line>   evidence: <evidence>
 
 Attacker report: <attacker output>

@@ -15,16 +15,24 @@ you relay — you do not implement, triage, or review in the main context.
 |---|---|---|---|
 | Inspector Lestrade | `workbench-dev-team:lestrade` | Triage — AC + WSJF; blocker sweeps | `Item ID: <n>` (triage one item) **or** `Repo sweep: <owner/repo>` (mark blocked-by dependencies across a repo's open issues) |
 | Dr. Watson | `workbench-dev-team:watson` | Development | `Item ID: <n>` (board item) **or** the five-slot brief (Direct mode, ad-hoc dev) |
-| Sherlock Holmes | `workbench-dev-team:holmes` | Code review | **Index mode only**: `Item ID: <n>` |
+| Sherlock Holmes | `workbench-dev-team:holmes` | Code review | `Item ID: <n>` (board PR review) **or** the five-slot brief (Local mode, uncommitted working tree) |
 
-Lestrade and Holmes are coupled to The Index board — triage and review need a
-`project_items.id`. Watson's Direct mode takes a five-slot brief (contract
-below) and runs the `/workbench-dev-team:develop` workflow with no board calls;
-use it for any ad-hoc dev work the user delegates mid-conversation. Watson runs
-Direct mode by default and switches to Index mode only on the `Item ID: <n>`
-token, so a brief needs no mode marker. Lestrade's sweep mode
-takes a repo slug instead of an item id; dispatch it when the user asks to
-"find blockers" or "mark dependencies" in a repo.
+Lestrade is coupled to The Index board — triage needs a `project_items.id`.
+Watson and Holmes each carry an off-board mode that takes a five-slot brief
+(contract below) and makes no board calls. **Watson's Direct mode** runs the
+`/workbench-dev-team:develop` workflow on any local repo and hands the work back
+as an uncommitted tree; **Holmes's Local mode** reviews exactly that — the
+uncommitted working tree in the brief's `Workdir:` — against the brief's `Goal:`
+and `Done when:` as its rubric, and returns the verdict as prose. Holmes's Local
+mode makes no The Index call and no GitHub write at all, so it is safe on any
+repo, governed or not. Both agents run the off-board mode by default and switch
+to Index mode only on the `Item ID: <n>` token, so a brief needs no mode marker.
+Lestrade's sweep mode takes a repo slug instead of an item id; dispatch it when
+the user asks to "find blockers" or "mark dependencies" in a repo.
+
+**Holmes's Local mode does not review a PR.** Its only target is uncommitted
+work. A pull request on a repo The Index does not govern has no agent path —
+see the routing table below.
 
 ## Agent choice — three specialists, and how to tell them apart
 
@@ -36,8 +44,10 @@ takes a repo slug instead of an item id; dispatch it when the user asks to
   produces a diff.
 - **Triage — Lestrade.** The request is about an item nobody has specified yet:
   write the acceptance criteria, score it, size it, find what blocks it.
-- **Review — Holmes.** The request judges work already written. A PR exists, and
-  the answer is a verdict rather than a diff.
+- **Review — Holmes.** The request judges work already written, and the answer is
+  a verdict rather than a diff. Index mode when a board item and its PR exist;
+  Local mode when the work is still an uncommitted tree, which is how every
+  Watson Direct-mode run comes back.
 
 The reason is skill loading, not seniority. A specialist loads
 `/workbench-dev-team:develop` and then works *from the repo it was pointed at*:
@@ -58,7 +68,8 @@ governs a Watson build.
 |---|---|
 | Implement, fix, refactor, add tests, edit docs | **Watson** (Index or Direct mode) |
 | Triage an item, write acceptance criteria | **Lestrade** |
-| Review a PR | **Holmes** |
+| Review a PR on a governed repo | **Holmes** (Index mode) |
+| Review uncommitted local work | **Holmes** (Local mode) |
 | Find where something lives, map a codebase | `Explore` |
 | Sketch an approach before any code exists | `Plan` |
 | Answer a question that writes no file | `general-purpose` |
@@ -161,12 +172,13 @@ slot: `references/brief-rationale.md`.
    takes effect immediately — never rely on frontmatter alone.
 3. **Every handoff is a brief.** Sub-agents have no memory of this
    conversation, so send the five slots defined below and nothing else — for
-   Watson's Direct mode and for the read-only `Explore`, `Plan`, and
-   `general-purpose` runs alike. Research is not exempt, and that is the point.
-   Three shapes are exempt: the two machine-built tokens (`Item ID: <n>` and
-   `Repo sweep: <owner/repo>`, between them every Lestrade and Holmes
-   dispatch), and a specialist's own fan-out, which stays inside the
-   orchestrator boundary rather than crossing it.
+   Watson's Direct mode, Holmes's Local mode, and the read-only `Explore`,
+   `Plan`, and `general-purpose` runs alike. Research is not exempt, and that is
+   the point. Three shapes are exempt: the two machine-built tokens
+   (`Item ID: <n>` and `Repo sweep: <owner/repo>`, between them every Lestrade
+   dispatch and every Holmes Index-mode dispatch), and a specialist's own
+   fan-out, which stays inside the orchestrator boundary rather than crossing
+   it.
 4. **A Watson Index-mode run goes through the dispatcher, never the Agent
    tool.** That run ends in commits and pushes, and the commit-approval gate
    refuses both to any sub-agent whose process does not carry
@@ -234,9 +246,9 @@ with no edit here. The measurement and the two other reasons behind the line:
 `references/brief-rationale.md`.
 
 Fill these five slots, in this order, under the names given, and send nothing
-else. No mode marker: Watson runs Direct mode by default and enters Index mode
-only on an `Item ID: <n>` token, so a brief that carries no such token is
-already unambiguous.
+else. No mode marker: Watson and Holmes both run their off-board mode by default
+and enter Index mode only on an `Item ID: <n>` token, so a brief that carries no
+such token is already unambiguous.
 
 ```
 Workdir: <absolute path, plus the branch or worktree when one was agreed>
@@ -413,6 +425,15 @@ answered the prompt. Never send the agent back to try again, and never grant it
 an approval by any route: the prompt is the whole mechanism, and only a
 foreground session can raise one.
 
+**Holmes can review it first.** An uncommitted tree is exactly what Local mode
+takes, so a Watson Direct-mode result can go to Holmes on a five-slot brief
+before the human sees the diff — the same review the board path gets, with no
+board item and nothing posted to GitHub. Dispatch it the same way you dispatch
+Watson, with `Workdir:` pointing at the tree Watson left and `Goal:` / `Done
+when:` restating what Watson was asked for, since those two slots are Holmes's
+rubric. Offer it rather than assuming it: the review costs a fan-out, and a
+one-line change rarely earns one.
+
 ### When a brief comes back
 
 An agent hands a brief back for two different reasons, and they need different
@@ -480,6 +501,10 @@ two questions decide the path. Answer them in order.
 - **The user's own actions** — comments they dictate, merges they order — are
   theirs, executed directly with `gh` under their identity, on any repo. You
   are the secretary here, not an agent.
+- **Neither, when nothing reaches GitHub.** A Holmes Local-mode verdict is prose
+  returned to this conversation, so it carries no GitHub voice and needs no
+  routing decision. Posting one anywhere is the user's own action, and only
+  after they have seen the exact content and said so.
 
 ### 2. Is the repo governed by The Index?
 
@@ -497,7 +522,8 @@ order:
 
 Cache the answer per repo for the rest of the session.
 
-To dispatch Lestrade or Holmes you also need the **item ID** for the issue/PR:
+To dispatch Lestrade, or Holmes in Index mode, you also need the **item ID** for
+the issue/PR (Holmes's Local mode needs none — it reads no board):
 `mcp__the-index__find_item(repo, issue_number)` where available, else the
 `list_items` scan. If the repo is governed but the item can't be resolved
 (webhook lag, item not on the board), **stop and report** — never fall back to
@@ -507,7 +533,8 @@ To dispatch Lestrade or Holmes you also need the **item ID** for the issue/PR:
 
 | Request | Governed repo | Ungoverned repo |
 |---|---|---|
-| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review | Wants a GitHub review artifact → review inline, post via `gh pr review` as the user, after confirming. Conversational opinion → verdict in chat, nothing posted. **Unclear which → ask.** |
+| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review | Wants a GitHub review artifact → review inline, post via `gh pr review` as the user, after confirming. Conversational opinion → verdict in chat, nothing posted. **Unclear which → ask.** Holmes has no path here: Local mode reviews an uncommitted tree, never a PR |
+| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the five-slot brief, via the Agent tool) — reviews the uncommitted tracked changes and untracked files, verdict comes back as prose | same — Local mode makes no board call and no GitHub write, so the repo's governance is irrelevant |
 | "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
 | "implement / fix / build X" | Item exists → **Watson** Index mode, dispatched with `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>` (the Agent tool cannot give that run its pipeline flag). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the five-slot brief, via the Agent tool; the diff comes back uncommitted) |
