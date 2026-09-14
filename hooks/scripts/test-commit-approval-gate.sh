@@ -137,6 +137,15 @@ if printf '%s' "$DENY_REASON" | grep -qE '[0-9a-f]{16}'; then
 else
   bad "the denial carries no request id"
 fi
+# The prompt's description line is what the human actually reads. Left to the
+# session to word, it came out naming the action and not the commit, which is a
+# prompt nobody reads. So the denial has to dictate it: the parameter by name,
+# and the literal shape.
+case "$DENY_REASON" in
+  *'`description`'*'"Commit: <first line of the commit message>"'*)
+    ok "the denial dictates the approval prompt's description" ;;
+  *) bad "the denial does not dictate the approval prompt's description" ;;
+esac
 
 echo "The approval lifecycle:"
 CMD='git commit -m "feat: the approved one"'

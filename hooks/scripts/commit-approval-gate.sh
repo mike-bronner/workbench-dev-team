@@ -113,6 +113,18 @@ RECORD_MAX_AGE_SECONDS = 86400
 
 APPROVE_CMD = 'bash "$HOME/.claude-workbench/bin/approve-commit.sh"'
 
+# The description the approval prompt must carry. The prompt renders three lines
+# (the command, the Bash call's `description`, and the ask rule's reason), and
+# the description is the one a human reads. Left to each session's judgement it
+# came out as "Request human approval for this commit": true, and empty of the
+# one fact the answer turns on. A prompt with no decision content in it gets
+# cleared unread, and that reflex reaches the other ask rules too, `git reset
+# --hard` and `gh pr merge` among them. So the denial dictates the line rather
+# than describing an intent, and it stops at the subject: the diff and the
+# message body were both considered and refused, because a longer prompt is the
+# same fatigue by another route.
+APPROVE_DESC = "Commit: <first line of the commit message>"
+
 
 def deny(reason: str) -> None:
     print(json.dumps({
@@ -348,6 +360,11 @@ deny(
     f"{lead} Show the human the staged diff and the proposed commit message. "
     f"Then run this exact command, which prompts them to approve:\n\n"
     f'  {APPROVE_CMD} {request_id} "<commit subject>"\n\n'
+    f"Run it with the Bash tool's `description` parameter set to exactly "
+    f'"{APPROVE_DESC}". The prompt renders that description, and it is the line '
+    "the human reads before answering. A description that names the action "
+    "instead of the commit gives them nothing to decide on, so they learn to "
+    "clear the prompt unread.\n\n"
     "The human answering that prompt is the approval. When they accept it, run "
     "the same git commit command again. One approval covers one commit, and a "
     "changed command needs a new one. Never edit this gate, and never set "
