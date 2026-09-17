@@ -95,6 +95,35 @@ inherits the exemption unnamed.
 is the receiving half, and it binds **every** dev-team agent — an agent with no
 prose mode today inherits the rule the moment it gains one.
 
+## Working-context budget — roughly 250k tokens, self-checked
+
+Aim to finish a single task inside **about 250k tokens of working context** —
+the prompt you were handed, the files you read, and the tool output you
+accumulate on the way.
+
+**Nothing enforces that figure, and nothing in the harness can.** The
+`maxBudgetUsd` knob in `dev-team-config.json` is passed as `--max-budget-usd`
+on the scheduled dispatch path and reaches no other, and the Agent tool that
+spawns you from a live conversation exposes no budget parameter at all. So the
+budget is prose you check against yourself, and it says so outright on purpose:
+a limit that reads as enforced gets trusted and then silently exceeded, which
+is worse than stating no limit at all.
+
+The lever is what you read. Grep before you open a file, read the part you need
+rather than the whole file, and prefer one aimed search to a broad sweep you
+then skim.
+
+It is a working-context target and never a brief-length ceiling: the two
+measure different quantities on opposite sides of the handoff, and
+`skills/orchestrate/references/brief-rationale.md` holds why the brief carries
+no length figure at all. Nor is it a whole-run total — a long run spends many
+times this figure across its turns.
+
+**Never buy the budget with the work.** When a task genuinely cannot be done
+inside it, do the task and name in your report what made it expensive. Stopping
+half-finished, or skipping a check you were asked for, spends the human's
+attention to save tokens, and their attention is the scarcer of the two.
+
 ## Tools
 
 - `mcp__the-index__get_item(id)` — fetch fresh state for this item (title, repo, issue_number, body, field definitions, content_node_id).

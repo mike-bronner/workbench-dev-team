@@ -69,10 +69,13 @@ gate_verdict() { # gate_verdict <command> [agent-id] -> deny | silent
   if gate_answer "$@" | grep -q '"permissionDecision": *"deny"'; then echo deny; else echo silent; fi
 }
 
-# The id the gate prints when it refuses a command, which is what a caller pastes.
+# The id the gate prints when it refuses a command, which is what a caller
+# pastes. It comes out of additionalContext: an id is something only an agent
+# acts on, so it lives in the model's half of the denial and never in the one
+# short line the human reads.
 gate_request_id() { # gate_request_id <command> [agent-id]
   gate_answer "$@" \
-    | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' \
+    | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"].get("additionalContext",""))' \
     | grep -oE '[0-9a-f]{16}' | head -1
 }
 
@@ -147,7 +150,21 @@ echo "End to end — deny, approve, commit once:"
 ID=$(gate_request_id "$CMD")
 OUT=$(approve "$ID" "feat: ✨ The real subject."); STATUS=$?
 expect_status "a true subject is approved" 0 "$STATUS"
-case "$OUT" in *"$CMD"*) ok "...and the approval echoes the command it covers" ;; *) bad "the approval does not echo the command" ;; esac
+# The receipt names the COMMIT and never the command. The command has already
+# been on screen twice by this point, and printing it a third time is how a
+# sixty-line heredoc ended up filling the session twice over.
+case "$OUT" in
+  *"✅ Approved: feat: ✨ The real subject."*) ok "...and the receipt names the commit it covers" ;;
+  *) bad "the receipt does not name the commit: $OUT" ;;
+esac
+case "$OUT" in
+  *"$CMD"*) bad "the receipt reprints the whole command again" ;;
+  *) ok "...without reprinting the command" ;;
+esac
+case "$OUT" in
+  *"expires in 15 minutes"*) ok "...and still says the approval is one commit, briefly" ;;
+  *) bad "the receipt lost the expiry" ;;
+esac
 if [ "$(gate_verdict "$CMD")" = silent ]; then ok "...and the gate lets that commit through"; else bad "the gate still denied the approved commit"; fi
 if [ "$(gate_verdict "$CMD")" = deny ]; then ok "...once, and only once"; else bad "the approval survived the commit it covered"; fi
 
@@ -183,11 +200,32 @@ echo "The subject is optional, and an approval covers only its own command:"
 ID=$(gate_request_id "$CMD")
 OUT=$(approve "$ID"); STATUS=$?
 expect_status "approving without a subject works" 0 "$STATUS"
+# With no label to echo, the receipt recovers the subject from the command's own
+# -m value, so the human still reads back which commit they approved.
+case "$OUT" in
+  *"✅ Approved: feat: ✨ The real subject."*) ok "...and the receipt still names the commit" ;;
+  *) bad "the receipt lost the commit when no subject was passed: $OUT" ;;
+esac
+case "$OUT" in
+  *"$CMD"*) bad "the receipt reprints the whole command again" ;;
+  *) ok "...without reprinting the command" ;;
+esac
 if [ "$(gate_verdict 'git commit -m "feat: a different commit"')" = deny ]; then
   ok "...and another command is still denied"
 else
   bad "the approval leaked to another command"
 fi
+
+# A command whose message cannot be recovered still gets a receipt, naming the
+# id. Display falls back; nothing about the approval itself depends on it.
+AMEND='git -C /tmp/repo commit --amend --no-edit'
+ID=$(gate_request_id "$AMEND")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "a commit with no -m is still approved" 0 "$STATUS"
+case "$OUT" in
+  *"✅ Approved request $ID."*) ok "...and the receipt falls back to the request id" ;;
+  *) bad "the no-message receipt is not the id fallback: $OUT" ;;
+esac
 
 echo
 echo "$PASS passed, $FAIL failed"

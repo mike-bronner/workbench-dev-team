@@ -64,8 +64,20 @@ verdict_of() {
   fi
 }
 
+# The refusal is split across the hook's two channels, and every assertion below
+# names the one it means. `permissionDecisionReason` becomes the tool_result a
+# PERSON reads, so it is one short line naming the action. `additionalContext`
+# survives a deny and reaches only the model, so the request id, the approval
+# command, and the policy live there. Asserting on the raw payload instead would
+# pass whichever field the text ended up in, which is the drift these catch —
+# except where the assertion is that a string appears NOWHERE. That is the
+# lane-2 case, and it is deliberately checked against the whole payload.
 reason_of() {
   printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])' 2>/dev/null
+}
+
+context_of() {
+  printf '%s' "$1" | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"].get("additionalContext",""))' 2>/dev/null
 }
 
 ok()  { PASS=$((PASS + 1)); echo "  ✅ $1"; }
@@ -84,10 +96,12 @@ run_case() { # run_case <desc> <command> <deny|silent>
 # request_id <command> [session] [agent] — the id the gate prints when it
 # refuses. Read out of the denial rather than recomputed here: a test that
 # rebuilds the gate's own hash asserts its copy of the formula, not the gate.
+# It comes out of additionalContext, because an id is something only an agent
+# acts on and the human line carries none.
 request_id() {
   local out
   out=$(ask_gate "$1" "${2-session-A}" "${3-}" -u WORKBENCH_DEV_TEAM_PIPELINE)
-  reason_of "$out" | grep -oE '[0-9a-f]{16}' | head -1
+  context_of "$out" | grep -oE '[0-9a-f]{16}' | head -1
 }
 
 # approve <request-id> [age-seconds] — flip a pending record to approved, as
@@ -125,26 +139,67 @@ run_case "unrelated command"                      'ls -la'                      
 run_case "echo containing the words"              'echo "git commit is gated"'                     silent
 run_case "git diff"                               'git diff --staged'                              silent
 
-echo "The denial tells the agent how to get an approval:"
+echo "The human reads one short line that names the action:"
 DENY_OUT=$(ask_gate 'git commit -m "feat: x"' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
 DENY_REASON=$(reason_of "$DENY_OUT")
+DENY_CONTEXT=$(context_of "$DENY_OUT")
+
+check "the human line names the action and nothing else" "$DENY_REASON" \
+  '🛑 Blocked: `git commit`. It needs your approval first.'
+if [ "$(printf '%s' "$DENY_REASON" | grep -c .)" = "1" ] && [ "${#DENY_REASON}" -le 120 ]; then
+  ok "the human line is one line and stays short (${#DENY_REASON} chars)"
+else
+  bad "the human line grew past one short line (${#DENY_REASON} chars)"
+fi
+# The three things that used to make the denial 922 characters. Each is acted on
+# by an agent alone, and each must now be absent from the line a person reads.
 case "$DENY_REASON" in
-  *'bash "$HOME/.claude-workbench/bin/approve-commit.sh"'*) ok "the denial names the approve-commit.sh command" ;;
-  *) bad "the denial does not name the approve-commit.sh command" ;;
+  *approve-commit.sh*) bad "the human line still carries the approval command" ;;
+  *) ok "the human line carries no approval command" ;;
 esac
 if printf '%s' "$DENY_REASON" | grep -qE '[0-9a-f]{16}'; then
-  ok "the denial carries a request id"
+  bad "the human line still carries a request id"
 else
-  bad "the denial carries no request id"
+  ok "the human line carries no request id"
+fi
+case "$DENY_REASON" in
+  *WORKBENCH_DEV_TEAM_PIPELINE*) bad "the human line still carries the pipeline policy" ;;
+  *) ok "the human line carries no policy paragraph" ;;
+esac
+# No Markdown emphasis: whether a client renders it is unsettled, and the model
+# receives the raw source either way, so asterisks would show up as asterisks.
+case "$DENY_REASON" in
+  *'**'*) bad "the human line uses Markdown emphasis" ;;
+  *) ok "the human line carries no Markdown emphasis" ;;
+esac
+
+echo "...and the agent still gets everything it needs to recover:"
+case "$DENY_CONTEXT" in
+  *"Commit approval gate (workbench-dev-team)."*)
+    ok "the context names the gate, so the model can report which one fired" ;;
+  *) bad "the context does not name the gate" ;;
+esac
+case "$DENY_CONTEXT" in
+  *'bash "$HOME/.claude-workbench/bin/approve-commit.sh"'*) ok "the context names the approve-commit.sh command" ;;
+  *) bad "the context does not name the approve-commit.sh command" ;;
+esac
+if printf '%s' "$DENY_CONTEXT" | grep -qE '[0-9a-f]{16}'; then
+  ok "the context carries a request id"
+else
+  bad "the context carries no request id"
 fi
 # The prompt's description line is what the human actually reads. Left to the
 # session to word, it came out naming the action and not the commit, which is a
 # prompt nobody reads. So the denial has to dictate it: the parameter by name,
 # and the literal shape.
-case "$DENY_REASON" in
+case "$DENY_CONTEXT" in
   *'`description`'*'"Commit: <first line of the commit message>"'*)
-    ok "the denial dictates the approval prompt's description" ;;
-  *) bad "the denial does not dictate the approval prompt's description" ;;
+    ok "the context dictates the approval prompt's description" ;;
+  *) bad "the context does not dictate the approval prompt's description" ;;
+esac
+case "$DENY_CONTEXT" in
+  *"never set WORKBENCH_DEV_TEAM_PIPELINE"*) ok "the context still forbids setting the pipeline flag" ;;
+  *) bad "the context lost the prohibition on setting the pipeline flag" ;;
 esac
 
 echo "The approval lifecycle:"
@@ -221,18 +276,34 @@ sub_case "gh pr create is untouched"              'gh pr create --draft --title 
 echo "...and it is offered nothing it could run to clear that denial:"
 SUB_OUT=$(ask_gate 'git commit -m "feat: x"' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)
 SUB_REASON=$(reason_of "$SUB_OUT")
-case "$SUB_REASON" in
+# These two run against the WHOLE payload, not one channel. The claim is that
+# neither half offers the sub-agent a route, so a check on one field alone would
+# pass while the other handed it the id.
+case "$SUB_OUT" in
   *approve-commit.sh*) bad "the sub-agent denial prints the approval command — it can run that itself" ;;
-  *) ok "the sub-agent denial names no approval command" ;;
+  *) ok "the sub-agent denial names no approval command, in either channel" ;;
 esac
-if printf '%s' "$SUB_REASON" | grep -qE '[0-9a-f]{16}'; then
+if printf '%s' "$SUB_OUT" | grep -qE '[0-9a-f]{16}'; then
   bad "the sub-agent denial carries a request id — that is half an approval"
 else
-  ok "the sub-agent denial carries no request id"
+  ok "the sub-agent denial carries no request id, in either channel"
 fi
-case "$SUB_REASON" in
-  *"Hand the work back"*) ok "...and it says to hand the work back instead" ;;
-  *) bad "the sub-agent denial does not say to hand the work back" ;;
+check "the human line names the action that was gated" "$SUB_REASON" \
+  '🛑 Blocked: `git commit`. A sub-agent does not commit, merge, or push.'
+if [ "$(printf '%s' "$SUB_REASON" | grep -c .)" = "1" ] && [ "${#SUB_REASON}" -le 120 ]; then
+  ok "...in one short line (${#SUB_REASON} chars)"
+else
+  bad "the sub-agent human line grew past one short line (${#SUB_REASON} chars)"
+fi
+# The gated verb, not a hardcoded "commit": a push and a merge are refused here
+# too, and telling somebody they were blocked committing when they pushed is the
+# confusion this whole change exists to remove.
+check "the human line names the verb the call actually ran" \
+  "$(reason_of "$(ask_gate 'git push origin feature' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `git push`. A sub-agent does not commit, merge, or push.'
+case "$(context_of "$SUB_OUT")" in
+  *"Hand the work back"*) ok "...and the context says to hand the work back instead" ;;
+  *) bad "the sub-agent context does not say to hand the work back" ;;
 esac
 
 # A pending record is what approve-commit.sh flips, and lane 2 writes none — so
@@ -281,8 +352,9 @@ echo "...and agent_id is the signal, never agent_type:"
 OUT=$(printf '%s' "$(payload 'git commit -m "feat: x"' session-T "agent-generic" "")" \
   | gate -u WORKBENCH_DEV_TEAM_PIPELINE)
 # The verdict alone cannot tell the two lanes apart — both deny an unapproved
-# commit. The absence of a request id in the reason is what says it was lane 2.
-if [ "$(verdict_of "$OUT")" = deny ] && ! reason_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
+# commit. The absence of a request id anywhere in the payload is what says it
+# was lane 2, so the whole output is searched rather than one channel.
+if [ "$(verdict_of "$OUT")" = deny ] && ! printf '%s' "$OUT" | grep -qE '[0-9a-f]{16}'; then
   ok "a sub-agent with no agent_type is refused with no path out"
 else
   bad "a sub-agent with no agent_type was handed the foreground's approval path"
@@ -290,7 +362,7 @@ fi
 
 OUT=$(printf '%s' "$(payload 'git commit -m "feat: x"' session-T "" "workbench-dev-team:watson")" \
   | gate -u WORKBENCH_DEV_TEAM_PIPELINE)
-if reason_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
+if context_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
   ok "a foreground session carrying an agent_type still gets the approval path"
 else
   bad "an agent_type sent the foreground session down the sub-agent lane"
@@ -305,15 +377,15 @@ run_case "nor gh pr merge"                        'gh pr merge 42 --squash'     
 run_case "a commit behind a push is still caught" 'git push && git commit -m "z"'                  deny
 
 echo "Fail-closed paths:"
-# Each of these asserts the REASON as well as the verdict. Both branches end in
+# Each of these asserts the MESSAGE as well as the verdict. Both branches end in
 # a denial that an unapproved commit would have earned anyway, so a check on the
-# verdict alone passes whether or not the branch it names still exists.
+# verdict alone passes whether or not the branch it names still exists. The
+# human line carries the one clause that distinguishes them; the diagnostic
+# detail sits in the context, where it is the model that acts on it.
 OUT=$(ask_gate "$CMD" EMPTY "" -u WORKBENCH_DEV_TEAM_PIPELINE)
 check "a payload with no session id is denied" "$(verdict_of "$OUT")" deny
-case "$(reason_of "$OUT")" in
-  *"no session id"*) ok "...and says the session id is what it lacks" ;;
-  *) bad "the no-session denial is the generic one — the session guard is gone" ;;
-esac
+check "...and the human line says the session id is what it lacks" "$(reason_of "$OUT")" \
+  '🛑 Blocked: `git commit`. No session id, so no approval can bind to it.'
 
 # An approval that cannot be deleted cannot be spent, and an unspendable
 # approval is a standing waiver for that command. Plant one, then make the
@@ -324,9 +396,11 @@ approve "$ID"
 chmod 555 "$STATE"
 OUT=$(ask_gate "$CMD_STUCK" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
 check "an approval that cannot be deleted is refused" "$(verdict_of "$OUT")" deny
-case "$(reason_of "$OUT")" in
-  *"cannot be deleted"*) ok "...and says the record could not be spent" ;;
-  *) bad "the undeletable-record denial is the generic one — the guard is gone" ;;
+check "...and the human line says the record could not be spent" "$(reason_of "$OUT")" \
+  '🛑 Blocked: `git commit`. The approval record cannot be deleted.'
+case "$(context_of "$OUT")" in
+  *"approves every commit after it"*) ok "...and the context says why that is refused" ;;
+  *) bad "the undeletable-record context lost the reason it fails closed" ;;
 esac
 chmod 755 "$STATE"
 rm -f "$STATE/$ID"
@@ -335,9 +409,11 @@ mkdir -p "$STATE"
 chmod 000 "$STATE"
 OUT=$(ask_gate 'git commit -m "feat: unwritable"' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
 check "an unwritable record directory is denied" "$(verdict_of "$OUT")" deny
-case "$(reason_of "$OUT")" in
-  *"cannot write the approval record"*) ok "...and names the directory it cannot write" ;;
-  *) bad "the unwritable-directory denial is the generic one — the write guard is gone" ;;
+check "...and the human line says the record cannot be written" "$(reason_of "$OUT")" \
+  '🛑 Blocked: `git commit`. The approval record cannot be written.'
+case "$(context_of "$OUT")" in
+  *"Cannot write the approval record under"*) ok "...and the context names the directory" ;;
+  *) bad "the unwritable-directory context no longer names the directory" ;;
 esac
 chmod 755 "$STATE"
 

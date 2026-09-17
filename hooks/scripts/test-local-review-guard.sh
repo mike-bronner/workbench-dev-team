@@ -313,6 +313,81 @@ check "but has no tree to judge a redirect against" \
   "$(bash_verdict "git diff HEAD > notes.md" session-A agent-1 "$WORKDIR")" silent
 
 echo
+echo "── the denial's wording: one line for the human, the rest for the model ──"
+
+# The refusal is split across the hook's two channels. The human line is ONE
+# line naming the ACTION they took; everything an agent acts on lives in
+# additionalContext, which survives a deny and reaches only the model. Each half
+# is asserted on the channel it belongs to, because asserting on the whole
+# payload would pass whichever field the text ended up in.
+field_of() { # field_of <payload-json> <field>
+  printf '%s' "$1" | python3 -c \
+    'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"][sys.argv[1]])' "$2"
+}
+
+reset_state
+arm
+DENY_OUT="$(run_guard "$(bash_payload "chmod 644 file.txt")")"
+DENY_REASON="$(field_of "$DENY_OUT" permissionDecisionReason)"
+DENY_CONTEXT="$(field_of "$DENY_OUT" additionalContext)"
+
+check "the human line names the action and nothing else" "$DENY_REASON" \
+  '🛑 Blocked: `chmod`. A local review is reading this working tree.'
+if [ "$(printf '%s' "$DENY_REASON" | grep -c .)" = "1" ] && [ "${#DENY_REASON}" -le 120 ]; then
+  ok "the human line is one line and stays short (${#DENY_REASON} chars)"
+else
+  bad "the human line grew past one short line (${#DENY_REASON} chars)"
+fi
+# No Markdown emphasis: whether a client renders it is unsettled, and the model
+# receives the raw source either way, so asterisks would show up as asterisks.
+case "$DENY_REASON" in
+  *'**'*) bad "the human line uses Markdown emphasis" ;;
+  *) ok "the human line carries no Markdown emphasis" ;;
+esac
+# The tree's absolute path is the noise a person was asked to stop reading.
+case "$DENY_REASON" in
+  *"$WORKDIR"*) bad "the human line replays the absolute workdir" ;;
+  *) ok "the human line replays no absolute path" ;;
+esac
+
+case "$DENY_CONTEXT" in
+  *"Local-review guard (workbench-dev-team)."*)
+    ok "the context names the guard, so the model can report which one fired" ;;
+  *) bad "the context does not name the guard" ;;
+esac
+case "$DENY_CONTEXT" in
+  *"changes a file's content, location, existence, or metadata"*)
+    ok "the context carries the reason the classifier gave" ;;
+  *) bad "the context lost the classifier's reason" ;;
+esac
+case "$DENY_CONTEXT" in
+  *"$WORKDIR"*) ok "the context names the tree under review" ;;
+  *) bad "the context does not name the tree under review" ;;
+esac
+case "$DENY_CONTEXT" in
+  *"git diff HEAD"*) ok "the context still says what to run instead" ;;
+  *) bad "the context lost the allowed alternatives" ;;
+esac
+case "$DENY_CONTEXT" in
+  *"no path around this"*) ok "the context still refuses an escape hatch" ;;
+  *) bad "the context lost the no-escape-hatch line" ;;
+esac
+
+# Each rule gets its own action word. One label for every refusal would tell a
+# person nothing the emoji does not already say.
+action_of() { # action_of <command> [cwd]
+  field_of "$(run_guard "$(bash_payload "$1" session-A agent-1 "${2-}")")" permissionDecisionReason
+}
+check "a git write names the verb" "$(action_of 'git restore .')" \
+  '🛑 Blocked: `git restore`. A local review is reading this working tree.'
+check "an in-place edit names -i" "$(action_of 'sed -i s/a/b/ f')" \
+  '🛑 Blocked: `sed -i`. A local review is reading this working tree.'
+check "a rewrite flag says so" "$(action_of 'prettier --write .')" \
+  '🛑 Blocked: `prettier` with a rewrite flag. A local review is reading this working tree.'
+check "a redirect into the tree says so" "$(action_of 'git diff HEAD > notes.md' "$WORKDIR")" \
+  '🛑 Blocked: redirecting output into the tree under review. A local review is reading this working tree.'
+
+echo
 echo "── --classify: the same rule the lint holds the docs to ───────────────"
 
 printf 'git -C /w status --short\ngit -C /w diff HEAD\nbash run-tests.sh\n' | bash "$GUARD" --classify >/dev/null \

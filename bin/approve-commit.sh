@@ -5,9 +5,17 @@
 #
 #   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"
 #
-# The request id comes from the gate's own denial. The subject is optional, and
-# when given it must appear in the command the id names — the human reads it in
-# the permission prompt, so a label that describes some other commit is refused.
+# The request id comes from the gate's own denial, in its additionalContext. The
+# subject is optional, and when given it must appear in the command the id names
+# — the human reads it in the permission prompt, so a label that describes some
+# other commit is refused.
+#
+# WHAT IT PRINTS ON SUCCESS, AND WHAT IT NO LONGER DOES. One line naming the
+# COMMIT that was approved, and never the command again. The command has already
+# been on screen twice by then — the agent ran it, and the permission prompt
+# rendered it — so echoing it a third time meant a sixty-line heredoc with a
+# whole commit message in it appearing twice in one session. The command is the
+# noise; which commit was just approved is the fact that needed confirming.
 #
 # WHY THIS COMMAND EXISTS. A PreToolUse hook can only answer allow / deny / ask,
 # and its "ask" is classifier-approvable: under permissions.defaultMode "auto"
@@ -95,6 +103,7 @@ export APPROVE_HOME="${HOME:-}"
 python3 - <<'PYEOF'
 import json
 import os
+import shlex
 import sys
 import time
 
@@ -151,6 +160,29 @@ except (OSError, ValueError):
 
 command = record["command"]
 
+
+def commit_subject(cmd: str) -> str:
+    """The first line of the commit message in `cmd`, for the receipt only.
+
+    Display, never decision: nothing below branches on it, and a command this
+    cannot parse simply falls back to the request id. `-am` and its friends are
+    covered, because a short cluster ending in `m` takes the message next.
+    """
+    try:
+        tokens = shlex.split(cmd)
+    except ValueError:
+        return ""
+    for index, token in enumerate(tokens):
+        if token.startswith("--message="):
+            return token.split("=", 1)[1].splitlines()[0]
+        takes_message = token == "--message" or (
+            token.startswith("-") and not token.startswith("--") and token.endswith("m")
+        )
+        if takes_message and index + 1 < len(tokens):
+            return tokens[index + 1].splitlines()[0]
+    return ""
+
+
 # The label is what the human reads in the permission prompt. It has to come out
 # of the command it claims to describe, or the prompt describes nothing.
 if label and label not in command:
@@ -169,9 +201,12 @@ try:
 except OSError as error:
     refuse(f"❌ approve-commit.sh: cannot write {record_path} ({error}). Nothing was approved.")
 
-print(f"✅ Approved {request_id}. This command, once:")
-print()
-print(f"  {command}")
-print()
-print("The approval expires in 15 minutes, and the commit spends it. Anything else needs a new one.")
+# The receipt names WHICH COMMIT was approved, and never the command again. The
+# command was already on screen twice by this point — the agent ran it, and the
+# permission prompt rendered it — and a sixty-line heredoc printed a third time
+# is the noise this receipt was making. What is left is the one fact the human
+# needs confirmed back.
+subject = label or commit_subject(command)
+print(f"✅ Approved: {subject}" if subject else f"✅ Approved request {request_id}.")
+print("   One commit spends it, and it expires in 15 minutes.")
 PYEOF

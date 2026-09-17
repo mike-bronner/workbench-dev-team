@@ -78,6 +78,31 @@
 # is refused outright with no path back, and a foreground commit cannot happen
 # SILENTLY, because the sanctioned path runs through a prompt the human answers.
 #
+# THE REFUSAL IS SPLIT ACROSS THE TWO CHANNELS A HOOK HAS, and the split changes
+# nothing about what is refused. Measured on Claude Code 2.1.274 with a probe
+# hook (insights/2026-09-17-hook-message-channels-measured.md in the memory
+# vault): `permissionDecisionReason` becomes the tool_result and is the text a
+# PERSON reads, and `additionalContext` survives a deny and arrives in its own
+# block, which only the model reads.
+#
+# So the reason is ONE line naming the action that was gated — "🛑 Blocked:
+# `git commit`. It needs your approval first." — and the request id, the approval
+# command, the `description` the prompt must carry, and the policy all move to
+# the context. Every one of those is a thing only an agent acts on, and at 922
+# characters they were the wall a person had to read past to learn they had
+# tried to commit.
+#
+# THE SPLIT CANNOT WEAKEN THIS GATE, and the direction matters. If a harness ever
+# dropped additionalContext, the agent would lose the request id and the approval
+# command, so no approval could be granted and the commit would stay refused.
+# The failure mode of losing the model's half is a commit that does not happen.
+# Nothing that decides the verdict lives in either message.
+#
+# NO MARKDOWN EMPHASIS, ANYWHERE. Whether a client renders the reason as Markdown
+# is unsettled, and the model receives the raw source either way. So emphasis is
+# carried by POSITION — the action leads the line — and by backticks, which read
+# as a quoted command whether or not they are rendered.
+#
 # Exit 0 with no output = no opinion (normal permission flow applies).
 # Exit 0 with permissionDecision "deny" = the harness refuses the call.
 
@@ -126,12 +151,24 @@ APPROVE_CMD = 'bash "$HOME/.claude-workbench/bin/approve-commit.sh"'
 APPROVE_DESC = "Commit: <first line of the commit message>"
 
 
-def deny(reason: str) -> None:
+GATE = "Commit approval gate (workbench-dev-team)."
+
+
+def deny(action: str, clause: str, context: str) -> None:
+    """Refuse the call, and say so twice over.
+
+    `action` and `clause` are the ONE line a person reads: what was gated, then
+    at most one short clause they can act on. `context` is everything an agent
+    needs to recover, and it opens with the gate's name so the model can report
+    which gate fired. Never put a request id, an approval command, or a policy
+    paragraph in the first two.
+    """
     print(json.dumps({
         "hookSpecificOutput": {
             "hookEventName": "PreToolUse",
             "permissionDecision": "deny",
-            "permissionDecisionReason": reason,
+            "permissionDecisionReason": f"🛑 Blocked: {action}. {clause}",
+            "additionalContext": f"{GATE} {context}",
         }
     }))
     sys.exit(0)
@@ -224,7 +261,8 @@ agent_id = str(payload.get("agent_id") or "")
 # before one is written, so no id exists for the agent to approve.
 if agent_id:
     deny(
-        f"🔒 Commit approval gate (workbench-dev-team): `{actions[0]}` is refused. "
+        f"`{actions[0]}`",
+        "A sub-agent does not commit, merge, or push.",
         f"This call comes from a sub-agent (agent {agent_id[:8]}) that carries no "
         "pipeline flag, so no human is reachable to approve it. There is no "
         "approval command for you to run, by design: any command you can run "
@@ -232,13 +270,12 @@ if agent_id:
         "Hand the work back instead. Leave the tree uncommitted, and report the "
         "diff and the proposed commit message to the session that dispatched "
         "you. That session commits it, where a prompt does reach a human.\n\n"
-        "A sub-agent does not commit, does not merge, and does not push. The two "
-        "lanes that do are the scheduled Index pipeline, which "
-        "bin/dispatch-agent.sh marks with WORKBENCH_DEV_TEAM_PIPELINE=1, and the "
-        "foreground session. An Index item dispatched from a conversation lands "
-        "here too: re-dispatch it through bin/dispatch-agent.sh, which sets that "
-        "flag. Never set the flag yourself, and never write an approval record "
-        "by hand."
+        "The two lanes that may write history are the scheduled Index pipeline, "
+        "which bin/dispatch-agent.sh marks with WORKBENCH_DEV_TEAM_PIPELINE=1, "
+        "and the foreground session. An Index item dispatched from a "
+        "conversation lands here too: re-dispatch it through "
+        "bin/dispatch-agent.sh, which sets that flag. Never set the flag "
+        "yourself, and never write an approval record by hand."
     )
 
 # Lane 3. Merge and push are the human's own, as they have always been here.
@@ -247,10 +284,11 @@ if "git commit" not in actions:
 
 if not session_id:
     deny(
-        "🔒 Commit approval gate (workbench-dev-team): this call carries no "
-        "session id, so an approval cannot be bound to it. The commit is "
-        "refused. Report this — the gate cannot be satisfied until the harness "
-        "sends a session id."
+        "`git commit`",
+        "No session id, so no approval can bind to it.",
+        "This call carries no session id, and an approval is keyed by session, "
+        "agent, and command text. Report this — the gate cannot be satisfied "
+        "until the harness sends a session id."
     )
 
 # The key answers "is THIS commit, by THIS agent, in THIS session approved?" and
@@ -268,8 +306,12 @@ if not state_dir or state_dir.startswith("/.claude-workbench"):
     # every user on the host shares. Host-wide approval state is the exact shape
     # of the watson.lock leak, so this case is refused rather than relocated.
     deny(
-        "🔒 Commit approval gate (workbench-dev-team): no approval directory is "
-        "addressable (HOME is unset). The commit is refused."
+        "`git commit`",
+        "HOME is unset, so no approval can be recorded.",
+        "No approval directory is addressable. The default would collapse to "
+        "\"/.claude-workbench/...\", a path every user on the host shares, and "
+        "host-wide approval state is the leak shape this gate was rebuilt to "
+        "close. So the case is refused rather than relocated."
     )
 
 record_path = os.path.join(state_dir, request_id)
@@ -313,10 +355,11 @@ if record.get("status") == "approved":
         os.unlink(record_path)
     except OSError as error:
         deny(
-            "🔒 Commit approval gate (workbench-dev-team): the approval record "
-            f"at {record_path} cannot be deleted ({error}), so it cannot be "
-            "spent. The commit is refused, because an approval that survives "
-            "its commit approves every commit after it."
+            "`git commit`",
+            "The approval record cannot be deleted.",
+            f"The record at {record_path} cannot be deleted ({error}), so it "
+            "cannot be spent. An approval that survives its commit approves "
+            "every commit after it, so the commit is refused instead."
         )
     try:
         age = time.time() - float(record.get("approved_at", 0))
@@ -344,20 +387,26 @@ try:
         }, handle)
 except OSError as error:
     deny(
-        "🔒 Commit approval gate (workbench-dev-team): cannot write the approval "
-        f"record under {state_dir} ({error}). The commit is refused until that "
-        "path is writable."
+        "`git commit`",
+        "The approval record cannot be written.",
+        f"Cannot write the approval record under {state_dir} ({error}). The "
+        "commit is refused until that path is writable."
     )
 
-lead = (
-    f"🔒 Commit approval gate (workbench-dev-team): the approval for this commit "
-    f"expired. Approvals last {APPROVAL_TTL_SECONDS // 60} minutes."
+# The one clause a PERSON acts on differs between these two, and it is the only
+# thing that differs: whether they are being asked for an approval or told that
+# the one they already gave ran out. The request id and the command belong to
+# the agent, so both branches hand them to the model instead.
+clause = (
+    f"Your approval expired after {APPROVAL_TTL_SECONDS // 60} minutes."
 ) if expired else (
-    "🔒 Commit approval gate (workbench-dev-team): this commit is not approved."
+    "It needs your approval first."
 )
 
 deny(
-    f"{lead} Show the human the staged diff and the proposed commit message. "
+    "`git commit`",
+    clause,
+    f"Show the human the staged diff and the proposed commit message. "
     f"Then run this exact command, which prompts them to approve:\n\n"
     f'  {APPROVE_CMD} {request_id} "<commit subject>"\n\n'
     f"Run it with the Bash tool's `description` parameter set to exactly "

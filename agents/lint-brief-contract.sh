@@ -23,11 +23,14 @@
 #      stated the other way round once, and a flip back is silent otherwise.
 #   5. It states the ask-back rule, and the bar that stops it firing on
 #      everything.
+#   6. The `## Working-context budget` section is present, states its figure,
+#      and states that nothing enforces it — with both reasons.
 # Then Watson's mode default, and a sweep over the sending docs: the template
 # governs every handoff, that rule carries its fan-out exemption in the same
 # section, no YAML frontmatter description names a stale slot, every `Workdir:`
 # template still carries the branch-or-worktree widening while a bare path stays
-# valid, and no length figure survives anywhere near the brief.
+# valid, and no length figure survives anywhere near the brief — the
+# working-context budget excepted, which measures the other side of the handoff.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -119,6 +122,44 @@ if [ ${#mode_problems[@]} -eq 0 ]; then
   echo "  ✅ watson — Direct mode is the default, no stale Index-mode default wording"
 else
   fail_file "watson — mode default" "${mode_problems[@]}"
+fi
+
+# The working-context budget, on every agent file. Checked per file rather than
+# per agent name for the same reason the brief contract is: a fourth agent
+# inherits the rule by being an agents/*.md, and the suite reddens on the one
+# file that shipped without it.
+#
+# The non-enforcement is checked as hard as the figure, and that is the whole
+# point. `maxBudgetUsd` reaches the scheduled dispatch path alone and the Agent
+# tool exposes no budget parameter, so the budget can only ever be advisory and
+# has to read that way. A limit an agent believes is enforced is one it trusts
+# and then exceeds silently, which is worse than stating no limit — so a copy
+# that keeps the figure and drops the disclaimer is the regression this catches,
+# and it is exactly the copy an editor trimming for length would produce.
+budget_problems=()
+for budget_file in "$DIR"/*.md; do
+  budget_agent="$(basename "$budget_file" .md)"
+  budget_section="$(awk '/^## Working-context budget/{f=1} f && /^## / && !/^## Working-context budget/{exit} f{print}' "$budget_file")"
+
+  if [ -z "$budget_section" ]; then
+    budget_problems+=("$budget_agent — no '## Working-context budget' section")
+    continue
+  fi
+  printf '%s\n' "$budget_section" | grep -Eq '250k|250,000' \
+    || budget_problems+=("$budget_agent — the budget names no figure to aim at")
+  printf '%s\n' "$budget_section" | grep -Fq 'Nothing enforces' \
+    || budget_problems+=("$budget_agent — the budget no longer says nothing enforces it")
+  printf '%s\n' "$budget_section" | grep -Fq 'maxBudgetUsd' \
+    || budget_problems+=("$budget_agent — the budget drops why: maxBudgetUsd reaches only the scheduled path")
+  printf '%s\n' "$budget_section" | grep -Fq 'no budget parameter' \
+    || budget_problems+=("$budget_agent — the budget drops why: the Agent tool has no budget parameter")
+done
+
+if [ ${#budget_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ budget — every agent carries the working-context target, stated as unenforced"
+else
+  fail_file "the working-context budget is missing or reads as enforced" "${budget_problems[@]}"
 fi
 
 # ── The sending half: every doc that describes the brief ──────────────────────
@@ -277,11 +318,35 @@ fi
 # a stated ceiling only ever pressured senders to cut the why. The must-omit
 # list carries that job alone now. Scoped to lines that talk about the brief, so
 # Holmes's vault-note ceiling and Lestrade's one-PR ceiling stay untouched.
+#
+# Run as two halves, because only one of them takes an exclusion.
+#
+# A figure in CHARACTERS is a brief-length figure wherever it appears, so that
+# half is absolute and excludes nothing. The working-context budget every
+# agents/*.md now carries is stated in tokens and never in characters, so a
+# ceiling smuggled past this as "5,000 characters of working context" still
+# reddens.
+#
+# The bare word `ceiling` is the half that needs the exclusion. That budget
+# names the brief exactly once, to say the figure does NOT apply there — the two
+# measure opposite sides of the handoff, one the context a receiver accumulates
+# and one the prose a sender writes. So `ceiling` is excused on a line that also
+# says "working context", and on no other line. Same per-case shape as the
+# frontmatter skip above: one check, one exclusion, stated where it applies.
 ceiling_problems=()
+brief_lines="$(grep -HnE 'brief|slot|template|Goal:|Context:|Constraints:|Done when:' "${BRIEF_DOCS[@]}")"
+
 while IFS= read -r hit; do
   [ -n "$hit" ] && ceiling_problems+=("$hit")
-done < <(grep -HnE 'brief|slot|template|Goal:|Context:|Constraints:|Done when:' "${BRIEF_DOCS[@]}" \
-  | grep -oE '^[^:]*:[0-9]+:.*([0-9][0-9,]*[- ]characters?|ceiling)' \
+done < <(printf '%s\n' "$brief_lines" \
+  | grep -oE '^[^:]*:[0-9]+:.*[0-9][0-9,]*[- ]characters?' \
+  | cut -c1-120)
+
+while IFS= read -r hit; do
+  [ -n "$hit" ] && ceiling_problems+=("$hit")
+done < <(printf '%s\n' "$brief_lines" \
+  | grep -vE '[Ww]orking[- ]context' \
+  | grep -oE '^[^:]*:[0-9]+:.*ceiling' \
   | cut -c1-120)
 
 if [ ${#ceiling_problems[@]} -eq 0 ]; then

@@ -118,12 +118,24 @@
 #     NotebookEdit grant, and neither do the lenses he dispatches, so Bash is
 #     the whole surface. Grant him one and this matcher must widen with it.
 #
+# ── HOW THE REFUSAL IS WORDED ─────────────────────────────────────────────────
+#
+# Split across the two channels a hook has, measured on Claude Code 2.1.274
+# (insights/2026-09-17-hook-message-channels-measured.md in the memory vault).
+# `permissionDecisionReason` becomes the tool_result and is the text a PERSON
+# reads, so it is ONE line naming the action that was gated.
+# `additionalContext` survives a deny and arrives in its own block that only the
+# model reads, so every recovery instruction lives there. Nothing is cut; it
+# stops being in the human's way. Same shape as commit-approval-gate.sh, which
+# is the sibling this borrows its reasoning from.
+#
 # Exit 0 with no output = no opinion (normal permission flow applies).
 # Exit 0 with permissionDecision "deny" = the harness refuses the call.
 #
 # `--classify` reads one command on stdin and exits 0 (allowed) or 1 (refused),
-# printing the reason. It is the same classifier the enforce path runs, exposed
-# so agents/lint-holmes-local-mode.sh can hold the shipped documentation to the
+# printing the REASON half — the sentence, not the short action label. It is the
+# same classifier the enforce path runs, exposed so
+# agents/lint-holmes-local-mode.sh can hold the shipped documentation to the
 # shipped rule instead of keeping a second copy of the roster.
 
 set -u
@@ -256,7 +268,11 @@ def under(path: str, root: str) -> bool:
 
 
 def classify(command: str, roots: list, cwd: str):
-    """The reason this command is refused, or None when it may run.
+    """`(action, reason)` for a refused command, or None when it may run.
+
+    `action` is the short label the human line names — what they tried to do,
+    in two or three words. `reason` is the sentence explaining it, which goes to
+    the model. Adding a rule here means writing both.
 
     Every segment is examined, never only the first: `git status && chmod 644 x`
     mutates the tree as surely as `chmod` alone does.
@@ -282,27 +298,33 @@ def classify(command: str, roots: list, cwd: str):
                 verb = leading_positionals(args, GIT_OPTS_WITH_ARG, 1)
                 if verb and verb[0] not in GIT_READ_ONLY:
                     return (
+                        f"`git {verb[0]}`",
                         f"`git {verb[0]}` is not one of git's read-only verbs, so it is "
                         "refused. `git restore`, `checkout`, `switch`, `reset`, `clean`, "
                         "and `stash` all discard exactly the uncommitted change you were "
-                        "sent to read."
+                        "sent to read.",
                     )
             elif name in MUTATING_COMMANDS:
                 return (
+                    f"`{name}`",
                     f"`{name}` changes a file's content, location, existence, or "
-                    "metadata. A review does none of those."
+                    "metadata. A review does none of those.",
                 )
             elif name == "find" and ("-delete" in args or "-exec" in args or "-execdir" in args):
-                return "`find` is deleting or executing against the files it matches."
+                return (
+                    "`find` deleting or executing",
+                    "`find` is deleting or executing against the files it matches.",
+                )
 
             if name in IN_PLACE_EDITORS and any(
                 a == "-i" or a.startswith("-i.") or a.startswith("--in-place") for a in args
             ):
-                return f"`{name} -i` rewrites the file in place."
+                return (f"`{name} -i`", f"`{name} -i` rewrites the file in place.")
             if any(a.split("=", 1)[0] in IN_PLACE_FLAGS for a in args):
                 return (
+                    f"`{name}` with a rewrite flag",
                     f"`{name}` is being run with a rewrite flag. Run formatters and "
-                    "linters in check mode only."
+                    "linters in check mode only.",
                 )
 
         # Only meaningful once a tree is named. With no root to compare against,
@@ -313,12 +335,16 @@ def classify(command: str, roots: list, cwd: str):
             if not os.path.isabs(target):
                 if not cwd:
                     return (
+                        "redirecting output into the tree under review",
                         f"the output is redirected to `{target}`, and no working "
-                        "directory was supplied to resolve it against."
+                        "directory was supplied to resolve it against.",
                     )
                 target = os.path.join(cwd, target)
             if any(under(target, root) for root in roots):
-                return f"the output is redirected into the tree under review (`{target}`)."
+                return (
+                    "redirecting output into the tree under review",
+                    f"the output is redirected into the tree under review (`{target}`).",
+                )
     return None
 
 
@@ -329,9 +355,9 @@ def classify(command: str, roots: list, cwd: str):
 if os.environ.get("GUARD_MODE") == "classify":
     refused = []
     for line in os.environ.get("GUARD_STDIN", "").splitlines():
-        reason = classify(line, [], "")
-        if reason:
-            refused.append(f"{line.strip()} — {reason}")
+        found = classify(line, [], "")
+        if found:
+            refused.append(f"{line.strip()} — {found[1]}")
     for line in refused:
         print(line)
     sys.exit(1 if refused else 0)
@@ -474,17 +500,30 @@ if not record:
 
 roots = [r for r in record.get("roots", []) if isinstance(r, str)]
 command = str((tool_input or {}).get("command") or "")
-reason = classify(command, roots, str(payload.get("cwd") or ""))
-if not reason:
+found = classify(command, roots, str(payload.get("cwd") or ""))
+if not found:
     sys.exit(0)
 
+action, reason = found
 target = roots[0] if roots else "the working directory under review"
+
+# The refusal is split across the two channels a hook has, measured on Claude
+# Code 2.1.274 (insights/2026-09-17-hook-message-channels-measured.md in the
+# memory vault). `permissionDecisionReason` becomes the tool_result and is the
+# text a PERSON reads, so it is ONE line naming the action that was gated.
+# `additionalContext` survives a deny and reaches only the model, so the reason,
+# the tree's path, and the allowed alternatives live there. No Markdown
+# emphasis: whether a client renders it is unsettled, so the action is
+# emphasised by position and by backticks, which read either way.
 print(json.dumps({
     "hookSpecificOutput": {
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason": (
-            f"🔒 Local-review guard (workbench-dev-team): this command is refused, because "
+            f"🛑 Blocked: {action}. A local review is reading this working tree."
+        ),
+        "additionalContext": (
+            f"Local-review guard (workbench-dev-team). This command is refused, because "
             f"{reason}\n\n"
             f"A local review is in flight in this session, over `{target}`. That tree is the "
             "human's live working directory, and the uncommitted change in it is the only "
