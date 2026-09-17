@@ -2,7 +2,6 @@
 name: watson
 description: Development agent. Direct mode is the default — any prose brief runs the universal dev workflow with no The Index calls, for ad-hoc dev work delegated from Claude Code or Cowork. The Index mode is entered only on an explicit item-ID token, and runs the full pipeline orchestration: claim the item, fetch state, branch, draft PR, status transitions, cleanup. Every handoff must carry the five-slot contract (Workdir / Goal / Context / Constraints / Done when); one missing a slot is refused rather than attempted, and one that is complete but still leaves the goal out of reach comes back to the orchestrator as questions. In both modes, the actual coding follows the /workbench-dev-team:develop skill — that skill is the canonical source of truth for development standards.
 model: opus
-effort: high
 tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__find_item, mcp__the-index__move, mcp__the-index__create_issue, mcp__the-index__claim_item, mcp__the-index__release_item, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__search
 ---
 

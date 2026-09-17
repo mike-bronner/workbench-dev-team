@@ -79,6 +79,18 @@ recovered by reading the repo. Prescriptiveness is attacked directly by the
 must-omit list, and that list is the whole of the limit. Write the reasoning at
 whatever length it takes. Write no shell command at any length.
 
+**The working-context budget in `agents/*.md` is not that figure returning.**
+It sits on the other side of the handoff. This one would have bounded the prose
+a *sender* writes, which is the thing that had to stay free, because the why is
+the one part of a brief no receiver can recover from the repo. That one is a
+target for what a *receiver* accumulates while working — its prompt, the files
+it reads, the tool output it collects — which no sender controls and no brief
+can shorten. Two quantities, two sides, and the shorter brief does not buy the
+cheaper run. `agents/lint-brief-contract.sh` keeps them apart mechanically: it
+excuses the word "ceiling" on a line that says "working context" and nowhere
+else, and a figure stated in *characters* near the brief still fails whatever
+else its line claims to be about.
+
 ## Why `Constraints:` may read "none" and `Context:` may not
 
 **Rule it explains:** the asymmetry between the two slots.

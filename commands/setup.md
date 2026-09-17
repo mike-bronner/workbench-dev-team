@@ -238,7 +238,7 @@ else
   "agents": {
     "lestrade": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
     "holmes": { "model": "opus", "effort": "high", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
-    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
+    "watson": { "model": "opus", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
 }
 EOF
@@ -253,10 +253,22 @@ Dispatch task passes `--model` / `--effort` / `--fallback-model` /
 `/workbench-dev-team:orchestrate` skill reads it for interactive sub-agent
 dispatch. The two paths reach `effort` differently, which is what Step 6a below
 is for. Setup never overwrites an existing config — the user's edits stick
-across plugin updates and re-runs. All three agents run effort-capable models:
-`xhigh` for the long-horizon agentic roles (Watson's development runs, Holmes's
-reviews), `high` for Lestrade's bounded triage — note `xhigh` is not supported on
-Sonnet, so a Sonnet agent's ceiling short of `max` is `high`. Holmes's optional `fanout`
+across plugin updates and re-runs.
+
+Holmes and Lestrade ship at `high`. **Watson ships no `effort` key at all**,
+and that asymmetry is deliberate rather than an oversight. Both paths then leave
+Watson's effort to whoever dispatched it: Step 6a deletes the frontmatter line,
+so an interactive Watson inherits the calling session's effort, and Dispatch
+omits `--effort`, so a scheduled one takes the model's own default. Watson
+shipped `xhigh` for months before anyone read the line, and replacing one wrong
+number with a right one would have left the next wrong number just as
+invisible. A key that is absent cannot drift. Holmes and Lestrade keep `high`
+because both run rarely enough that the same drift risk is small beside a
+review- or triage-quality regression.
+
+Every value is still settable here by hand: `low`, `medium`, `high`, `xhigh`,
+`max`, or an integer. Note `xhigh` is not supported on Sonnet, so a Sonnet
+agent's ceiling short of `max` is `high`. Holmes's optional `fanout`
 (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel`
 (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run
 on — both default cleanly when absent. Lestrade carries the same two knobs for its
@@ -273,16 +285,22 @@ when set, and both default cleanly when absent.
 The scheduled path reads `effort` off this config on every tick. **The interactive
 path cannot.** The Agent tool exposes a per-invocation `model` parameter and no
 effort parameter, so a sub-agent dispatched from a live conversation takes its
-effort from its own definition — which is to say, from frontmatter. Leave the
-frontmatter silent and every interactive Watson, Holmes, and Lestrade runs at
-whatever effort the calling session happens to sit at, while the config knob
-appears to be set.
+effort from its own definition — which is to say, from frontmatter. A
+frontmatter line the config disagrees with is the whole defect: name an effort
+in the config, leave the frontmatter silent, and that agent runs at whatever
+effort the calling session happens to sit at while the knob appears to be set.
 
 So the config stays canonical for the *value* and this step copies it into the
 *place the interactive dispatch reads*. One edit still moves both paths, and
 re-running setup is what re-synchronises them: **edit the config and the
 scheduled path changes on the next tick, while interactive dispatch keeps the
 last stamped value until setup runs again.**
+
+Silence is a *result* here, never a gap. The step deletes the frontmatter line
+whenever the config names no effort, which is exactly when Dispatch omits
+`--effort`, so both paths agree that the agent inherits its caller's effort.
+Watson ships that way on purpose (see above), and `agents/test-effort-stamp.sh`
+pins the deletion path as well as the write path.
 
 The block writes the installed plugin's `agents/*.md`, resolved the same way
 Step 7a resolves the orchestrator and for the same reason. Agents are

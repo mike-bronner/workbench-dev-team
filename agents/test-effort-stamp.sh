@@ -15,6 +15,12 @@
 # byte. That is the one assertion that goes red when the config defaults and the
 # frontmatter drift apart in either direction.
 #
+# An ABSENT effort is part of that agreement, not an exception to it. Watson
+# ships no effort key and no effort line, so re-adding one to the config alone
+# makes the stamper write a line the committed file lacks, and re-adding one to
+# the frontmatter alone makes it delete a line the committed file has. Either
+# reddens case 1. That is the whole mechanical guard on Watson's absence.
+#
 # Nothing here asserts that a spawned subagent actually ran at a given effort.
 # That belongs to the harness, and a test of it would be brittle across versions.
 #
@@ -122,6 +128,9 @@ fi
 #
 # Discriminating on purpose: every agent gets a DIFFERENT value from its shipped
 # default, so a stamper that wrote the frontmatter it already found would fail.
+# Watson ships no effort line at all, so its row also pins INSERTION into silent
+# frontmatter, where lestrade's and holmes's pin the rewrite of a line already
+# there. Both branches of the awk, one case.
 cfg="$WORK/changed.json"
 cat > "$cfg" <<'JSON'
 {"agents":{"lestrade":{"effort":"low"},"holmes":{"effort":"medium"},"watson":{"effort":"max"}}}
@@ -135,9 +144,11 @@ else
   bad "expected low/medium/max, got '$got'"
 fi
 
-# 2b. `xhigh` — the value whose own schema description omits it, and the one
-#     Watson actually ships with. Pinned on its own so a regression here is not
-#     hidden inside the defaults case above.
+# 2b. `xhigh` — the value whose own schema description omits it, and the value no
+#     shipped default names any more: Holmes and Lestrade ship `high`, and Watson
+#     ships no effort at all. That is precisely why this case stays. Case 1 can no
+#     longer reach `xhigh` through any agent, so this pin is the only thing left
+#     in the suite holding the enum's least-documented value.
 cfg="$WORK/xhigh.json"
 echo '{"agents":{"watson":{"effort":"xhigh"}}}' > "$cfg"
 root=$(newtree xhigh)
@@ -177,20 +188,37 @@ fi
 # Both paths must stay in lockstep. If the config stops naming an effort, the
 # scheduled path stops passing --effort, so the frontmatter must stop carrying
 # one too. Leaving a stale line is the silent disagreement this closes.
+#
+# The fixture CONSTRUCTS the line it then expects to lose. Watson now ships with
+# no effort line, so copying the shipped tree and stamping an absent key would
+# assert a removal against a file that had nothing to remove — green whether or
+# not the stamper can delete anything at all, and unreachable by construction.
+# The seed is written by awk rather than by the stamper, so the code under test
+# never builds its own fixture.
 cfg="$WORK/absent.json"
 echo '{"agents":{"watson":{"model":"opus"}}}' > "$cfg"
 root=$(newtree absent)
+awk 'NR==1 && $0=="---" {print; print "effort: xhigh"; next} {print}' \
+  "$REPO/agents/watson.md" > "$root/agents/watson.md"
+if [ "$(effort_of "$root/agents/watson.md")" = "xhigh" ]; then
+  ok "seeded a stale effort line for the removal to find"
+else
+  bad "seeding failed — the removal assertions below would pass vacuously"
+fi
 stamp "$root" "$cfg" > /dev/null 2>&1
 if [ -z "$(effort_of "$root/agents/watson.md")" ]; then
   ok "an absent config key removes the effort line"
 else
   bad "absent key left effort '$(effort_of "$root/agents/watson.md")' behind"
 fi
-# ...and the rest of the file survives that removal.
-if [ "$(grep -c . "$root/agents/watson.md")" -eq "$(( $(grep -c . "$REPO/agents/watson.md") - 1 ))" ]; then
+# ...and the rest of the file survives that removal. Compared against the
+# committed file rather than by counting lines: the seed is one line, so what is
+# left has to be the original byte for byte, and no count needs keeping in step.
+if diff -q "$REPO/agents/watson.md" "$root/agents/watson.md" > /dev/null 2>&1; then
   ok "removal takes exactly one line, nothing else"
 else
-  bad "removal changed more than the effort line"
+  bad "removal changed more than the effort line:
+$(diff -u "$REPO/agents/watson.md" "$root/agents/watson.md" 2>&1 | head -10)"
 fi
 
 # --- 4. an unrecognized value is refused, not written -------------------------
@@ -310,8 +338,10 @@ fi
 
 # --- 8. a fourth agent is discovered, never listed ----------------------------
 #
-# The stamper globs agents/*.md. Pin that, so a future agent cannot quietly ship
-# without an effort while this suite stays green.
+# The stamper globs agents/*.md rather than naming the three it knows about. Pin
+# that, so a fourth agent takes its configured effort the day it ships with no
+# edit to Step 6a. What this guards is REACHABILITY, not the presence of a value:
+# shipping without an effort is a supported state, and Watson ships that way.
 root=$(newtree fourth)
 printf -- '---\nname: moriarty\ndescription: fixture\nmodel: sonnet\n---\n\nBody.\n' \
   > "$root/agents/moriarty.md"

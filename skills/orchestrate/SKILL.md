@@ -87,7 +87,7 @@ cat "$HOME/.claude-workbench/dev-team-config.json"
   "agents": {
     "lestrade": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
     "holmes": { "model": "opus", "effort": "high", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
-    "watson": { "model": "opus", "effort": "xhigh", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
+    "watson": { "model": "opus", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
 }
 ```
@@ -115,10 +115,16 @@ suggest `/workbench-dev-team:setup`.
   nothing to pass for `effort` and nothing you need to do about it: the
   configured value is already on the agent's frontmatter, which is where the
   harness reads effort from when it spawns a sub-agent.
-  `/workbench-dev-team:setup` puts it there (Step 6a). Watson's `xhigh` does
-  reach this path. **After editing the config, re-run setup** — the scheduled
-  path re-reads the file every tick, while this one keeps the last stamped
-  value until setup runs again. `maxBudgetUsd` and `fallback` have no such
+  `/workbench-dev-team:setup` puts it there (Step 6a), so the knob is live on
+  this path rather than inert. **Watson is the exception and ships no `effort`
+  at all**, by design and not by omission: a value that is never shipped cannot
+  silently drift out of date, and Watson's frontmatter is therefore silent, so
+  an interactive Watson runs at whatever effort *this* session sits at. Holmes
+  and Lestrade ship `high` and carry it stamped. Neither case asks anything of
+  you at dispatch time.
+  **After editing the config, re-run setup** — the scheduled path re-reads the
+  file every tick, while this one keeps the last stamped value until setup runs
+  again. `maxBudgetUsd` and `fallback` have no such
   route and stay CLI-only — neither applies to interactive dispatch (the Agent
   tool has no budget or fallback-model parameter; a model error on this path
   surfaces immediately for the human to handle).
