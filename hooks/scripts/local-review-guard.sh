@@ -82,7 +82,17 @@
 #   3. In-place rewriting: a formatter or linter run with --write / --fix /
 #      --in-place, and sed / perl / ruby with -i. Bare `-i` is checked ONLY for
 #      those three commands, because `grep -i` is a legitimate review command
-#      and a blanket `-i` rule would break the mode it protects.
+#      and a blanket `-i` rule would break the mode it protects. Within those
+#      three it is checked wherever it sits in a single-dash cluster, not only
+#      as a whole token: `perl -pi -e` is the commonest spelling of an in-place
+#      Perl edit, and a whole-token match let every clustered form through. The
+#      cluster is read left to right and stops at the first switch that takes
+#      the rest of the token as its value, so `perl -pes/i/j/` stays allowed —
+#      that `i` is program text, not a flag. Which letter means in-place is read
+#      per interpreter from the same table as those terminators, because the
+#      interpreters disagree: `-I` is an in-place edit to BSD and macOS sed and
+#      is refused there, while to perl and ruby it names an include directory,
+#      so `perl -Ilib -ne print` stays allowed.
 #   4. Redirection into a protected tree. `> file` is checked by target path,
 #      not refused outright, because `git diff HEAD > /tmp/scratch.diff` is
 #      ordinary review work. A relative target is resolved against the payload's
@@ -214,8 +224,46 @@ PASS_THROUGH = {"command", "builtin", "exec", "sudo", "nohup", "time", "env", "x
 # would break the reading this guard exists to permit.
 IN_PLACE_FLAGS = {"--write", "--fix", "--in-place"}
 
-# The three commands where a bare `-i` does mean "edit the file in place".
-IN_PLACE_EDITORS = {"sed", "perl", "ruby"}
+# The three commands where a bare `-i` does mean "edit the file in place". Each
+# is mapped to BOTH halves of the rule at once: the letters that mean in-place
+# for that interpreter, and the single-letter switches that take the REST OF
+# THEIR TOKEN as a value. One table, not three rosters — every half of the rule
+# is read from a single subscript, so a fourth interpreter added here cannot be
+# present in one lookup and missing from another. That drift raises KeyError,
+# which crashes a PreToolUse hook, and a crashed hook fails OPEN.
+#
+# Both halves are per-interpreter for the same reason: the interpreters differ.
+#
+# IN-PLACE LETTERS. `i` everywhere. `I` for sed ONLY, where BSD and macOS sed
+# make `-I` an in-place edit exactly like `-i` and neither GNU nor BSD sed has
+# any other meaning for it — GNU sed rejects `-I` outright, so refusing it costs
+# nothing there either. `I` is deliberately NOT an in-place letter for perl or
+# ruby, where it is an include directory: refusing `perl -Ilib -ne print` would
+# break the legitimate reading this guard exists to permit.
+#
+# TERMINATORS. These end the flag part of a cluster. After one of them the
+# remaining characters are an argument, so an `i` among them is not a flag.
+# `perl -pes/i/j/` is the case that makes this necessary — the joined form of a
+# read-only one-liner, where `e` takes `s/i/j/` as the program. Worked out from
+# each interpreter's documented switches: perl's -e/-E/-F/-I/-m/-M/-x (perlrun),
+# ruby's -e/-C/-E/-F/-I/-r/-x, and sed's -e/-f.
+#
+# Switches that consume only digits or a fixed letter set are deliberately
+# ABSENT — perl's -0/-l/-C, ruby's -K/-T/-W, and sed's -l. More flags can follow
+# them inside the same token (`perl -lpi -e` is a real in-place edit), so
+# treating them as terminators would reopen the hole this closes. sed's `-l` is
+# the measured case: GNU `sed -l N` takes a line length, but BSD and macOS sed
+# make `-l` line-buffered and take no argument at all, so a joined `sed -li` is
+# a genuine in-place edit. Listing `l` as a terminator let it through. A joined
+# GNU `-l` can only be followed by digits, and no digit is an `i`, so dropping
+# it refuses nothing a reader would type. Leaving a terminator out costs a
+# refused read, never an allowed write, which is the direction this guard
+# already fails in.
+IN_PLACE_EDITORS = {
+    "sed": (set("iI"), set("ef")),
+    "perl": (set("i"), set("eEFImMx")),
+    "ruby": (set("i"), set("eCEFIrx")),
+}
 
 # git options that consume the next token as their value, so the verb search
 # must step over both. Same shape as the commit gate's.
@@ -258,6 +306,39 @@ def leading_positionals(tokens, opts_with_arg, want):
             found.append(tok)
             i += 1
     return found
+
+
+def rewrites_in_place(name: str, args: list) -> bool:
+    """True when a sed/perl/ruby argument list carries the in-place switch.
+
+    Every single-dash cluster is walked left to right. An in-place letter counts
+    while the characters before it are still flags, and stops counting once a
+    switch that swallows the rest of the token has been passed — at that point
+    the letter is inside that switch's value. So `perl -pi -e`, `perl -lpi -e`,
+    `sed -ie`, `sed -I`, `sed -li` and `perl -pi.bak -e` are all in-place edits,
+    while `perl -pes/i/j/` and `perl -Ilib -ne print` are read-only one-liners
+    and stay allowed.
+
+    Both letter sets come from one subscript, so neither can be looked up for an
+    interpreter the other does not know.
+    """
+    in_place, terminators = IN_PLACE_EDITORS[name]
+    for arg in args:
+        if arg.startswith("--"):
+            # IN_PLACE_FLAGS below catches `--in-place` for any command. It is
+            # answered here as well so these three keep the `sed -i` action
+            # label rather than the generic rewrite-flag one.
+            if arg.startswith("--in-place"):
+                return True
+            continue
+        if not arg.startswith("-"):
+            continue
+        for char in arg[1:]:
+            if char in in_place:
+                return True
+            if char in terminators:
+                break
+    return False
 
 
 def under(path: str, root: str) -> bool:
@@ -316,9 +397,7 @@ def classify(command: str, roots: list, cwd: str):
                     "`find` is deleting or executing against the files it matches.",
                 )
 
-            if name in IN_PLACE_EDITORS and any(
-                a == "-i" or a.startswith("-i.") or a.startswith("--in-place") for a in args
-            ):
+            if name in IN_PLACE_EDITORS and rewrites_in_place(name, args):
                 return (f"`{name} -i`", f"`{name} -i` rewrites the file in place.")
             if any(a.split("=", 1)[0] in IN_PLACE_FLAGS for a in args):
                 return (

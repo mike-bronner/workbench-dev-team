@@ -186,6 +186,102 @@ check "the breach command itself is refused" \
   "$(bash_verdict "chmod 644 /Users/mike/Developer/workbench-dev-team/agents/lint-holmes-local-mode.sh")" deny
 
 echo
+echo "── in-place -i is read anywhere in a flag cluster ─────────────────────"
+
+# The second measured breach. A lens ran `perl -pi` against the tree it was
+# reviewing and the guard allowed it, because `-i` was matched as a whole token
+# only. `perl -pi -e` is the commonest spelling of an in-place Perl edit, so the
+# gap covered the likeliest case rather than an edge one. Every line below was
+# ALLOWED before the cluster scan landed.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused: $cmd" "$(bash_verdict "$cmd")" deny
+done <<EOF
+perl -pi -e s/a/b/ file.txt
+perl -ni -e print file.txt
+perl -pi.bak -e s/a/b/ file.txt
+perl -lpi -e s/a/b/ file.txt
+sed -ie s/a/b/ file.txt
+ruby -pi -e x file.txt
+ruby -i.bak -pe x file.txt
+sed --in-place s/a/b/ file.txt
+EOF
+
+# sed's own two spellings, both of which the cluster scan first shipped allowing.
+# `-I` is an in-place edit on BSD and macOS sed exactly as `-i` is, and GNU sed
+# rejects it outright, so there is no platform where refusing it costs a read.
+# `sed -li` is the joined form BSD's no-argument `-l` (line-buffered) makes
+# reachable; it was allowed while `l` sat in sed's terminator set, because the
+# scan stopped at the `l` and never saw the `i`.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused: $cmd" "$(bash_verdict "$cmd")" deny
+done <<EOF
+sed -I s/a/b/ file.txt
+sed -I.bak s/a/b/ file.txt
+sed -nI s/a/b/ file.txt
+sed -li s/a/b/ file.txt
+sed -lni s/a/b/ file.txt
+sed -nlI s/a/b/ file.txt
+EOF
+
+# The other direction, and the reason the in-place letter is per-interpreter
+# rather than a hardcoded pair. `-I` is an include directory to perl and ruby,
+# so widening sed's letters must not have widened theirs.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "allowed: $cmd" "$(bash_verdict "$cmd")" silent
+done <<EOF
+perl -Ilib -ne print file.txt
+perl -Ilib -Ilib2 -ne print file.txt
+ruby -Ilib -e puts
+ruby -Ilib:vendor -e puts
+sed -l 5 -n p file.txt
+sed -l5 -n p file.txt
+EOF
+
+# The other half of the same rule, and the reason it is a terminator scan rather
+# than "an i anywhere". A cluster's flags end at the first switch that takes the
+# rest of the token as its value; after that the letters are program text, an
+# include path, or a module name. Matching `i` blindly would refuse all of these
+# and kill the reading the mode exists to do.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "allowed: $cmd" "$(bash_verdict "$cmd")" silent
+done <<EOF
+perl -pes/i/j/ file.txt
+perl -ne print file.txt
+sed -n 1p file.txt
+sed -nE s/x/y/i file.txt
+sed -ffilter.sed file.txt
+perl -Ilib -ne print file.txt
+perl -MList::Util -ne print file.txt
+ruby -Ilib -e puts
+ruby -rtime -e puts
+EOF
+
+# `grep -i` is ignore-case, and the whole reason a blanket `-i` rule was rejected.
+# The cluster scan must not have widened the flag rule past the three interpreters.
+check "grep keeps its clustered -i too" "$(bash_verdict "grep -ri needle .")" silent
+
+# The in-place letters and the terminators are per-interpreter, so a table that
+# knew an interpreter in one half and not the other would raise KeyError — which
+# crashes the hook, and a crashed hook fails OPEN. A verdict cannot catch that on
+# its own: a crash prints nothing, so it reads as "silent" exactly like an
+# allowed command does. Stderr is what tells them apart, and it is asserted here
+# on a command from each interpreter that must reach the cluster walk at all.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  STRAY="$(run_guard "$(bash_payload "$cmd")" 2>&1 >/dev/null)"
+  if [ -z "$STRAY" ]; then ok "no interpreter is half-known to the table: $cmd"
+  else bad "the cluster walk errored on $cmd — $STRAY"; fi
+done <<EOF
+sed -n 1p file.txt
+perl -pes/i/j/ file.txt
+ruby -rtime -e puts
+EOF
+
+echo
 echo "── redirection is judged by target, not refused outright ──────────────"
 
 check "redirect to an absolute path outside the tree is allowed" \
