@@ -42,11 +42,12 @@ mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 Per-agent model, effort, fallback model, and budget live in
 `~/.claude-workbench/dev-team-config.json` (written by `/workbench-dev-team:setup`,
 editable by the user, survives plugin updates). `dispatch-agent.sh` reads it on
-every dispatch and falls back to the baked-in defaults when the file or a key is
-missing — a malformed or absent config never blocks a dispatch. Effort, the
-optional `fallback` model chain, and Holmes's optional budget cap are passed only
-when set; Watson's budget cap defaults to `10.00` when absent, and models default
-to `high` effort on their own when the flag is absent. The `fallback` value is a
+every dispatch. A malformed or absent config never blocks a dispatch. Model,
+effort, the optional `fallback` model chain, and Holmes's optional budget cap are
+passed only when set. An absent model or effort leaves the run on the agent
+definition's frontmatter value. Watson's budget cap is the one baked-in default,
+`10.00` when absent. The shipped config pins all three agents to
+`claude-opus-5-5[1m]` at `medium` effort. The `fallback` value is a
 comma-separated model list passed to `--fallback-model` (print-mode only) — when
 the primary model is overloaded or unavailable (e.g. a retired model), the
 dispatch degrades to the next model in the chain instead of failing.

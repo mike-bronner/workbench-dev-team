@@ -85,9 +85,9 @@ cat "$HOME/.claude-workbench/dev-team-config.json"
 ```json
 {
   "agents": {
-    "lestrade": { "model": "sonnet", "effort": "high", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
-    "holmes": { "model": "opus", "effort": "high", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
-    "watson": { "model": "opus", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
+    "lestrade": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
+    "holmes": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
+    "watson": { "model": "claude-opus-5-5[1m]", "effort": "medium", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
   }
 }
 ```
@@ -103,25 +103,32 @@ overloaded or unavailable (e.g. a retired model) rather than failing. Holmes als
 takes an optional `maxBudgetUsd` cap (Watson's defaults to `10.00`). All of these
 are optional — absent file or keys → defaults.
 
+**All three agents ship `claude-opus-5-5[1m]` at `medium` effort**, in this
+config and in their frontmatter. The exact ID is deliberate, because the `opus`
+alias moves to a new release without anyone approving it. The `[1m]` variant
+holds the roughly 250k tokens of working context the agents budget for.
+`medium` is enough for all three: Anthropic's Opus 5.5 guidance reports it
+beating Opus 5 at `high` on coding, and catching more bugs with fewer false
+alarms in review. Either key is still yours to change per agent. Setup asks
+before it moves an existing config onto the pin, and never moves it silently.
+
 Read it once at the start of an orchestration session. If the file is missing,
-fall back to the values above (they match the agents' frontmatter defaults) and
-suggest `/workbench-dev-team:setup`.
+fall back to the values above and suggest `/workbench-dev-team:setup`.
 
 **How the knobs land, per dispatch path:**
 
-- **Interactive (this skill):** pass the config's `model` as the Agent tool's
-  per-invocation `model` parameter — it overrides the agent's frontmatter.
-  The Agent tool still has **no per-invocation effort parameter**, so there is
-  nothing to pass for `effort` and nothing you need to do about it: the
-  configured value is already on the agent's frontmatter, which is where the
-  harness reads effort from when it spawns a sub-agent.
-  `/workbench-dev-team:setup` puts it there (Step 6a), so the knob is live on
-  this path rather than inert. **Watson is the exception and ships no `effort`
-  at all**, by design and not by omission: a value that is never shipped cannot
-  silently drift out of date, and Watson's frontmatter is therefore silent, so
-  an interactive Watson runs at whatever effort *this* session sits at. Holmes
-  and Lestrade ship `high` and carry it stamped. Neither case asks anything of
-  you at dispatch time.
+- **Interactive (this skill):** **never pass the Agent tool's `model`
+  parameter** to a dev-team agent. It accepts only an alias (`sonnet`, `opus`,
+  `haiku`, `fable`), so it cannot carry the agents' `claude-opus-5-5[1m]`, and it
+  overrides the agent's frontmatter, so passing `opus` would silently replace
+  the exact ID with whatever the alias points at today. The Agent tool has no
+  effort parameter at all. Both values reach this path through the agent's
+  frontmatter instead, which the harness reads when it spawns the sub-agent:
+  `/workbench-dev-team:setup` stamps the configured `model` and `effort` there
+  (Step 6a), so the knobs are live on this path rather than inert. A
+  per-project `CLAUDE_CODE_SUBAGENT_MODEL` reaches a pinned agent only with
+  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` beside it, which is the deliberate
+  opt-out. None of it asks anything of you at dispatch time.
   **After editing the config, re-run setup** — the scheduled path re-reads the
   file every tick, while this one keeps the last stamped value until setup runs
   again. `maxBudgetUsd` and `fallback` have no such
@@ -130,7 +137,9 @@ suggest `/workbench-dev-team:setup`.
   surfaces immediately for the human to handle).
 - **Scheduled (Dispatch):** the `model`, `effort`, `fallback`, and budget knobs
   are passed as `--model`, `--effort`, `--fallback-model`, and `--max-budget-usd`
-  flags. Not your concern here, but it is the same config file — one edit still
+  flags, each only when set. An absent `model` or `effort` leaves the run on
+  the agent definition's value, or on Claude Code's own default where the
+  definition has none. Not your concern here, but it is the same config file — one edit still
   moves both paths: this one on the next tick, the interactive one at the next
   setup run.
 
@@ -174,8 +183,9 @@ slot: `references/brief-rationale.md`.
 1. **Background by default.** Every dispatch sets `run_in_background: true`.
    The conversation continues; completion notifications arrive on their own.
    Foreground only when the user explicitly wants to wait on a quick result.
-2. **Model from config.** Always pass `model` from the config so a user edit
-   takes effect immediately — never rely on frontmatter alone.
+2. **No `model` parameter.** Never pass the Agent tool's `model` to a dev-team
+   agent. The agent's frontmatter carries the configured model, and the
+   alias-only parameter would override it (see "How the knobs land" above).
 3. **Every handoff is a brief.** Sub-agents have no memory of this
    conversation, so send the five slots defined below and nothing else — for
    Watson's Direct mode, Holmes's Local mode, and the read-only `Explore`,
@@ -202,13 +212,13 @@ slot: `references/brief-rationale.md`.
    tool stays right for everything that writes no commit: Watson's Direct mode,
    Lestrade, Holmes, and every read-only dispatch.
 
-Example — ad-hoc dev work, config says Watson runs opus. The prompt is the
-five-slot brief, contract below:
+Example — ad-hoc dev work. The prompt is the five-slot brief, contract below:
 
 ```
 Agent(
   subagent_type: "workbench-dev-team:watson",
-  model: "opus",                  // from config, not hardcoded
+  // no model: Watson's frontmatter carries claude-opus-5-5[1m], and the alias-only
+  // parameter would override that exact ID. Never pass one to a dev-team agent.
   run_in_background: true,
   description: "Expire stale cache entries",
   prompt: "Workdir: /Users/mike/Developer/bar (branch: fix/cache-expiry,

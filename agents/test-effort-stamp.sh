@@ -1,25 +1,26 @@
 #!/usr/bin/env bash
-# Test for the Step 6a agent-effort stamper in commands/setup.md.
+# Test for the Step 6a agent model-and-effort stamper in commands/setup.md.
 #
 # It extracts the *real* stamping block from setup.md (between the
 # `agent-effort-stamp` sentinel markers) and runs it against fixture trees, so
 # the test can never drift from the shipped logic.
 #
-# Why the step exists: the Agent tool has a per-invocation `model` parameter and
-# no effort parameter, so an interactively dispatched sub-agent reads its effort
-# from its own frontmatter. The shared config is canonical for the value; this
-# step copies it to where an interactive dispatch will actually look.
+# Why the step exists: the Agent tool has no effort parameter, and its `model`
+# parameter takes an alias only, never a full model ID. So an interactively
+# dispatched sub-agent reads both values from its own frontmatter. The shared
+# config is canonical for the value; this step copies it to where an
+# interactive dispatch will actually look.
 #
 # The headline case is AGREEMENT: the shipped default config in setup.md, run
 # through the shipped stamper, must reproduce the committed agents/*.md byte for
 # byte. That is the one assertion that goes red when the config defaults and the
 # frontmatter drift apart in either direction.
 #
-# An ABSENT effort is part of that agreement, not an exception to it. Watson
-# ships no effort key and no effort line, so re-adding one to the config alone
-# makes the stamper write a line the committed file lacks, and re-adding one to
-# the frontmatter alone makes it delete a line the committed file has. Either
-# reddens case 1. That is the whole mechanical guard on Watson's absence.
+# Every agent ships a pin, so a pin dropped from the config alone makes the
+# stamper delete a line the committed file has, and one dropped from the
+# frontmatter alone makes it write a line the committed file lacks. Either
+# reddens case 1. Agreement cannot tell a pin that moved in both places at
+# once, so case 1c holds the values themselves.
 #
 # Nothing here asserts that a spawned subagent actually ran at a given effort.
 # That belongs to the harness, and a test of it would be brittle across versions.
@@ -60,7 +61,7 @@ if [ ! -s "$DEFAULT_CFG" ] || ! jq empty "$DEFAULT_CFG" 2>/dev/null; then
   echo "FAIL: could not extract the default agent config heredoc from $SRC"; exit 1
 fi
 
-echo "Testing agent-effort stamper ($SNIPPET):"
+echo "Testing agent model-and-effort stamper ($SNIPPET):"
 
 # --- helpers -----------------------------------------------------------------
 
@@ -80,6 +81,11 @@ stamp() {
     STAMP_ROOT="$root" \
     DEVTEAM_CONFIG="$cfg" \
     bash "$SNIPPET" 2>&1 )
+}
+
+# model_of <file> -> the frontmatter model value, or empty
+model_of() {
+  awk 'NR==1&&$0=="---"{f=1;next} f&&$0=="---"{exit} f&&/^model:/{sub(/^model:[[:space:]]*/,"");print;exit}' "$1"
 }
 
 # effort_of <file> -> the frontmatter effort value, or empty
@@ -124,31 +130,71 @@ else
   bad "second run over a stamped tree altered the files"
 fi
 
+# 1c. Every agent ships exactly `claude-opus-5-5[1m]` at `medium`, in the config
+#     and the frontmatter. The exact ID, never the `opus` alias, because the
+#     alias moves to a new release unapproved. The `[1m]` variant, because the
+#     agents budget more working context than the standard window may hold.
+#     Every shipped pin is listed and compared whole, so a pin added, dropped,
+#     or changed anywhere turns this red.
+EXPECTED_PINS=""
+for a in holmes lestrade watson; do
+  EXPECTED_PINS="$EXPECTED_PINS
+config $a.effort=medium
+config $a.model=claude-opus-5-5[1m]
+$a.md effort=medium
+$a.md model=claude-opus-5-5[1m]"
+done
+EXPECTED_PINS=$(printf '%s\n' "$EXPECTED_PINS" | sed '/^$/d' | LC_ALL=C sort)
+pinned=$(jq -r '.agents | to_entries[] | .key as $a | .value | to_entries[]
+                | select(.key == "model" or .key == "effort")
+                | "config \($a).\(.key)=\(.value)"' "$DEFAULT_CFG")
+for f in "$REPO"/agents/*.md; do
+  line=$(awk -v a="$(basename "$f")" '
+           NR==1&&$0=="---"{f=1;next} f&&$0=="---"{exit}
+           f&&/^(model|effort):/{k=$0; sub(/:.*/,"",k); v=$0; sub(/^[^:]*:[[:space:]]*/,"",v)
+                                 print a " " k "=" v}' "$f")
+  [ -n "$line" ] && pinned="$pinned
+$line"
+done
+pinned=$(printf '%s\n' "$pinned" | sed '/^$/d' | LC_ALL=C sort)
+if [ "$pinned" = "$EXPECTED_PINS" ]; then
+  ok "every agent ships claude-opus-5-5[1m] at medium, in config and frontmatter"
+else
+  bad "shipped model/effort pins differ from claude-opus-5-5[1m] at medium for all three:
+$(diff <(printf '%s\n' "$EXPECTED_PINS") <(printf '%s\n' "$pinned"))"
+fi
+
 # --- 2. a changed value actually lands ---------------------------------------
 #
-# Discriminating on purpose: every agent gets a DIFFERENT value from its shipped
-# default, so a stamper that wrote the frontmatter it already found would fail.
-# Watson ships no effort line at all, so its row also pins INSERTION into silent
-# frontmatter, where lestrade's and holmes's pin the rewrite of a line already
-# there. Both branches of the awk, one case.
+# Discriminating on purpose: every agent gets a DIFFERENT value from what its
+# file holds, so a stamper that wrote the frontmatter it already found would
+# fail. Holmes and Watson rewrite the `effort: medium` they ship. Lestrade's
+# effort line is STRIPPED from the fixture (by grep, never by the stamper) to
+# pin INSERTION into frontmatter that carries none.
 cfg="$WORK/changed.json"
 cat > "$cfg" <<'JSON'
-{"agents":{"lestrade":{"effort":"low"},"holmes":{"effort":"medium"},"watson":{"effort":"max"}}}
+{"agents":{"lestrade":{"effort":"low"},"holmes":{"effort":"high"},"watson":{"effort":"max"}}}
 JSON
 root=$(newtree changed)
+grep -vxF -- "effort: medium" "$REPO/agents/lestrade.md" > "$root/agents/lestrade.md"
+if [ "$(effort_of "$root/agents/lestrade.md")/$(effort_of "$root/agents/holmes.md")/$(effort_of "$root/agents/watson.md")" = "/medium/medium" ]; then
+  ok "fixture holds no lestrade effort, and the shipped holmes and watson ones"
+else
+  bad "fixture setup failed — the insertion or rewrite branch below would go untested"
+fi
 stamp "$root" "$cfg" > /dev/null 2>&1
 got="$(effort_of "$root/agents/lestrade.md")/$(effort_of "$root/agents/holmes.md")/$(effort_of "$root/agents/watson.md")"
-if [ "$got" = "low/medium/max" ]; then
-  ok "each agent takes its own configured value (low/medium/max)"
+if [ "$got" = "low/high/max" ]; then
+  ok "each agent takes its own configured value (low/high/max)"
 else
-  bad "expected low/medium/max, got '$got'"
+  bad "expected low/high/max, got '$got'"
 fi
 
 # 2b. `xhigh` — the value whose own schema description omits it, and the value no
-#     shipped default names any more: Holmes and Lestrade ship `high`, and Watson
-#     ships no effort at all. That is precisely why this case stays. Case 1 can no
-#     longer reach `xhigh` through any agent, so this pin is the only thing left
-#     in the suite holding the enum's least-documented value.
+#     shipped default names any more: all three agents ship `medium`. That is
+#     precisely why this case stays.
+#     Case 1 can no longer reach `xhigh` through any agent, so this pin is the
+#     only thing left in the suite holding the enum's least-documented value.
 cfg="$WORK/xhigh.json"
 echo '{"agents":{"watson":{"effort":"xhigh"}}}' > "$cfg"
 root=$(newtree xhigh)
@@ -185,40 +231,88 @@ fi
 
 # --- 3. an absent key REMOVES the line ---------------------------------------
 #
-# Both paths must stay in lockstep. If the config stops naming an effort, the
-# scheduled path stops passing --effort, so the frontmatter must stop carrying
-# one too. Leaving a stale line is the silent disagreement this closes.
+# Both paths must stay in lockstep. If the config stops naming a value, the
+# scheduled path stops passing its flag, so the frontmatter must stop carrying
+# the line too. Leaving a stale line is the silent disagreement this closes.
 #
-# The fixture CONSTRUCTS the line it then expects to lose. Watson now ships with
-# no effort line, so copying the shipped tree and stamping an absent key would
-# assert a removal against a file that had nothing to remove — green whether or
-# not the stamper can delete anything at all, and unreachable by construction.
-# The seed is written by awk rather than by the stamper, so the code under test
-# never builds its own fixture.
-cfg="$WORK/absent.json"
-echo '{"agents":{"watson":{"model":"opus"}}}' > "$cfg"
-root=$(newtree absent)
-awk 'NR==1 && $0=="---" {print; print "effort: xhigh"; next} {print}' \
-  "$REPO/agents/watson.md" > "$root/agents/watson.md"
-if [ "$(effort_of "$root/agents/watson.md")" = "xhigh" ]; then
-  ok "seeded a stale effort line for the removal to find"
-else
-  bad "seeding failed — the removal assertions below would pass vacuously"
-fi
+# Watson ships both lines, so each removal acts on a real shipped line rather
+# than on a fixture built to be removed. Case 1c pins that Watson ships them,
+# so neither removal below can turn vacuous without that case going red first.
+# The config keeps the OTHER key each time: what is under test is one absent
+# key taking one line, not an empty config taking everything.
+#
+# without <line> -> the committed watson.md minus exactly that frontmatter line
+without() { grep -vxF -- "$1" "$REPO/agents/watson.md"; }
+for key in effort model; do
+  case "$key" in
+    effort) cfg_json='{"agents":{"watson":{"model":"claude-opus-5-5[1m]"}}}'; line="effort: medium" ;;
+    model)  cfg_json='{"agents":{"watson":{"effort":"medium"}}}';             line="model: claude-opus-5-5[1m]" ;;
+  esac
+  cfg="$WORK/absent-$key.json"
+  echo "$cfg_json" > "$cfg"
+  root=$(newtree "absent-$key")
+  if ! grep -qxF -- "$line" "$root/agents/watson.md"; then
+    bad "fixture lacks '$line' — the removal below would pass vacuously"
+    continue
+  fi
+  stamp "$root" "$cfg" > /dev/null 2>&1
+  # Compared against the committed file rather than by counting lines: what is
+  # left has to be the original minus that one line, byte for byte.
+  if [ "$(without "$line")" = "$(cat "$root/agents/watson.md")" ]; then
+    ok "an absent $key key removes exactly its line, nothing else"
+  else
+    bad "absent $key key: expected only '$line' gone, got:
+$(diff <(without "$line") "$root/agents/watson.md" 2>&1 | head -10)"
+  fi
+done
+
+# --- 3b. a configured model lands, as an alias or a full ID ------------------
+#
+# The model has to reach the frontmatter because the Agent tool cannot carry a
+# full ID. Every agent ships a model line, so each row here pins the REWRITE of
+# it: an alias over the shipped ID, the bare ID with its suffix dropped, and a
+# different ID that keeps a bracketed suffix, which must survive the validator.
+# INSERTION into frontmatter with no model line is case 7b's job.
+cfg="$WORK/model.json"
+echo '{"agents":{"lestrade":{"model":"sonnet"},"holmes":{"model":"claude-sonnet-5[1m]"},"watson":{"model":"claude-opus-5-5"}}}' > "$cfg"
+root=$(newtree model)
 stamp "$root" "$cfg" > /dev/null 2>&1
-if [ -z "$(effort_of "$root/agents/watson.md")" ]; then
-  ok "an absent config key removes the effort line"
+got="$(model_of "$root/agents/lestrade.md")|$(model_of "$root/agents/holmes.md")|$(model_of "$root/agents/watson.md")"
+if [ "$got" = "sonnet|claude-sonnet-5[1m]|claude-opus-5-5" ]; then
+  ok "an alias, a suffixed ID, and a bare ID each rewrite the shipped model"
 else
-  bad "absent key left effort '$(effort_of "$root/agents/watson.md")' behind"
+  bad "expected 'sonnet|claude-sonnet-5[1m]|claude-opus-5-5', got '$got'"
 fi
-# ...and the rest of the file survives that removal. Compared against the
-# committed file rather than by counting lines: the seed is one line, so what is
-# left has to be the original byte for byte, and no count needs keeping in step.
-if diff -q "$REPO/agents/watson.md" "$root/agents/watson.md" > /dev/null 2>&1; then
-  ok "removal takes exactly one line, nothing else"
+
+# 3c. A model value that would change what YAML parses is refused, and the
+#     stale line goes with it. A space-and-hash turns the tail into a comment.
+cfg="$WORK/model-bogus.json"
+echo '{"agents":{"watson":{"model":"opus # pinned","effort":"medium"}}}' > "$cfg"
+root=$(newtree model-bogus)
+out=$(stamp "$root" "$cfg"); rc=$?
+if [ -z "$(model_of "$root/agents/watson.md")" ] \
+   && printf '%s' "$out" | grep -qF "'opus # pinned'" && [ "$rc" -eq 0 ]; then
+  ok "an unsafe model value is refused by name, its stale line removed, exit 0"
 else
-  bad "removal changed more than the effort line:
-$(diff -u "$REPO/agents/watson.md" "$root/agents/watson.md" 2>&1 | head -10)"
+  bad "unsafe model: got '$(model_of "$root/agents/watson.md")', rc=$rc — $(printf '%s' "$out" | tr '\n' ' ')"
+fi
+
+# 3d. A model value spanning several lines is refused whole. grep matches line
+#     by line, so without the newline check the valid first line would pass the
+#     value and the second would land in the frontmatter as a YAML key of its
+#     own. The fixture's second line is a key the harness would read.
+cfg="$WORK/model-multiline.json"
+printf '%s\n' '{"agents":{"watson":{"model":"opus\npermissionMode: bypassPermissions","effort":"medium"}}}' > "$cfg"
+root=$(newtree model-multiline)
+out=$(stamp "$root" "$cfg"); rc=$?
+if [ -z "$(model_of "$root/agents/watson.md")" ] \
+   && ! grep -q '^permissionMode:' "$root/agents/watson.md" \
+   && [ "$(effort_of "$root/agents/watson.md")" = "medium" ] \
+   && printf '%s' "$out" | grep -qF "is not an alias or model ID" && [ "$rc" -eq 0 ]; then
+  ok "a multi-line model value is refused whole, nothing of it written, exit 0"
+else
+  bad "multi-line model: got model '$(model_of "$root/agents/watson.md")', rc=$rc, file:
+$(awk 'NR==1&&$0=="---"{f=1;next} f&&$0=="---"{exit} f' "$root/agents/watson.md" | grep -v '^description:')"
 fi
 
 # --- 4. an unrecognized value is refused, not written -------------------------
@@ -300,27 +394,27 @@ effort: low
 End of body.
 MD
 cfg="$WORK/boundary.json"
-echo '{"agents":{"watson":{"effort":"max"}}}' > "$cfg"
+echo '{"agents":{"watson":{"model":"sonnet","effort":"max"}}}' > "$cfg"
 body() { awk 'f{print} $0=="---"{n++; if(n==2)f=1}' "$1"; }
 body_before=$(body "$root/agents/watson.md")
 stamp "$root" "$cfg" > /dev/null 2>&1
-if [ "$(effort_of "$root/agents/watson.md")" = "max" ] \
+if [ "$(model_of "$root/agents/watson.md")/$(effort_of "$root/agents/watson.md")" = "sonnet/max" ] \
    && [ "$body_before" = "$(body "$root/agents/watson.md")" ]; then
   ok "only the frontmatter is rewritten — the body survives byte for byte"
 else
-  bad "frontmatter boundary leaked: fm='$(effort_of "$root/agents/watson.md")', body diff:
+  bad "frontmatter boundary leaked: fm='$(model_of "$root/agents/watson.md")/$(effort_of "$root/agents/watson.md")', body diff:
 $(diff <(printf '%s\n' "$body_before") <(body "$root/agents/watson.md") 2>&1 | head -10)"
 fi
 
-# 7b. No `model:` line at all: the value still has to land, before the closing fence.
+# 7b. No `model:` or `effort:` line at all: both still land, before the closing fence.
 root="$WORK/nomodel"
 mkdir -p "$root/agents"
 printf -- '---\nname: watson\ndescription: fixture\n---\n\nBody.\n' > "$root/agents/watson.md"
 stamp "$root" "$cfg" > /dev/null 2>&1
-if [ "$(effort_of "$root/agents/watson.md")" = "max" ]; then
-  ok "effort lands even with no model: line to anchor to"
+if [ "$(model_of "$root/agents/watson.md")/$(effort_of "$root/agents/watson.md")" = "sonnet/max" ]; then
+  ok "model and effort land in frontmatter that carried neither line"
 else
-  bad "no model: anchor -> effort missing"
+  bad "silent frontmatter -> got '$(model_of "$root/agents/watson.md")/$(effort_of "$root/agents/watson.md")'"
 fi
 
 # 7c. Unterminated frontmatter: skip it rather than rewriting the whole file.
@@ -341,7 +435,8 @@ fi
 # The stamper globs agents/*.md rather than naming the three it knows about. Pin
 # that, so a fourth agent takes its configured effort the day it ships with no
 # edit to Step 6a. What this guards is REACHABILITY, not the presence of a value:
-# shipping without an effort is a supported state, and Watson ships that way.
+# shipping without an effort is a supported state, even though no agent ships
+# that way today.
 root=$(newtree fourth)
 printf -- '---\nname: moriarty\ndescription: fixture\nmodel: sonnet\n---\n\nBody.\n' \
   > "$root/agents/moriarty.md"

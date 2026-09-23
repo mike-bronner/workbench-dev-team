@@ -24,7 +24,9 @@
 #                                   the autonomous pipeline. See the export below.
 #
 # Exits non-zero on bad arguments only. A malformed or absent config never
-# blocks a dispatch — every knob falls back to the agent's default.
+# blocks a dispatch — every knob falls back to its default, and a knob with no
+# default (model, effort) is left off, so the agent definition's own pin
+# applies where it has one and Claude Code's default applies where it has none.
 set -u
 
 CONFIG="${DISPATCH_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
@@ -61,12 +63,16 @@ case "$TARGET" in
     ;;
 esac
 
-# Per-agent defaults, used when the config is missing, malformed, or silent on a
-# key. These match the agents' own frontmatter defaults.
+# Per-agent budget default, used when the config is missing, malformed, or silent
+# on the key. Model and effort have no default here on purpose. The config is
+# where they are set, and the shipped one pins every agent to
+# claude-opus-5-5[1m] at medium. An absent key omits the flag, so the run falls
+# back to the agent definition, which setup's Step 6a keeps in step with the
+# config. A baked-in value here would be one more copy to drift.
 case "$AGENT" in
-  lestrade) DEFAULT_MODEL=sonnet; DEFAULT_BUDGET= ;;
-  holmes)   DEFAULT_MODEL=opus;   DEFAULT_BUDGET= ;;
-  watson)   DEFAULT_MODEL=opus;   DEFAULT_BUDGET=10.00 ;;
+  lestrade) DEFAULT_BUDGET= ;;
+  holmes)   DEFAULT_BUDGET= ;;
+  watson)   DEFAULT_BUDGET=10.00 ;;
 esac
 
 cfg() {
@@ -76,7 +82,7 @@ cfg() {
   [ -n "$value" ] && printf '%s' "$value" || printf '%s' "$2"
 }
 
-MODEL=$(cfg ".agents.${AGENT}.model" "$DEFAULT_MODEL")
+MODEL=$(cfg ".agents.${AGENT}.model" "")
 EFFORT=$(cfg ".agents.${AGENT}.effort" "")
 FALLBACK=$(cfg ".agents.${AGENT}.fallback" "")
 BUDGET=$(cfg ".agents.${AGENT}.maxBudgetUsd" "$DEFAULT_BUDGET")
@@ -102,7 +108,8 @@ else
   LOCK="$LOGDIR/${AGENT}-${TARGET}.lock"
 fi
 
-set -- --agent "workbench-dev-team:${AGENT}" --model "$MODEL"
+set -- --agent "workbench-dev-team:${AGENT}"
+[ -n "$MODEL" ]    && set -- "$@" --model "$MODEL"
 [ -n "$EFFORT" ]   && set -- "$@" --effort "$EFFORT"
 [ -n "$FALLBACK" ] && set -- "$@" --fallback-model "$FALLBACK"
 [ -n "$BUDGET" ]   && set -- "$@" --max-budget-usd "$BUDGET"

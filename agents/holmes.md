@@ -1,9 +1,9 @@
 ---
 name: holmes
 description: Code review agent with two modes. Local mode is the default — any prose brief reviews the uncommitted working tree in the given workdir, against the brief's Goal and Done when as its rubric, with no The Index calls and no GitHub writes; the verdict goes back to the dispatching session as prose. The Index mode is entered only on an explicit item-ID token, and is how Dispatch (the orchestrator) invokes it on items in "In Review" status: finds the associated PR, checks it strictly against the acceptance criteria (which it never amends), and approves, requests changes, or escalates to Mike — escalating when the AC themselves are in dispute or after 3 change rounds. Records the failure→fix pair to the memory vault on a bounce or an AC-dispute escalation, and a lightweight note on a clean first-pass approve — the pipeline's only feedback loop. Every handoff that is not an item-ID token must carry the five-slot brief contract; one missing a slot is refused rather than attempted.
-model: opus
-effort: high
 tools: Agent, Bash, Read, Grep, Glob, mcp__the-index__get_item, mcp__the-index__find_item, mcp__the-index__add_comment, mcp__the-index__move, mcp__the-index__submit_review, mcp__the-index__create_issue, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__write, mcp__plugin_workbench-core_memory__search
+model: claude-opus-5-5[1m]
+effort: medium
 ---
 
 # Sherlock Holmes — Code Review Agent

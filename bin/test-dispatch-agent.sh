@@ -130,17 +130,57 @@ for label in empty broken missing; do
     broken)  c="$BROKEN" ;;
     missing) c="$MISSING" ;;
   esac
+  # A config silent on model and effort must leave both flags off. An empty
+  # `--model` would either fail the run or pin a value, and either way the
+  # agent definition's own value would never apply.
+  for agent in lestrade holmes watson; do
+    out=$(run "$c" "$agent" 7)
+    expect_lacks "$agent no model flag ($label)"  "--model"  "$out"
+    expect_lacks "$agent no effort flag ($label)" "--effort" "$out"
+  done
   out=$(run "$c" watson 7)
-  expect_has  "watson model default ($label)"   "--model opus"          "$out"
   expect_has  "watson budget default ($label)"  "--max-budget-usd 10.00" "$out"
-  expect_lacks "no effort flag ($label)"        "--effort"              "$out"
   out=$(run "$c" lestrade 7)
-  expect_has  "lestrade model default ($label)" "--model sonnet"        "$out"
   expect_lacks "lestrade no budget ($label)"    "--max-budget-usd"      "$out"
   out=$(run "$c" holmes 7)
-  expect_has  "holmes model default ($label)"   "--model opus"          "$out"
   expect_lacks "holmes no budget ($label)"      "--max-budget-usd"      "$out"
 done
+
+echo "— the shipped default config"
+# Read out of setup.md's Step 6 heredoc rather than restated here, so this
+# checks the config users actually get. Every agent runs on the exact model ID,
+# `[1m]` variant included, at medium effort. The trailing space pins where the
+# value ends, so a longer value cannot pass as a prefix match.
+SHIPPED="$WORK/shipped.json"
+awk '/cat > "\$CONFIG" <<.EOF.$/{f=1;next} f && /^EOF$/{exit} f' \
+  "$HERE/../commands/setup.md" > "$SHIPPED"
+if [ -s "$SHIPPED" ] && jq empty "$SHIPPED" 2>/dev/null; then
+  for agent in lestrade holmes watson; do
+    out=$(run "$SHIPPED" "$agent" 7)
+    expect_has "shipped $agent model is the exact [1m] id" "--model claude-opus-5-5[1m] " "$out"
+    expect_has "shipped $agent effort is medium"           "--effort medium "              "$out"
+  done
+else
+  echo "  FAIL — could not extract the shipped config from commands/setup.md"
+  fail=$((fail+1))
+fi
+
+echo "— model and effort are independent"
+# One key set and the other absent, both ways round. A script that gated both
+# flags on one key would pass the all-or-nothing cases above.
+ONLY_MODEL=$(mkcfg only-model '{"agents":{"watson":{"model":"sonnet"}}}')
+out=$(run "$ONLY_MODEL" watson 7)
+expect_has   "model alone is passed"          "--model sonnet" "$out"
+expect_lacks "absent effort stays off"        "--effort"       "$out"
+ONLY_EFFORT=$(mkcfg only-effort '{"agents":{"watson":{"effort":"medium"}}}')
+out=$(run "$ONLY_EFFORT" watson 7)
+expect_has   "effort alone is passed"         "--effort medium" "$out"
+expect_lacks "absent model stays off"         "--model"         "$out"
+# An empty string is absent, not a value: it must not reach the command line.
+BLANK=$(mkcfg blank '{"agents":{"watson":{"model":"","effort":""}}}')
+out=$(run "$BLANK" watson 7)
+expect_lacks "empty model string omitted"     "--model"  "$out"
+expect_lacks "empty effort string omitted"    "--effort" "$out"
 
 echo "— reprieve"
 out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
