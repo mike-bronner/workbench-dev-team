@@ -47,6 +47,21 @@ Fixes: #789
 Fixes: #790
 ```
 
+## Passing the Message to git
+
+In a foreground session the commit approval gate prompts only for the plain
+form: one line, `git [-C <path>] commit …`, every word bare or quoted, with no
+`$`, backtick, or backslash inside double quotes. So:
+
+- **A one-line message** goes in `-m`: `git commit -m 'feat: ✨ Add email validation endpoint.'`
+- **A message with a body or footers** goes in a file. Write it to the session
+  scratchpad, then run `git commit -F <absolute path>`. The gate reads the
+  subject from the file's first line, so the prompt still names it.
+- **Never use the heredoc form**, `git commit -m "$(cat <<'EOF' … EOF)"`. The
+  gate refuses it, and the retry costs a round trip.
+
+A sub-agent does not commit at all. It hands the message back in its report.
+
 ## Body & Footers
 
 For details on body paragraphs, footer format, and breaking change indicators, read `references/conventional-commits.md`.

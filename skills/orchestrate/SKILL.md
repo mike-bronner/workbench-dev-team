@@ -435,9 +435,15 @@ no approval path — anything the agent can run itself is not an approval. So it
 report carries a diff summary and a proposed commit message instead, and the
 tree is left as the change made it.
 
-**Committing it is yours.** Show the human the diff and that message, run the
-approval command the gate's own denial prints, and commit once they have
-answered the prompt. Never send the agent back to try again, and never grant it
+**Committing it is yours, and so is the push.** Show the human the diff and
+that message, then attempt the commit and let the gate prompt: run the approval
+command its denial prints, and commit once they have answered the prompt. A push
+takes the same route. Attempt it, and let the gate ask. Do not tell the human to
+run it themselves. Write either as the plain form — one line, `git [-C <path>]
+commit …`, `git [-C <path>] push …`, or the two joined by `&&` — because the gate
+refuses any other command that names one. Stage with `git add` as its own call,
+and put a multi-line message in a scratchpad file committed with
+`git commit -F <absolute path>`; the heredoc form is refused. Never send the agent back to try again, and never grant it
 an approval by any route: the prompt is the whole mechanism, and only a
 foreground session can raise one.
 

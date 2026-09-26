@@ -1,22 +1,46 @@
 #!/bin/bash
-# approve-commit.sh — grant one commit the approval hooks/scripts/commit-approval-gate.sh
-# demands. Run it only after the human has seen the staged diff and the proposed
-# commit message.
+# approve-commit.sh — grant one commit or push the approval
+# hooks/scripts/commit-approval-gate.sh demands. Run it only after the human has
+# seen what it does: the staged diff and the proposed commit message for a commit,
+# and the branch, remote, and commits it sends for a push.
 #
 #   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"
+#   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id>      (a push)
+#
+# ONE SCRIPT FOR BOTH, BECAUSE THE RECORD ALREADY IS. The gate keys a request by
+# session, agent, working directory, and the exact command text, and this script
+# approves that record and nothing else. So a push needs no second script, no
+# second pair of ask rules, and no second setup step. It keeps the commit's name
+# because the ask rules and the installed path are spelled with it.
+#
+# WHAT IT READS FROM THE RECORD. The gate parses the command once and records the
+# result: the verbs it approves (`commit`, `push`, or both), the commit's own
+# words, and the push statement with the branch and commit it is bound to. This
+# script reads the commit's message from the commit's words alone, never from the
+# whole command, because a push beside it has options of its own: `-oF` there is a
+# push option, not a message file. A record without those fields was written by
+# an older gate or by hand, and it is refused rather than guessed at.
 #
 # The request id comes from the gate's own denial, in its additionalContext. The
 # subject is optional, and when given it must be the real subject of the commit
 # the id names — the human reads it in the permission prompt, so a label that
 # describes some other commit is refused. Where the real subject lives depends on
 # the command: in its own -m value, or in the message file a -F path points at.
+# A push has no subject, so a label on a push-only id is refused, and so is a
+# label that is part of the push statement rather than the commit.
 #
-# WHAT IT PRINTS ON SUCCESS, AND WHAT IT NO LONGER DOES. One line naming the
-# COMMIT that was approved, and never the command again. The command has already
-# been on screen twice by then — the agent ran it, and the permission prompt
-# rendered it — so echoing it a third time meant a sixty-line heredoc with a
-# whole commit message in it appearing twice in one session. The command is the
-# noise; which commit was just approved is the fact that needed confirming.
+# WHAT IT PRINTS ON SUCCESS. One line naming what was approved, never less than
+# the command does:
+#
+#   a commit           ✅ Approved: <subject>
+#   a push             ✅ Approved: <push statement> (<branch> at <commit>)
+#   a commit and push  ✅ Approved: <subject>, then <push statement>
+#
+# A commit's command is never printed again. It has already been on screen twice
+# by then — the agent ran it, and the permission prompt rendered it — and echoing
+# it a third time meant a sixty-line heredoc with a whole commit message in it
+# appearing twice in one session. A push statement is short and carries no
+# message, so it is the name the receipt uses for a push.
 #
 # A MESSAGE THAT LIVES IN A FILE. `git commit -F <path>` keeps the message out of
 # the command, and that shape is the one to prefer: the gate makes the command run
@@ -24,11 +48,10 @@
 # full. The subject check used to refuse exactly that shape, because it looked for
 # the subject in the command text and a -F command carries only a path. It now
 # reads the first line of the file git will read, in every spelling git accepts —
-# -F <path>, --file=<path>, --file <path>, and a short cluster like -aF. Variables
-# in the path are resolved from the assignments the command itself makes and from
-# this process's environment, and never by running a shell on it: the recorded
-# command is caller-controlled text, so expanding it through a shell would be the
-# injection this gate is supposed to make impossible.
+# -F <path>, --file=<path>, --file <path>, and a short cluster like -aF. The path
+# is the literal text git receives: the gate issues an id only to the plain form,
+# which holds no variable, substitution, or unquoted ~, so there is nothing to
+# expand, and nothing here ever runs a shell on caller-controlled text.
 #
 # THE FILE IS DISPLAY; THE COMMAND IS STILL THE DECISION. Every check that decides
 # whether an approval may be granted at all — the id's shape, this copy's path,
@@ -49,7 +72,7 @@
 # One thing the file shape makes stricter. When the message is in a file, no
 # honest subject appears in the command text, so the label is compared against
 # the file's first line instead of the command. Substring-matching the command
-# there would have accepted "core" as the subject of `-F "$SP/core.txt"`.
+# there would have accepted "core" as the subject of `-F /tmp/core.txt`.
 #
 # WHY THIS COMMAND EXISTS. A PreToolUse hook can only answer allow / deny / ask,
 # and its "ask" is classifier-approvable: under permissions.defaultMode "auto"
@@ -80,12 +103,13 @@
 # the rules (`sh <path>`, or the path without the `bash` prefix) is not matched
 # by them and is not prompted, and in the foreground session anything holding
 # Bash can write the approval record directly. This is a protocol gate for that
-# lane. It makes an unapproved foreground commit impossible to perform SILENTLY;
-# it is not a barrier against a main agent that sets out to defeat it.
+# lane. It makes an unapproved foreground commit or push the gate can read
+# impossible to perform SILENTLY; it is not a barrier against a main agent that
+# sets out to defeat it.
 #
 # The scheduled Index pipeline never runs this command. The gate exits before
 # any of it when WORKBENCH_DEV_TEAM_PIPELINE=1, so the headless lane keeps
-# committing unattended.
+# committing and pushing unattended.
 
 set -u
 
@@ -98,7 +122,7 @@ LABEL="${2:-}"
 
 if [ -z "$REQUEST_ID" ] || [ "$REQUEST_ID" = "-h" ] || [ "$REQUEST_ID" = "--help" ]; then
   echo "usage: $SANCTIONED_CMD <request-id> [\"commit subject\"]" >&2
-  echo "The request id is the one the commit approval gate printed when it refused the commit." >&2
+  echo "The request id is the one the commit approval gate printed when it refused the commit or push." >&2
   exit 2
 fi
 
@@ -137,8 +161,6 @@ export APPROVE_HOME="${HOME:-}"
 python3 - <<'PYEOF'
 import json
 import os
-import re
-import shlex
 import sys
 import time
 
@@ -190,10 +212,27 @@ try:
 except (OSError, ValueError):
     refuse(
         f"❌ approve-commit.sh: no commit is waiting for approval under id {request_id}.",
-        "   The gate writes that record when it refuses a commit. Run the git commit again and use the id it prints.",
+        "   The gate writes that record when it refuses a commit or a push. Run the command again and use the id it prints.",
     )
 
 command = record["command"]
+
+# The gate records what it parsed out of the command: which verbs it approves,
+# the words of the commit, and the push. A record without them was written by an
+# older gate, or by hand, and this script will not guess at what it approves.
+if not isinstance(record.get("verbs"), list) or not record["verbs"]:
+    refuse(
+        f"❌ approve-commit.sh: the record under id {request_id} does not say what it approves.",
+        "   Run the command again, and use the id the gate prints for it.",
+    )
+verbs = record["verbs"]
+commit_words = record.get("commit_words") if "commit" in verbs else None
+push_line = record.get("push") if "push" in verbs else None
+if ("commit" in verbs and not isinstance(commit_words, list)) or ("push" in verbs and not isinstance(push_line, str)):
+    refuse(
+        f"❌ approve-commit.sh: the record under id {request_id} is missing the commit or push it names.",
+        "   Run the command again, and use the id the gate prints for it.",
+    )
 
 # A message file is whatever the caller pointed at, so it is read at arm's
 # length: the first few KB, for one line, printed with control characters
@@ -201,8 +240,6 @@ command = record["command"]
 # rendered by the terminal the receipt is written to.
 MESSAGE_READ_LIMIT = 8192
 SUBJECT_DISPLAY_LIMIT = 200
-IDENTIFIER = re.compile(r"[A-Za-z_][A-Za-z0-9_]*")
-VARIABLE = re.compile(r"\$\{([A-Za-z_][A-Za-z0-9_]*)\}|\$([A-Za-z_][A-Za-z0-9_]*)")
 
 
 def first_line(text: str) -> str:
@@ -215,22 +252,19 @@ def path_source(path: str) -> tuple:
     return ("stdin", "") if path == "-" else ("file", path)
 
 
-def message_source(cmd: str) -> tuple:
-    """Where `cmd` says its commit message comes from: (kind, value).
+def message_source(tokens: list) -> tuple:
+    """Where the commit's own words say its message comes from: (kind, value).
 
     kind is "inline" (value is the message itself), "file" (value is the path
-    exactly as the command spells it, variables and all), "stdin", or "" for a
+    exactly as git receives it), "stdin", or "" for a
     command that names no message at all — `--amend --no-edit`, say.
 
-    Command text only. Nothing here opens a file or runs anything, because which
-    command is being approved is a question about this text and nothing else.
-    `-am` and `-aF` are covered: a short cluster ending in `m` takes the message
-    next, and one ending in `F` takes a path.
+    The words are the commit's alone, as the gate parsed them, and never the
+    whole command: a push beside it has options of its own, and `-oF` there is
+    a push option, not a message file. Nothing here opens a file or runs
+    anything. `-am` and `-aF` are covered: a short cluster ending in `m` takes
+    the message next, and one ending in `F` takes a path.
     """
-    try:
-        tokens = shlex.split(cmd)
-    except ValueError:
-        return "", ""
     for index, token in enumerate(tokens):
         if token.startswith("--message="):
             return "inline", token.split("=", 1)[1]
@@ -245,52 +279,17 @@ def message_source(cmd: str) -> tuple:
     return "", ""
 
 
-def expand(text: str, assigned: dict) -> tuple:
-    """`text` with $VAR and ${VAR} replaced, plus the first name with no value."""
-    missing = []
+def resolve_path(raw: str) -> tuple:
+    """`raw` as an absolute path, or ("", the case that stopped it).
 
-    def value(match):
-        name = match.group(1) or match.group(2)
-        for source in (assigned, os.environ):
-            if name in source:
-                return source[name]
-        missing.append(name)
-        return ""
-
-    return VARIABLE.sub(value, text), missing[0] if missing else ""
-
-
-def resolve_path(raw: str, cmd: str) -> tuple:
-    """An absolute path for `raw`, or ("", the case that stopped it).
-
-    Values come from the assignments the recorded command makes itself
-    (`SP=/tmp/x git commit -F "$SP/m.txt"`) and then from this process's
-    environment. A shell is never run on the text — see the header.
+    The gate issues an id only to the plain form, which holds no $, backtick, or
+    backslash, and no unquoted ~. So the path in the record is the literal text
+    git receives, and nothing here expands it. A relative path is refused: git
+    resolves it against a directory this script would have to guess.
     """
-    assigned = {}
-    try:
-        tokens = shlex.split(cmd)
-    except ValueError:
-        tokens = []
-    for token in tokens:
-        name, sep, raw_value = token.partition("=")
-        if sep and IDENTIFIER.fullmatch(name):
-            # `SP=/tmp/x; git commit …` is the shape an agent actually writes, and
-            # shlex keeps that `;` stuck to the value. No path ends in a shell
-            # operator, so dropping trailing ones costs nothing.
-            expanded, unknown = expand(raw_value.rstrip(";&|"), assigned)
-            if not unknown:
-                assigned[name] = expanded
-
-    path, unknown = expand(raw, assigned)
-    if unknown:
-        return "", f"the path names ${unknown}, and nothing here knows that value"
-    if "$" in path or "`" in path:
-        return "", f"the path {path} is built by the shell as it runs, and this command never runs one"
-    path = os.path.expanduser(path)
-    if not os.path.isabs(path):
-        return "", f"the path {path} is relative, and the record does not say which directory the commit ran in"
-    return path, ""
+    if not os.path.isabs(raw):
+        return "", f"the path {raw} is relative, and this command will not guess the directory git reads it from"
+    return raw, ""
 
 
 def file_subject(path: str) -> tuple:
@@ -321,7 +320,7 @@ def for_display(subject: str) -> str:
     return clean
 
 
-kind, source = message_source(command)
+kind, source = message_source(commit_words) if commit_words else ("", "")
 subject_in_file = ""
 recovered = first_line(source) if kind == "inline" else ""
 
@@ -336,7 +335,7 @@ if kind == "stdin":
     )
 
 if kind == "file":
-    message_path, problem = resolve_path(source, command)
+    message_path, problem = resolve_path(source)
     if not problem:
         subject_in_file, problem = file_subject(message_path)
     if problem:
@@ -349,6 +348,18 @@ if kind == "file":
 
 # The label is what the human reads in the permission prompt. It has to be the
 # subject of the commit it claims to describe, or the prompt describes nothing.
+# A push has no subject, so a label on a push-only record could only ever stand
+# in for the push line in the receipt, and describe something else.
+if label and not commit_words:
+    refuse(
+        "❌ approve-commit.sh: this id names a push, and a push takes no subject.",
+        "   Run the approval command exactly as the gate printed it, with no label.",
+    )
+if label and push_line and label in push_line:
+    refuse(
+        "❌ approve-commit.sh: that label is part of the push, not the commit's subject.",
+        "   The human reads the subject in the prompt, so it must be the commit's own.",
+    )
 if label and kind == "file":
     # With the message in a file, no honest subject appears in the command — only
     # the path does — so the file's own first line is what the label must be.
@@ -384,6 +395,20 @@ except OSError as error:
 # is the same line anyway. It is also the one subject here that came out of a
 # file, so it is the one printed at arm's length.
 subject = recovered if kind == "file" else label or recovered
-print(f"✅ Approved: {subject}" if subject else f"✅ Approved request {request_id}.")
-print("   One commit spends it, and it expires in 15 minutes.")
+# A push has no subject, so its own statement names it, with the branch and the
+# commit the gate bound it to. A push statement is short, and unlike a commit's
+# heredoc it holds no message to print twice. A commit that also pushes names
+# both, so the receipt never names less than the command does.
+push_display = for_display(push_line) if push_line else ""
+if push_display and not commit_words:
+    where = (record.get("branch") or "").replace("refs/heads/", "") or "detached HEAD"
+    head = str(record.get("head") or "")[:12]
+    print(f"✅ Approved: {push_display} ({where} at {head})")
+elif push_display:
+    print(f"✅ Approved: {subject or 'the commit'}, then {push_display}")
+else:
+    print(f"✅ Approved: {subject}" if subject else f"✅ Approved request {request_id}.")
+print("   One run of that command spends it, and it expires in 15 minutes.")
+if push_display:
+    print("   Any change to the repository's branches, tags, HEAD, or remote config voids it first.")
 PYEOF

@@ -195,9 +195,36 @@ might write by hand, so there is no route to find. Do not go looking for one.
 The session that dispatched you commits it. A prompt reaches a human there, and
 reaching a human is the entire point.
 
-**You are the foreground session → every `git commit` needs the human's
-explicit approval for that specific commit.** Merge and push are the human's own
-and are not gated. Before any commit:
+**You are the foreground session → attempt the commit or the push yourself, and
+let the gate prompt.** Every `git commit` and every `git push` needs the human's
+explicit approval of that specific command. Do not hand either one to the human
+to run: the gate is how the human is asked. A push that forces or deletes
+remote refs (`--force`, `-f`, a `+` refspec, `--mirror`, `--delete`, `-d`, a
+`:branch` refspec, `--prune`) is refused with no approval path, and merge stays
+an explicit human request.
+
+**Write it as the plain form, or it is refused.** The gate does not parse bash.
+It prompts only for one line that is exactly `git [-C <path>] commit …`,
+`git [-C <path>] push …`, or `git [-C <path>] commit … && git [-C <path>] push …`,
+with every word bare or quoted. A double-quoted string may not hold `$`, a
+backtick, or a backslash. There is no `cd`, pipe, redirect, comment, heredoc,
+variable, wrapper, or second line, and no bare word that starts with `=`. Any
+other command whose text names git and a commit or push is refused with no
+approval path, and so is one that names git and holds a shell-building
+character. Write it this way from the start, so the first attempt is the one the
+gate prompts for:
+
+- Run `git add` as its own call, never chained to the commit.
+- Write a multi-line message to a file in the session scratchpad, and commit
+  with `git commit -F <absolute path>`. Claude Code's default
+  `git commit -m "$(cat <<'EOF' … EOF)"` is refused. A one-line message can go
+  in `-m '…'` or `-m "…"` with no `$`, backtick, or backslash.
+- Use `-C <path>` rather than `cd`.
+- Never use a shell alias such as `gp` or `gcmsg`: the gate cannot see through
+  one, so it would commit or push unprompted.
+
+If an innocent read is refused because its text names a verb, run it on its own
+line. Before any commit:
 
 1. **Show the diff** that will be committed — the human reviews the actual
    change, not your summary of it.
@@ -208,26 +235,38 @@ and are not gated. Before any commit:
    One approval covers one commit — for multi-commit work, present each
    commit (or an explicitly enumerated batch) for its own approval.
 
+Before a push, show what it publishes: the branch, the remote, and the commits
+it sends. Then attempt it.
+
 The denial here is not a wall, it is the next step, and it prints one:
 
 ```
 bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"
 ```
 
-Run that command *after* doing steps 1–3 above, never before. Permission rules
+For a push it prints the same command with no subject, because a push has none.
+
+Run that command *after* doing the steps above, never before. Permission rules
 cover it, so the harness raises a real prompt the human must answer, and their
-answer is the approval. Then run the same `git commit` again — the same one:
-the approval is bound to that exact command, to your agent, and to this session,
-it is spent by the commit that uses it, and it expires in 15 minutes.
+answer is the approval. Then run the same `git commit` or `git push` again — the
+same one, from the same directory: the approval is bound to that exact command,
+to your agent, to this session, and to the working directory, it is spent by the
+run that uses it, and it expires in 15 minutes. A commit is also bound to HEAD
+and the staged diff, and to the working tree when it takes files from there
+(`-a`, `--only`, `--include`, or a pathspec), so restaging voids the approval. A
+push is also bound to the repository's branches, tags, HEAD, and remote, branch,
+push, and url config, so a pull, rebase, or new commit before it runs voids the
+approval and asks again.
 
 Two rules about the command itself. Run it **exactly** as the denial prints it,
 because a different spelling is not covered by the rules and prompts nobody.
-And never run it before the human has seen the diff and the message: the prompt
-asks them to approve a commit, and only your output tells them what is in it.
+And never run it before the human has seen what it approves: the prompt asks
+them to approve a commit or a push, and only your output tells them what is in
+it.
 
-If it refuses — missing permission rules, or an id with no waiting commit —
+If it refuses — missing permission rules, or an id with nothing waiting —
 report that and stop. `/workbench-dev-team:setup` installs the command and its
-rules; until it has run, no commit can be approved. That is the gate failing
+rules; until it has run, no commit or push can be approved. That is the gate failing
 closed, which is the designed direction. Never edit the gate, never set
 `WORKBENCH_DEV_TEAM_PIPELINE`, and never write an approval record by hand.
 

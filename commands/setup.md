@@ -818,7 +818,9 @@ summary.
 ## Step 6.6 — Install the commit-approval command and its permission rules
 
 The commit-approval gate (`hooks/scripts/commit-approval-gate.sh`) denies every
-`git commit` in a foreground session that the human has not approved.
+plain one-line `git commit` and `git push` in a foreground session that the human
+has not approved, and refuses outright any other command that names one. The same script approves both, because a request is keyed by the exact
+command text and its working directory.
 `bin/approve-commit.sh` is how the approval arrives, and **this step is what lets it
 grant anything**: it installs that script at a stable path and adds the two
 `permissions.ask` rules covering it.
@@ -839,9 +841,9 @@ merge, and push outright, issues it no request id, and writes it no record, so
 nothing installed here can approve anything for one. A sub-agent hands its work
 back uncommitted instead.
 
-**Do not "simplify" this by putting `Bash(git commit:*)` in the ask list.** An
-ask rule always prompts, a headless `claude -p` run has nobody to answer, and the
-pipeline would die at its first commit. workbench-core's rails exclude it for
+**Do not "simplify" this by putting `Bash(git commit:*)` or `Bash(git push:*)`
+in the ask list.** An ask rule always prompts, a headless `claude -p` run has
+nobody to answer, and the pipeline would die at its first commit or push. workbench-core's rails exclude it for
 that reason, and `hooks/test-permissions.sh` there asserts the absence.
 
 Run it from anywhere:

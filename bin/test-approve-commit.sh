@@ -35,6 +35,16 @@ STATE="$HOME_DIR/.claude-workbench/commit-approvals"
 mkdir -p "$HOME_DIR/.claude-workbench/bin" "$HOME_DIR/.claude" "$STATE"
 install -m 755 "$SRC" "$INSTALLED"
 
+# The directory every gate payload runs in: a throwaway repository with one
+# commit, written with plumbing, and an `origin` that points at no path. A push
+# is bound to the state of this repository, so the gate needs one to read.
+WORK="$SANDBOX/work"
+git init -q -b main "$WORK"
+TREE=$(git -C "$WORK" write-tree)
+FIRST=$(git -C "$WORK" -c user.name=fixture -c user.email=fixture@example.invalid commit-tree "$TREE" -m fixture)
+git -C "$WORK" update-ref refs/heads/main "$FIRST"
+git -C "$WORK" remote add origin "$SANDBOX/no-such-remote.git"
+
 ok()  { PASS=$((PASS + 1)); echo "  ✅ $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
 
@@ -60,7 +70,7 @@ PY
 # session, and any value is a sub-agent.
 gate_answer() { # gate_answer <command> [agent-id]
   local body
-  body=$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"session-A","agent_id":sys.argv[2],"tool_input":{"command":sys.argv[1]}}))' "$1" "${2-}")
+  body=$(python3 -c 'import json,sys; print(json.dumps({"hook_event_name":"PreToolUse","tool_name":"Bash","session_id":"session-A","agent_id":sys.argv[2],"cwd":sys.argv[3],"tool_input":{"command":sys.argv[1]}}))' "$1" "${2-}" "$WORK")
   printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE -u WORKBENCH_COMMIT_APPROVAL_DIR \
     -u WORKBENCH_SETTINGS_FILE HOME="$HOME_DIR" TMPDIR="$SANDBOX" "$GATE"
 }
@@ -168,6 +178,106 @@ esac
 if [ "$(gate_verdict "$CMD")" = silent ]; then ok "...and the gate lets that commit through"; else bad "the gate still denied the approved commit"; fi
 if [ "$(gate_verdict "$CMD")" = deny ]; then ok "...once, and only once"; else bad "the approval survived the commit it covered"; fi
 
+echo "A push takes the same route — deny, approve, push once:"
+# The request record is keyed by the command text, so the same script approves a
+# push. A push carries no subject, so the receipt names the push itself, with
+# the branch and commit the gate bound it to.
+HEAD12=$(git -C "$WORK" rev-parse HEAD | cut -c1-12)
+PUSH='git push origin feature'
+if [ "$(gate_verdict "$PUSH")" = deny ]; then ok "a foreground push is denied"; else bad "a foreground push ran unprompted"; fi
+ID=$(gate_request_id "$PUSH")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "the push is approved with no subject" 0 "$STATUS"
+case "$OUT" in
+  *"✅ Approved: git push origin feature (main at $HEAD12)"*)
+    ok "...and the receipt names the push, its branch, and its commit" ;;
+  *) bad "the receipt does not name the bound push: $OUT" ;;
+esac
+if [ "$(gate_verdict 'git push origin main')" = deny ]; then ok "...and a different push is still denied"; else bad "the approval leaked to a different push"; fi
+if [ "$(gate_verdict "$PUSH")" = silent ]; then ok "...and the gate lets that push through"; else bad "the gate still denied the approved push"; fi
+if [ "$(gate_verdict "$PUSH")" = deny ]; then ok "...once, and only once"; else bad "the approval survived the push it covered"; fi
+
+# A label on a push could only replace the push line in the receipt, and a label
+# that is merely somewhere in the command — `origin feature` — used to do that.
+ID=$(gate_request_id "$PUSH")
+OUT=$(approve "$ID" "origin feature"); STATUS=$?
+expect_status "a label on a push-only id is refused" 1 "$STATUS"
+case "$OUT" in *"a push takes no subject"*) ok "...and it says why" ;; *) bad "the push-label refusal does not say why: $OUT" ;; esac
+if [ "$(gate_verdict "$PUSH")" = deny ]; then ok "...and the push is still denied"; else bad "the refused label approved the push anyway"; fi
+
+# Only the plain form is ever issued an id, so nothing but the plain form can
+# reach this script. An env prefix is not the plain form.
+if [ -z "$(gate_request_id 'GIT_TRACE=0 git push -u origin feature')" ]; then
+  ok "an env-prefixed push is issued no id to approve"
+else
+  bad "an env-prefixed push was issued an id"
+fi
+
+echo "The receipt never names less than the command does:"
+# A push option is not a commit message. -o takes the rest of its word, so
+# `-ocheck=confirm` used to read as the message `origin`, and `-oF` as a message
+# file that made a legal push unapprovable.
+OPT_PUSH='git push -ocheck=confirm origin main'
+ID=$(gate_request_id "$OPT_PUSH")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "a push with a -o…m option is approved" 0 "$STATUS"
+case "$OUT" in
+  *"✅ Approved: git push -ocheck=confirm origin main ("*) ok "...and the receipt names the push, not a message" ;;
+  *) bad "the -o…m push receipt is wrong: $OUT" ;;
+esac
+ID=$(gate_request_id 'git push -oF origin main')
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "a push with a -oF option is approved, not read as a message file" 0 "$STATUS"
+
+# A commit and a push in one command: the receipt names both, and the subject
+# comes from the commit's own words even when the push carries -oF.
+BOTH='git commit -m "feat: ✨ Both at once." && git push -oF origin main'
+ID=$(gate_request_id "$BOTH")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "a commit-and-push is approved" 0 "$STATUS"
+case "$OUT" in
+  *"✅ Approved: feat: ✨ Both at once., then git push -oF origin main"*)
+    ok "...and the receipt names the commit and the push" ;;
+  *) bad "the commit-and-push receipt names less than the command: $OUT" ;;
+esac
+if [ "$(gate_verdict "$BOTH")" = silent ]; then ok "...and the gate lets that command through"; else bad "the approved commit-and-push was denied"; fi
+ID=$(gate_request_id "$BOTH")
+OUT=$(approve "$ID" "origin main"); STATUS=$?
+expect_status "a label taken from the push is refused on a commit-and-push" 1 "$STATUS"
+OUT=$(approve "$ID" "feat: ✨ Both at once."); STATUS=$?
+expect_status "...while the commit's real subject is approved" 0 "$STATUS"
+
+# Two pushes cannot share one approval, so the gate issues no id for them.
+if [ -z "$(gate_request_id 'git push origin main && git push origin other')" ]; then
+  ok "a two-push command is issued no id to approve"
+else
+  bad "a two-push command was issued an id"
+fi
+
+echo "An approval spent through the real script is still bound to the repository:"
+MOVE='git push origin main'
+ID=$(gate_request_id "$MOVE")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "the push is approved" 0 "$STATUS"
+TREE=$(git -C "$WORK" write-tree)
+NEXT=$(git -C "$WORK" -c user.name=fixture -c user.email=fixture@example.invalid commit-tree "$TREE" -p HEAD -m moved)
+git -C "$WORK" update-ref refs/heads/main "$NEXT"
+if [ "$(gate_verdict "$MOVE")" = deny ]; then
+  ok "...and a branch that moved before the push voids the approval"
+else
+  bad "the approval covered commits the human never saw"
+fi
+
+echo "A record that does not say what it approves is refused:"
+python3 - "$STATE/0123456789abcdef" <<'PY'
+import json, sys, time
+with open(sys.argv[1], "w") as handle:
+    json.dump({"status": "pending", "command": "git push origin main", "requested_at": time.time()}, handle)
+PY
+OUT=$(approve 0123456789abcdef); STATUS=$?
+expect_status "a record with no parsed verbs is refused" 1 "$STATUS"
+case "$OUT" in *"does not say what it approves"*) ok "...and it says why" ;; *) bad "no reason given: $OUT" ;; esac
+
 echo "A sub-agent has nothing here to approve, and nobody else's to spend:"
 # The reason this command exists is a prompt a human answers. A sub-agent has no
 # human attached, so the gate refuses it outright and issues it no id — there is
@@ -218,7 +328,7 @@ fi
 
 # A command whose message cannot be recovered still gets a receipt, naming the
 # id. Display falls back; nothing about the approval itself depends on it.
-AMEND='git -C /tmp/repo commit --amend --no-edit'
+AMEND="git -C $WORK commit --amend --no-edit"
 ID=$(gate_request_id "$AMEND")
 OUT=$(approve "$ID"); STATUS=$?
 expect_status "a commit with no -m is still approved" 0 "$STATUS"
@@ -294,23 +404,19 @@ ID=$(gate_request_id "git commit -F \"$MSG_DIR/hash.txt\"")
 OUT=$(approve "$ID" '# fix: 🐛 A hash is not a comment here.'); STATUS=$?
 expect_status "a first line starting with # is still the subject" 0 "$STATUS"
 
-echo "A path the command builds out of a variable resolves:"
-VAR_CMD="MSG=$MSG_DIR git commit -F \"\$MSG/core.txt\""
-ID=$(gate_request_id "$VAR_CMD")
-OUT=$(approve "$ID" "$SUBJECT"); STATUS=$?
-expect_status "a variable the command assigns in front of git resolves" 0 "$STATUS"
-
-SEMI_CMD="MSG=$MSG_DIR; git commit -F \"\$MSG/core.txt\""
-ID=$(gate_request_id "$SEMI_CMD")
-OUT=$(approve "$ID" "$SUBJECT"); STATUS=$?
-expect_status "...and so does one left by a statement of its own" 0 "$STATUS"
-
-# HOME is in this process's environment, and it is the sandbox's HOME, so a
-# $HOME path resolves inside the sandbox and nowhere near the real home.
-cp "$MSG_DIR/core.txt" "$HOME_DIR/home-msg.txt"
-ID=$(gate_request_id 'git commit -F "$HOME/home-msg.txt"')
-OUT=$(approve "$ID" "$SUBJECT"); STATUS=$?
-expect_status "a variable from the environment resolves" 0 "$STATUS"
+echo "A path built out of a variable never reaches this script:"
+# The plain form holds no $, so a message path is always the literal text git
+# receives. A command that builds one from a variable is issued no id at all.
+for VAR_CMD in "MSG=$MSG_DIR git commit -F \"\$MSG/core.txt\"" \
+               "MSG=$MSG_DIR; git commit -F \"\$MSG/core.txt\"" \
+               'git commit -F "$HOME/home-msg.txt"' \
+               'git commit -F "$(cat /nowhere/path.txt)"'; do
+  if [ -z "$(gate_request_id "$VAR_CMD")" ]; then
+    ok "no id for: ${VAR_CMD//$MSG_DIR/…}"
+  else
+    bad "an id was issued for: $VAR_CMD"
+  fi
+done
 
 echo "Every path that cannot be resolved or read refuses, and names its case:"
 # Same two assertions as every other refusal here: the exit status, and the
@@ -344,10 +450,6 @@ refuses "a file with no message in it is refused" \
   "git commit -F \"$MSG_DIR/blank.txt\"" "holds no message"
 refuses "a relative path is refused, because the record does not say from where" \
   "git commit -F core.txt" "is relative"
-refuses "a path naming a variable nothing here knows is refused" \
-  'git commit -F "$NOTHING_SETS_THIS/core.txt"' 'names $NOTHING_SETS_THIS'
-refuses "a path the shell would have to build is refused, never run" \
-  'git commit -F "$(cat /nowhere/path.txt)"' "built by the shell"
 refuses "a message read from standard input is refused" \
   "git commit -F -" "standard input"
 refuses "...in the long spelling too" \
