@@ -296,6 +296,17 @@ reason.** A constraint without its reason gets obeyed literally and defeated in
 spirit: the agent meets the letter, hits a surprise in the repo, and works
 around the part that mattered because nothing told it what the limit protects.
 
+**A limit on a database names the category, never one activity.** State the
+connection the agent may execute against and forbid every other one, not the one
+command you had in mind. "Don't run migrations against dev" left a seeder, a
+truncate, and a raw query free to hit the same connection. Six near-misses met
+the letter of limits like that one before the next lost 17,063 rows:
+
+```
+- Execute nothing against any database connection except <the designated
+  test database>. Every other connection holds data we cannot rebuild.
+```
+
 **`Done when:` is an observable finish line** — a state you could check without
 asking the agent what it meant.
 
