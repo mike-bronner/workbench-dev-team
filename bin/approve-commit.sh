@@ -403,8 +403,10 @@ subject = recovered if kind == "file" else label or recovered
 # heredoc it holds no message to print twice. A commit that also pushes names
 # both, so the receipt never names less than the command does.
 push_display = for_display(push_line) if push_line else ""
-# A GitHub write is named by its own gh command, which is one plain line.
-gh_display = for_display(record.get("gh") or command) if "gh" in verbs else ""
+# A GitHub write is named by its own gh line. For a body in a heredoc, the gate
+# records the gh line without the body, and only the first line is ever shown,
+# so the receipt never reprints a body. The full command still keys the approval.
+gh_display = for_display((record.get("gh") or command).split("\n", 1)[0]) if "gh" in verbs else ""
 if gh_display:
     print(f"✅ Approved: {gh_display}")
 elif push_display and not commit_words:

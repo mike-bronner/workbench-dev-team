@@ -530,6 +530,13 @@ the issue/PR (Holmes's Local mode needs none — it reads no board):
 | "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool). Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
 
+**Pass a gh body in a quoted heredoc or a file.** Before any `gh` call that
+carries prose (a comment, an issue, a PR body, or release notes), read "Passing
+a gh body" in `/workbench-dev-team:git-commit`. In short, write
+`--body-file - <<'EOF'` (or `--notes-file -`), or name a file. Never write a
+multi-line body in double quotes: the shell runs its backticks, and the gate
+refuses it.
+
 **Issue creation, two identities.** When *you* ask for an issue in conversation,
 it's opened with `gh issue create` so **you** (the human) are the author — the
 user's voice, same as comments. Agent-authored follow-ups are the other case:

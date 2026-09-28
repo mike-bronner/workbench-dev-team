@@ -1,6 +1,6 @@
 ---
 name: git-commit
-description: Generate commit messages using Conventional Commits + Gitmoji format. Use this skill whenever creating, drafting, or suggesting git commit messages — including /commit commands, pre-commit hooks, bulk commits, and any context where a commit message is being composed. Always invoke this skill before writing a commit message.
+description: Generate commit messages using Conventional Commits + Gitmoji format. Use this skill whenever creating, drafting, or suggesting git commit messages — including /commit commands, pre-commit hooks, bulk commits, and any context where a commit message is being composed. Always invoke this skill before writing a commit message. Also carries the canonical rule for passing a body, comment, or release notes to gh.
 ---
 
 # Git Commit Messages
@@ -113,6 +113,41 @@ If `approve-commit.sh` refuses (missing permission rules, or an id with nothing
 waiting), report that and stop: `/workbench-dev-team:setup` installs the command
 and its rules. Never edit the gate, never set `WORKBENCH_DEV_TEAM_PIPELINE`, and
 never write an approval record by hand.
+
+## Passing a gh body — PRs, issues, comments, and release notes
+
+This section is the canonical rule for any `gh` call that carries prose. Other
+files point here.
+
+**Never put a multi-line body in a double-quoted string.** Inside double quotes,
+bash and zsh run `$( )` and backticks, and Markdown uses backticks for code. So
+``--notes "Run `make`"`` runs `make` before gh sees the text. The gate refuses that
+shape for this reason, and the retry costs a round trip.
+
+**Give the body in one of two forms:**
+
+- **A heredoc with a quoted delimiter**, fed to the flag that reads standard
+  input. The shell expands nothing in the body, so backticks and `$` stay text.
+
+  ```bash
+  gh pr edit 35 --body-file - <<'EOF'
+  ## Summary
+  Ships `phpcs.xml` again.
+  EOF
+  ```
+
+  The flag is `--body-file -` for `pr create`, `pr edit`, `pr comment`,
+  `pr review`, `issue create`, `issue edit`, and `issue comment`, and
+  `--notes-file -` for `release create` and `release edit`. Put `<<'EOF'` last
+  on the gh line, and put nothing after the closing `EOF` line.
+- **A file**, written to the session scratchpad first and passed as
+  `--body-file <absolute path>` or `--notes-file <absolute path>`.
+
+**Keep the gh line itself plain.** The gate reads it by its own words: literal
+words only, with no variable, no `cd` before it, and no pipe or redirect. A
+delimiter without quotes (`<<EOF`) is refused, because the shell expands the
+body. A short one-line body with no backtick or `$` can stay in single quotes:
+`--body 'Fixes #12'`.
 
 ## Body & Footers
 

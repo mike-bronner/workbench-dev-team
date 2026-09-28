@@ -756,6 +756,75 @@ else
   ok "...with no approval id, since an approval covers one plain gh call"
 fi
 
+echo "...and a gh body in a quoted-delimiter heredoc is data, like a quoted --body:"
+# bash and zsh expand nothing in the body of `<<'X'` and run nothing from it. The
+# gh line is classified by its own words, exactly as it would be with no heredoc.
+# The first case is the pr edit body refused in live use, backticks and all.
+HEREDOC_EDIT=$'gh pr edit 35 --body-file - <<\'EOF\'\n## Summary\nShips `phpcs.xml` again. Run `git push`, then $(gh pr merge 35).\nEOF'
+run_case "a pr edit body naming git push, \$( ), and backticks" "$HEREDOC_EDIT" silent
+run_case "a double-quoted delimiter"              $'gh pr comment 3 --body-file - <<"EOF"\nbody `x` $(git push)\nEOF' silent
+run_case "--body-file=- in one word"              $'gh issue edit 3 --body-file=- <<\'EOF\'\ngit commit\nEOF' silent
+run_case "an issue create body through -F -"      $'gh issue create --title x -F - <<\'BODY\'\ngit push --force\nBODY' silent
+run_case "a line that only looks like the delimiter" $'gh pr comment 3 --body-file - <<\'EOF\'\nEOF is the end\n EOF\nEOF\n\n' silent
+run_case "gh pr merge stays the human's own"      $'gh pr merge 3 --squash --body-file - <<\'EOF\'\ngit push\nEOF' silent
+HEREDOC_NOTES=$'gh release create 1.0.0 --title "1.0.0" --notes-file - <<\'EOF\'\n## Notes\nThe gate reads `git push` as text.\nEOF'
+check "a release body is still a gh write, and is prompted" \
+  "$(reason_of "$(ask_gate "$HEREDOC_NOTES" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh release create`. It needs your approval first.'
+check "...and so is a pr create with no --head, which pushes" \
+  "$(reason_of "$(ask_gate $'gh pr create --title x --body-file - <<\'EOF\'\nx\nEOF' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh pr create`. It needs your approval first.'
+ID=$(request_id "$HEREDOC_NOTES")
+approve "$ID"
+OUT=$(ask_gate "${HEREDOC_NOTES/as text/as data}" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "...and its approval does not cover a different body" "$(verdict_of "$OUT")" deny
+OUT=$(ask_gate "$HEREDOC_NOTES" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "...while the body that was approved goes through" "$(verdict_of "$OUT")" silent
+check "a heredoc gh body is refused to a sub-agent, as its gh line is" \
+  "$(reason_of "$(ask_gate "$HEREDOC_EDIT" "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh pr edit`. A sub-agent only reads through gh.'
+# The near misses. Each one is refused in the foreground, and to a sub-agent.
+while IFS='|' read -r desc cmd; do
+  [ -n "$desc" ] || continue
+  cmd=$(printf '%b' "$cmd")
+  run_case "$desc" "$cmd" deny
+  sub_case "...and to a sub-agent" "$cmd" deny
+done <<'EOF'
+an unquoted delimiter expands $( ) in the body|gh pr edit 35 --body-file - <<EOF\n$(git push)\nEOF
+...and backticks|gh pr edit 35 --body-file - <<EOF\n`git push`\nEOF
+...even with a harmless body|gh pr edit 35 --body-file - <<EOF\nnotes on git push\nEOF
+a backslash-quoted delimiter is not this shape|gh pr edit 35 --body-file - <<\\EOF\ngit push\nEOF
+a <<- delimiter is not this shape|gh pr edit 35 --body-file - <<-'EOF'\ngit push\n\tEOF
+a command after the delimiter|gh pr edit 35 --body-file - <<'EOF'\nx\nEOF\ngit push
+...after a blank line|gh pr edit 35 --body-file - <<'EOF'\nx\nEOF\n\ngit push origin main
+...and after a second delimiter line|gh pr edit 35 --body-file - <<'EOF'\nx\nEOF\ngit push\nEOF
+a delimiter with a trailing space is not the delimiter|gh pr edit 35 --body-file - <<'EOF'\nx\nEOF \ngit push
+a body that never reaches its delimiter|gh pr edit 35 --body-file - <<'EOF'\ngit push
+a gh line that does not read stdin|gh pr edit 35 --body x <<'EOF'\ngit push\nEOF
+...and a - that belongs to no body flag|gh pr edit 35 --title - <<'EOF'\ngit push\nEOF
+...and a body flag that names a file, not stdin|gh pr edit 35 --body-file /tmp/b.md <<'EOF'\ngit push\nEOF
+...and -F naming a file|gh issue create --title x -F /tmp/b.md <<'EOF'\ngit push\nEOF
+a gh line holding a variable|gh pr edit $N --body-file - <<'EOF'\ngit push\nEOF
+an opener inside a quote on the gh line|gh pr edit 35 --title 'x <<'EOF'\ngit push\nEOF
+a cd before the gh line|cd /tmp && gh pr edit 35 --body-file - <<'EOF'\ngit push\nEOF
+a redirect on the gh line|gh pr edit 35 --body-file - 2>&1 <<'EOF'\ngit push\nEOF
+a heredoc into git, not gh|git commit -F - <<'EOF'\nfeat: x\nEOF
+a heredoc into a program that runs it|bash -s <<'EOF'\ngit push\nEOF
+EOF
+# Holmes's reproduction: only space and tab are blank to the shell. A line after
+# the delimiter made of any other whitespace is a command word, and with an
+# executable of that name on PATH, zsh and bash run it. U+3000 is written as
+# its UTF-8 bytes, since bash 3.2's $'...' has no \u. The body names git push, so
+# the gate refuses once it no longer reads the body as data.
+for tail in $'\x1f' $'\xe3\x80\x80' $'\x0b' $'\r' $'\x0c'; do
+  cmd=$'gh pr view 1 --body-file - <<\'EOF\'\ngit push\nEOF\n'"$tail"
+  name=$(printf '%s' "$tail" | od -An -tx1 | tr -d ' \n')
+  run_case "a line of 0x$name after the delimiter is a command" "$cmd" deny
+  sub_case "...and to a sub-agent" "$cmd" deny
+done
+run_case "...while spaces and tabs after the delimiter are blank" \
+  $'gh pr comment 3 --body-file - <<\'EOF\'\nx\nEOF\n \t \n\t' silent
+
 echo "Class (a) — a plain-form push that forces is refused, with no approval path:"
 # workbench-core's rails deny `git push --force` by prefix and nothing else, so
 # an approval spent on a force push would only buy a second denial, and every
@@ -1113,6 +1182,29 @@ run_case "a --body line that says git push"    $'gh pr edit 42 --body \'Steps:\n
 silent_case "--json commits with a --jq filter"   "gh pr view 42 --json commits --jq '.commits[] | .oid'"
 silent_case "--json=commits in one word"          'gh pr view 42 --json=commits'
 run_case "a --title naming push"               "gh pr create --head feat/x --title 'feat: push gate' --body 'Fixes #1'" silent
+# A backslash inside double quotes, read as the shell reads it. Sub-agents
+# working on the hooks were refused these greps, because `\|` made the pattern
+# unreadable and the path names commit. The two reported shapes come first.
+silent_case "a grep for gh_publishes in the gate"  'grep -n "gh_publishes" /Users/mike/Developer/workbench-dev-team/hooks/scripts/commit-approval-gate.sh'
+silent_case "a grep with two -e patterns naming gh pr create" \
+  "grep -n -e 'title naming' -e 'silent_case \"gh pr create' test-commit-approval-gate.sh"
+silent_case "a grep whose pattern holds \\|"      'grep -n "gh_publishes\|gh pr create\|--head" hooks/scripts/commit-approval-gate.sh | head -40'
+silent_case "a grep -E with \\s naming git push"  'grep -nE "git push\s+--force" skills/git-commit/SKILL.md'
+silent_case "an escaped quote inside the pattern" 'grep -n "a\" ; git push ; \"" hooks/scripts/commit-approval-gate.sh'
+silent_case "an escaped \$( ) is literal text"    'grep -n "\$(git push)" hooks/scripts/commit-approval-gate.sh'
+silent_case "an escaped backslash"                'grep -c "gh\\|commit" hooks/scripts/commit-approval-gate.sh'
+silent_case "a gh read whose --jq holds escaped quotes" 'gh pr view 42 --json body --jq ".body | test(\"git push\")"'
+# ...and the near misses. A $ or backtick the backslash does not quote is still
+# an expansion, and a quote the backslash does not escape still ends the string.
+hidden_case "a \$( ) in a pattern that also holds \\|" 'grep -n "$(git push)\|x" f'
+hidden_case "a backtick beside \\|"               'grep -n "`git push`\|x" f'
+hidden_case "an escaped backslash, then a real \$( )" 'grep -n "\\$(git push)" f'
+hidden_case "an escaped backslash that closes the quote" 'grep -n "a\\" ; git push ; "b" f'
+hidden_case "a zsh \\! escape"                    'grep -n "git push\!" f'
+hidden_case "an unquoted backslash"               'grep -n git\ push f'
+hidden_case "sed, which can run a command, beside \\|" 'sed -n "/git push\|x/p" f'
+sub_case "a gh merge chained after such a grep"   'grep -n "gh pr\|x" f && gh pr merge 1'     deny
+sub_case "a grep piped into xargs gh"             'grep -l "gh\|x" f | xargs gh pr merge'     deny
 
 echo "An approval is bound to its directory, and a push to the repository's state:"
 BIND_CMD='git push origin main'

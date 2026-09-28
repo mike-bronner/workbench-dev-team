@@ -222,6 +222,26 @@ OUT=$(approve "$ID" "message=m"); STATUS=$?
 expect_status "a label on a gh write is refused" 1 "$STATUS"
 case "$OUT" in *"a GitHub write takes no subject"*) ok "...and it says why" ;; *) bad "the gh-label refusal does not say why: $OUT" ;; esac
 
+echo "A GitHub write whose body is a heredoc is named by its gh line alone:"
+# The full command, body included, keys the approval. The receipt names only the
+# gh line: a body printed a third time is the noise the receipt exists to avoid.
+GHH_LINE='gh release create 1.0.0 --title 1.0.0 --notes-file -'
+GHH="$GHH_LINE <<'EOF'"$'\n## Notes\nBODY-MARKER: the gate reads `git push` as text.\nEOF'
+if [ "$(gate_verdict "$GHH")" = deny ]; then ok "a heredoc gh release create is denied"; else bad "a heredoc gh release create ran unprompted"; fi
+ID=$(gate_request_id "$GHH")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "the heredoc gh write is approved with no subject" 0 "$STATUS"
+case "$OUT" in
+  *"✅ Approved: $GHH_LINE"$'\n'*) ok "...and the receipt names the gh line" ;;
+  *) bad "the receipt does not name the gh line alone: $OUT" ;;
+esac
+case "$OUT" in
+  *BODY-MARKER*|*"<<'EOF'"*) bad "the receipt reprints the heredoc body: $OUT" ;;
+  *) ok "...and never reprints the body" ;;
+esac
+if [ "$(gate_verdict "${GHH/as text/as data}")" = deny ]; then ok "...and the approval does not cover another body"; else bad "the approval covered a body it was never shown"; fi
+if [ "$(gate_verdict "$GHH")" = silent ]; then ok "...while the approved body goes through"; else bad "the gate still denied the approved heredoc write"; fi
+
 # Only the plain form is ever issued an id, so nothing but the plain form can
 # reach this script. An env prefix is not the plain form.
 if [ -z "$(gate_request_id 'GIT_TRACE=0 git push -u origin feature')" ]; then

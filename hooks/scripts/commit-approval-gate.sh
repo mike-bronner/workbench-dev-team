@@ -53,7 +53,9 @@
 #   (b) COULD HIDE ONE, refused with no request id, and asked for in the plain
 #       form. Decided by substring tests over the raw text, case-insensitive,
 #       with no parsing at all, so no quote, comment, or line break can move a
-#       word out of view. A command is class (b) when it is neither class (a)
+#       word out of view. The one exception is a gh body in a quoted-delimiter
+#       heredoc (below): the tests then run over the gh line alone, because the
+#       shell runs nothing from the body. A command is class (b) when it is neither class (a)
 #       nor a read-only chain (below), and
 #         - it names git or yadm (`git` not followed by a letter, so `github` is
 #           not git, and not preceded by a letter, a digit, or a dot, so `.git`
@@ -98,7 +100,17 @@
 #       below. In a chain a quoted string
 #       may span lines, because the shell expands nothing inside it. A line
 #       break outside quotes, or a `#`, still ends the chain rule, so an
-#       apostrophe in a comment never opens a quote.
+#       apostrophe in a comment never opens a quote. In a chain a
+#       double-quoted string may also hold a backslash, read as the shell
+#       reads it, so a grep pattern such as "a\|b" is data. A $ or backtick
+#       the backslash does not quote is still an expansion, and still refused.
+#
+#   A gh body in a heredoc whose delimiter is quoted (`<<'EOF'`), fed to a gh
+#   flag that reads the body from stdin (`--body-file -`, `--notes-file -`,
+#   `-F -`), is data in the same way: the shell expands nothing in it. The gate
+#   then reads the gh line alone, by its own words, and the full text still
+#   keys any approval. heredoc_gh_line() below states the exact shape. An
+#   unquoted `<<EOF` expands $( ) and backticks in its body, so it is not data.
 #
 # FAST PATH. Before python3 starts, python-fallback.sh's payload_may_name_git
 # checks the raw payload. When it cannot name git, gh, or yadm, no class above
@@ -440,7 +452,43 @@ SHELL_BUILDS = re.compile(r"[$`\\'\"{}*?\[\]]")
 BARE = set(string.ascii_letters + string.digits + "-_./:=+@,%^")
 
 
-def plain_words(text: str, quoted_lines: bool = False):
+def double_quoted(inner: str):
+    """(the text a program receives, True when the shell builds any of it) for
+    the inside of a double-quoted string.
+
+    Inside double quotes a backslash quotes only $ ` " \\ and a line break, and
+    stays in front of any other character, in bash and in zsh alike. zsh also
+    lets a backslash quote `!`, and whether it stays depends on an option, so
+    `\\!` counts as built. An unquoted $ or backtick runs an expansion, so the
+    shell builds the word. Everything else is literal text.
+    """
+    value, built, index = "", False, 0
+    while index < len(inner):
+        char = inner[index]
+        if char == "\\" and index + 1 < len(inner):
+            following = inner[index + 1]
+            if following in "$`\"\\":
+                value += following
+            elif following != "\n":
+                built = built or following == "!"
+                value += char + following
+            index += 2
+        else:
+            built = built or char in "$`"
+            value, index = value + char, index + 1
+    return value, built
+
+
+def closing_quote(text: str, start: int) -> int:
+    """The index of the `"` that closes the string opening at start, or -1.
+    A backslash inside it quotes the character after it, a `"` included."""
+    index = start + 1
+    while index < len(text) and text[index] != '"':
+        index += 2 if text[index] == "\\" else 1
+    return index if index < len(text) else -1
+
+
+def plain_words(text: str, quoted_lines: bool = False, escapes: bool = False):
     """[(word, kind)] for a one-line command of plain words, or None.
 
     kind is "bare", "quoted", "and" for a standalone `&&`, "sep" for a standalone
@@ -456,6 +504,12 @@ def plain_words(text: str, quoted_lines: bool = False):
     is `#`, so an apostrophe in a comment cannot open a quote here: the scan
     reaches the `#` first and gives up. The plain form never passes this, so an
     approved command stays one line.
+
+    With escapes, a double-quoted string may hold a backslash, which is how a
+    grep pattern spells `\\|` or `\\s`. The backslash is read as the shell reads
+    it (double_quoted), so the word is still exactly what the program receives.
+    A $ or backtick the backslash does not quote is still refused, because that
+    is an expansion. The plain form and a prompted gh line never pass this.
     """
     line = text.strip(" \t\n")
     words = []
@@ -480,12 +534,18 @@ def plain_words(text: str, quoted_lines: bool = False):
                 word += char
                 i += 1
             elif char in "'\"":
-                end = line.find(char, i + 1)
+                end = closing_quote(line, i) if char == '"' and escapes else line.find(char, i + 1)
                 if end < 0:
                     return None
                 inner = line[i + 1:end]
-                if ("\n" in inner and not quoted_lines) or (char == '"' and any(c in inner for c in "$`\\")):
+                if "\n" in inner and not quoted_lines:
                     return None
+                if char == '"':
+                    if not escapes and any(c in inner for c in "$`\\"):
+                        return None
+                    inner, built = double_quoted(inner)
+                    if built:
+                        return None
                 word, kind, i = word + inner, "quoted", end + 1
             else:
                 return None  # anything else is shell the gate does not read
@@ -605,8 +665,9 @@ def gh_names_no_verb(segment: list, lane: str) -> bool:
 def read_only_chain(text: str, lane: str) -> bool:
     """True for plain words joined by standalone separators, where every segment
     is a SAFE_VERBS git call, a no-exec reader, or a gh call that names no gated
-    verb. A quoted string may span lines here. See class (c) in the header."""
-    words = plain_words(text, quoted_lines=True)
+    verb. A quoted string may span lines here, and a double-quoted one may hold
+    a backslash. See class (c) in the header."""
+    words = plain_words(text, quoted_lines=True, escapes=True)
     if not words:
         return False
     segments = [[]]
@@ -725,8 +786,10 @@ def shell_segments(text: str):
     A lexer, not a parser: it splits words the way the shell does and never
     guesses what an expansion yields. value is the word the program receives, or
     None when the shell could change it ($, a glob, a brace, a tilde, a
-    backslash). A segment ends at an unquoted ; & | ( ) newline or backtick, so a
-    `$( )` or backtick substitution is a segment of its own. The word after a
+    backslash outside quotes). A backslash inside double quotes is read as the
+    shell reads it (double_quoted), so `"a\\|b"` is the literal `a\\|b`. A
+    segment ends at an unquoted ; & | ( ) newline or backtick, so a `$( )` or
+    backtick substitution is a segment of its own. The word after a
     redirect is a file and is dropped. `#` at the start of a word ends the line.
     Every mistake it can make splits a word the shell would not, which only ever
     shows the gate more to refuse.
@@ -754,13 +817,11 @@ def shell_segments(text: str):
                         return None
                     value, i = value + text[i + 1:end], end + 1
                 elif char == '"':
-                    end = i + 1
-                    while end < n and text[end] != '"':
-                        end += 2 if text[end] == "\\" else 1
-                    if end >= n:
+                    end = closing_quote(text, i)
+                    if end < 0:
                         return None
-                    inner = text[i + 1:end]
-                    dynamic = dynamic or any(c in inner for c in "$`\\")
+                    inner, built = double_quoted(text[i + 1:end])
+                    dynamic = dynamic or built
                     value, i = value + inner, end + 1
                 elif char == "\\":
                     dynamic, value, i = True, value + text[i + 1:i + 2], i + 2
@@ -1015,13 +1076,57 @@ def gh_kind(args: list):
     return ("own" if path in GH_OWN else "write"), label
 
 
-gh_found = gh_calls(command)
+# A gh body in a heredoc whose delimiter is quoted: `gh ... --body-file - <<'X'`,
+# then the body, then a line that is X alone. bash and zsh expand nothing in
+# that body and run nothing from it, so it is data, as a `--body '...'` string
+# is. Only the gh line is classified, by its own words, exactly as a gh line
+# with no heredoc. The shape is narrow on purpose:
+#   - the gh line is one line of plain words (plain_words, with no escapes),
+#     so the `<<` after it is a real redirect and not text inside a quote;
+#   - the delimiter is quoted with ' or ", and made of letters, digits, and _.
+#     An unquoted `<<X` expands $( ) and backticks in the body, so it is not
+#     this shape, and neither is `<<-X`;
+#   - gh reads the body from stdin: --body-file -, --notes-file -, or -F -;
+#   - nothing but blank lines (spaces and tabs only) follows the first line
+#     that is X alone, which is where the shell ends the body too.
+# The full command text, body included, still keys any approval.
+QUOTED_HEREDOC = re.compile(r"[ \t]<<(['\"])([A-Za-z0-9_]+)\1[ \t]*$")
+GH_STDIN_BODY = {"--body-file", "--notes-file", "-F"}
+
+
+def heredoc_gh_line(text: str):
+    """The gh line of a quoted-delimiter heredoc feeding a gh body, or None."""
+    first, newline, rest = text.partition("\n")
+    opener = QUOTED_HEREDOC.search(first)
+    if not newline or not opener:
+        return None
+    lines = rest.split("\n")
+    delimiter = opener.group(2)
+    # Blank means space and tab alone, as the shell counts it. str.strip() also
+    # drops \r, \x0b, \x1c-\x1f, and unicode spaces, and a line of those runs as
+    # a command.
+    if delimiter not in lines or any(line.strip(" \t") for line in lines[lines.index(delimiter) + 1:]):
+        return None
+    line = first[:opener.start()]
+    words = plain_words(line)
+    if not words or words[0] != ("gh", "bare") or any(kind not in ("bare", "quoted") for _, kind in words):
+        return None
+    values = [word for word, _ in words]
+    reads_stdin = any(word in ("--body-file=-", "--notes-file=-")
+                      or (word in GH_STDIN_BODY and values[index + 1:index + 2] == ["-"])
+                      for index, word in enumerate(values))
+    return line if reads_stdin else None
+
+
+# What the gate classifies: the gh line of a heredoc body, else the command.
+text = heredoc_gh_line(command) or command
+gh_found = gh_calls(text)
 gh_kinds = None if gh_found is None else [gh_kind(call) for call in gh_found]
 
 # Lane 2. Before any record is read, so a planted approval cannot be spent, and
 # before one is written, so no id exists for the agent to approve.
 if agent_id:
-    verdict, invocations = classify(command, "sub-agent", GATED_GIT)
+    verdict, invocations = classify(text, "sub-agent", GATED_GIT)
     gh_reads = gh_kinds is not None and all(kind == "read" for kind, _ in gh_kinds)
     if verdict == "silent" and gh_reads:
         sys.exit(0)
@@ -1061,13 +1166,15 @@ if gh_kinds is None:
         "Run the gh call as a plain line of its own.",
         "The gate decides a gh call by the subcommand gh runs, so gh and its "
         "subcommand must be literal words: no quote left open, no gh word the "
-        "shell builds, and no gh inside a string another program runs."
+        "shell builds, and no gh inside a string another program runs. A "
+        "multi-line body goes to --body-file - (or --notes-file -) in a heredoc "
+        "with a quoted delimiter, <<'EOF', never in double quotes."
     )
 github_write = next((label for kind, label in gh_kinds if kind == "write"), None)
 if github_write:
     # Prompted like a push, but only as one plain line that is the gh call and
     # nothing else, so the approval covers exactly the words gh receives.
-    words = plain_words(command)
+    words = plain_words(text)
     if not words or words[0] != ("gh", "bare") or any(kind not in ("bare", "quoted") for _, kind in words):
         deny(
             f"this command could hide {github_write}",
@@ -1078,11 +1185,13 @@ if github_write:
             "pr close --delete-branch) is prompted only as one plain line of the gh call "
             "alone, words bare or quoted, with no $, backtick, or backslash in "
             "double quotes, and no cd, pipe, redirect, separator, variable, or "
-            "wrapper."
+            "wrapper. Give a multi-line body as a file to --body-file or "
+            "--notes-file, or as --body-file - (or --notes-file -) fed by a "
+            "heredoc with a quoted delimiter, <<'EOF'."
         )
     verdict, invocations = "gated", []
 else:
-    verdict, invocations = classify(command, "foreground", APPROVABLE)
+    verdict, invocations = classify(text, "foreground", APPROVABLE)
 if verdict == "silent":
     sys.exit(0)
 
@@ -1097,8 +1206,9 @@ if verdict == "hidden":
         "<args>`, or a commit && a push. Words bare or quoted, no $, backtick, or "
         "backslash in double quotes, and no cd, pipe, redirect, comment, heredoc, "
         "variable, wrapper, or other separator. Run git add on its own, and give "
-        "a multi-line message as -F <absolute path> to a scratchpad file. A read "
-        "(log, show, diff, status, or gh) runs silently as a plain line of its own."
+        "a multi-line message as -F <absolute path> to a scratchpad file. A gh "
+        "body goes to --body-file - in a heredoc with a quoted delimiter, <<'EOF'. "
+        "A read (log, show, diff, status, or gh) runs silently as a plain line of its own."
     )
 
 # Class (a) from here on: the gate knows exactly which words git receives.
@@ -1331,7 +1441,7 @@ def gh_state(words: list):
             "remote": remote.stdout.decode(errors="replace").strip() if remote.returncode == 0 else ""}
 
 
-gh_bound = gh_state(plain_words(command)) if github_write else None
+gh_bound = gh_state(plain_words(text)) if github_write else None
 if github_write and gh_bound is None:
     deny(
         gated,
@@ -1476,7 +1586,9 @@ try:
             "verbs": ["gh"] if github_write else [i["verb"] for i in invocations],
             "commit_words": commits[0]["words"] if commits else None,
             "push": shlex.join(push["words"]) if push else None,
-            "gh": command if github_write else None,
+            # The gh line alone, for approve-commit.sh's receipt. For a heredoc
+            # body that is the line before the body. "command" keys the approval.
+            "gh": text if github_write else None,
             "branch": state["branch"] if state else None,
             "head": state["head"] if state else None,
             "staged": staged_print,

@@ -295,6 +295,10 @@ When the work is for a tracked issue:
   plan), append it after the template content. No template → use the
   structure in the next bullets.
 - **Use `Fixes #<n>`** in the body for auto-linking.
+- **Pass the body as `--body-file - <<'EOF'`, or as a file**, never as a
+  multi-line double-quoted string: the shell runs the backticks in one. The
+  `/workbench-dev-team:git-commit` skill's "Passing a gh body" section is the
+  canonical rule.
 - **Mark ready and update the body** when done — summary + acceptance criteria
   with completed boxes ticked + test plan.
 - **CI green is the real "done" line.** Local-green isn't enough — CI runs checks

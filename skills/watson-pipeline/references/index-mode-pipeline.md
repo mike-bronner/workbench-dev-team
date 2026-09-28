@@ -371,12 +371,14 @@ human), so you own the PR, not a bot:
 ```bash
 BASE=$(gh repo view <repo> --json defaultBranchRef --jq .defaultBranchRef.name)
 gh pr create --draft -R <repo> --base "$BASE" --head "$BRANCH" \
-  --title "<title>" --body "## Summary
+  --title "<title>" --body-file - <<'EOF'
+## Summary
 Implements #<issue_number>
 
 Work in progress.
 
-Fixes #<issue_number>"
+Fixes #<issue_number>
+EOF
 PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
 ```
 
@@ -559,7 +561,8 @@ If no template exists, use this structure:
 
 ```bash
 PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
-gh pr edit "$PR_NUM" -R <repo> --body "## Summary
+gh pr edit "$PR_NUM" -R <repo> --body-file - <<'EOF'
+## Summary
 Implements #<issue_number>
 
 ## Changes
@@ -573,9 +576,14 @@ Implements #<issue_number>
 - [ ] New tests cover the changes
 - [ ] Manual verification steps if applicable
 
-Fixes #<issue_number>"
+Fixes #<issue_number>
+EOF
 gh pr ready "$PR_NUM" -R <repo>
 ```
+
+The body goes in a heredoc with a quoted delimiter, never in double quotes: the
+shell runs any backtick in a double-quoted body, and a PR body quotes code in
+backticks. `/workbench-dev-team:git-commit` ("Passing a gh body") has the rule.
 
 ### 8. Wait for CI and make it green
 
