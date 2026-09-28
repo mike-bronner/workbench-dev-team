@@ -47,20 +47,72 @@ Fixes: #789
 Fixes: #790
 ```
 
-## Passing the Message to git
+## Committing and pushing — the approval gate
 
-In a foreground session the commit approval gate prompts only for the plain
-form: one line, `git [-C <path>] commit …`, every word bare or quoted, with no
-`$`, backtick, or backslash inside double quotes. So:
+This section is the canonical statement of the foreground mechanics. Other
+files state the lane rule and point here.
 
+**A sub-agent does not commit, merge, or push.** It leaves the tree
+uncommitted and hands the diff summary and this message back in its report.
+The gate refuses it with no approval path, by design. The scheduled Index
+pipeline (`WORKBENCH_DEV_TEAM_PIPELINE=1`, set by `bin/dispatch-agent.sh`)
+commits unattended. Everything below is for the foreground session.
+
+**Attempt the commit or the push yourself, and let the gate prompt.** Do not
+hand either one to the human to run: the gate is how the human is asked. It
+denies every `git commit` and every `git push` until the human approves that
+exact command.
+
+**Write the plain form, or it is refused.** The gate does not parse shell. It
+prompts only for one line that is exactly `git [-C <path>] commit …`,
+`git [-C <path>] push …`, or `git [-C <path>] commit … && git [-C <path>] push …`,
+with every word bare or quoted. A double-quoted string may not hold `$`, a
+backtick, or a backslash. There is no `cd`, pipe, redirect, comment, heredoc,
+variable, wrapper, or second line, and no bare word that starts with `=`. Any
+other command whose text names git and a commit or push is refused with no
+approval path. So:
+
+- Run `git add` as its own call, never chained to the commit.
 - **A one-line message** goes in `-m`: `git commit -m 'feat: ✨ Add email validation endpoint.'`
 - **A message with a body or footers** goes in a file. Write it to the session
   scratchpad, then run `git commit -F <absolute path>`. The gate reads the
   subject from the file's first line, so the prompt still names it.
 - **Never use the heredoc form**, `git commit -m "$(cat <<'EOF' … EOF)"`. The
   gate refuses it, and the retry costs a round trip.
+- Use `-C <path>` rather than `cd`.
+- Never use a shell alias such as `gp` or `gcmsg`. The gate cannot see through
+  one, so it would commit or push unprompted.
 
-A sub-agent does not commit at all. It hands the message back in its report.
+**Before the approval, show what it approves.** For a commit, show the diff that
+will be committed and the proposed message. For a push, show the branch, the
+remote, and the commits it sends. General approval of the task, "looks good"
+about the code, or approval of a previous commit do not carry over: one approval
+covers one command.
+
+**Then run the command the denial prints**, exactly as printed:
+`bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"`
+for a commit, and the same command with no subject for a push. Set the Bash
+call's `description` to the line the denial dictates. Permission rules cover
+that command, so the harness raises a real prompt, and the human's answer is the
+approval. Then run the same `git commit` or `git push` again, from the same
+directory.
+
+**What an approval binds.** One run of one command, in that session and
+directory, for 15 minutes. A commit is also bound to HEAD and the staged diff,
+and to the working tree when it takes files from there (`-a`, `--only`,
+`--include`, or a pathspec). A push is bound to the repository's branches, tags,
+HEAD, and its remote, branch, push, and url config. Any change before it runs
+voids the approval and asks again.
+
+**What is never approved.** A push that forces or deletes remote refs
+(`--force`, `-f`, a `+` refspec, `--mirror`, `--delete`, `-d`, a `:branch`
+refspec, `--prune`) is refused with no approval path. Merge stays an explicit
+human request.
+
+If `approve-commit.sh` refuses (missing permission rules, or an id with nothing
+waiting), report that and stop: `/workbench-dev-team:setup` installs the command
+and its rules. Never edit the gate, never set `WORKBENCH_DEV_TEAM_PIPELINE`, and
+never write an approval record by hand.
 
 ## Body & Footers
 

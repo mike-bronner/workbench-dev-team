@@ -19,11 +19,13 @@ The orchestrator was creating branches and worktrees on its own initiative,
 without asking. Three independent sources in the same skill pushed that
 behaviour, which is why removing any one of them would not have fixed it:
 
-1. **Both worked examples** end their `Done when:` slot with "and a PR is open".
-   A PR needs a branch, so every example a reader copies teaches
-   PR-and-branch as the default finish line. The examples are correct — a PR is
-   a legitimate and common finish line — so they stay as written, and the check
-   supplies what they never stated: *which* branch.
+1. **Both worked examples** ended their `Done when:` slot with "and a PR is
+   open". A PR needs a branch, so every example a reader copied taught
+   PR-and-branch as the default finish line. Both examples are Watson
+   Direct-mode briefs, and a sub-agent can neither commit nor open a PR, so
+   that finish line was unreachable as well as leading. They now end with the
+   change handed back uncommitted. The check still supplies what they never
+   stated: *which* branch the foreground session commits to.
 2. **Worktree isolation for two Watsons on one repo** was stated as a standing
    rule with no counterweight saying when not to reach for it.
 3. **The Claude Code harness itself** instructs "If on the default branch,

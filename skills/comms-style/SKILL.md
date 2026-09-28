@@ -32,6 +32,20 @@ costs nothing. Apply the intent, don't agonize over the letter.
 
 ## The principles
 
+**Density — write for a tired human.** This one comes first, because the
+others do not fix a text that says too much. Picture a reader at the end of a
+long day. Say only what they need to act on, and make it readable in one pass.
+Keep paragraphs short and words plain. Do not restate context the reader
+already has: the issue, the brief, or what an earlier comment said. When a
+true, verified detail does not change what the reader does next, leave it out.
+
+A PR body carries three things: what changed, why, and what a reviewer must
+know before approving. A PR for a tracked issue also carries its
+acceptance-criteria checklist and `Fixes #<n>`, when its pipeline requires
+them. Stop there. Reasoning and rejected alternatives go in the
+review wiki, detail about each change goes in the commit messages, and test
+evidence is one line saying which suites pass. No tables of measurements.
+
 **Vocabulary — one word per concept, no synonyms.** Don't call the same
 thing three different things in one comment ("the item," "the issue," "the
 ticket" — in this repo those are three genuinely different things, so

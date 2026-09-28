@@ -19,9 +19,9 @@
 #   ARM     PreToolUse on the Agent tool. When a session dispatches Holmes with
 #           a prose brief (Local mode), a record is written for that SESSION,
 #           naming the `Workdir:` the brief protects.
-#   ENFORCE PreToolUse on Bash. A Bash call from a SUB-AGENT of an armed session
-#           is refused when the command mutates a working tree. Reads and test
-#           runs are untouched.
+#   ENFORCE PreToolUse on Bash, Edit, Write, and NotebookEdit. A call from a
+#           SUB-AGENT of an armed session is refused when it writes into the
+#           tree under review. Reads and test runs are untouched.
 #   DISARM  PostToolUse on the Agent tool. The Holmes dispatch returned, so the
 #           record is released. A TTL covers the run that never returns.
 #
@@ -57,12 +57,13 @@
 # auto-mode classifier answered it and no human was ever prompted. The same is
 # true here, so nothing below ever returns "ask".
 #
-# ── WHAT COUNTS AS MUTATION: A RULE, NOT A ROSTER ─────────────────────────────
+# ── WHAT COUNTS AS MUTATION ──────────────────────────────────────────────────
 #
 # A local review reads the tree constantly and runs the repository's own suite.
 # A rule that stops either one makes the mode useless and gets switched off, so
 # the line is drawn at commands whose PURPOSE is to change a file's content,
-# location, existence, or metadata:
+# location, existence, or metadata. Rule 1 is a true rule. Rules 2 and 3 are
+# fixed lists, and "WHAT IT DOES NOT COVER" below states what that costs:
 #
 #   1. git, inverted. GIT_READ_ONLY below lists the verbs that only read; every
 #      other git verb is refused. The inversion is the point. A roster of
@@ -72,15 +73,48 @@
 #      it discards precisely the uncommitted change the mode exists to read. A
 #      verb git invents tomorrow is refused by this rule on the day it ships,
 #      and a verb missing from the read-only set costs a denied read, never an
-#      allowed write.
-#   2. Metadata and destruction, whatever the tool: chmod, chown, chgrp, rm,
-#      rmdir, unlink, mv, shred, truncate. `chmod` is in there because it is
-#      what the measured breach used. A review has no legitimate call for any of
-#      them, so these are refused outright rather than by target path — parsing
-#      which path an arbitrary command writes to is where the false negatives
-#      hide.
+#      allowed write. A few verbs that both read and write (branch, tag, remote,
+#      config, stash, worktree) are allowed in their listing forms only, by
+#      git_reads() — `git branch --show-current`, never `git branch -D x`.
+#   2. Commands that write or remove files, from the fixed list
+#      MUTATING_COMMANDS: chmod, chown, chgrp, rm, rmdir, unlink, mv, shred,
+#      truncate, touch, tee, cp, ln, install, dd, patch, mkdir, rsync, tar,
+#      unzip, sort, and uniq. `chmod` is in there because it is what the
+#      measured breach used. The paths each one writes are read per command:
+#      rsync's destination, the directory tar and unzip extract into (the
+#      working directory when none is named) and the archive tar creates,
+#      sort's -o value, and uniq's second operand. A listing form writes
+#      nothing, so `tar -tf` and `unzip -l` stay allowed. Each is judged by the paths it writes, resolved
+#      two ways: through every symlink, and with only the final name left
+#      unresolved, because `rm <tree>/link` removes a link that lives in the
+#      tree wherever it points. Refused when either is inside the tree under review or
+#      contains it (`rm -rf ..`), and refused when a path cannot be resolved at
+#      all — a variable, a glob, a quote, a relative path with no cwd, or
+#      arguments fed by xargs. So `rm -rf /tmp/scratch` runs, and `rm -rf
+#      "$DIR"` does not. An option's value is read as a path too, which can
+#      only refuse more. With no tree named, nothing can be judged, so every
+#      write is refused.
 #   3. In-place rewriting: a formatter or linter run with --write / --fix /
-#      --in-place, and sed / perl / ruby with -i. Bare `-i` is checked ONLY for
+#      --in-place; a common formatter run with its short write flag (gofmt,
+#      goimports, gofumpt, shfmt, and prettier -w; clang-format, autopep8,
+#      yapf, and swift-format -i; rubocop -a, -A, -x, and their long forms),
+#      read anywhere in a single-dash cluster for the four whose parsers
+#      bundle short flags (yapf, autopep8, prettier, rubocop), so `yapf -ir .`
+#      and `rubocop -Da` are refused while `clang-format -sort-includes` is not;
+#      a common formatter that writes with no flag at all and was not put in
+#      check mode (black, rustfmt, cargo fmt, go fmt, ruff format, isort,
+#      terraform fmt, mix format, dotnet format, deno fmt, zig fmt, stylua,
+#      pint, php-cs-fixer fix), so `black --check`, `pint --test`, and
+#      `cargo fmt --check` stay allowed, and so do their help and
+#      config-printing forms and their stdin forms (`black -`, a bare
+#      `rustfmt`), which write only to stdout; and sed / perl / ruby with -i.
+#      A formatter is found behind a wrapper (`npx`, `env`) and behind a
+#      project runner's run form (`bundle exec`, `uv run`, `poetry run`,
+#      `pipx run`, `pnpm exec` and `dlx`, `npm exec`, `composer exec`, and
+#      `yarn` with or without `exec`, `dlx`, or `run`). `command -v` is a lookup and runs
+#      nothing, so it is never judged as the program it names.
+#      Unlike rule 2, rule 3 is not judged by path: a formatter asked to write
+#      is refused wherever it points. Bare `-i` is checked ONLY for
 #      those three commands, because `grep -i` is a legitimate review command
 #      and a blanket `-i` rule would break the mode it protects. Within those
 #      three it is checked wherever it sits in a single-dash cluster, not only
@@ -95,15 +129,35 @@
 #      so `perl -Ilib -ne print` stays allowed.
 #   4. Redirection into a protected tree. `> file` is checked by target path,
 #      not refused outright, because `git diff HEAD > /tmp/scratch.diff` is
-#      ordinary review work. A relative target is resolved against the payload's
-#      `cwd`; when no cwd is supplied it is treated as inside the tree, because
-#      the safe answer to "which tree is this relative to?" is the one under
-#      review.
+#      ordinary review work. The target goes through resolve(), as every write
+#      path does: `~` is expanded, a relative target is resolved against the
+#      payload's `cwd`, and a quoted, `$HOME`, or other shell-built target is
+#      refused. When no cwd is known it is refused too, because the safe answer
+#      to "which tree is this relative to?" is the one under review. A `cd`,
+#      `pushd`, or `popd` makes cwd unknown for every segment after it.
 #
 # ── WHAT IT DOES NOT COVER ────────────────────────────────────────────────────
 #
 # Stated plainly, because a guard whose limits are unwritten gets trusted past
 # them:
+#
+#   • It does not catch every program that writes. Rules 2 and 3 name the
+#     ordinary file writers and the common formatters, and that is where they
+#     stop: a program on neither list that writes into the tree runs silently.
+#     The same holds for runners: a listed writer behind a runner not named in
+#     RUNNERS (`uvx`, `bun x`, `pnpm <bin>`), or inside a package script
+#     (`npm run format`), runs silently.
+#     Code run inside an interpreter (`python -c`, `node -e`) is out of scope
+#     for the reason the next point gives. The backstop for both is the lens
+#     prompts' no-mutation rule and the human review of the diff. The rejected
+#     alternative was a read allowlist, which refuses every command it does not
+#     know. It would refuse reads too, and a guard that blocks reading gets
+#     switched off. A writer found missing is added to the list.
+#     Short write flags are read inside a cluster only for the four formatters
+#     in FORMATTER_CLUSTER_FLAGS. A tool added to FORMATTER_WRITE_FLAGS whose
+#     parser bundles short flags needs a row there too, or its clustered write
+#     runs silently. A stdin form is read by its operands alone, so `black -l
+#     88 -` is refused: `88` looks like a file operand.
 #
 #   • It is not anti-evasion machinery. Like its sibling gate it reads the
 #     command the agent asked to run, so a verb inside `bash -c`, inside a
@@ -124,9 +178,10 @@
 #     read-only rule, not only the review's own. Two agents mutating the tree a
 #     third is reviewing is not a workflow worth protecting, and the window is
 #     bounded by the disarm and by GUARD_TTL_SECONDS.
-#   • Editing tools are not matched, only Bash. Holmes holds no Edit, Write, or
-#     NotebookEdit grant, and neither do the lenses he dispatches, so Bash is
-#     the whole surface. Grant him one and this matcher must widen with it.
+#   • Editing tools are matched by path. Holmes and his lenses hold no Edit,
+#     Write, or NotebookEdit grant, but any other sub-agent of the armed session
+#     might, so an edit whose file path is inside the tree is refused, and so is
+#     one whose path cannot be resolved or that arrives with no tree named.
 #
 # ── HOW THE REFUSAL IS WORDED ─────────────────────────────────────────────────
 #
@@ -181,6 +236,69 @@ else
 fi
 export GUARD_STATE_DIR
 
+# Fast path. With no review record anywhere on this host, nothing below can
+# refuse a call or release a hold, so the one thing python3 is needed for is
+# ARMING, and that takes an Agent call naming holmes. Everything else exits
+# here, before python3 starts (about 48 ms on every Bash, Agent, and edit call).
+# It errs toward the full check: a state directory it cannot list, a `\u`
+# escape, or any non-ASCII byte (python folds `ſ` into `s`) goes on to python3.
+#
+# guard_has_records is true when the state directory holds any entry, or cannot
+# be listed. It is host-wide on purpose: telling one session's record from
+# another's takes python3.
+guard_has_records() {
+  local LC_ALL=C entry
+  [ -d "$GUARD_STATE_DIR" ] || return 1
+  [ -r "$GUARD_STATE_DIR" ] || return 0
+  for entry in "$GUARD_STATE_DIR"/* "$GUARD_STATE_DIR"/.[!.]* "$GUARD_STATE_DIR"/..?*; do
+    { [ -e "$entry" ] || [ -L "$entry" ]; } && return 0
+  done
+  return 1
+}
+
+if [ "$GUARD_MODE" = hook ]; then
+  guard_needs_python() {
+    guard_has_records && return 0
+    local LC_ALL=C holmes_re='[Hh][Oo][Ll][Mm][Ee][Ss]' escape_re='\\u' wide_re='[^ -~]'
+    [[ $GUARD_STDIN =~ $holmes_re || $GUARD_STDIN =~ $escape_re || $GUARD_STDIN =~ $wide_re ]]
+  }
+  guard_needs_python || exit 0
+fi
+
+# Without a working python3 the classifier never runs, and a hook that errors is
+# a non-blocking error to the harness: the call runs as if no guard existed. So
+# this path refuses on its own terms, and they are the guard's, not the commit
+# gate's. The gate's fallback refuses text that names git, which is what the gate
+# guards. This guard stops rm, mv, chmod, redirects, and edits into the tree, and
+# none of those name git.
+#
+# Without python3 nothing can be judged: not the command, not the session a
+# record belongs to, not its TTL. So while ANY record is on the host, every Bash
+# and editing call from a sub-agent is refused. The main thread keeps its tools,
+# as it always does. The three fields are read from the raw payload, where a
+# quote inside a string is escaped, so command text cannot supply them.
+#
+# The cost is stated plainly: a stale record, or another session's, holds every
+# sub-agent on the host to no Bash until python3 is fixed. That is a broken
+# install, the refusal names the fix, and it is the direction this guard already
+# fails in.
+guard_python_fallback() {
+  local p="$GUARD_STDIN"
+  local event_re='"hook_event_name" *: *"PreToolUse"'
+  local tool_re='"tool_name" *: *"(Bash|Edit|Write|NotebookEdit)"'
+  local agent_re='"agent_id" *: *"[^"]'
+  if guard_has_records && [[ $p =~ $event_re ]] && [[ $p =~ $tool_re ]] && [[ $p =~ $agent_re ]]; then
+    printf '%s\n' "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"🛑 Blocked: this call. python3 is missing or failed, so the local-review guard cannot judge it.\", \"additionalContext\": \"Local-review guard (workbench-dev-team). A local review record exists on this host, and this hook judges calls with python3, which is not on PATH or exited with an error. It cannot tell a read from a write, or this session's review from another's, so it refuses every Bash and editing call from a sub-agent until python3 works. Report this to the human: python3 is a prerequisite of workbench-dev-team (see its README). Do not try another spelling of the call.\"}}"
+  fi
+  exit 0
+}
+
+# --classify is the lint's entry point, not a hook, so it reports the failure.
+if ! command -v python3 >/dev/null 2>&1; then
+  [ "$GUARD_MODE" = classify ] && { echo "python3 is missing" >&2; exit 2; }
+  guard_python_fallback
+fi
+
 python3 - <<'PYEOF'
 import hashlib
 import json
@@ -207,17 +325,181 @@ GIT_READ_ONLY = {
     "describe", "diff", "diff-index", "diff-tree", "for-each-ref", "grep", "log",
     "ls-files", "ls-tree", "merge-base", "name-rev", "reflog", "rev-list",
     "rev-parse", "shortlog", "show", "show-ref", "status", "symbolic-ref", "var",
-    "verify-commit", "verify-tag", "whatchanged",
+    "verify-commit", "verify-tag", "whatchanged", "ls-remote",
 }
+
+# Verbs that read in their listing forms and write in every other. git_reads()
+# admits the listing form and nothing else, so a new flag is refused until it is
+# named here.
+BRANCH_READ_FLAGS = {"--show-current", "-a", "--all", "-r", "--remotes", "-v", "-vv", "--verbose",
+                     "-l", "--list", "--no-color", "--contains", "--no-contains", "--merged",
+                     "--no-merged", "--points-at"}
+TAG_READ_FLAGS = {"-l", "--list", "-n", "--no-color", "--contains", "--no-contains", "--merged",
+                  "--no-merged", "--points-at"}
+LIST_VALUE_PREFIXES = ("--format=", "--sort=", "--contains=", "--no-contains=", "--merged=",
+                       "--no-merged=", "--points-at=")
+# The same options spelled with their value as the next word. git takes that
+# word as the value (`git branch --contains <sha>`), so it is not a positional.
+LIST_VALUE_FLAGS = {prefix[:-1] for prefix in LIST_VALUE_PREFIXES}
+CONFIG_READ_FLAGS = {"--get", "--get-all", "--get-regexp", "--get-urlmatch", "--list", "-l",
+                     "--get-color", "--get-colorbool"}
+CONFIG_WRITE_FLAGS = {"--add", "--unset", "--unset-all", "--replace-all", "--rename-section",
+                      "--remove-section", "--edit", "-e"}
 
 # Commands whose purpose is to change a file's content, location, existence, or
 # metadata. `chmod` heads the list because it is what the measured breach used.
+# Each is judged by the paths write_targets() says it writes.
 MUTATING_COMMANDS = {
     "chmod", "chown", "chgrp", "rm", "rmdir", "unlink", "mv", "shred", "truncate",
+    "touch", "tee", "cp", "ln", "install", "dd", "patch",
+    "mkdir", "rsync", "tar", "unzip", "sort", "uniq",
 }
 
+# Options that take the next word as their value, on both GNU and BSD, so the
+# value is not read as a path. Only options that take a value on BOTH belong
+# here: skipping a word after a flag that takes none would skip a real target.
+# uniq's `-w` and the long forms are GNU only, and BSD uniq rejects them, so
+# skipping their value can never skip a target there.
+VALUE_OPTIONS = {
+    "install": {"-m", "-o", "-g"},
+    "truncate": {"-s", "-r"},
+    "touch": {"-r", "-t", "-d"},
+    "mkdir": {"-m"},
+    "rsync": {"-e", "-f", "-T"},
+    "uniq": {"-f", "-s", "-w", "--skip-fields", "--skip-chars", "--check-chars"},
+}
+
+# unzip options that only list, test, print, or show help, so nothing is extracted.
+UNZIP_READ_FLAGS = set("lptvcZh")
+
+# Formatters that rewrite files only when handed a write flag. IN_PLACE_FLAGS
+# catches `--write`, `--fix`, and `--in-place` for every command, and nothing
+# else, so any other spelling a formatter uses to write is listed here.
+FORMATTER_WRITE_FLAGS = {
+    "gofmt": {"-w"}, "goimports": {"-w"}, "gofumpt": {"-w"}, "shfmt": {"-w"},
+    "prettier": {"-w"}, "clang-format": {"-i"}, "autopep8": {"-i"}, "yapf": {"-i"},
+    "swift-format": {"-i"},
+    "rubocop": {"-a", "-A", "-x", "--autocorrect", "--autocorrect-all", "--auto-correct",
+                "--auto-correct-all", "--safe-auto-correct", "--fix-layout"},
+}
+
+# The formatters whose option parsers accept bundled short flags, so a write
+# letter counts anywhere in a single-dash cluster (`yapf -ir`, `rubocop -Da`),
+# read like IN_PLACE_EDITORS: (write letters, letters that take the rest of the
+# token as their value). yapf and autopep8 use argparse, prettier minimist, and
+# rubocop OptionParser. The cluster walk stops at a value letter, so the `i` in
+# `yapf -l1-9i` is part of a line range. The Go-flag tools, clang-format, and
+# swift-format do not bundle, and are matched on whole tokens only:
+# `clang-format -sort-includes` is one long flag, not an `-i` in a cluster.
+FORMATTER_CLUSTER_FLAGS = {
+    "yapf": (set("i"), set("le")),
+    "autopep8": (set("i"), set("jp")),
+    "prettier": (set("w"), set()),
+    "rubocop": (set("aAx"), set("corfCs")),
+}
+
+# Options naming the file a formatter reading stdin reports on. Their value is
+# a label, not a file operand, so `black --stdin-filename x.py -` still writes
+# only to stdout.
+STDIN_NAME_OPTIONS = {"--stdin-filename", "--filename"}
+
+# Formatters that rewrite files with no flag at all, keyed by program or by
+# program and subcommand, each with the options that make it only check. An
+# option with its value is matched as `option=value` whichever way it was typed,
+# and an option listed bare matches whatever value it carries. Printing a
+# formatter's config, or formatting a string it was handed, rewrites no file.
+FORMATTERS_WRITING_BY_DEFAULT = {
+    "black": {"--check", "--diff", "-c", "--code"},
+    "rustfmt": {"--check", "--emit=stdout", "--print-config"},
+    "cargo fmt": {"--check"},
+    "go fmt": {"-n"},
+    "ruff format": {"--check", "--diff"},
+    "isort": {"--check-only", "--check", "-c", "--diff", "--show-config", "--show-files",
+              "--stdout", "-d"},
+    "terraform fmt": {"-check", "-write=false"},
+    "mix format": {"--check-formatted", "--dry-run"},
+    "dotnet format": {"--verify-no-changes"},
+    "deno fmt": {"--check"},
+    "zig fmt": {"--check"},
+    "stylua": {"--check"},
+    "pint": {"--test"},
+    "php-cs-fixer fix": {"--dry-run"},
+}
+
+# `rustfmt --print-config default|minimal PATH` writes the config to PATH. Only
+# `current`, or no PATH, prints it.
+RUSTFMT_CONFIG_FILE_KINDS = {"default", "minimal"}
+
+# Values that turn a boolean option off.
+OFF_VALUES = {"false", "f", "0", "no", "off"}
+
+# Asking a formatter about itself writes nothing.
+FORMATTER_INFO_FLAGS = {"-h", "--help", "-V", "--version"}
+
+# A path holding any of these is shell the guard does not expand: a variable, a
+# substitution, a glob, a brace, a quote, or an escape. It cannot be resolved,
+# so the write it names is refused.
+UNRESOLVABLE = re.compile(r"[$`*?\[\]{}()'\"\\<>]")
+
+# The editing tools, and the input field each one names its file in.
+EDIT_TOOLS = {"Edit": "file_path", "Write": "file_path", "NotebookEdit": "notebook_path"}
+
 # Commands that run another command, and are stepped through to find it.
-PASS_THROUGH = {"command", "builtin", "exec", "sudo", "nohup", "time", "env", "xargs"}
+PASS_THROUGH = {"command", "builtin", "exec", "sudo", "nohup", "time", "env", "xargs",
+                "npx", "bunx", "pnpx"}
+
+# Project runners, each with the subcommands that run another command. The pair
+# is stepped through like a wrapper, so `bundle exec rubocop -a` is seen as
+# `rubocop -a`. Any other subcommand is the runner's own (`npm test`, `uv sync`),
+# and the runner is the command. yarn also runs a program with no subcommand
+# (`yarn prettier -w .`), so its next word is the command unless it is one of
+# yarn's own commands that shares a name with a listed writer.
+RUNNERS = {
+    "bundle": {"exec"}, "uv": {"run"}, "poetry": {"run"}, "pipx": {"run"},
+    "pnpm": {"exec", "dlx"}, "npm": {"exec", "x"}, "yarn": {"exec", "dlx", "run"},
+    "composer": {"exec"},
+}
+YARN_OWN_WRITER_NAMES = {"install", "unlink", "patch"}
+
+# Wrapper options whose value is the next word, so that word is stepped over
+# with the option rather than read as the command. Over-listing is the safe
+# direction here: a flag listed that takes no value skips the real command.
+# That is why each entry takes a value on every platform that knows it.
+WRAPPER_VALUE_OPTIONS = {
+    "env": {"-u", "--unset", "-P", "-C", "--chdir"},
+    "sudo": {"-u", "--user", "-g", "--group", "-C", "--close-from", "-D", "--chdir",
+             "-h", "--host", "-p", "--prompt", "-r", "--role", "-t", "--type", "-U",
+             "--other-user", "-T", "--command-timeout"},
+    "xargs": {"-I", "-J", "-L", "-n", "-P", "-R", "-S", "-s", "-E", "-a", "-d"},
+    "time": {"-o", "--output", "-f", "--format"},
+    "npx": {"-p", "--package"},
+    "uv": {"-w", "--with", "--with-editable", "--with-requirements", "-p", "--python",
+           "--package", "--extra", "--group", "--env-file", "--index", "-i", "--index-url",
+           "--directory", "--project"},
+    "poetry": {"-C", "--directory", "-P", "--project"},
+    "pipx": {"--spec", "--python", "--pip-args", "--index-url"},
+    "pnpm": {"-C", "--dir", "-F", "--filter", "--package"},
+    "npm": {"-p", "--package", "--prefix", "-w", "--workspace"},
+    "yarn": {"--cwd", "-p", "--package"},
+    "composer": {"-d", "--working-dir"},
+}
+
+# Wrapper options that run the command in another directory, like `cd`.
+WRAPPER_CHDIR_OPTIONS = {"env": {"-C", "--chdir"}, "sudo": {"-D", "--chdir"},
+                         "uv": {"--directory"}, "poetry": {"-C", "--directory"},
+                         "pnpm": {"-C", "--dir"}, "npm": {"-w", "--workspace"},
+                         "yarn": {"--cwd"}, "composer": {"-d", "--working-dir"}}
+
+# env's `-S` and npm exec's `-c` take the command line itself as their value,
+# so that value is read as the command rather than stepped over.
+WRAPPER_SPLIT_OPTIONS = {"env": {"-S", "--split-string"}, "npm": {"-c", "--call"}}
+
+# Shell keywords that can open a segment before its command, stepped over the
+# same way, so `then cd <tree>` and `{ cd <tree>; }` are seen as `cd`.
+SHELL_KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}", "(", ")"}
+
+# Builtins that change the directory later segments run in. zsh's `chdir` is `cd`.
+DIRECTORY_CHANGES = {"cd", "pushd", "popd", "chdir"}
 
 # Rewrite-in-place flags, in their unambiguous long forms. `-i` is NOT here: it
 # means "ignore case" to grep and "in place" to sed, and refusing it everywhere
@@ -269,12 +551,18 @@ IN_PLACE_EDITORS = {
 # must step over both. Same shape as the commit gate's.
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 
-SEGMENT_SPLIT = re.compile(r"\|\||&&|[|;\n&]")
+# A `|` or `&` straight after `>` or `<` belongs to a redirect operator (`>|`,
+# `2>&1`, `<&0`), not a pipe or a background job, so it does not split.
+SEGMENT_SPLIT = re.compile(r"\|\||&&|(?<![<>])[|&]|[;\n]")
 
-# A redirect and its target. The lookbehind drops `2>&1`-style descriptor
-# duplication, and targets starting with `&` or `(` are a descriptor and a
-# process substitution rather than a file.
-REDIRECT = re.compile(r"(?<![0-9<>])>>?\s*([^\s;|&<>]+)")
+# A redirect and its target. Any descriptor number before `>` is still a file
+# redirect (`2> f`, `1>> f`), and so are `>| f`, zsh's `>! f` and `>>! f`, and
+# `>& f`. Only `>&` followed
+# by a descriptor number or `-` duplicates or closes a descriptor. That form
+# leaves the `&` unconsumed, and the target class cannot start with `&`, so it
+# never matches. A target
+# starting with `(` is a process substitution rather than a file.
+REDIRECT = re.compile(r">>?(?:[|!]|&(?!\s*(?:[0-9]+-?|-)(?:[\s;|&<>]|$)))?\s*([^\s;|&<>]+)")
 
 HOLMES_AGENT = re.compile(r"(^|[:/])holmes$", re.IGNORECASE)
 
@@ -290,22 +578,6 @@ BARE_ID_TOKEN = re.compile(
 WORKDIR_SLOT = re.compile(r"^[ \t]*Workdir:[ \t]*(\S+)", re.MULTILINE)
 
 STATE_DIR = os.environ.get("GUARD_STATE_DIR", "")
-
-
-def leading_positionals(tokens, opts_with_arg, want):
-    """The first `want` non-option tokens, stepping over flags and their values."""
-    found = []
-    i = 0
-    while i < len(tokens) and len(found) < want:
-        tok = tokens[i]
-        if tok.split("=", 1)[0] in opts_with_arg and "=" not in tok:
-            i += 2
-        elif tok.startswith("-"):
-            i += 1
-        else:
-            found.append(tok)
-            i += 1
-    return found
 
 
 def rewrites_in_place(name: str, args: list) -> bool:
@@ -341,11 +613,307 @@ def rewrites_in_place(name: str, args: list) -> bool:
     return False
 
 
-def under(path: str, root: str) -> bool:
-    """True when `path` is `root` or sits inside it."""
-    path = os.path.normpath(path)
-    root = os.path.normpath(root)
+def under(path: str, root: str, follow: bool = True) -> bool:
+    """True when `path` is `root` or sits inside it, both resolved through
+    symlinks, so `/tmp/link-into-tree/x` is inside the tree it points at.
+
+    With follow=False the final name is left unresolved: only its parent
+    directory is, so a link inside the tree is judged where the link itself
+    lives, not where it points. That is the path `rm`, `mv`, and `chmod -h` act
+    on."""
+    if follow:
+        path = os.path.realpath(path)
+    else:
+        head, name = os.path.split(path)
+        # `x/`, `x/.`, and `x/..` go through the link, so they resolve in full.
+        path = (os.path.realpath(path) if name in ("", ".", "..")
+                else os.path.join(os.path.realpath(head or "."), name))
+    root = os.path.realpath(root)
     return path == root or path.startswith(root.rstrip("/") + "/")
+
+
+def resolve(target: str, cwd: str):
+    """The absolute path a command names, or None when it cannot be known."""
+    if target.startswith("~"):
+        target = os.path.expanduser(target)
+    if not target or target.startswith("~") or UNRESOLVABLE.search(target):
+        return None
+    if not os.path.isabs(target):
+        if not cwd:
+            return None
+        target = os.path.join(cwd, target)
+    return target
+
+
+def git_verb(args: list):
+    """(verb, the words after it), stepping over git's own options."""
+    i = 0
+    while i < len(args):
+        tok = args[i]
+        if tok.split("=", 1)[0] in GIT_OPTS_WITH_ARG and "=" not in tok:
+            i += 2
+        elif tok.startswith("-"):
+            i += 1
+        else:
+            return tok, args[i + 1:]
+    return None, []
+
+
+def git_reads(verb: str, rest: list) -> bool:
+    """True when `git <verb> <rest>` only reads. See rule 1 in the header."""
+    if verb in GIT_READ_ONLY:
+        return True
+    flags = [a for a in rest if a.startswith("-")]
+    positionals = [a for a in rest if not a.startswith("-")]
+    listing = "-l" in flags or "--list" in flags
+    if verb in ("branch", "tag"):
+        positionals = [a for i, a in enumerate(rest) if not a.startswith("-")
+                       and not (i and rest[i - 1] in LIST_VALUE_FLAGS)]
+        allowed = BRANCH_READ_FLAGS if verb == "branch" else TAG_READ_FLAGS
+        return (all(f in allowed or f.startswith(LIST_VALUE_PREFIXES)
+                    or (verb == "tag" and re.fullmatch(r"-n\d+", f)) for f in flags)
+                and (not positionals or listing))
+    if verb == "remote":
+        return (all(f in ("-v", "--verbose", "--all", "--push", "-n") for f in flags)
+                and (positionals[:1] in ([], ["get-url"], ["show"])))
+    if verb == "config":
+        if any(f.split("=", 1)[0] in CONFIG_WRITE_FLAGS for f in flags):
+            return False
+        return bool(CONFIG_READ_FLAGS.intersection(flags)) or positionals[:1] in (["get"], ["list"])
+    if verb == "stash":
+        return positionals[:1] in (["list"], ["show"])
+    if verb == "worktree":
+        return positionals[:1] == ["list"]
+    return False
+
+
+def write_targets(name: str, args: list, cwd: str) -> list:
+    """The paths a MUTATING_COMMANDS command writes, as written. Over-reading is
+    the safe direction: an extra path can only refuse more."""
+    operands, done, skip = [], False, False
+    for arg in args:
+        if skip:
+            skip = False
+        elif not done and arg == "--":
+            done = True
+        elif done or not arg.startswith("-") or arg == "-":
+            operands.append(arg)
+        else:
+            skip = arg in VALUE_OPTIONS.get(name, ())
+    if name == "dd":
+        return [a[3:] for a in args if a.startswith("of=")]
+    if name in ("cp", "ln", "install"):
+        for i, arg in enumerate(args):
+            if arg.startswith("--target-directory="):
+                return [arg.split("=", 1)[1]]
+            if re.fullmatch(r"-[A-Za-z]*t", arg):
+                return args[i + 1:i + 2] or [""]
+            if re.fullmatch(r"-[A-Za-z]*t.+", arg) and not arg.startswith("--"):
+                return [arg[arg.index("t") + 1:]]
+        if name == "ln" and len(operands) == 1:
+            return [cwd]  # the link lands in the working directory
+        # Every operand after the first: the destination is always among them,
+        # whichever option order the command used.
+        return operands[1:] if name != "install" or "-d" not in args else operands
+    if name in ("chmod", "chown", "chgrp"):
+        return operands if any(a.startswith("--reference") for a in args) else operands[1:]
+    if name == "rsync":
+        if "--remove-source-files" in args:
+            return operands
+        return operands[-1:] if len(operands) > 1 else []  # one operand only lists
+    if name == "tar":
+        return tar_targets(args, cwd)
+    if name == "unzip":
+        return unzip_targets(args, cwd)
+    if name == "sort":
+        return sort_targets(args)
+    if name == "uniq":
+        return operands[1:]  # the second operand is the output file
+    if name == "patch":
+        directory = cwd
+        for i, arg in enumerate(args):
+            if arg in ("-d", "--directory"):
+                directory = args[i + 1] if i + 1 < len(args) else ""
+            elif arg.startswith("--directory="):
+                directory = arg.split("=", 1)[1]
+            elif arg.startswith("-d") and len(arg) > 2:
+                directory = arg[2:]
+        return operands + [directory]
+    return operands
+
+
+# tar's long mode options, mapped to the short letter each one means.
+TAR_LONG_MODES = {"--extract": "x", "--get": "x", "--create": "c", "--append": "r",
+                  "--update": "u", "--catenate": "A", "--concatenate": "A", "--delete": "r"}
+
+
+def tar_targets(args: list, cwd: str) -> list:
+    """What tar writes: the directory it extracts into, and the archive it
+    creates or changes. Listing, comparing, and extracting to stdout write
+    nothing. The first word may carry bundled letters with no dash
+    (`tar xzf a.tar`), and each of `f` and `C` there takes the next word."""
+    modes, archives, dirs, to_stdout = set(), [], [], False
+    i = 0
+    while i < len(args):
+        arg = args[i]
+        if arg.startswith("--"):
+            key, eq, value = arg.partition("=")
+            modes.update(TAR_LONG_MODES.get(key, ""))
+            to_stdout = to_stdout or key == "--to-stdout"
+            if key in ("--file", "--directory"):
+                if not eq:
+                    i += 1
+                    value = args[i] if i < len(args) else ""
+                (archives if key == "--file" else dirs).append(value)
+        elif (arg.startswith("-") and arg != "-") or i == 0:
+            letters = arg.lstrip("-")
+            for j, char in enumerate(letters):
+                if char in "fC":
+                    value = letters[j + 1:] if arg.startswith("-") else ""
+                    if not value:
+                        i += 1
+                        value = args[i] if i < len(args) else ""
+                    (archives if char == "f" else dirs).append(value)
+                    if arg.startswith("-"):
+                        break
+                else:
+                    modes.update(char if char in "xcruA" else "")
+                    to_stdout = to_stdout or char == "O"
+        i += 1
+    targets = []
+    if modes & set("cruA"):
+        targets += [a for a in archives if a != "-"]
+    if "x" in modes and not to_stdout:
+        targets += dirs or [cwd]
+    return targets
+
+
+def unzip_targets(args: list, cwd: str) -> list:
+    """The directory unzip extracts into: `-d`'s value, or the working
+    directory. A listing, testing, or printing form extracts nothing."""
+    letters, dest, operands, i = "", None, [], 0
+    while i < len(args):
+        arg = args[i]
+        if arg.startswith("-") and not arg.startswith("--") and len(arg) > 1:
+            for j, char in enumerate(arg[1:]):
+                if char == "d":
+                    dest = arg[j + 2:]
+                    if not dest:
+                        i += 1
+                        dest = args[i] if i < len(args) else ""
+                    break
+                letters += char
+        elif not arg.startswith("-"):
+            operands.append(arg)
+        i += 1
+    if not operands or UNZIP_READ_FLAGS.intersection(letters):
+        return []  # with no archive named, unzip prints its usage
+    return [dest if dest is not None else cwd]
+
+
+def sort_targets(args: list) -> list:
+    """The file `sort -o` writes. Without `-o`, sort only prints."""
+    targets = []
+    for i, arg in enumerate(args):
+        nxt = args[i + 1:i + 2] or [""]
+        if arg.startswith("--output"):
+            targets.append(arg.partition("=")[2] if "=" in arg else nxt[0])
+        elif re.fullmatch(r"-[A-Za-z]*o", arg):
+            targets += nxt
+        elif re.fullmatch(r"-[A-Za-z]*o.+", arg):
+            targets.append(arg[arg.index("o") + 1:])
+    return targets
+
+
+def formatter_writes(name: str, args: list):
+    """The formatter's name when this call rewrites files, else None. See rule
+    3 in the header: a short write flag, or a formatter that writes by default
+    and was not put in check mode."""
+    if re.fullmatch(r"python[0-9.]*", name) and args[:1] == ["-m"] and len(args) > 1:
+        name, args = args[1], args[2:]
+    for arg in args:
+        key = arg.split("=", 1)[0]
+        if len(key) == 3 and key.startswith("--"):
+            key = key[1:]  # Go's flag package reads `--w` as `-w`
+        if key in FORMATTER_WRITE_FLAGS.get(name, ()):
+            return name
+    if name in FORMATTER_CLUSTER_FLAGS:
+        write, takes_value = FORMATTER_CLUSTER_FLAGS[name]
+        for arg in args:
+            if arg.startswith("--") or not arg.startswith("-"):
+                continue
+            for char in arg[1:]:
+                if char in write:
+                    return name
+                if char in takes_value:
+                    break
+    sub = next((a for a in args if not a.startswith(("-", "+"))), "")
+    key = name if name in FORMATTERS_WRITING_BY_DEFAULT else f"{name} {sub}"
+    if key not in FORMATTERS_WRITING_BY_DEFAULT:
+        return None
+    # `--code=x` matches a bare `--code`. A value that switches a check off
+    # (`-check=false`) never does.
+    words = (set(args) | {f"{a}={b}" for a, b in zip(args, args[1:])}
+             | {a.split("=", 1)[0] for a in args
+                if "=" in a and a.split("=", 1)[1].lower() not in OFF_VALUES})
+    if key == "rustfmt" and "--print-config" in words:
+        operands = [a for a in args if not a.startswith("-")]
+        joined = [a.split("=", 1)[1] for a in args if a.startswith("--print-config=")]
+        kind = joined[0] if joined else (operands.pop(0) if operands else "")
+        return key if operands and kind in RUSTFMT_CONFIG_FILE_KINDS else None
+    if words & (FORMATTERS_WRITING_BY_DEFAULT[key] | FORMATTER_INFO_FLAGS):
+        return None
+    # A formatter reading stdin writes only to stdout: `-` with no file operand,
+    # or rustfmt with no operand at all. Any file operand beside it is written.
+    operands = [a for i, a in enumerate(args) if not a.startswith(("-", "+"))
+                and (i == 0 or args[i - 1] not in STDIN_NAME_OPTIONS)]
+    if " " in key:
+        operands.remove(sub)
+    if not operands and ("-" in args or key == "rustfmt"):
+        return None
+    return key
+
+
+def refuses_write(name: str, args: list, roots: list, cwd: str, via_xargs: bool):
+    """(action, reason) when a file-writing command touches the tree, else None."""
+    targets = write_targets(name, args, cwd)
+    if via_xargs:
+        targets.append("$xargs")  # its paths arrive on stdin, where nothing reads them
+    if not targets:
+        return None
+    base = f"`{name}` changes a file's content, location, existence, or metadata"
+    if not roots:
+        return (f"`{name}`", base + ", and no tree was named to judge its paths against.")
+    for raw in targets:
+        path = resolve(raw, cwd)
+        if path is None:
+            return (f"`{name}`", base + f", and the path `{raw or '(none)'}` cannot be resolved.")
+        # Judged both ways: where a link points, for the writers that follow it
+        # (cp, tee, touch), and where the link itself lives, for the ones that
+        # act on the entry (rm, mv, chmod -h). Checking both for every command
+        # needs no per-command table, and it can only refuse more.
+        if any(under(path, root) or under(path, root, follow=False) or under(root, path)
+               for root in roots):
+            return (f"`{name}`", base + f", and `{raw}` is the tree under review or holds it.")
+    return None
+
+
+def runs_command(tokens: list) -> bool:
+    """True when `tokens` open a RUNNERS run form. The run subcommand is removed
+    in place, so the runner is then stepped over like any wrapper, its own
+    options included."""
+    subcommands = RUNNERS.get(tokens[0])
+    if subcommands is None:
+        return False
+    i = 1
+    while i < len(tokens) and tokens[i].startswith("-"):
+        i += 2 if tokens[i] in WRAPPER_VALUE_OPTIONS.get(tokens[0], ()) else 1
+    if i >= len(tokens):
+        return False
+    if tokens[i] in subcommands:
+        del tokens[i]
+        return True
+    return tokens[0] == "yarn" and tokens[i] not in YARN_OWN_WRITER_NAMES
 
 
 def classify(command: str, roots: list, cwd: str):
@@ -357,40 +925,74 @@ def classify(command: str, roots: list, cwd: str):
 
     Every segment is examined, never only the first: `git status && chmod 644 x`
     mutates the tree as surely as `chmod` alone does.
+
+    A `cd`, `pushd`, `popd`, zsh `chdir`, `env -C`, or `sudo -D` moves the
+    directory the later segments run in to one this guard does not follow, so
+    from there on cwd is unknown and every relative path is unresolvable:
+    `cd <tree> && rm README.md` is refused. It is found after wrappers and shell keywords are stepped over,
+    so `builtin cd`, `( cd`, and `then cd` count too.
     """
     for segment in SEGMENT_SPLIT.split(command):
         tokens = segment.strip().split()
-        # Step over environment assignments and wrappers to reach the real command.
+        # Step over environment assignments, wrappers, and shell keywords to
+        # reach the real command. A `(` or `{` glued to the command is dropped.
         # A wrapper's own flags are stepped over too, so `xargs -0 rm` is seen as
-        # `rm`; a wrapper flag that takes a separate value is not, and sits on the
-        # far side of the boundary this guard already declines to police.
-        wrapped = False
+        # `rm`, and so is the value of a flag WRAPPER_VALUE_OPTIONS names, so
+        # `env -u FOO chmod` is seen as `chmod`. `env -C` and `sudo -D` change
+        # the directory the way `cd` does, and `env -S` hands over the command
+        # line itself as its value.
+        wrapper, via_xargs = "", False
         while tokens:
-            if re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]) or tokens[0] in PASS_THROUGH:
-                wrapped = wrapped or tokens[0] in PASS_THROUGH
-            elif not (wrapped and tokens[0].startswith("-")):
+            tokens[0] = tokens[0].lstrip("({") or tokens[0]
+            if wrapper == "command" and re.fullmatch(r"-[pvV]*[vV][pvV]*", tokens[0]):
+                tokens = []  # `command -v` looks a name up and runs nothing
+                break
+            if wrapper and tokens[0].startswith("-"):
+                option, joined = tokens[0].split("=", 1)[0], "=" in tokens[0]
+                short = option[:2] if not option.startswith("--") else option
+                if short in WRAPPER_CHDIR_OPTIONS.get(wrapper, ()):
+                    cwd = ""  # the command runs in another directory, as after `cd`
+                if short in WRAPPER_SPLIT_OPTIONS.get(wrapper, ()):
+                    # The value is the command line: read it as the command.
+                    word = tokens.pop(0)
+                    value = (word.split("=", 1)[1] if joined
+                             else word[2:] if not word.startswith("--") else "")
+                    if value:
+                        tokens.insert(0, value)
+                    if tokens:
+                        tokens[0] = tokens[0].lstrip("'\"")
+                    continue
+                if (option in WRAPPER_VALUE_OPTIONS.get(wrapper, ()) and not joined
+                        and len(tokens) > 1):
+                    tokens.pop(0)  # the option's value, not the command
+            elif (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]) or tokens[0] in PASS_THROUGH
+                  or runs_command(tokens)):
+                if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
+                    wrapper = tokens[0]
+                via_xargs = via_xargs or tokens[0] == "xargs"
+            elif tokens[0] not in SHELL_KEYWORDS:
                 break
             tokens.pop(0)
+        if tokens and os.path.basename(tokens[0]) in DIRECTORY_CHANGES:
+            cwd = ""
         if tokens:
             name = os.path.basename(tokens[0])
             args = tokens[1:]
 
             if name == "git":
-                verb = leading_positionals(args, GIT_OPTS_WITH_ARG, 1)
-                if verb and verb[0] not in GIT_READ_ONLY:
+                verb, rest = git_verb(args)
+                if verb and not git_reads(verb, rest):
                     return (
-                        f"`git {verb[0]}`",
-                        f"`git {verb[0]}` is not one of git's read-only verbs, so it is "
+                        f"`git {verb}`",
+                        f"`git {verb}` is not one of git's read-only forms, so it is "
                         "refused. `git restore`, `checkout`, `switch`, `reset`, `clean`, "
                         "and `stash` all discard exactly the uncommitted change you were "
                         "sent to read.",
                     )
             elif name in MUTATING_COMMANDS:
-                return (
-                    f"`{name}`",
-                    f"`{name}` changes a file's content, location, existence, or "
-                    "metadata. A review does none of those.",
-                )
+                found = refuses_write(name, args, roots, cwd, via_xargs)
+                if found:
+                    return found
             elif name == "find" and ("-delete" in args or "-exec" in args or "-execdir" in args):
                 return (
                     "`find` deleting or executing",
@@ -405,24 +1007,33 @@ def classify(command: str, roots: list, cwd: str):
                     f"`{name}` is being run with a rewrite flag. Run formatters and "
                     "linters in check mode only.",
                 )
+            formatter = formatter_writes(name, args)
+            if formatter:
+                return (
+                    f"`{formatter}` rewriting files",
+                    f"`{formatter}` rewrites files unless it runs in check mode. Run "
+                    "formatters and linters in check mode only, such as `--check`.",
+                )
 
         # Only meaningful once a tree is named. With no root to compare against,
-        # a redirect has nothing it could be inside of.
+        # a redirect has nothing it could be inside of. A target goes through
+        # resolve(), as a write_targets path does, so a quoted, `~`, or `$HOME`
+        # target is expanded or refused rather than joined onto cwd as text.
         for target in REDIRECT.findall(segment) if roots else []:
             if target.startswith(("&", "(")):
                 continue
-            if not os.path.isabs(target):
-                if not cwd:
-                    return (
-                        "redirecting output into the tree under review",
-                        f"the output is redirected to `{target}`, and no working "
-                        "directory was supplied to resolve it against.",
-                    )
-                target = os.path.join(cwd, target)
-            if any(under(target, root) for root in roots):
+            path = resolve(target, cwd)
+            if path is None:
                 return (
                     "redirecting output into the tree under review",
-                    f"the output is redirected into the tree under review (`{target}`).",
+                    f"the output is redirected to `{target}`, which cannot be "
+                    "resolved: it holds shell the guard does not expand, or it is "
+                    "relative with no known working directory.",
+                )
+            if any(under(path, root) for root in roots):
+                return (
+                    "redirecting output into the tree under review",
+                    f"the output is redirected into the tree under review (`{path}`).",
                 )
     return None
 
@@ -565,7 +1176,7 @@ if event == "PostToolUse" and tool_name == "Agent":
     sys.exit(0)
 
 # ── ENFORCE ───────────────────────────────────────────────────────────────────
-if event != "PreToolUse" or tool_name != "Bash":
+if event != "PreToolUse" or (tool_name != "Bash" and tool_name not in EDIT_TOOLS):
     sys.exit(0)
 
 # A main session is never gagged. The human keeps working in the window that
@@ -578,8 +1189,18 @@ if not record:
     sys.exit(0)
 
 roots = [r for r in record.get("roots", []) if isinstance(r, str)]
-command = str((tool_input or {}).get("command") or "")
-found = classify(command, roots, str(payload.get("cwd") or ""))
+cwd = str(payload.get("cwd") or "")
+if tool_name in EDIT_TOOLS:
+    raw = str(tool_input.get(EDIT_TOOLS[tool_name]) or "")
+    path = resolve(raw, cwd)
+    found = None
+    if not roots or path is None:
+        found = (f"`{tool_name}`", f"`{tool_name}` writes to `{raw or '(no path)'}`, and "
+                 "no tree or no resolvable path was given to judge it against.")
+    elif any(under(path, root) for root in roots):
+        found = (f"`{tool_name}`", f"`{tool_name}` writes to `{raw}`, inside the tree under review.")
+else:
+    found = classify(str(tool_input.get("command") or ""), roots, cwd)
 if not found:
     sys.exit(0)
 
@@ -620,3 +1241,7 @@ print(json.dumps({
 }))
 sys.exit(0)
 PYEOF
+status=$?
+# --classify exits 1 to mean "refused", which is not a crash.
+[ "$GUARD_MODE" = classify ] && exit "$status"
+[ "$status" -eq 0 ] || guard_python_fallback

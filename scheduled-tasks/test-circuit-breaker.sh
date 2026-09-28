@@ -1,30 +1,27 @@
 #!/usr/bin/env bash
 # Test for the Dispatch circuit-breaker pre-flight.
 #
-# It extracts the *real* pre-flight snippet from orchestrator.md (the block
-# between the `circuit-breaker-preflight` sentinel markers) and runs it against
-# fixture log directories, so the test can never drift from the shipped logic.
+# The pre-flight lives in bin/dispatch-agent.sh, and `--check` prints its
+# verdict without spawning anything. Every case below runs the shipped script
+# against a fixture log directory, so the test can never drift from the logic
+# the pipeline runs.
 #
 # Run: bash scheduled-tasks/test-circuit-breaker.sh
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC="$HERE/orchestrator.md"
-SNIPPET=$(mktemp)
+SCRIPT="$HERE/../bin/dispatch-agent.sh"
 WORK=$(mktemp -d)
-trap 'rm -rf "$SNIPPET" "$WORK"' EXIT
+trap 'rm -rf "$WORK"' EXIT
 
-# The snippet falls back to LOGDIR="$HOME/.claude-workbench/dev-team-logs". Every
+# The script falls back to LOGDIR="$HOME/.claude-workbench/dev-team-logs". Every
 # `run` below passes LOGDIR, but a case that ever forgot would read this machine's
 # real Dispatch logs and take its verdict from whatever the last live tick wrote.
 # A sandboxed HOME makes that impossible rather than merely unlikely.
 mkdir -p "$WORK/home"
 
-# Pull the snippet out from between the markers (exclusive of the marker lines).
-awk '/# >>> circuit-breaker-preflight >>>/{f=1;next} /# <<< circuit-breaker-preflight <<</{f=0} f' \
-  "$SRC" > "$SNIPPET"
-if [ ! -s "$SNIPPET" ]; then
-  echo "FAIL: could not extract circuit-breaker-preflight block from $SRC"; exit 1
+if [ ! -f "$SCRIPT" ]; then
+  echo "FAIL: $SCRIPT not found"; exit 1
 fi
 
 pass=0; fail=0
@@ -37,7 +34,7 @@ mklog() {
   TZ=UTC touch -t "$stamp" "$dir/$agent-$id-$stamp.log"   # deterministic mtime for ls -t ordering
 }
 # run <dir> <agent> <id> -> echoes the pre-flight verdict
-run() { LOGDIR="$1" AGENT="$2" ID="$3" HOME="$WORK/home" bash "$SNIPPET"; }
+run() { LOGDIR="$1" HOME="$WORK/home" bash "$SCRIPT" --check "$2" "$3"; }
 # expect <name> <expected-prefix> <actual>
 expect() {
   case "$3" in
@@ -46,7 +43,7 @@ expect() {
   esac
 }
 
-echo "Testing circuit-breaker pre-flight ($SNIPPET):"
+echo "Testing circuit-breaker pre-flight ($SCRIPT --check):"
 
 # 1. No prior runs -> DISPATCH
 d="$WORK/case1"; mkdir -p "$d"
@@ -233,6 +230,76 @@ expect "other item's lock ignored -> dispatch" "DISPATCH" "$(run "$d" holmes 432
 d="$WORK/case20"; mkdir -p "$d"
 echo $$ > "$d/watson-431.lock"
 expect "other agent's lock ignored -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+
+echo
+echo "Testing the verdicts on the dispatch path (stubbed claude):"
+# A real dispatch, with `claude` and `security` stubbed on PATH, so each case
+# proves what the script DOES with a verdict: spawn or not, and what it leaves
+# on disk. The stub records its arguments, so a spawn is visible.
+STUB="$WORK/stub-bin"; mkdir -p "$STUB"
+printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/spawned"\n' "$WORK" > "$STUB/claude"
+printf '#!/bin/sh\nexit 1\n' > "$STUB/security"
+chmod +x "$STUB/claude" "$STUB/security"
+CFG="$WORK/cfg.json"
+printf '%s' '{"agents":{"holmes":{"maxBudgetUsd":10},"watson":{"maxBudgetUsd":10,"reprieveBudgetMultiplier":3}}}' > "$CFG"
+# dispatch <dir> <agent> <id> -> the script's output; spawns land in $WORK/spawned
+dispatch() {
+  rm -f "$WORK/spawned"
+  LOGDIR="$1" DISPATCH_CONFIG="$CFG" HOME="$WORK/home" PATH="$STUB:$PATH" \
+    bash "$SCRIPT" "$2" "$3" 2>&1
+  sleep 1   # the stub runs detached; give it time to record its spawn
+}
+spawned() { [ -s "$WORK/spawned" ] && echo yes || echo no; }
+
+d="$WORK/path1"; mkdir -p "$d"
+mklog "$d" watson 131 202606210800 "API Error: Output blocked by content filtering policy"
+out=$(dispatch "$d" watson 131)
+expect "ESCALATE is printed as the first line" "ESCALATE" "$out"
+expect "...and nothing is spawned" "no" "$(spawned)"
+
+d="$WORK/path2"; mkdir -p "$d"
+echo $$ > "$d/holmes-431.lock"
+out=$(dispatch "$d" holmes 431)
+expect "SKIP is printed as the first line" "SKIP" "$out"
+expect "...and nothing is spawned" "no" "$(spawned)"
+expect "...and the live run's lock is left alone" "$$" "$(cat "$d/holmes-431.lock")"
+
+d="$WORK/path3"; mkdir -p "$d"
+mklog "$d" holmes 215 202606210800 "Error: Exceeded USD budget (10)"
+touch "$d/holmes-215.escalated"
+out=$(dispatch "$d" holmes 215)
+expect "REPRIEVE is printed first" "REPRIEVE" "$out"
+expect "...and the run is spawned" "yes" "$(spawned)"
+case "$(cat "$WORK/spawned" 2>/dev/null)" in
+  *"--max-budget-usd 30.00 "*) echo "  ok   — ...at the multiplied budget"; pass=$((pass+1)) ;;
+  *) echo "  FAIL — the reprieve did not multiply the budget: $(cat "$WORK/spawned" 2>/dev/null)"; fail=$((fail+1)) ;;
+esac
+if [ -e "$d/holmes-215.escalated" ]; then
+  echo "  FAIL — the reprieve marker survived its dispatch, so every tick would reprieve again"; fail=$((fail+1))
+else
+  echo "  ok   — ...and the marker is consumed, so the reprieve is one-shot"; pass=$((pass+1))
+fi
+# The fresh run's own (clean) log is now the newest, so the next tick reads it
+# as an ordinary item. Before the fix the marker survived and this said REPRIEVE.
+expect "the next check is an ordinary verdict, not a second reprieve" "DISPATCH" "$(run "$d" holmes 215)"
+
+d="$WORK/path4"; mkdir -p "$d"
+touch "$d/watson-77.escalated"
+LOGDIR="$d" DISPATCH_CONFIG="$CFG" DISPATCH_DRY_RUN=1 HOME="$WORK/home" bash "$SCRIPT" watson 77 >/dev/null 2>&1
+if [ -e "$d/watson-77.escalated" ]; then
+  echo "  ok   — a dry run consumes no marker"; pass=$((pass+1))
+else
+  echo "  FAIL — a dry run consumed the reprieve marker"; fail=$((fail+1))
+fi
+
+d="$WORK/path5"; mkdir -p "$d"
+out=$(LOGDIR="$d" HOME="$WORK/home" bash "$SCRIPT" --mark-escalated holmes 88)
+expect "--mark-escalated reports the marker" "marked holmes-88 escalated" "$out"
+expect "...and the next check is a reprieve" "REPRIEVE" "$(run "$d" holmes 88)"
+LOGDIR="$d" HOME="$WORK/home" bash "$SCRIPT" --mark-escalated lestrade owner/repo >/dev/null 2>&1
+expect "--mark-escalated refuses a sweep target" "2" "$?"
+LOGDIR="$d" HOME="$WORK/home" bash "$SCRIPT" --check watson abc >/dev/null 2>&1
+expect "--check refuses a non-numeric id" "2" "$?"
 
 echo
 echo "circuit-breaker: $pass passed, $fail failed"

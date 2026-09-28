@@ -1,4 +1,4 @@
-# The Index mode pipeline — steps 1 through 11
+# The Index mode pipeline — steps 0 through 11
 
 On-demand detail for `agents/watson.md`. Dr. Watson reads this file at the start
 of every The Index-mode run, before any other action, and executes the steps in
@@ -9,6 +9,23 @@ The `## Rules` section of `agents/watson.md` applies on top of this procedure.
 Direct mode never uses this file.
 
 ---
+
+### 0. Confirm this run can commit — before the claim
+
+An Index run ends in commits and pushes, and the commit gate lets them through
+only for a process that `bin/dispatch-agent.sh` spawned with
+`WORKBENCH_DEV_TEAM_PIPELINE=1`. The Agent tool cannot set that variable. A run
+without it would claim the item, move it to `In Progress`, and then die at its
+first commit, leaving the claim behind to hide the item from the lane.
+
+```bash
+printf '%s\n' "${WORKBENCH_DEV_TEAM_PIPELINE:-unset}"
+```
+
+**Anything but `1` ends the run here.** Claim nothing, move nothing, comment
+nothing. Report to the session that dispatched you: "Index-mode Watson runs only
+through `bin/dispatch-agent.sh`, which sets the pipeline flag; this run carries
+none, so I touched nothing." Then stop. Never set the variable yourself.
 
 ### 1. Claim the item on the board
 
@@ -156,7 +173,8 @@ BASE=$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name)
 # Prints exactly one tab-separated verdict, "<VERDICT>\t<branch|->\t<pr|->":
 #   "FRESH"     — no branch for this issue. Start fresh (step 4).
 #   "RESUME"    — Watson's own in-flight work. Resume on that branch (step 5).
-#   "DRIFT"     — Watson's own work is already merged or closed. Repair status, exit.
+#   "DRIFT"     — Watson's own work is already merged. Repair status, exit.
+#   "CLOSED"    — Watson's own PR was closed without merging. A human decides; escalate, exit.
 #   "HANDS-OFF" — someone else owns that branch/PR. Do not touch it, exit.
 wr_verdict=FRESH; wr_branch=-; wr_pr=-
 
@@ -199,8 +217,9 @@ for wr_b in $(gh api --paginate "repos/$REPO/branches" --jq '.[].name' 2>/dev/nu
   fi
   if [ "$wr_verdict" = FRESH ]; then   # first branch of Watson's own — keep scanning for a human's
     case "$wr_s" in
-      MERGED|CLOSED) wr_verdict=DRIFT ;;
-      *)             wr_verdict=RESUME ;;
+      MERGED) wr_verdict=DRIFT ;;
+      CLOSED) wr_verdict=CLOSED ;;   # closed unmerged is a human's "no", not finished work
+      *)      wr_verdict=RESUME ;;
     esac
     wr_branch=$wr_b; wr_pr=$wr_p
   fi
@@ -219,7 +238,8 @@ Read the three fields into the variables the later steps use: `BRANCH` is field
 | None | — | — | `FRESH` | Fresh start. Go to step 4 (fresh-work path). |
 | Yes | Watson's | None | `RESUME` | Clone, check out `$BRANCH`, skip creation in step 5, go to step 6. |
 | Yes | Watson's | Open (draft or ready) | `RESUME` | Same as above — the PR already exists, just continue the work. |
-| Yes | Watson's | Merged or closed | `DRIFT` | The work was already completed. `move(<ITEM_ID>, "In Review")` to repair the drift, log, then release the claim (below) and exit. |
+| Yes | Watson's | Merged | `DRIFT` | The work was already completed. `move(<ITEM_ID>, "In Review")` to repair the drift, log, then release the claim (below) and exit. |
+| Yes | Watson's | Closed without merging | `CLOSED` | A human closed the PR, so the work was not accepted. Do not reopen it, redo it, or open a new PR. `move(<ITEM_ID>, "Escalated")`, then comment on the issue: the PR was closed unmerged; reopen it for Watson to resume, or delete the branch for a fresh start. Release the claim (below) and exit. |
 | Yes | Not Watson's | None | `HANDS-OFF` | Someone else's branch. Comment, leave the status, release the claim, exit. |
 | Yes | Not Watson's | Any state | `HANDS-OFF` | Same as above. Name their PR in the comment. |
 | Several | At least one is not Watson's | Any | `HANDS-OFF` | A human works this issue. Never compete, even when one of the branches is Watson's own. |
@@ -285,8 +305,9 @@ On `SKIP`, post nothing at all. **Nothing else about this exit changes either
 way**: still no checkout, no push, no competing branch or PR, no implementation,
 no `move`. Release the claim and exit, the same on both paths.
 
-**`DRIFT` exits through this same release**, after its `move` to `In Review`. The
-move takes the item out of the dev lane, so the claim is not hiding it today — but
+**`DRIFT` and `CLOSED` exit through this same release**, after their `move` to
+`In Review` or `Escalated`. The move takes the item out of the dev lane, so the
+claim is not hiding it today — but
 nothing clears a claim on a status change, and the moment a human moves that item
 back, an abandoned claim would make it invisible.
 
@@ -328,12 +349,12 @@ TYPE=feature   # set to fix or chore when the issue calls for it
 SLUG="$(echo '<title>' | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-50)"
 BRANCH="$TYPE/<issue_number>-$SLUG"
 
-# The path carries the repo, not just the issue number. Two repos can each have
-# an issue #42, and with no host-wide lock two Watsons now run side by side — one
-# `rm -rf` would take the other's uncommitted work. <repo-slug> is the item's
-# `repo` with `/` written as `-`, e.g. mike-bronner-phpcs-rules.
-CLONE=/tmp/watson-<repo-slug>-<issue_number>
-rm -rf "$CLONE"
+# A fresh mktemp -d directory per run. With no host-wide lock two Watsons run
+# side by side, and a directory of its own means no `rm -rf` can take the other's
+# uncommitted work, whatever repo or issue number each carries. Note the path it
+# prints: step 10 removes it by that path, written out in full.
+CLONE=$(mktemp -d)
+echo "$CLONE"
 gh repo clone <repo> "$CLONE"
 cd "$CLONE"
 git checkout -b "$BRANCH"
@@ -362,8 +383,14 @@ PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
 The `Fixes #<issue_number>` keyword in the body handles the issue↔PR link on
 merge — no separate linking step needed.
 
-On a resume: clone fresh (or reuse `/tmp/watson-<repo-slug>-<issue_number>` if it exists),
-check out `$BRANCH`, rebase onto the default branch, and continue.
+On a resume: clone fresh into a new `mktemp -d` directory, as above. A prior
+run's clone is never reused: every run pushes its work before it exits and
+removes its clone in step 10, so the branch on the remote is the whole state.
+Check out `$BRANCH`, bring in the default branch with `git merge "origin/$BASE"`,
+and continue. **Merge, never rebase.** The branch is already pushed, so a rebase
+rewrites its history, and the next push then needs a force push. The commit gate
+refuses every force push with no approval path, and Watson never force-pushes.
+Resolve any conflict in a merge commit of its own.
 
 ### 6. Implement, test, commit
 
@@ -397,9 +424,16 @@ file, or pattern that the general digest wouldn't surface:
 mcp__plugin_workbench-core_memory__search(query: "<repo> <issue title or key symbol>", folder: "dev-team/review-learnings")
 ```
 
-**Degrade gracefully both ways:** if the digest doesn't exist yet or the search
-returns nothing (no rejections recorded yet), skip and rely on the `/develop` §4
-standards — never block on either being empty.
+Then run the `feedback/` search `/develop` §2 requires: Mike's own corrections,
+which no review rejection records, and which bind this repo and this kind of task.
+
+```
+mcp__plugin_workbench-core_memory__search(query: "<repo> <what you are about to change, in the words a rule about it would use>", folder: "feedback")
+```
+
+**Degrade gracefully:** if the digest doesn't exist yet or a search returns
+nothing, skip it and rely on the `/develop` §4 standards — never block on one
+being empty.
 
 If you previously routed a block (see "If a fork blocks you" below), the
 answer is waiting where the resolver replied: sharpened AC in the issue body
@@ -597,8 +631,13 @@ mcp__the-index__release_item(<ITEM_ID>)
 ```
 
 ```bash
-rm -rf /tmp/watson-<repo-slug>-<issue_number>
+rm -rf <the clone path step 5 printed>
 ```
+
+Write the path out in full. workbench-core's destructive-scope guard permits an
+`rm` inside a `mktemp -d` directory, and it refuses one whose target is a
+variable such as `"$CLONE"` or a glob, because it cannot tell what it would
+delete.
 
 The claim has no automatic release — if you exit early (blocked, wrong lane,
 hands-off, budget), release it yourself on the way out.

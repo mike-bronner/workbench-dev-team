@@ -295,13 +295,118 @@ sub_case "a gh pr merge with a repo flag"         'gh -R owner/name pr merge 42'
 sub_case "a commit hidden behind a push"          'git push && git commit -m "z"'                  deny
 sub_case "a commit in a -C clone"                 'git -C /tmp/clone commit -m "z"'                deny
 
-# Reads and the rest of gh stay open — a sub-agent that cannot inspect its own
-# work cannot write the report it is being told to hand back.
+# Reads stay open — a sub-agent that cannot inspect its own work cannot write
+# the report it is being told to hand back.
 sub_case "git status is untouched"                'git status'                                     silent
 sub_case "git diff is untouched"                  'git diff --staged'                              silent
-sub_case "gh pr view is untouched"                'gh pr view 42 --comments'                       silent
-sub_case "gh pr comment is untouched"             'gh pr comment 42 --body hi'                      silent
-sub_case "gh pr create is untouched"              'gh pr create --draft --title x --body y'        silent
+
+echo "...and gh is an allowlist of reads, never a list of writes:"
+# gh api reaches every GitHub endpoint, so a list of write spellings never
+# closed: each review round found one it missed. A sub-agent's gh call is read
+# by the command path gh runs, and only a read path runs.
+while IFS='|' read -r desc cmd; do
+  [ -n "$desc" ] || continue
+  sub_case "$desc" "$cmd" silent
+done <<'EOF'
+gh pr view is a read|gh pr view 42 --comments
+gh pr diff is a read|gh pr diff 42 -R o/r
+gh pr checks is a read|gh pr checks 42 -R o/r
+gh pr checkout only fetches|gh pr checkout 42
+gh repo clone only fetches|gh repo clone owner/name /tmp/x -- --depth 1
+gh issue list is a read|gh issue list -R o/r --state open
+gh release view is a read|gh release view v1.0.0
+a flag before the subcommand still reads the path|gh -R o/r pr view 42
+...and a flag between group and subcommand|gh pr -R o/r view 42
+...and --repo= in one word|gh release --repo=o/r list
+a contents/ read|gh api repos/o/r/contents/README.md
+a git/refs read with --jq|gh api repos/o/r/git/refs/heads/main --jq .object.sha
+an explicit -X GET|gh api -X GET repos/o/r/issues/1
+a read piped to jq|gh api repos/o/r/contents/a | jq .
+a variable after the subcommand is an argument|gh pr checkout $PR_NUM
+a read in a substitution (Holmes's strike count)|ACTIVITY=$(gh pr view $PR_NUM -R o/r --json comments,reviews)
+a gh api endpoint holding a variable|gh api "repos/o/r/issues/$N/comments?per_page=100"
+which gh names gh as data|which gh
+Holmes's inline-comments read, whose path names pulls|gh api "repos/o/r/pulls/$PR_NUM/comments?per_page=100"
+...and in the substitution Holmes runs it in|INLINE=$(gh api "repos/o/r/pulls/$PR_NUM/comments?per_page=100")
+a GET of a pull's merge status|gh api repos/o/r/pulls/1/merge
+a GET of the required pull request reviews|gh api repos/o/r/branches/main/protection/required_pull_request_reviews
+a pulls/ read in a read-only chain beside git|gh api repos/o/r/pulls/1/comments | jq length && git status
+EOF
+# Every reproduction from Holmes's round 3, and the everyday writes a sub-agent
+# never needs: each one names no git verb, and each was silent here.
+while IFS='|' read -r desc cmd; do
+  [ -n "$desc" ] || continue
+  sub_case "$desc" "$cmd" deny
+done <<'EOF'
+gh release -R before the subcommand|gh release -R o/r create v9
+gh release --repo= before the subcommand|gh release --repo=o/r create v9
+gh pr -R before create|gh pr -R o/r create --fill
+a contents write by repository id|gh api -X PUT repositories/123/contents/p -f message=m -f content=eA==
+a ref made by repository id|gh api repositories/123/git/refs -f ref=refs/heads/x -f sha=abc
+GraphQL createRef|gh api graphql -f query='mutation { createRef(input: {}) { clientMutationId } }'
+GraphQL updateRef with force|gh api graphql -f query='mutation { updateRef(input: {force: true}) { clientMutationId } }'
+GraphQL deleteRef|gh api graphql -f query='mutation { deleteRef(input: {}) { clientMutationId } }'
+gh pr update-branch|gh pr update-branch 1
+gh release edit publishing a draft|gh release edit v1 --draft=false
+gh pr comment is a write|gh pr comment 42 --body hi
+gh pr create naming its --head is a write|gh pr create --draft --head feat/x --title x --body y
+gh pr create with no --head pushes the branch|gh pr create --draft --title x --body y
+gh pr create hidden in a read-only chain|gh pr view 1 && gh pr create --fill
+gh repo sync writes to a remote|gh repo sync owner/fork
+a PUT to contents/ makes a commit|gh api -X PUT repos/o/r/contents/README.md -f message=m -f content=eA== -f branch=main
+a field alone makes a POST|gh api repos/o/r/git/refs -f ref=refs/heads/x -f sha=abc
+--input alone makes a POST|gh api repos/o/r/git/trees --input /tmp/tree.json
+--method= spelling|gh api --method=DELETE repos/o/r/git/refs/heads/x
+an attached -XPUT|gh api -XPUT repos/o/r/contents/a -f message=m -f content=eA==
+-i clustered with -f|gh api -if content=x repos/o/r/git/blobs
+a comment through gh api|gh api repos/o/r/issues/1/comments -f body=hi
+a write to a pulls/ path|gh api repos/o/r/pulls/1/comments -f body=hi -f commit_id=abc -f path=a -F line=1
+-X GET with a field is still refused|gh api -X GET repos/o/r/git/refs -f per_page=100
+a method the shell builds|gh api -X "$M" repos/o/r/git/refs
+an endpoint word that could be a flag|gh api "$E"
+gh pr ready is foreground-only|gh pr ready 42
+gh pr close is foreground-only|gh pr close 42
+gh pr reopen is foreground-only|gh pr reopen 42
+gh issue close is foreground-only|gh issue close 3
+gh issue reopen is foreground-only|gh issue reopen 3
+gh release create|gh release create v1.0.0 --notes x
+gh release create in a read-only chain|gh release view v0 && gh release create v1.0.0 --generate-notes
+an unknown subcommand, such as an alias|gh co 42
+a subcommand the shell builds|gh $CMD 42
+a flag whose arity decides the path|gh --jq x pr view 1
+gh inside a string another program runs|bash -c 'gh release create v1'
+gh in a quoted substitution|echo "$(gh release create v1)"
+gh in a backtick substitution|echo `gh release create v1`
+a quote left open|gh pr view 'unbalanced
+round 4 (1): a program name held in a variable, calling gh api|G=gh; $G api -X DELETE repos/o/r
+round 4 (1): ...and calling gh repo delete|G=gh; $G repo delete o/r --yes
+round 4 (1): ...and a quoted gh in the assignment|G="gh"; "$G" repo delete o/r --yes
+round 4 (1): ...and a wrapper running the variable|gh pr view 1; env $G api -X DELETE repos/o/r
+round 4 (1): ...and a string that runs the variable later|G=gh; eval '$G api -X DELETE repos/o/r'
+round 4 (2): a program name from a substitution|$(printf gh) api -X POST repos/o/r/issues -f title=x
+round 4 (3): an unquoted substitution that splits into api flags|gh api repos/$(printf 'o/r/issues -X POST -f title=x')
+round 4 (3): a zsh ${=X} that splits into api flags|X='o/r/issues -X POST'; gh api repos/${=X}
+round 4 (3): ...and ${=X} splits inside double quotes too|gh api "repos/${=X}"
+round 4 (3): ...and so does a zsh array subscript|gh api "repos/$A[@]"
+round 4 (3): an unquoted variable in an api argument could split|gh api repos/o/r/issues/$N
+round 4 (3): a method the shell builds after the endpoint is never GET|gh api repos/o/r/issues -X G"$M"
+round 4 (4): gh api reached through xargs|printf '%s\n' -X POST -f title=x repos/o/r/issues | xargs gh api
+round 4 (4): ...and through xargs behind another wrapper|printf x | env xargs gh api repos/o/r
+round 4 (5): a merge hidden behind a gh api read|gh api user; $(printf gh) pr merge 1
+EOF
+check "the human line names the gh subcommand" \
+  "$(reason_of "$(ask_gate 'gh release -R o/r create v1' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh release create`. A sub-agent only reads through gh.'
+check "...and says when it cannot read the gh call" \
+  "$(reason_of "$(ask_gate "bash -c 'gh release create v1'" "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: a `gh` command the gate cannot read. A sub-agent only reads through gh.'
+# The pipeline lane opens Watson's draft PR and writes through gh api, and keeps both.
+check "the pipeline lane keeps gh pr create" \
+  "$(verdict_of "$(ask_gate 'gh pr create --draft --title x --body y' "session-S" "agent-sub" WORKBENCH_DEV_TEAM_PIPELINE=1)")" silent
+check "...and gh api writes" \
+  "$(verdict_of "$(ask_gate 'gh api -X PUT repos/o/r/contents/a -f message=m' "session-S" "agent-sub" WORKBENCH_DEV_TEAM_PIPELINE=1)")" silent
+check "...and gh release create" \
+  "$(verdict_of "$(ask_gate 'gh release create v1 --notes x' "session-S" "agent-sub" WORKBENCH_DEV_TEAM_PIPELINE=1)")" silent
 
 echo "...and it is offered nothing it could run to clear that denial:"
 SUB_OUT=$(ask_gate 'git commit -m "feat: x"' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)
@@ -331,9 +436,29 @@ fi
 check "the human line names the verb the call actually ran" \
   "$(reason_of "$(ask_gate 'git push origin feature' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
   '🛑 Blocked: `git push`. A sub-agent does not commit, merge, or push.'
+# The two refusals that fire most carry the shortest context: 120 of them in
+# three days came to 114 KB of model context at the old length.
+SUB_CONTEXT=$(context_of "$SUB_OUT")
+HIDDEN_CONTEXT=$(context_of "$(ask_gate '(git push)' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")
+if [ "${#SUB_CONTEXT}" -le 600 ] && [ "${#HIDDEN_CONTEXT}" -le 600 ]; then
+  ok "the sub-agent and could-hide contexts stay short (${#SUB_CONTEXT} and ${#HIDDEN_CONTEXT} chars)"
+else
+  bad "a frequent refusal's context grew (${#SUB_CONTEXT} and ${#HIDDEN_CONTEXT} chars, limit 600)"
+fi
+case "$HIDDEN_CONTEXT" in
+  *"-F <absolute path>"*"plain line of its own"*) ok "...and the could-hide context still says how to retry" ;;
+  *) bad "the could-hide context lost the plain-form instructions" ;;
+esac
 case "$(context_of "$SUB_OUT")" in
   *"Hand the work back"*) ok "...and the context says to hand the work back instead" ;;
   *) bad "the sub-agent context does not say to hand the work back" ;;
+esac
+# A refused sub-agent that runs the dispatcher itself launches a second,
+# unsupervised pipeline run. The denial tells it to report and stop instead.
+case "$(context_of "$SUB_OUT")" in
+  *"re-dispatch it through"*) bad "the sub-agent context invites it to run dispatch-agent.sh itself" ;;
+  *"report that to the dispatching session and stop"*) ok "...and it says to report and stop, not to re-dispatch" ;;
+  *) bad "the sub-agent context lost the report-and-stop instruction" ;;
 esac
 
 # A pending record is what approve-commit.sh flips, and lane 2 writes none — so
@@ -467,6 +592,169 @@ OUT=$(ask_gate "$PUSH_CMD" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
 check "an expired push approval is refused" "$(verdict_of "$OUT")" deny
 check "...and the human line says it expired" "$(reason_of "$OUT")" \
   '🛑 Blocked: `git push`. Your approval expired after 15 minutes.'
+
+echo "Lane 3 — a GitHub-side write is prompted like a push:"
+GH_WRITE='gh api -X PUT repos/o/r/contents/README.md -f message=m -f content=eA== -f branch=main'
+run_case "a gh api write to contents/ is denied until approved" "$GH_WRITE"                    deny
+run_case "gh release create is denied until approved" 'gh release create v1.0.0 --notes x'       deny
+run_case "a contents/ read stays silent"          'gh api repos/o/r/contents/README.md'            silent
+
+echo "...and the human's everyday gh actions are an allowlist that is never prompted:"
+# Comments, issue create and edit, pr create naming its --head, pr edit, reviews,
+# labels, pr ready, and pr and issue close and reopen are the human's own voice
+# through gh, and none moves a ref. Prompting on them is noise.
+while IFS='|' read -r desc cmd; do
+  [ -n "$desc" ] || continue
+  run_case "$desc" "$cmd" silent
+done <<'EOF'
+gh pr comment|gh pr comment 42 --body hi
+a comment whose body names a gh write|gh pr comment 42 --body "run gh release create"
+gh issue create|gh issue create --title x --body y
+gh issue edit with a flag before the subcommand|gh -R o/r issue edit 3 --add-label bug
+gh pr create naming its --head|gh pr create --draft --head feat/x --title x --body y
+gh pr create with -H after a flag|gh pr -R o/r create -H feat/x --title x
+gh pr edit|gh pr edit 42 --title x
+gh pr review|gh pr review 42 --approve --body ok
+gh label create|gh label create bug --color ff0000
+a read with a variable|gh pr view "$N" --json body
+gh pr ready|gh pr ready 42
+gh pr close|gh pr close 42
+gh pr close with a comment|gh pr close 42 --comment "superseded by 43"
+gh pr reopen|gh pr reopen 42
+gh issue close|gh issue close 3
+gh issue close whose comment names a commit|gh issue close 3 --comment "fixed by commit abc"
+gh issue reopen|gh issue reopen 3
+EOF
+# Every other gh write reaches the one-shot approval, and every Holmes round-3
+# reproduction with it: each was silent here, since none names a git verb.
+while IFS='|' read -r desc cmd; do
+  [ -n "$desc" ] || continue
+  run_case "$desc" "$cmd" deny
+done <<'EOF'
+gh pr create with no --head pushes the branch|gh pr create --draft --title x --body y
+gh release -R before the subcommand|gh release -R o/r create v9
+gh release --repo= before the subcommand|gh release --repo=o/r create v9
+gh pr -R before create with no --head|gh pr -R o/r create --fill
+a contents write by repository id|gh api -X PUT repositories/123/contents/p -f message=m -f content=eA==
+a ref made by repository id|gh api repositories/123/git/refs -f ref=refs/heads/x -f sha=abc
+GraphQL createRef|gh api graphql -f query='mutation { createRef(input: {}) { clientMutationId } }'
+GraphQL updateRef with force|gh api graphql -f query='mutation { updateRef(input: {force: true}) { clientMutationId } }'
+GraphQL deleteRef|gh api graphql -f query='mutation { deleteRef(input: {}) { clientMutationId } }'
+gh pr update-branch|gh pr update-branch 1
+gh release edit publishing a draft|gh release edit v1 --draft=false
+gh repo sync|gh repo sync owner/fork
+a gh write off the allowlist|gh issue delete 3 --yes
+gh pr close deleting its branch moves a ref|gh pr close 42 --delete-branch
+...and with -d|gh pr close 42 -d
+...and with -d in a short cluster|gh pr close 42 -dR o/r
+...and with --delete-branch=|gh pr close 42 --delete-branch=true
+...and a flag the shell builds could be -d|gh pr close 42 $FLAG
+an unknown subcommand, such as an alias|gh co 42
+gh text the gate cannot read|bash -c 'gh release create v1'
+round 4 (1): a program name held in a variable, calling gh api|G=gh; $G api -X DELETE repos/o/r
+round 4 (1): ...and calling gh repo delete|G=gh; $G repo delete o/r --yes
+round 4 (2): a program name from a substitution|$(printf gh) api -X POST repos/o/r/issues -f title=x
+round 4 (3): an unquoted substitution that splits into api flags|gh api repos/$(printf 'o/r/issues -X POST -f title=x')
+round 4 (3): a zsh ${=X} that splits into api flags|X='o/r/issues -X POST'; gh api repos/${=X}
+round 4 (4): gh api reached through xargs|printf '%s\n' -X POST -f title=x repos/o/r/issues | xargs gh api
+round 4 (5): a merge hidden behind a gh api read|gh api user; $(printf gh) pr merge 1
+round 4 (6): gh pr create whose --base swallows --head|gh pr create --base --head --title x --body y
+round 4 (6): ...and -B swallowing -H|gh pr create -B -H --title x
+round 4 (6): gh pr create with an empty --head=|gh pr create --head= --title x
+round 4 (6): ...and an empty -H=|gh pr create -H= --title x
+round 4 (6): gh pr create whose head the shell builds could be empty|gh pr create --head "$BR" --title x
+round 4 (6): gh pr create with a flag of unknown arity before --head|gh pr create --frob --head feat/x --title x
+round 5: -H inside a short cluster is not read as a head, so it is prompted, as kept on purpose|gh pr create -dH x --fill
+EOF
+# The head parse still knows gh's own spellings, so the everyday forms stay own.
+while IFS='|' read -r desc cmd; do
+  [ -n "$desc" ] || continue
+  run_case "$desc" "$cmd" silent
+done <<'EOF'
+gh pr create with --base before --head|gh pr create --base main --head feat/x --title x
+gh pr create with -B and an attached -H|gh pr create -B main -Hfeat/x --title x
+gh pr create with --head=|gh pr create --head=feat/x --title x --body y
+gh pr create with labels, reviewers, and a body file|gh pr create -l bug -a @me -r octo -F /tmp/b.md -H feat/x
+EOF
+check "a gh write off the allowlist names its subcommand" \
+  "$(reason_of "$(ask_gate 'gh release -R o/r create v9' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh release create`. It needs your approval first.'
+OUT=$(ask_gate "bash -c 'gh release create v1'" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+if context_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
+  bad "gh text the gate cannot read was offered an approval id"
+else
+  ok "gh text the gate cannot read is offered no approval id"
+fi
+
+GH_OUT=$(ask_gate "$GH_WRITE" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "the human line names the GitHub write" "$(reason_of "$GH_OUT")" \
+  '🛑 Blocked: `gh api` writing to GitHub. It needs your approval first.'
+check "...and names gh release create" \
+  "$(reason_of "$(ask_gate 'gh release create v1.0.0 --notes x' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh release create`. It needs your approval first.'
+GH_CONTEXT=$(context_of "$GH_OUT")
+GH_ID=$(printf '%s' "$GH_CONTEXT" | grep -oE '[0-9a-f]{16}' | head -1)
+case "$GH_CONTEXT" in
+  *"  bash \"\$HOME/.claude-workbench/bin/approve-commit.sh\" $GH_ID"$'\n'*)
+    ok "the context prints the approval command with no subject label" ;;
+  *) bad "the gh write context does not print the bare approval command: $GH_CONTEXT" ;;
+esac
+case "$GH_CONTEXT" in
+  *'`description`'*'"GitHub write: <what it writes> to <owner/repo>"'*)
+    ok "the context dictates a description naming the write and the repository" ;;
+  *) bad "the gh write context does not dictate its description" ;;
+esac
+ID=$(request_id "$GH_WRITE")
+approve "$ID"
+OUT=$(ask_gate 'gh api -X PUT repos/o/r/contents/other.md -f message=m -f content=eA==' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "an approval does not cover a different GitHub write" "$(verdict_of "$OUT")" deny
+OUT=$(ask_gate "$GH_WRITE" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "the approved GitHub write goes through" "$(verdict_of "$OUT")" silent
+OUT=$(ask_gate "$GH_WRITE" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "...once, and the next run asks again" "$(verdict_of "$OUT")" deny
+ID=$(request_id "$GH_WRITE")
+approve "$ID" 901
+check "an expired GitHub-write approval is refused" \
+  "$(reason_of "$(ask_gate "$GH_WRITE" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh api` writing to GitHub. Your approval expired after 15 minutes.'
+# gh reads a file named by --input, -F k=@path, or a release asset when it runs,
+# so the command text alone does not say what it sends. The approval binds the
+# content of every argument that names a file.
+printf '{"sha":"abc"}' > "$REPO/body.json"
+GH_FILE_CMD="gh api -X PATCH repos/o/r/git/refs/heads/main --input $REPO/body.json"
+ID=$(request_id "$GH_FILE_CMD")
+approve "$ID"
+printf '{"sha":"def","force":true}' > "$REPO/body.json"
+check "a GitHub write whose --input file changed after approval is denied" \
+  "$(reason_of "$(ask_gate "$GH_FILE_CMD" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
+  '🛑 Blocked: `gh api` writing to GitHub. A file or the remote it reads changed since you approved it.'
+ID=$(request_id "$GH_FILE_CMD")
+approve "$ID"
+check "...and an unchanged file lets it through" \
+  "$(verdict_of "$(ask_gate "$GH_FILE_CMD" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" silent
+# gh resolves {owner}/{repo} and a release's repository from the git remote.
+GH_REMOTE_CMD="gh release create v2.0.0 --notes x"
+ID=$(request_id "$GH_REMOTE_CMD")
+approve "$ID"
+git -C "$REPO" remote set-url origin "$SANDBOX/moved.git"
+check "a GitHub write whose remote changed after approval is denied" \
+  "$(verdict_of "$(ask_gate "$GH_REMOTE_CMD" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)")" deny
+git -C "$REPO" remote set-url origin "$SANDBOX/no-such-remote.git"
+rm -f "$REPO/body.json"
+OUT=$(ask_gate 'gh api -X PUT "repos/o/r/contents/$P" -f message=m' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "a GitHub write the gate cannot read whole is refused" "$(verdict_of "$OUT")" deny
+if context_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
+  bad "...but it was offered an approval id"
+else
+  ok "...with no approval id, and asked for as a plain line"
+fi
+OUT=$(ask_gate "gh pr view 1 && $GH_WRITE" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "a GitHub write chained to another command is refused" "$(verdict_of "$OUT")" deny
+if context_of "$OUT" | grep -qE '[0-9a-f]{16}'; then
+  bad "...but the chain was offered an approval id"
+else
+  ok "...with no approval id, since an approval covers one plain gh call"
+fi
 
 echo "Class (a) — a plain-form push that forces is refused, with no approval path:"
 # workbench-core's rails deny `git push --force` by prefix and nothing else, so
@@ -693,15 +981,60 @@ hidden_case "send-pack in plain words"            'git send-pack ../remote.git m
 hidden_case "a zsh =word in a commit"             'git commit -m =ls'
 hidden_case "a zsh =word in a push"               'git push =origin main'
 # The cost, stated as tests so it stays visible: innocent text that names git
-# and a verb, outside the plain form, is refused too.
-hidden_case "a log piped into grep commit"        'git log --oneline | grep commit'
-hidden_case "an echo naming git commit"           'echo "git commit is gated"'
+# and a verb, outside the plain form and outside a read-only chain, is refused.
 hidden_case "a heredoc body that says git push"   $'cat > /tmp/x <<EOF\ngit push --force\nEOF'
+hidden_case "a log in a cd chain naming commit"   "cd /tmp && git log --grep commit"
+# A read-only chain is silent only when EVERY segment runs nothing. One segment
+# that can run a gated verb, or a program, puts the whole command back here.
+hidden_case "a status chained to a push"          'git status && git push'
+hidden_case "a log piped into a commit"           'git log --oneline | git commit -F -'
+hidden_case "xargs feeding a push"                'echo main | xargs git push origin'
+hidden_case "a push after a reader and ;"         'ls .git ; git push'
+hidden_case "a push after ||"                     'git status || git push'
+hidden_case "sort running a program"              'git log | sort --compress-program=./push.sh'
+hidden_case "sort running one by prefix"          'git log | sort --co=./commit.sh'
+hidden_case "sed in a chain naming push"          'git log | sed -n /push/p'
+# A read-only chain only reads. sort -o and a second uniq operand write a file,
+# so a chain holding one falls back to the substring test, and these name git
+# and a verb.
+hidden_case "sort -o writing a file"              'git log --grep push | sort -o /tmp/pushes'
+hidden_case "sort -o in a short cluster"          'git log --grep push | sort -uo /tmp/pushes'
+hidden_case "uniq writing a second operand"       'git log --grep push | uniq - /tmp/pushes'
+# The plain form never takes a separator or a redirect as a word. Read as words,
+# `| cat` would become two more arguments to an approvable push.
+hidden_case "a push piped to cat"                 'git push origin main | cat'
+hidden_case "a push with 2>&1"                    'git push origin main 2>&1'
+hidden_case "a commit then ;"                     'git commit -m x ; true'
+# A quoted string may span lines only as a word of a chain, and only inside its
+# quotes. The plain form stays one line, and a line break or `#` outside quotes
+# still ends the chain rule.
+hidden_case "a quoted line, then a push line"     $'echo \'a\nb\'\ngit push'
+hidden_case "a gh call, then a push"              'gh pr view 1 && git push'
+hidden_case "a gh body, then a commit"            "gh pr edit 1 --body 'x' && git commit -m y"
+hidden_case "a gh call under comment apostrophes" $'gh pr view 1 # what\'s\ngit push # it\'s'
+hidden_case "a push in a substituted --title"     "gh pr edit 1 --body 'a' --title \"\$(git push)\""
+# A gh alias renames a subcommand, so setting one is a write off the allowlist:
+# prompted as one plain line in the foreground, refused to a sub-agent.
+run_case "a gh alias, which renames a verb"       "gh alias set p 'pr merge'"                      deny
+sub_case "...and refused to a sub-agent"          "gh alias set p 'pr merge'"                      deny
 
 echo "...and a sub-agent is refused on the lane-2 verbs hidden the same way:"
 sub_case "a merge after a cd"                     'cd /tmp/clone && git merge main'                deny
 sub_case "a rebase in a subshell"                 '(git rebase main)'                              deny
 sub_case "an am behind env"                       'env -i git am /tmp/p.mbox'                      deny
+sub_case "a merge chained after a read"           'git log -1 && git merge main'                   deny
+sub_case "a rebase after a pipe"                  'git log | git rebase main'                      deny
+# gh verbs are whole words now, and a text option's value is skipped. Neither may
+# free a real merge: the subcommand word, a quoted one, an option value that
+# only precedes it, or an api call's REST path or GraphQL mutation.
+sub_case "a gh pr merge with a --body"            "gh pr merge 42 --body 'squash it'"              deny
+sub_case "a quoted gh merge verb"                 'gh pr "merge" 42'                               deny
+sub_case "a gh merge after a text option's value" 'gh --jq x pr merge 42'                          deny
+sub_case "a verb after --title=value is not skipped" 'gh pr --title=x merge 42'                    deny
+sub_case "a gh pr merge with a redirect"          'gh pr merge 42 > /dev/null'                     deny
+sub_case "a gh api merge endpoint"                'gh api -X PUT repos/o/r/pulls/1/merge'          deny
+sub_case "a gh api merges endpoint"               'gh api repos/o/r/merges -f base=main'           deny
+sub_case "a gh api GraphQL merge mutation"        "gh api graphql -f query='mutation { mergePullRequest(input: {}) { clientMutationId } }'" deny
 check "the sub-agent human line for a hidden shape" \
   "$(reason_of "$(ask_gate '(git push)' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)")" \
   '🛑 Blocked: a command that names a git commit, merge, or push. A sub-agent does not commit, merge, or push.'
@@ -733,11 +1066,53 @@ silent_case "git -C path status"                  "git -C $REPO status"
 silent_case "a status after a cd"                 'cd /tmp && git status'
 silent_case "a log piped to head"                 'git log --oneline | head -5'
 silent_case "gh pr view"                          'gh pr view 42 --comments'
-silent_case "gh pr comment"                       'gh pr comment 42 --body hi'
-silent_case "gh pr create"                        'gh pr create --draft --title x --body y'
+# The human's everyday gh writes are silent in the foreground alone. A
+# sub-agent only reads through gh, which lane 2's allowlist cases pin.
+run_case "gh pr comment"                          'gh pr comment 42 --body hi' silent
+run_case "gh pr create naming its --head"         'gh pr create --draft --head feat/x --title x --body y' silent
 silent_case "a github URL with quotes"            'curl -s "https://github.com/x/y"'
 silent_case "ls"                                  'ls -la'
 silent_case "echo"                                'echo hello'
+# Read-only chains. Each of these was refused before the chain rule, and a
+# refused read teaches an agent to hide the command in a script file.
+silent_case "a log piped into grep commit"        'git log --oneline | grep commit'
+silent_case "an echo naming git commit"           'echo "git commit is gated"'
+silent_case "a status with 2>&1 into head"        "git -C $REPO status --short 2>&1 | head -20"
+silent_case "a diff and a log joined by &&"       'git diff --stat && git log --oneline -3'
+silent_case "a log with an || fallback"           'git log -1 --format=%s 2>/dev/null || echo none'
+silent_case "two reads joined by ;"               'git status ; git branch --show-current'
+silent_case "a grep for 'git push' into head"     "grep -rn 'git push' agents | head -5"
+silent_case "the .git config piped into grep"     'cat .git/config | grep -i push'
+silent_case "sort over a .git file"               'sort -u .git/info/exclude'
+silent_case "a log through sort and uniq"         'git log --format=%an | sort | uniq -c'
+silent_case "a wc over several readers"           'ls -la | wc -l && pwd'
+# `.git` the directory and a word ending in "git" name no program. These reach
+# the substring test, not the chain rule, so they pin the GIT_NAME lookbehind.
+silent_case "stat on .git/COMMIT_EDITMSG"         'stat .git/COMMIT_EDITMSG'
+silent_case "a quoted word ending in git"         "printf '%s' 'legit push'"
+silent_case "a .git path with a push hook"        'chmod +x .git/hooks/pre-push'
+# Reported from live use in workbench-core: `.git`, `digit`, and a log format
+# string were each refused, most of them in the sub-agent lane.
+silent_case "find pruning .git"                   "find . -path ./.git -prune -o -name '*.sh' -print"
+silent_case "grep excluding .git, naming push"    'grep -rn --exclude-dir=.git push .'
+silent_case "a [[:digit:]] class"                 "grep -E '[[:digit:]]+' file"
+silent_case "an echo naming digit"                'echo "digit: 5"'
+silent_case "git log --format with quotes"        "git log --format='%h %s' -5"
+silent_case "git log --pretty=format:"            "git log --pretty=format:'%h %an' -3"
+# gh verbs are whole words. Holmes and Watson run both of these routinely, and a
+# sub-agent was refused for `merge` inside `mergedAt` and `merged`.
+silent_case "gh pr view --json mergedAt"          'gh pr view 42 --json mergedAt'
+silent_case "gh pr list --state merged"           'gh pr list --state merged'
+silent_case "gh --json commits piped into jq"     "gh pr view 42 --json commits | jq '.commits[].oid'"
+# jq reads and prints and runs nothing, so it is a no-exec reader.
+silent_case "a log piped into a jq naming push"   "git log -3 --format=%s | jq -R 'select(test(\"push\"))'"
+# A gh text option is data. From the data-importer session: a PR body quoting a
+# template that says "commit" was refused, and so was a --jq filter.
+run_case "a multi-line --body naming commit"   $'gh pr edit 42 --body \'All commits use conventional commit\nformat. Run tests prior to committing.\'' silent
+run_case "a --body line that says git push"    $'gh pr edit 42 --body \'Steps:\ngit push origin main\'' silent
+silent_case "--json commits with a --jq filter"   "gh pr view 42 --json commits --jq '.commits[] | .oid'"
+silent_case "--json=commits in one word"          'gh pr view 42 --json=commits'
+run_case "a --title naming push"               "gh pr create --head feat/x --title 'feat: push gate' --body 'Fixes #1'" silent
 
 echo "An approval is bound to its directory, and a push to the repository's state:"
 BIND_CMD='git push origin main'
@@ -1000,6 +1375,97 @@ chmod 755 "$STATE"
 OUT=$(printf 'not json' | gate -u WORKBENCH_DEV_TEAM_PIPELINE)
 check "an unparseable payload stays silent" "$(verdict_of "$OUT")" silent
 
+echo "A missing or failing python3 fails closed on git text:"
+# A hook that exits 127 or 1 is a non-blocking error, so the call would run as
+# if no gate existed. Two PATHs stand in for a broken host: one with no python3
+# at all, and one whose python3 exits 1. Each holds only the tools the gate's
+# shell half needs, so the host's own python3 cannot answer for them.
+NOPY="$SANDBOX/no-python"
+BADPY="$SANDBOX/bad-python"
+mkdir -p "$NOPY" "$BADPY"
+for tool in cat grep dirname; do
+  ln -sf "$(command -v "$tool")" "$NOPY/$tool"
+  ln -sf "$(command -v "$tool")" "$BADPY/$tool"
+done
+printf '#!/bin/sh\nexit 1\n' > "$BADPY/python3"
+chmod +x "$BADPY/python3"
+for broken in "$NOPY" "$BADPY"; do
+  label="no python3"; [ "$broken" = "$BADPY" ] && label="a python3 that exits 1"
+  OUT=$(ask_gate 'git commit -m "feat: x"' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE PATH="$broken")
+  check "$label: a commit is refused" "$(verdict_of "$OUT")" deny
+  OUT=$(ask_gate 'git status' "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE PATH="$broken")
+  check "$label: any git text is refused, in a sub-agent too" "$(verdict_of "$OUT")" deny
+  OUT=$(ask_gate 'gh pr merge 42' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE PATH="$broken")
+  check "$label: gh text is refused" "$(verdict_of "$OUT")" deny
+  OUT=$(ask_gate 'ls -la' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE PATH="$broken")
+  check "$label: text naming no git stays silent" "$(verdict_of "$OUT")" silent
+done
+# python-fallback.sh serves the commit gate alone. The local-review guard keeps
+# its own fallback, so a payload only the guard captures must reach nothing here.
+OUT=$(env -u GATE_PAYLOAD GUARD_STDIN='{"tool_name": "Bash", "tool_input": {"command": "git push"}}' \
+  bash -c '. "$1"; python_fallback test' _ "$(dirname "$GATE")/python-fallback.sh")
+check "the fallback reads the gate's payload only, never the guard's" "$(verdict_of "$OUT")" silent
+case "$(reason_of "$(ask_gate 'git push' "" "" -u WORKBENCH_DEV_TEAM_PIPELINE PATH="$NOPY")")" in
+  *"python3 is missing or failed"*) ok "the refusal names python3 as the cause" ;;
+  *) bad "the python3 refusal does not name its cause" ;;
+esac
+
+echo "A missing python-fallback.sh fails closed too:"
+# The gate sources the helper before its fast path. When the file is missing,
+# payload_may_name_git exits 127, and `|| exit 0` used to let every commit and
+# push through. A copy of the gate with no helper beside it stands in for that.
+LONE="$SANDBOX/lone-gate"
+mkdir -p "$LONE"
+cp "$GATE" "$LONE/gate.sh"
+lone_gate() { # lone_gate <command> <agent>
+  local body
+  body=$(payload "$1" "session-L" "$2")
+  printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE TMPDIR="$SANDBOX" HOME="$SANDBOX/home" bash "$LONE/gate.sh"
+}
+check "no helper: a commit is refused" "$(verdict_of "$(lone_gate 'git commit -m x' '')")" deny
+check "no helper: a sub-agent push is refused" "$(verdict_of "$(lone_gate 'git push' 'agent-sub')")" deny
+check "no helper: gh text is refused" "$(verdict_of "$(lone_gate 'gh release create v1' '')")" deny
+check "no helper: text naming no git stays silent" "$(verdict_of "$(lone_gate 'ls -la' '')")" silent
+case "$(reason_of "$(lone_gate 'git push' '')")" in
+  *"python-fallback.sh is missing"*) ok "the refusal names the missing helper" ;;
+  *) bad "the missing-helper refusal does not name its cause" ;;
+esac
+
+echo "Fast path — python3 starts only for a payload that could name git, gh, or yadm:"
+# A python3 that leaves a marker and then runs the real one, so each case sees
+# whether the gate started it at all, while the verdict still comes from the
+# real classifier. The fast path is a raw-JSON test, so every case that must
+# reach python3 is also asserted by its verdict.
+SPY="$SANDBOX/spy-python"
+SPY_MARK="$SANDBOX/python-ran"
+mkdir -p "$SPY"
+printf '#!/bin/sh\ntouch "%s"\nexec "%s" "$@"\n' "$SPY_MARK" "$(command -v python3)" > "$SPY/python3"
+chmod +x "$SPY/python3"
+fast() { # fast <desc> <raw payload> <python: yes|no> <verdict> — sub-agent lane
+  local out ran
+  rm -f "$SPY_MARK"
+  out=$(printf '%s' "$2" | gate -u WORKBENCH_DEV_TEAM_PIPELINE PATH="$SPY:$PATH")
+  ran=no; [ -e "$SPY_MARK" ] && ran=yes
+  check "$1" "python3 $ran, $(verdict_of "$out")" "python3 $3, $4"
+}
+raw() { # raw <json-escaped command text> — a sub-agent payload, written by hand
+  printf '{"tool_name": "Bash", "session_id": "session-S", "agent_id": "agent-sub", "cwd": "%s", "tool_input": {"command": "%s"}}' "$CWD" "$1"
+}
+fast "ls skips python3"                           "$(raw 'ls -la')"                    no  silent
+fast "digit, legit, and .git skip python3"        "$(raw 'echo digit legit .git')"     no  silent
+fast "English words holding gh skip python3"      "$(raw 'echo through high')"         no  silent
+fast "git status reaches python3"                 "$(raw 'git status')"                yes silent
+fast "gh reaches python3"                         "$(raw 'gh pr merge 42')"            yes deny
+fast "yadm reaches python3"                       "$(raw 'yadm push')"                 yes deny
+fast "GIT in capitals reaches python3"            "$(raw 'GIT push')"                  yes deny
+# JSON escapes: the byte before `git` is the escape's letter, not a boundary.
+fast "git after an escaped newline reaches it"    "$(raw 'ls\ngit push')"              yes deny
+fast "gh after an escaped tab reaches it"         "$(raw '(\tgh pr merge 1)')"         yes deny
+fast "git after an escaped quote reaches it"      "$(raw 'x \"git\" push')"            yes deny
+fast "git spelled with a \\u escape reaches it"   "$(raw 'ls; \u0067it push')"    yes deny
+fast "a dotless-i gıt reaches it, as python folds it" "$(raw 'gıt push')"            yes deny
+fast "a non-ASCII payload reaches it"             "$(raw 'echo ✅')"                   yes silent
+
 echo "Carve-out — the dispatcher's env flag, and nothing else:"
 PIPE_CMD='git commit -m "chore: pipeline"'
 
@@ -1101,9 +1567,14 @@ CMD_TEMPLATE="$(python3 -c 'import json,sys; print(json.load(open(sys.argv[1]))[
 SPACED_ROOT="$(mktemp -d "$SANDBOX/plugin root XXXXXX")"  # deliberate space
 mkdir -p "$SPACED_ROOT/hooks/scripts"
 cp "$GATE" "$SPACED_ROOT/hooks/scripts/commit-approval-gate.sh"
+cp "$(dirname "$GATE")/python-fallback.sh" "$SPACED_ROOT/hooks/scripts/python-fallback.sh"
+SPACED_ERR="$SANDBOX/spaced-stderr"
 OUT=$(payload 'git commit -m "z"' | env -u WORKBENCH_DEV_TEAM_PIPELINE -u WORKBENCH_COMMIT_APPROVAL_DIR \
-  CLAUDE_PLUGIN_ROOT="$SPACED_ROOT" TMPDIR="$SANDBOX" HOME="$SANDBOX/home" sh -c "$CMD_TEMPLATE")
+  CLAUDE_PLUGIN_ROOT="$SPACED_ROOT" TMPDIR="$SANDBOX" HOME="$SANDBOX/home" sh -c "$CMD_TEMPLATE" 2>"$SPACED_ERR")
 check "gate fires when the plugin path contains a space" "$(verdict_of "$OUT")" deny
+# The fallback helper is sourced by a path built from $0, so a spaced root must
+# find it too, or a broken python3 would fail open on exactly these hosts.
+check "...and sources its python3 fallback from that path without error" "$(cat "$SPACED_ERR")" ""
 
 echo
 echo "$PASS passed, $FAIL failed"

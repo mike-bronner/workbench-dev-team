@@ -15,11 +15,18 @@ its own way is one the substitution silently misses, leaving that sub-agent
 pointed at a scratch clone Local mode never creates. Add a sixth skeleton and it
 carries the same line verbatim.
 
+**Every skeleton also carries the no-mutation line under it, verbatim.** Lenses
+and verifiers never change a file in the tree under review, not even to probe a
+fail-open path and put it back. In Local mode that tree is exactly what the human
+approves, and a mutation, even an undone one, can corrupt it and races any other
+run reading it. A probe that needs a mutated tree runs on a copy in the
+sub-agent's own `mktemp -d` directory.
+
 ---
 
 #### Phase B — fan out four blind lens reviewers (parallel)
 
-Dispatch **four** read-only lens reviewers in a **single message** (multiple `Agent` calls), each on `LENS_MODEL` (your model if unset). Each is **blind to the others** (no shared findings), each is **read-only** (no MCP, no Write/Edit), and each prompt is **fully self-contained** — it carries the clone path `/tmp/holmes-<issue_number>`, the PR number, the **AC text pasted verbatim**, and the standing instruction that **the repo's conventions win over the reviewer's preferences**. Each lens returns structured findings — one per row: `{ claim, location (file:line), severity (blocker | note), scope (in-pr | general), evidence }`. **`severity`** is the finding's intrinsic seriousness — a correctness, security, or test defect is a `blocker`; anything softer (a refactor, a duplication, a minor improvement) is a `note`. **`scope`** is locality — `in-pr` if the finding's location falls on a line this PR added or modified, `general` if it's about code the PR left untouched. The lens reports both facts; **you** (the parent) route them by the §4e matrix. To judge scope, the lens checks each `file:line` against `gh pr diff <PR_NUM>` in the checkout.
+Dispatch **four** read-only lens reviewers in a **single message** (multiple `Agent` calls), each on `LENS_MODEL` (your model if unset). Each is **blind to the others** (no shared findings), each is **read-only** (no MCP, no Write/Edit), and each prompt is **fully self-contained** — it carries the clone path §4b printed (`<checkout path>`), the PR number, the **AC text pasted verbatim**, and the standing instruction that **the repo's conventions win over the reviewer's preferences**. Each lens returns structured findings — one per row: `{ claim, location (file:line), severity (blocker | note), scope (in-pr | general), evidence }`. **`severity`** is the finding's intrinsic seriousness — a correctness, security, or test defect is a `blocker`; anything softer (a refactor, a duplication, a minor improvement) is a `note`. **`scope`** is locality — `in-pr` if the finding's location falls on a line this PR added or modified, `general` if it's about code the PR left untouched. The lens reports both facts; **you** (the parent) route them by the §4e matrix. To judge scope, the lens checks each `file:line` against `gh pr diff <PR_NUM>` in the checkout.
 
 **Reading discipline — the fan-out's cost lives here.** Four lenses each walk the same checkout independently, so on a repo with multi-thousand-line files that redundancy — not your own reasoning — is what exhausts a review's budget. Measured: on a 20K-line-file repo the four lenses accounted for ~85% of a killed review's spend, and 96% of its token volume, while the parent's share was ~$1. Carry the four rules below **verbatim** in every lens prompt:
 
@@ -39,7 +46,10 @@ Prompt skeleton for each lens (fill the bracketed parts; vary only the lens-spec
 
 ```
 You are a read-only code-review lens. You have NO write tools and you never patch.
-Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): <checkout path>
+Never change a file in the tree under review, not even for a moment and not
+even to undo it after. A probe that needs a mutated tree runs on a copy you make
+in your own `mktemp -d` directory, and you change only that copy.
 PR number: <PR_NUM>   Repo: <repo>
 
 Acceptance criteria (verbatim — never amend or reinterpret):
@@ -75,11 +85,11 @@ If a lens dispatch errors, or the `Agent` tool is unavailable, **fall back to th
 
 Every finding that will enter the review as a **blocker** under §4e goes to adversarial verification before it survives. That set is: every **hard defect** (`severity: blocker`, any scope) and every **in-PR finding** (`scope: in-pr`, any severity). The advisory tier — soft observations about untouched code (`note` + `general`) — skips this step entirely, on either track below.
 
-Verification runs on one of two tracks, chosen by lens **and** by `CHANGES_COUNT` (§3):
+Verification runs on one of two tracks, chosen by lens, by severity, and by `CHANGES_COUNT` (§3):
 
 - **Security-lens findings, every round** — a 3-agent **red-team / blue-team / auditor** pipeline (below). A false UPHELD on a phantom vulnerability blocks a PR for nothing; a false REFUTED ships a real hole — one skeptic's vote alone doesn't carry enough signal for that asymmetry.
-- **Every other finding, on the first review of the current window (`CHANGES_COUNT == 0`)** — the same 3-agent pipeline. The first review sets Watson's whole punch list for this round; a false REFUTED here doesn't just miss one defect, it ships Watson a picture that's wrong from the start and virtually guarantees a second round once the missed defect surfaces some other way. Paying for the fuller check once, up front, is cheaper than an extra Watson→Holmes round-trip discovering it later.
-- **Every other finding, on a re-review (`CHANGES_COUNT >= 1`)** — a single **skeptic** sub-agent, as before. By now the diff is narrower and already scoped to what the last review flagged — the cheaper check carries enough signal.
+- **Hard defects (`severity: blocker`) on the first review of the current window (`CHANGES_COUNT == 0`)** — the same 3-agent pipeline. The first review sets Watson's whole punch list for this round, and a false REFUTED on a real defect ships him a wrong picture that guarantees a second round. The fuller check, once, is cheaper than that round trip.
+- **Everything else** — a single **skeptic** sub-agent. That covers soft in-PR observations (`note` + `in-pr`) on any round, and every non-security finding on a re-review (`CHANGES_COUNT >= 1`). A wrong verdict on a naming or duplication note costs one cheap fix or one missed nit, which does not justify three agents.
 
 ##### Standard track — single skeptic
 
@@ -87,7 +97,10 @@ A fresh **skeptic** sub-agent (read-only, `LENS_MODEL`, blind to the lens that r
 
 ```
 You are an adversarial verifier. Read-only, no write tools, no patching.
-Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): <checkout path>
+Never change a file in the tree under review, not even for a moment and not
+even to undo it after. A probe that needs a mutated tree runs on a copy you make
+in your own `mktemp -d` directory, and you change only that copy.
 A reviewer claims the following BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -106,7 +119,10 @@ Dispatch the attacker and defender **in parallel** (single message, two `Agent` 
 
 ```
 You are a red-team attacker. Read-only, no write tools, no patching.
-Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): <checkout path>
+Never change a file in the tree under review, not even for a moment and not
+even to undo it after. A probe that needs a mutated tree runs on a copy you make
+in your own `mktemp -d` directory, and you change only that copy.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -118,7 +134,10 @@ this claim is real and reachable. Return exactly one of:
 
 ```
 You are a blue-team defender. Read-only, no write tools, no patching.
-Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): <checkout path>
+Never change a file in the tree under review, not even for a moment and not
+even to undo it after. A probe that needs a mutated tree runs on a copy you make
+in your own `mktemp -d` directory, and you change only that copy.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -134,7 +153,10 @@ Once both return, dispatch the **auditor** with both reports attached:
 ```
 You are the auditor. Read-only, no write tools, no patching. You did not write
 either report below — weigh them against the tree yourself, don't just trust them.
-Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>
+Checkout (already prepared, do not re-clone): <checkout path>
+Never change a file in the tree under review, not even for a moment and not
+even to undo it after. A probe that needs a mutated tree runs on a copy you make
+in your own `mktemp -d` directory, and you change only that copy.
 Claim: <claim>   location: <file:line>   evidence: <evidence>
 
 Attacker report: <attacker output>
@@ -178,4 +200,4 @@ Skip this phase entirely on a clean review — no surviving findings and no ❌ 
 
 #### §4-fallback — inline review (no fan-out)
 
-When the `Agent` tool is unavailable in the runtime, `fanout` is `false`, or every dispatch path errors, **you review the checkout yourself, inline**, exactly as a single reviewer: read each changed file in context against the AC and the repo's patterns (the AC-conformance check), look for correctness / security / test defects, and read the test files for meaningfulness. There is no adversarial verification step in the fallback — you are the single head. **Phase D still runs** — it's independent of the fan-out. Feed your findings into the **same** §4d/§4e verdict logic. The fan-out is an enhancement layered over this path; this path is always complete on its own.
+When the `Agent` tool is unavailable in the runtime, `fanout` is `false`, or every dispatch path errors, **you review the checkout yourself, inline**, exactly as a single reviewer: read each changed file in context against the AC and the repo's patterns (the AC-conformance check), look for correctness / security / test defects, and read the test files for meaningfulness. There is no adversarial verification step in the fallback — you are the single head. **Phase D still runs** — it's independent of the fan-out — and so does the check against Mike's `feedback/` rules from §4a.5. Feed your findings into the **same** §4d/§4e verdict logic. The fan-out is an enhancement layered over this path; this path is always complete on its own.

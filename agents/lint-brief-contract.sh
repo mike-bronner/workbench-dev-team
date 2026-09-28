@@ -163,7 +163,10 @@ else
 fi
 
 # ── The sending half: every doc that describes the brief ──────────────────────
-BRIEF_DOCS=("$ROOT/skills/orchestrate/SKILL.md" "$ROOT/README.md" "$ROOT/session-warmup.md" "$DIR"/*.md)
+# session-warmup.md is not one of them. It reaches every session and every
+# sub-agent through ~/.claude/CLAUDE.md, so Mike ruled it carries the routing and
+# a pointer to /workbench-dev-team:orchestrate and no brief rules of its own.
+BRIEF_DOCS=("$ROOT/skills/orchestrate/SKILL.md" "$ROOT/README.md" "$DIR"/*.md)
 
 # Scope of the template. Requiring it on read-only research too is what lets the
 # companion hook stop guessing whether a dispatch is code work, so a doc that
@@ -271,9 +274,9 @@ fi
 # every agent refuses a brief missing one.
 #
 # Template lines only (`Workdir: <…>`), which is where the slot is *defined*. The
-# worked examples carry real paths and are instances, not definitions, and
-# session-warmup.md names the slots without defining any. A doc that reverts one
-# template to a bare path teaches half the contract to whoever reads that file,
+# worked examples carry real paths and are instances, not definitions. A doc
+# that reverts one template to a bare path teaches half the contract to whoever
+# reads that file,
 # which is the shape release 0.41.0 already shipped once with the old slot name.
 #
 # Fails closed on finding nothing: a renamed slot or a deleted template would

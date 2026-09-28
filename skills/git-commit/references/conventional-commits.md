@@ -2,10 +2,14 @@
 
 Source: [conventionalcommits.org/en/v1.0.0](https://www.conventionalcommits.org/en/v1.0.0/)
 
+The spec allows more than this house format does. Every example below is
+written in the house format from `SKILL.md`: a gitmoji after the colon, a
+capitalized description ending in a period, and no scope.
+
 ## Structure
 
 ```
-<type>: <description>
+<type>: <emoji> <description>.
 
 [optional body]
 
@@ -32,7 +36,7 @@ Source: [conventionalcommits.org/en/v1.0.0](https://www.conventionalcommits.org/
 Two ways to indicate a breaking change (correlates to SemVer MAJOR):
 
 ```
-feat!: remove deprecated endpoints
+feat!: 💥 Remove deprecated endpoints.
 
 BREAKING CHANGE: The /v1/users endpoint has been removed.
 ```
@@ -46,7 +50,7 @@ BREAKING CHANGE: The /v1/users endpoint has been removed.
 Optional. Begins one blank line after the description. Free-form, can contain multiple paragraphs:
 
 ```
-fix: prevent race condition in lead processing
+fix: 🐛 Prevent race condition in lead processing.
 
 The previous implementation allowed concurrent requests to create
 duplicate leads. Added a database-level unique constraint and
@@ -58,7 +62,7 @@ optimistic locking to prevent this.
 Optional. Begin one blank line after the body. Follow git trailer format:
 
 ```
-fix: correct minor typos in code
+fix: ✏️ Correct minor typos in code.
 
 Reviewed-by: Z
 Refs: #123
@@ -70,7 +74,7 @@ Refs: #123
 ## Rules
 
 1. Type is **required** — must be a noun (`feat`, `fix`, etc.)
-2. Description is **required** — immediately after `: `
+2. Description is **required** — immediately after `: `, led by its gitmoji
 3. Body is **optional** — blank line after description
 4. Footers are **optional** — blank line after body
 5. `BREAKING CHANGE` must be **uppercase**

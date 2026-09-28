@@ -142,8 +142,10 @@ for label in empty broken missing; do
   expect_has  "watson budget default ($label)"  "--max-budget-usd 10.00" "$out"
   out=$(run "$c" lestrade 7)
   expect_lacks "lestrade no budget ($label)"    "--max-budget-usd"      "$out"
+  # Holmes's default matches the shipped config's 10.00, so a lost config cannot
+  # lift the cap off the one multi-agent lane.
   out=$(run "$c" holmes 7)
-  expect_lacks "holmes no budget ($label)"      "--max-budget-usd"      "$out"
+  expect_has  "holmes budget default ($label)"  "--max-budget-usd 10.00" "$out"
 done
 
 echo "— the shipped default config"
@@ -183,14 +185,19 @@ expect_lacks "empty model string omitted"     "--model"  "$out"
 expect_lacks "empty effort string omitted"    "--effort" "$out"
 
 echo "— reprieve"
-out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
+# The reprieve comes from the breaker's escalation marker, never from the
+# caller's environment: an env-prefixed command misses the allow rule. A dry run
+# reads the marker and leaves it in place.
+mkdir -p "$WORK/logs"
+for agent in watson holmes lestrade; do touch "$WORK/logs/$agent-8.escalated"; done
+out=$(run "$FULL" watson 8)
 expect_has  "watson budget tripled"  "--max-budget-usd 30.00" "$out"
-out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" holmes 7 2>&1)
+out=$(run "$FULL" holmes 8)
 expect_has  "holmes budget tripled"  "--max-budget-usd 15.00" "$out"
-out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" lestrade 7 2>&1)
+out=$(run "$FULL" lestrade 8)
 expect_lacks "no budget stays absent under reprieve" "--max-budget-usd" "$out"
-out=$(REPRIEVE=0 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
-expect_has  "budget untouched without reprieve" "--max-budget-usd 10" "$out"
+out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
+expect_has  "an env REPRIEVE=1 buys nothing without a marker" "--max-budget-usd 10 " "$out"
 
 echo
 echo "passed: $pass  failed: $fail"

@@ -59,6 +59,7 @@ output.
 | §2.5 decision request | **does not apply** — no PR, no Watson blocked-marker |
 | §3 strike count | **does not apply** — see §L3 |
 | §4a read the issue and AC | **replaced** — the rubric is the brief (§L4a) |
+| §4a.5 `feedback/` search | **unchanged** — run it before the lenses, search the workdir's repo, and check the change against every rule it confirms |
 | §4b check out the PR | **replaced** — the workdir *is* the evidence room (§L4b) |
 | §4c CI status | **replaced** — run the repo's own suite (§L4c) |
 | Phases B, C, D | **unchanged in substance** — substitutions in §L4 |
@@ -80,11 +81,12 @@ Two consequences, both mechanical:
 - **The 3-strike gate never fires.** You never escalate on a count, and you never
   refuse to review because a previous run bounced something.
 - **Phase C takes the `CHANGES_COUNT == 0` track** — the 3-agent
-  red-team / blue-team / auditor panel for every finding, not the single skeptic.
-  That is the existing reasoning applied unchanged: the first review of a window
-  sets the whole punch list, and a false REFUTED there hands the human a picture
-  that is wrong from the start. The 10-verification cap and its priority order
-  are unchanged.
+  red-team / blue-team / auditor panel for every hard defect and every security
+  finding, and the single skeptic for soft observations. That is the existing
+  reasoning applied unchanged: the first review of a window sets the whole punch
+  list, and a false REFUTED on a real defect hands the human a picture that is
+  wrong from the start. The 10-verification cap and its priority order are
+  unchanged.
 
 ## §L4a — the rubric is the brief, and you never amend it
 
@@ -100,6 +102,13 @@ change that breaks a stated constraint is a finding — the constraint carries i
 reason, and the reason is what you check against.
 
 `Context:` is background for your reading. It is not a criterion.
+
+**Mike's `feedback/` rules bind here as they bind a PR.** Run `agents/holmes.md`
+§4a.5 before Phase B: two searches with `folder: "feedback"`, one for the
+workdir's repo and one for what the change does. Check the change against every
+rule you confirm, and report a line that breaks one as an `in-pr` finding. A
+local review is where Watson's Direct-mode work is judged, and no other stage
+downstream of it reads those rules.
 
 ## §L4b — the workdir is the evidence room
 
@@ -173,7 +182,7 @@ never to the one it was quoted from.
 
 | Where `review-phases.md` says | Local mode passes |
 |---|---|
-| `Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>` | `Working tree (the human's live directory — read only, never modify): <workdir>` |
+| `Checkout (already prepared, do not re-clone): <checkout path>` | `Working tree (the human's live directory — read only, never modify): <workdir>` |
 | `PR number: <PR_NUM>   Repo: <repo>` | the workdir, and the changed-file list from §L4b |
 | `gh pr diff <PR_NUM>` (the map, and the scope test) | `git -C <workdir> diff HEAD`, plus the untracked-file list |
 | `Acceptance criteria (verbatim — never amend or reinterpret)` | the brief's `Goal:` and `Done when:`, verbatim, under the same instruction |
@@ -185,10 +194,9 @@ what lets §4e's routing matrix apply with no local fork.
 
 Add one line to **every** sub-agent prompt you dispatch, with no exception. That
 is each of the four lenses, and every role on Phase C's verification panel — the
-red-team attacker, the blue-team defender, and the auditor. §L3 puts every local
-review on that panel track, so those three are the verifiers a local review
-actually dispatches; the single skeptic takes the line too, wherever a track
-reaches it. Their own skeletons say only *read-only, no patching*, which forbids
+red-team attacker, the blue-team defender, and the auditor — and the single
+skeptic, which §L3 sends every soft observation to. Their own skeletons say only
+*read-only, no patching*, which forbids
 writing code and never names what destroys a working tree:
 
 ```
@@ -198,8 +206,12 @@ ls-files are allowed, and every other git verb is forbidden. That includes
 restore, stash, checkout, switch, reset, and clean -- each one discards the
 uncommitted change you were sent to read. Never change a file's content,
 location, existence, or metadata either: no chmod, no rm, no mv, no truncate,
-and no formatter or linter run with a write flag. A PreToolUse hook refuses
-these too, and its denial is final -- report it, never work around it.
+and no formatter or linter run with a write flag. That holds even for a moment:
+a file you rename and rename back still changes the tree the human approves, and
+races any other run reading it. A probe that needs a mutated tree runs on a copy
+you make in your own mktemp -d directory, and you change only that copy. A
+PreToolUse hook refuses these too, and its denial is final -- report it, never
+work around it.
 ```
 
 ## §L4-fallback — the inline review, when there is no fan-out
@@ -225,7 +237,7 @@ You review the working tree yourself, in place, exactly as a single reviewer:
 - **There is no adversarial verification.** You are the single head, so §L3's
   panel track has nothing to run and no finding is refuted by anyone.
 - **Phase D still runs**, unchanged. It is parent-only and independent of the
-  fan-out.
+  fan-out. So does the `feedback/` check from §L4a.
 - **The no-write limit still binds you.** It never depended on there being a
   sub-agent to bind.
 

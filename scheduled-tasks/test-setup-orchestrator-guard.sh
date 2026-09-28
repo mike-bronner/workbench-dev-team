@@ -10,9 +10,9 @@
 # merely EXISTS, so a truncated, half-written, or wrong file passes unchallenged.
 # These cases assert the guard rejects every degraded body rather than deploying it.
 #
-# The guard's lane checks are DERIVED (counts of dispatched lanes and of lanes
-# writing a per-item in-flight lock), not a list of agent names — so these
-# fixtures break the counts rather than deleting named markers.
+# The guard's lane check is DERIVED (a count of dispatched lanes), not a list of
+# agent names — so these fixtures break the count rather than deleting named
+# markers.
 #
 # Run: bash scheduled-tasks/test-setup-orchestrator-guard.sh
 set -u
@@ -107,7 +107,7 @@ expect_reject "frontmatter survives strip -> reject" "$WORK/survived.md" "frontm
 
 # 8. A truncated body is the silent-downgrade case size alone can catch.
 head -50 "$REAL" > "$WORK/truncated.md"
-expect_reject "truncated body -> reject" "$WORK/truncated.md" "expected >= 200"
+expect_reject "truncated body -> reject" "$WORK/truncated.md" "expected >= 120"
 
 # --- derived structural checks: each must independently discriminate ----------
 #
@@ -132,35 +132,29 @@ expect_reject "no wrapper invocations -> reject" "$WORK/no-wrapper.md" "distinct
 grep -vF -- 'dispatch-agent.sh" lestrade <OWNER/REPO>' "$REAL" > "$WORK/no-sweep.md"
 expect_pass "sweep removed, three lanes remain -> accept" "$WORK/no-sweep.md"
 
-# 12-13. The circuit-breaker sentinel pair, each half independently.
-grep -vF -- '>>> circuit-breaker-preflight >>>' "$REAL" > "$WORK/no-open.md"
-expect_reject "missing opening sentinel -> reject" "$WORK/no-open.md" "opening sentinel"
-grep -vF -- '<<< circuit-breaker-preflight <<<' "$REAL" > "$WORK/no-close.md"
-expect_reject "missing closing sentinel -> reject" "$WORK/no-close.md" "closing sentinel"
+# 12-13. The circuit breaker's two calls back into the wrapper, each on its own.
+#        The pre-flight lives in dispatch-agent.sh now; the body keeps these.
+grep -vF -- '--mark-escalated' "$REAL" > "$WORK/no-mark.md"
+expect_reject "missing --mark-escalated -> reject" "$WORK/no-mark.md" "--mark-escalated call"
+grep -vF -- 'dispatch-agent.sh" --check' "$REAL" > "$WORK/no-check.md"
+expect_reject "missing --check -> reject" "$WORK/no-check.md" "--check call"
 
-# --- cross-file agreement on the one surviving literal ------------------------
+# 14. The modes are not lanes. A body with the two mode calls and only two real
+#     lanes must still be rejected, or `--check` would stand in for Watson.
+grep -vF -- 'dispatch-agent.sh" holmes' "$REAL" > "$WORK/modes-not-lanes.md"
+expect_reject "two lanes plus the two modes -> reject" "$WORK/modes-not-lanes.md" "distinct agent lane(s) dispatched"
+
+# --- the body re-types no pre-flight ----------------------------------------
 #
-# The circuit-breaker sentinel pair is the guard's only hard-coded string, and it
-# is duplicated across three files: orchestrator.md DECLARES it,
-# test-circuit-breaker.sh EXTRACTS between it, and the Step 7a-bis guard ASSERTS
-# it. If any one drifts, that file silently becomes a no-op — the extraction
-# yields nothing, or the assertion never fires. Pin all three together so a
-# rename has to be deliberate and complete.
-echo "  -- cross-file sentinel agreement --"
-CB_TEST="$HERE/test-circuit-breaker.sh"
-for sentinel in '>>> circuit-breaker-preflight >>>' '<<< circuit-breaker-preflight <<<'; do
-  missing=""
-  for f in "$REAL" "$SNIPPET" "$CB_TEST"; do
-    grep -qF -- "$sentinel" "$f" || missing="$missing $(basename "$f")"
-  done
-  if [ -z "$missing" ]; then
-    echo "  ok   — '$sentinel' agreed across orchestrator.md, guard, circuit-breaker test"
-    pass=$((pass+1))
-  else
-    echo "  FAIL — '$sentinel' missing from:$missing"
-    fail=$((fail+1))
-  fi
-done
+# The pre-flight used to be a ~115-line block the orchestrator re-typed per item
+# per tick, and its reprieve step ran an `rm` the destructive-scope guard denies.
+# Pin that the shipped body carries neither, so the block cannot creep back.
+echo "  -- the pre-flight stays in the script --"
+if grep -qE -- 'rm -f|REPRIEVE=1|kill -0' "$REAL"; then
+  echo "  FAIL — orchestrator.md carries pre-flight shell (rm, REPRIEVE=1, or kill -0) again"; fail=$((fail+1))
+else
+  echo "  ok   — orchestrator.md carries no pre-flight shell"; pass=$((pass+1))
+fi
 
 echo
 if [ "$fail" -eq 0 ]; then
