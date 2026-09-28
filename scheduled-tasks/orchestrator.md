@@ -17,7 +17,7 @@ You have **three** MCP tools from The Index:
 
 The Index server owns all the filter and sort logic. You never interpret status or field_changes yourself — trust the tool results.
 
-You also have `Bash` — used for exactly two things: the circuit-breaker pre-flight, and invoking `dispatch-agent.sh` — and `ToolSearch` to load the deferred Index tools (see Workflow). Beyond the three list tools you may touch `mcp__the-index__release_item`, loaded for Lane 3's stale-claim sweep, and `mcp__the-index__move` / `mcp__the-index__add_comment`, loaded on demand *only* when the circuit breaker (below) decides to escalate a wedged item. You never use `move` or `add_comment` in normal routing.
+You also have `Bash`, and you use it for one command only: `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" …`, in the forms this prompt writes out, plus the `mkdir` below. That script is covered by a `permissions.allow` rule, so it never waits on the auto-mode classifier. `ToolSearch` loads the deferred Index tools (see Workflow). Beyond the three list tools you may touch `mcp__the-index__release_item`, for Lane 3's stale-claim sweep and after an escalation, and `mcp__the-index__move` / `mcp__the-index__add_comment`, loaded on demand *only* when the circuit breaker escalates an item. You never use `move` or `add_comment` in normal routing.
 
 ## Workflow
 
@@ -42,189 +42,34 @@ mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 Per-agent model, effort, fallback model, and budget live in
 `~/.claude-workbench/dev-team-config.json` (written by `/workbench-dev-team:setup`,
 editable by the user, survives plugin updates). `dispatch-agent.sh` reads it on
-every dispatch. A malformed or absent config never blocks a dispatch. Model,
-effort, the optional `fallback` model chain, and Holmes's optional budget cap are
-passed only when set. An absent model or effort leaves the run on the agent
-definition's frontmatter value. Watson's budget cap is the one baked-in default,
-`10.00` when absent. The shipped config pins all three agents to
-`claude-opus-5-5[1m]` at `medium` effort. The `fallback` value is a
-comma-separated model list passed to `--fallback-model` (print-mode only) — when
-the primary model is overloaded or unavailable (e.g. a retired model), the
-dispatch degrades to the next model in the chain instead of failing.
+every dispatch. A malformed or absent config never blocks a dispatch. You never
+read it yourself.
 
-The budget-capped lanes also honour `agents.<agent>.reprieveBudgetMultiplier`
-(default `3`): on a **reprieve** dispatch — a human re-activating an item the
-circuit breaker had escalated (see below) — the cap is multiplied by this factor
-for that one run, so a legitimately large review can finish on the budget the
-human just signed off by re-activating it. Raise the factor (or the base
-`maxBudgetUsd`) if even the multiple isn't enough; it never affects ordinary ticks.
+### The circuit breaker lives in the dispatch script
 
-### Circuit breaker — pre-flight before every dispatch
+Every item dispatch runs a pre-flight inside `dispatch-agent.sh` before it spawns anything. The pre-flight reads the item's own run logs, lock, and escalation marker, never its content. Its policy is written out in the script's header. The **first line** the script prints tells you what happened:
 
-An agent can die on a **fatal, non-recoverable error before it ever runs a tool** — most notably `API Error: Output blocked by content filtering policy`, which aborts the whole `claude -p` run the instant the model tries to emit flagged output (e.g. generating a CODE_OF_CONDUCT / Contributor Covenant). When that happens the agent never gets to move its own item, so the item stays in its lane and **every tick re-dispatches it forever** — burning processes and, in the single-track dev lane, starving all other work behind it.
+- `dispatched <agent> pid=… log=…` — the normal case. Record a **dispatch**.
+- `SKIP<TAB><reason>` — an earlier run on this item is still alive. Nothing was spawned. Do not escalate and do not touch the item: the live run owns it. Record a **skip**.
+- `REPRIEVE<TAB><note>`, followed by a `dispatched` line — a human moved an escalated item back to its lane. The script consumed the marker and dispatched one fresh run at a raised budget. Record a **reprieve**.
+- `ESCALATE<TAB><reason>` — the item is wedged. Nothing was spawned. Escalate it as below, and record an **escalation**.
 
-The circuit breaker stops that. **Before each per-item dispatch in every lane**, run the pre-flight below with the lane's `AGENT` (`lestrade` / `holmes` / `watson`) and the item's `ID`. It inspects that item's own recent **run logs** and **dispatch lock** — not its content — and prints `DISPATCH` (proceed), `SKIP<TAB><reason>` (a run on this item is still in flight — leave it for a later tick), `REPRIEVE<TAB><note>` (a human re-activated a previously-escalated item — give it one fresh, raised-budget run), or `ESCALATE<TAB><reason>` (the item is wedged — escalate instead).
-
-**An in-flight run holds its item.** A dispatched agent writes its status changes at the *end* of its run, so for the whole time it works the item still reads as lane-eligible. When a run outlives the tick interval — a fan-out review with a full test suite routinely does — the next tick sees the same item and fires a second agent at it. Both then do the same work and both write, and whichever finishes last stomps everything that happened in between, including a human's own moves. So each dispatch records its PID in a per-item lock (`<agent>-<id>.lock`), and the pre-flight prints `SKIP` while that PID is alive. The lock is per **item**, not per lane — parallel agents on *different* items are the point, and unaffected. Nothing cleans the lock up (the run is detached and may die abruptly); a dead PID simply reads as free, and the next dispatch overwrites it.
-
-**Escalating before review is a last resort, reserved for the provably-terminal case.** The normal "this has been tried too many times" judgement is **Holmes's** — his 3-change-round rule, which only counts *after* a PR reaches review. A sequence should always end on Holmes finishing a review and deciding how it moves forward, not on Dispatch pulling an item before review. So the breaker splits by lane:
-
-- **Human re-activation wins (any lane).** Once the breaker escalates an item it drops a marker; if that item later reappears in its lane, a human must have moved it back, and their intervention **overrides** the breaker. The pre-flight prints `REPRIEVE` — one fresh run, dispatched with a **raised budget** (a re-activated review is usually one that was too big for the normal cap) — instead of re-escalating on the same stale logs. This is the fix for the failure mode where a manually re-requested review bounced straight back out to `Escalated` without Holmes ever running. Each human touch buys exactly one real attempt; if it wedges again, escalation starts from scratch.
-- **Content filter** (any lane, including Watson) — deterministic: the deliverable itself trips the output filter, so the run can *never* succeed and can never produce a PR to review. There is nothing to wait for — escalate on the first hit. This is the only generic case that can escalate a Watson-lane item, and it's the exact failure (#66) the breaker was built for.
-- **USD budget exceeded** (**Lestrade and Holmes lanes only**) — deterministic for a given workload and cap: re-running at the same budget hits the same wall. Escalate on the **first** hit rather than burning two more capped runs into it, so a human can raise `agents.<agent>.maxBudgetUsd` (or split the work) and move the item back — at which point the re-activation reprieve above dispatches it with a raised budget. On Watson this just retries (the dev lane never escalates pre-review). **On Holmes there is one exception: the workload may have changed since the kill.** If the dev lane logged a run on this item *after* the killed review, Watson has pushed to the branch and the next review is a different — usually much smaller — job, so the "same wall" premise does not hold and the item is dispatched instead. Lestrade has no such exception: triage runs before any Watson does.
-- **N identical fatal errors** (**Lestrade and Holmes lanes only**) — a transient guard for a run wedged on the same generic fatal where no review stage will ever catch it. It does **not** apply to Watson: a 529 or a partial isn't provably terminal, the work may yet reach a PR, and pulling it to `Escalated` before review is precisely the premature escalation the dev lane must avoid. On the Watson lane a generic fatal just retries on the next tick — escalation waits for Holmes.
-
-```bash
-AGENT=watson   # ← the lane's agent: lestrade | holmes | watson
-ID=<ITEM_ID>   # ← the item's `id` field
-# >>> circuit-breaker-preflight >>>  (markers used by scheduled-tasks/test-circuit-breaker.sh — keep them)
-# Inputs: AGENT (lestrade|holmes|watson), ID (project_items.id). Optional: LOGDIR.
-# Prints one of:
-#   "DISPATCH"            — proceed with the normal dispatch.
-#   "SKIP<TAB><reason>"   — a run dispatched on this item is still alive; leave it alone this tick.
-#   "REPRIEVE<TAB><note>" — a human re-activated a previously-escalated item; dispatch ONE fresh run
-#                           with a raised budget (the orchestrator consumes the marker + bumps budget).
-#   "ESCALATE<TAB><reason>" — the item is wedged; escalate, do not dispatch.
-LOGDIR="${LOGDIR:-$HOME/.claude-workbench/dev-team-logs}"
-CB_BUDGET_SIG='Exceeded USD budget'   # the HARD kill the harness writes. Watson's graceful wind-down (it senses the cap, commits what is done, comments on the PR) never writes this, and must never escalate — that path is how multi-file work completes inside a per-run cap.
-CB_FATAL_STRIKES=3   # generic fatal errors may be transient — Lestrade/Holmes only escalate after N identical runs (never Watson; see below)
-cb_marker="$LOGDIR/$AGENT-$ID.escalated"   # written when the breaker escalates this item; presence => it was escalated before
-cb_lock="$LOGDIR/$AGENT-$ID.lock"          # written at dispatch; holds the dispatched run's PID
-cb_latest=$(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null | head -1)
-cb_pid=$(cat "$cb_lock" 2>/dev/null || true)
-case "$cb_pid" in ''|0|*[!0-9]*) cb_pid= ;; esac   # empty, malformed, or `0` (kill -0 0 hits our own process GROUP — never a run) => item is free
-if [ -n "$cb_pid" ] && kill -0 "$cb_pid" 2>/dev/null; then
-  # An earlier tick's run on this same item is STILL ALIVE. Its status writes haven't landed yet, so
-  # the item still reads as lane-eligible — dispatching a second run would duplicate the whole review
-  # and race its board writes (the loser lands last and stomps whatever happened in between). Skip:
-  # the next tick either finds the lock dead (run finished) or the item gone from the lane.
-  printf 'SKIP\ta run dispatched on this item is still alive (pid %s) — a second one would duplicate its work and race its board writes' "$cb_pid"
-elif [ -f "$cb_marker" ]; then
-  # This item was escalated by the breaker before, yet here it is back in its lane — which can only
-  # mean a HUMAN re-activated it. Their intervention OVERRIDES the breaker: do not re-escalate on the
-  # same stale logs (the bug where a manual re-review bounced straight back out). Grant exactly one
-  # fresh, raised-budget run — the orchestrator consumes the marker and dispatches with the reprieve
-  # budget. If it wedges again, escalation starts from scratch, so each human touch buys one real try.
-  printf 'REPRIEVE\thuman re-activated a previously-escalated item — granting one fresh run with a raised budget'
-elif [ -z "$cb_latest" ]; then
-  echo DISPATCH                       # never run before — go
-elif tail -3 "$cb_latest" 2>/dev/null | grep -qi 'content filtering policy'; then
-  # Deterministic, any lane: the deliverable trips the output filter and will never succeed on retry — and can never produce a PR to review. Escalate on the first hit.
-  printf 'ESCALATE\toutput blocked by the content filtering policy — a required deliverable trips the output content filter, so the run can never succeed on retry'
-elif tail -3 "$cb_latest" 2>/dev/null | grep -qF "$CB_BUDGET_SIG"; then
-  # Deterministic for a given workload + cap: a re-run at the same budget hits the same wall. On the
-  # review/triage lanes, escalate on the FIRST hit — burning more capped runs into the same wall only
-  # wastes money. A human raises the cap (agents.<agent>.maxBudgetUsd) or splits the work, then moves
-  # the item back to its lane: that re-activation is a REPRIEVE (above), dispatched with a raised budget.
-  # The dev lane is the exception, because Watson resumes on a PERSISTENT branch: each capped run
-  # starts further along than the last, so a budget kill there is not the same wall twice. Measured
-  # over 1,015 runs: 69 hard kills across 52 items, and no item ever needed a 4th. So Watson gets the
-  # strike counter (CB_FATAL_STRIKES) rather than the first-hit escalation — three consecutive kills
-  # on the same item is the point where "it is making progress" stops being the likelier story.
-  #
-  # Only the HARD kill matches here. Watson's graceful wind-down — sensing the cap, committing what
-  # is done, and commenting on the PR — never writes this signature, and must never be escalated:
-  # that path is how multi-file work completes inside a per-run cap.
-  if [ "$AGENT" = watson ]; then
-    cb_budget_strikes=0
-    for cb_f in $(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null); do
-      if tail -3 "$cb_f" 2>/dev/null | grep -qF "$CB_BUDGET_SIG"; then
-        cb_budget_strikes=$((cb_budget_strikes + 1))
-      else
-        break                         # streak broken — an older run ended differently (or succeeded)
-      fi
-    done
-    if [ "$cb_budget_strikes" -ge "$CB_FATAL_STRIKES" ]; then
-      printf 'ESCALATE\t%s consecutive runs were killed by the USD budget cap without reaching review — raise agents.watson.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve' "$cb_budget_strikes"
-    else
-      echo DISPATCH                   # not enough strikes yet — the branch persists, let it resume
-    fi
-  else
-    # Holmes exception: "the same wall" holds only while the WORKLOAD is unchanged, and Watson
-    # regenerates Holmes's workload. After an AC dispute or a change-request bounce, Watson pushes a
-    # follow-up commit and the next review is a small diff, not a repeat of the job that died. So if
-    # the dev lane logged a run on this item AFTER the killed review, the premise fails and this is a
-    # different job — dispatch it. If that run also dies on the cap with no newer Watson log behind
-    # it, the next tick escalates normally, so at most one capped run is spent proving it.
-    #
-    # Observed on item 575 (phpcs-rules#375): the review was killed at 08:15 having ALREADY published
-    # its verdict — the cap cut the memory write-back tail, not the review. Watson pushed the
-    # adjudicated follow-up at 10:16, and the 10:22 tick escalated an item whose pending review was a
-    # comment-only diff, on a log from a round that had finished its work two hours earlier.
-    #
-    # Lestrade is excluded deliberately: triage runs before any Watson does, so a newer dev-lane log
-    # cannot mean a triage item's workload changed.
-    cb_newer_watson=$(ls -t "$LOGDIR/watson-$ID-"*.log 2>/dev/null | head -1)
-    if [ "$AGENT" = holmes ] && [ -n "$cb_newer_watson" ] && [ "$cb_newer_watson" -nt "$cb_latest" ]; then
-      echo DISPATCH                     # the dev lane moved this item on — not the same wall
-    else
-      printf 'ESCALATE\tthe run hit the configured USD budget cap before completing, so re-running at the same cap will hit the same wall — raise agents.%s.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve' "$AGENT"
-    fi
-  fi
-elif [ "$AGENT" = watson ]; then
-  # Dev lane, generic (non-content-filter) fatal. Watson NEVER escalates here: a 529, a
-  # budget-cap exhaustion, or a partial isn't provably terminal, the work may yet reach a
-  # PR, and "tried too many times" is Holmes's call AFTER review (his 3-change-round rule),
-  # not Dispatch's before it. Retry on the next tick; let the sequence end on Holmes.
-  echo DISPATCH
-else
-  # Lestrade / Holmes lanes — no review stage, or the PR already exists. A run wedged on the
-  # same generic fatal would otherwise re-dispatch forever, so escalate after N strikes.
-  cb_sig=$(tail -3 "$cb_latest" 2>/dev/null | grep -iE '^(API Error|Execution error|Error:)' | tail -1)
-  if [ -z "$cb_sig" ]; then
-    echo DISPATCH                     # last run didn't end on a fatal error — go
-  else
-    cb_strikes=0
-    for cb_f in $(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null); do
-      if tail -3 "$cb_f" 2>/dev/null | grep -qiF "$cb_sig"; then
-        cb_strikes=$((cb_strikes + 1))
-      else
-        break                         # streak broken — older runs failed differently (or succeeded)
-      fi
-    done
-    if [ "$cb_strikes" -ge "$CB_FATAL_STRIKES" ]; then
-      printf 'ESCALATE\t%s consecutive runs died with the same fatal error: %s' "$cb_strikes" "$cb_sig"
-    else
-      echo DISPATCH                   # not enough strikes yet — let this tick retry
-    fi
-  fi
-fi
-# <<< circuit-breaker-preflight <<<
-```
-
-**If the pre-flight prints `DISPATCH`** (the normal case), proceed with the lane's dispatch command exactly as written.
-
-**If it prints a line starting with `SKIP`**, an earlier run on this item is still working. Do *not* dispatch, do *not* escalate, and do *not* touch the item — the live run owns it and will move it when it finishes. Record it as a **skip** (with the reason) in the final summary and move on to the next item.
-
-**If it prints a line starting with `REPRIEVE`**, a human re-activated an item the breaker had escalated. Honour the override:
-
-1. **Consume the marker** so this reprieve is one-shot, not permanent: `rm -f "$HOME/.claude-workbench/dev-team-logs/<AGENT>-<ID>.escalated"`. (If the fresh run wedges again, the breaker re-escalates from scratch and writes a new marker.)
-2. **Dispatch the lane's command with `REPRIEVE=1` exported** — prefix it onto the same command, e.g. `REPRIEVE=1 bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <ITEM_ID>`. The budget-capped lanes (Holmes, Watson) multiply the cap by `agents.<agent>.reprieveBudgetMultiplier` (default `3`); the uncapped Lestrade lane ignores it and just runs fresh.
-
-Record it as a **reprieve** in the final summary, then move on.
-
-**If it prints a line starting with `ESCALATE`**, do *not* dispatch this item — re-dispatching only burns another process. Escalate it instead:
+To escalate an item:
 
 1. Load the escalation tools once (deferred): `ToolSearch query: select:mcp__the-index__move,mcp__the-index__add_comment,mcp__the-index__release_item`.
 2. `mcp__the-index__move(agent=<AGENT>, column="Escalated", id=<ID>)`.
-3. `mcp__the-index__add_comment(agent=<AGENT>, id=<ID>, body=…)` — the body states the item was **auto-escalated by the Dispatch circuit breaker**, quotes the `<reason>` the pre-flight printed (the text after the tab), notes it was pulled from the lane to stop an infinite re-dispatch loop, and tells the human that **moving it back to its lane re-runs it once with a raised budget** (the reprieve) — for a budget escalation, raise `agents.<AGENT>.maxBudgetUsd` first if even the reprieve multiple won't be enough.
-4. **Only after the `move` succeeds**, write the reprieve marker so a later human re-activation is recognised: `touch "$HOME/.claude-workbench/dev-team-logs/<AGENT>-<ID>.escalated"`. (Skip this if the move failed — without a real escalation there is nothing to reprieve.)
-5. **Release the item's board claim**: `mcp__the-index__release_item(<ID>)` (load it with the escalation tools in step 1). An escalated item has left the lane, so nothing is working it — and a claim left behind would keep it hidden from `list_development_items` even after a human moves it back. The call is idempotent, so it is safe when the run never claimed.
-
-Record it as an **escalation** (not a dispatch) in the final summary, and move on to the next item.
+3. `mcp__the-index__add_comment(agent=<AGENT>, id=<ID>, body=…)`. The body says the item was auto-escalated by the Dispatch circuit breaker, quotes the `<reason>` (the text after the tab), and says it was pulled from the lane to stop an infinite re-dispatch loop. It tells the human that moving it back to its lane re-runs it once with a raised budget. For a budget escalation, it adds that `agents.<AGENT>.maxBudgetUsd` may need raising first.
+4. **Only after the `move` succeeds**, record the escalation so a later re-activation is recognised: `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" --mark-escalated <AGENT> <ID>`. Skip this if the move failed: without a real escalation there is nothing to reprieve.
+5. Release the item's board claim: `mcp__the-index__release_item(<ID>)`. An escalated item has left the lane, and a claim left behind would hide it from `list_development_items` after a human moves it back. The call is idempotent.
 
 ### Lane 1 — Inspector Lestrade (triage)
 
 ```
 items = mcp__the-index__list_unrefined_items()
 for each item in items:
-  run circuit-breaker pre-flight (AGENT=lestrade, ID=item.id)
-  if it says SKIP: a run on this item is still alive — leave it alone, skip dispatch
-  if it says ESCALATE: escalate the item (write the marker after move succeeds), skip dispatch
-  if it says REPRIEVE: consume the marker, then dispatch Lestrade on item.id with REPRIEVE=1
-  else: dispatch Lestrade on item.id
+  dispatch Lestrade on item.id, and act on the first line it prints
 for each distinct item.repo across items:
-  dispatch Lestrade sweep on that repo   # sweeps are per-repo, not per-item — breaker does not apply
+  dispatch Lestrade sweep on that repo   # per-repo, not per-item: no pre-flight
 ```
 
 Dispatch command (run in Bash, **detached**):
@@ -247,11 +92,7 @@ bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" lestrade <OWNER/REPO>
 ```
 items = mcp__the-index__list_review_items()
 for each item in items:
-  run circuit-breaker pre-flight (AGENT=holmes, ID=item.id)
-  if it says SKIP: a run on this item is still alive — leave it alone, skip dispatch
-  if it says ESCALATE: escalate the item (write the marker after move succeeds), skip dispatch
-  if it says REPRIEVE: consume the marker, then dispatch Holmes on item.id with REPRIEVE=1
-  else: dispatch Holmes on item.id
+  dispatch Holmes on item.id, and act on the first line it prints
 ```
 
 Dispatch command:
@@ -265,37 +106,30 @@ bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" holmes <ITEM_ID>
 **Sweep stale claims first.** A Watson killed outright — a budget-cap kill leaves a
 31-byte log and nothing else — never reaches its own cleanup, so its board claim
 survives it. `list_development_items` hides claimed items by default, which is the
-point; it also means a claim nobody owns would hide its item **forever**, and the
-strike counter that would eventually escalate it never gets another run to count.
-So before the normal pick, look at the claimed items and release the ones whose run
-is dead:
+point; it also means a claim nobody owns would hide its item **forever**. So before
+the normal pick, look at the claimed items and release the ones whose run is dead:
 
 ```
 held = mcp__the-index__list_development_items(include_claimed=true, limit=25)
 for each item in held where item.in_flight_at is not null:
-  run circuit-breaker pre-flight (AGENT=watson, ID=item.id)
-  if it says SKIP: the run is still alive — leave the claim exactly as it is
+  verdict = bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" --check watson <item.id>
+  if verdict starts with SKIP: the run is still alive — leave the claim exactly as it is
   else: mcp__the-index__release_item(item.id)   # dead owner; hand the item back to the lane
 ```
 
-`SKIP` is the pre-flight's live-PID verdict, so it is the same liveness test the
-per-item lock already used — the claim adds board visibility, not a second opinion.
-Everything else (a dead lock, an escalation-worthy log, no log at all) means nobody
-is working it.
+`--check` prints the pre-flight verdict and spawns nothing. `SKIP` is its live-PID
+verdict, the same liveness test the per-item lock uses. Everything else means nobody
+is working the item.
 
 Then take the normal pick, which now excludes anything still legitimately held:
 
 ```
 items = mcp__the-index__list_development_items(limit=1)
 if items is non-empty:
-  run circuit-breaker pre-flight (AGENT=watson, ID=items[0].id)
-  if it says SKIP: a run on this item is still alive — leave it alone, skip dispatch
-  if it says ESCALATE: escalate the item (write the marker after move succeeds), skip dispatch
-  if it says REPRIEVE: consume the marker, then dispatch Watson on items[0].id with REPRIEVE=1
-  else: dispatch Watson on items[0].id
+  dispatch Watson on items[0].id, and act on the first line it prints
 ```
 
-Dispatch command (note the budget cap):
+Dispatch command:
 
 ```bash
 bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <ITEM_ID>
@@ -308,19 +142,20 @@ There is no `/tmp/watson.lock` any more, and reintroducing one would be a regres
 ## Rules
 
 - **Fire-and-forget.** `dispatch-agent.sh` backgrounds every run with `nohup ... &` + `disown` and returns immediately. Never wait for an agent to complete — Watson alone can run for hours.
-- **Copy the dispatch command byte-for-byte.** The only thing you substitute is the trailing target — the item's `id`, or `owner/repo` for a Lestrade sweep. The path, the quoting, and the agent token are pasted verbatim: the command is matched against a `permissions.allow` prefix rule, and any reformatting drops it back under the auto-mode classifier, which refuses the spawn nondeterministically. Never reconstruct a dispatch command from memory.
+- **Copy the dispatch command byte-for-byte.** The only thing you substitute is the trailing target — the item's `id`, or `owner/repo` for a Lestrade sweep — and, for `--check` and `--mark-escalated`, the agent token. The path and the quoting are pasted verbatim, with nothing before `bash`: the command is matched against a `permissions.allow` prefix rule, and any reformatting (an environment prefix included) drops it back under the auto-mode classifier, which refuses the spawn nondeterministically.
 - **One Bash call per dispatch.** Don't batch multiple dispatches into one shell command — each needs its own log file and backgrounding.
 - **ITEM_ID is the `id` field** (`project_items.id`) of the item the lane tool returned — never `issue_number` or `pr_number`. Mixing them up dispatches an agent at a nonexistent item.
-- **No reasoning about item contents.** You decide *which agent* based on *which tool returned the item*, not on item fields. That logic lives server-side. The lone exception is the **circuit breaker**, which reads an item's own **run logs** and escalation **marker** (not its content) to decide dispatch / reprieve / escalate.
+- **No reasoning about item contents.** You decide *which agent* based on *which tool returned the item*, not on item fields. That logic lives server-side, and the circuit breaker lives in the script.
 - **Empty lanes are fine.** If a tool returns an empty list, move on. Log nothing for that lane.
 - **Final output.** Print a one-line-per-action summary:
   `→ lestrade #123 (repo/name)`
   `→ lestrade sweep (repo/name)`
   `→ holmes #456 (repo/name)`
   `→ watson #789 (repo/name)`
+  `⏸ skipped #431 (repo/name) — run still alive`   ← circuit-breaker skips
   `♻️ reprieved #215 (repo/name) — human re-activated, raised budget`   ← circuit-breaker reprieves
   `⛔ escalated #66 (repo/name) — content filter`   ← circuit-breaker escalations
-  Followed by a count: `dispatched N, reprieved R, escalated M across 3 lanes`. If nothing fired, print `idle — nothing to dispatch`.
+  Followed by a count: `dispatched N, reprieved R, skipped S, escalated M across 3 lanes`. If nothing fired, print `idle — nothing to dispatch`.
 
 ## Failure modes
 

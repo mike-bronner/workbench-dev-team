@@ -6,6 +6,7 @@
 #
 #   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"
 #   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id>      (a push)
+#   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id>      (a GitHub write)
 #
 # ONE SCRIPT FOR BOTH, BECAUSE THE RECORD ALREADY IS. The gate keys a request by
 # session, agent, working directory, and the exact command text, and this script
@@ -35,6 +36,7 @@
 #   a commit           ✅ Approved: <subject>
 #   a push             ✅ Approved: <push statement> (<branch> at <commit>)
 #   a commit and push  ✅ Approved: <subject>, then <push statement>
+#   a GitHub write     ✅ Approved: <the gh command>
 #
 # A commit's command is never printed again. It has already been on screen twice
 # by then — the agent ran it, and the permission prompt rendered it — and echoing
@@ -352,7 +354,8 @@ if kind == "file":
 # in for the push line in the receipt, and describe something else.
 if label and not commit_words:
     refuse(
-        "❌ approve-commit.sh: this id names a push, and a push takes no subject.",
+        "❌ approve-commit.sh: this id names a GitHub write, and a GitHub write takes no subject."
+        if "gh" in verbs else "❌ approve-commit.sh: this id names a push, and a push takes no subject.",
         "   Run the approval command exactly as the gate printed it, with no label.",
     )
 if label and push_line and label in push_line:
@@ -400,7 +403,11 @@ subject = recovered if kind == "file" else label or recovered
 # heredoc it holds no message to print twice. A commit that also pushes names
 # both, so the receipt never names less than the command does.
 push_display = for_display(push_line) if push_line else ""
-if push_display and not commit_words:
+# A GitHub write is named by its own gh command, which is one plain line.
+gh_display = for_display(record.get("gh") or command) if "gh" in verbs else ""
+if gh_display:
+    print(f"✅ Approved: {gh_display}")
+elif push_display and not commit_words:
     where = (record.get("branch") or "").replace("refs/heads/", "") or "detached HEAD"
     head = str(record.get("head") or "")[:12]
     print(f"✅ Approved: {push_display} ({where} at {head})")
@@ -411,4 +418,6 @@ else:
 print("   One run of that command spends it, and it expires in 15 minutes.")
 if push_display:
     print("   Any change to the repository's branches, tags, HEAD, or remote config voids it first.")
+if gh_display:
+    print("   Any change to a file it names, or to the git remote config, voids it first.")
 PYEOF

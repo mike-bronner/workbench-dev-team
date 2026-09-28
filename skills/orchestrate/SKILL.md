@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Run the dev team (Inspector Lestrade, Dr. Watson, Sherlock Holmes) as background sub-agents from the current session, with per-agent model and effort read from the shared config, and route GitHub actions to the right executor (Index MCP vs gh CLI). Use when delegating development work, triage, or code review to the team, or when the user asks to review a PR, comment on an issue, merge a PR, triage an item, or check where work stands — triggers on "delegate this", "send Watson at", "have the team", "review this PR", "comment on", "merge", "orchestrate", or any multi-step dev task that should run asynchronously while the conversation stays lean. Also carries the routing rule that sends development to Watson, triage to Lestrade, and review to Holmes, and the five-slot brief template (Workdir / Goal / Context / Constraints / Done when) that every handoff is written to — read-only research dispatches included. Read it before picking any sub-agent, and whenever a dispatch gate refuses a handoff.
+description: Run the dev team (Inspector Lestrade, Dr. Watson, Sherlock Holmes) as background sub-agents from the current session, with per-agent model and effort carried by each agent's frontmatter, and route GitHub actions to the right executor (Index MCP vs gh CLI). Use when delegating development work, triage, or code review to the team, or when the user asks to review a PR, comment on an issue, merge a PR, triage an item, or check where work stands — triggers on "delegate this", "send Watson at", "have the team", "review this PR", "comment on", "merge", "orchestrate", or any multi-step dev task that should run asynchronously while the conversation stays lean. Also carries the routing rule that sends development to Watson, triage to Lestrade, and review to Holmes, and the five-slot brief template (Workdir / Goal / Context / Constraints / Done when) that every handoff is written to — read-only research dispatches included. Read it before picking any sub-agent, and whenever a dispatch gate refuses a handoff.
 ---
 
 # Orchestrate — The Dev Team as Sub-Agents
@@ -52,7 +52,7 @@ see the routing table below.
 The reason is skill loading, not seniority. A specialist loads
 `/workbench-dev-team:develop` and then works *from the repo it was pointed at*:
 it reads the repo's conventions, discovers the test framework, follows the
-existing file layout, and sequences the work itself. `/develop` §4 is where the
+existing file layout, and sequences the work itself. `/develop` §1 is where the
 discovery rule lives — don't restate it in a prompt, and don't pre-decide any of
 it. A generic agent never loads that skill, so it guesses at conventions the
 repo already states. That is also why the brief below omits implementation
@@ -74,74 +74,21 @@ governs a Watson build.
 | Sketch an approach before any code exists | `Plan` |
 | Answer a question that writes no file | `general-purpose` |
 
-## Read the config first
+## Model and effort come from the agent, never from you
 
-Per-agent model, effort, and Watson's budget cap live in:
+Nothing in this skill reads `~/.claude-workbench/dev-team-config.json`: the
+interactive path has no use for it. `/workbench-dev-team:setup` stamps each
+agent's configured `model` and `effort` into its frontmatter (Step 6a), and the
+harness reads the frontmatter when it spawns the sub-agent. All three ship
+`claude-opus-5-5[1m]` at `medium`.
 
-```bash
-cat "$HOME/.claude-workbench/dev-team-config.json"
-```
-
-```json
-{
-  "agents": {
-    "lestrade": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
-    "holmes": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
-    "watson": { "model": "claude-opus-5-5[1m]", "effort": "medium", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
-  }
-}
-```
-
-Holmes carries two optional review knobs: `fanout` (bool, default `true`) toggles
-the multi-lens review fan-out, and `lensModel` (default: Holmes's own `model`)
-sets the model its lens and skeptic sub-agents run on. Lestrade carries the same
-two knobs for its own fan-out — four blind lenses that check the draft
-acceptance criteria before scoring. Any agent may carry an
-optional `fallback` knob — a comma-separated model list handed to
-`--fallback-model` so a dispatch degrades to the next model when the primary is
-overloaded or unavailable (e.g. a retired model) rather than failing. Holmes also
-takes an optional `maxBudgetUsd` cap (Watson's defaults to `10.00`). All of these
-are optional — absent file or keys → defaults.
-
-**All three agents ship `claude-opus-5-5[1m]` at `medium` effort**, in this
-config and in their frontmatter. The exact ID is deliberate, because the `opus`
-alias moves to a new release without anyone approving it. The `[1m]` variant
-holds the roughly 250k tokens of working context the agents budget for.
-`medium` is enough for all three: Anthropic's Opus 5.5 guidance reports it
-beating Opus 5 at `high` on coding, and catching more bugs with fewer false
-alarms in review. Either key is still yours to change per agent. Setup asks
-before it moves an existing config onto the pin, and never moves it silently.
-
-Read it once at the start of an orchestration session. If the file is missing,
-fall back to the values above and suggest `/workbench-dev-team:setup`.
-
-**How the knobs land, per dispatch path:**
-
-- **Interactive (this skill):** **never pass the Agent tool's `model`
-  parameter** to a dev-team agent. It accepts only an alias (`sonnet`, `opus`,
-  `haiku`, `fable`), so it cannot carry the agents' `claude-opus-5-5[1m]`, and it
-  overrides the agent's frontmatter, so passing `opus` would silently replace
-  the exact ID with whatever the alias points at today. The Agent tool has no
-  effort parameter at all. Both values reach this path through the agent's
-  frontmatter instead, which the harness reads when it spawns the sub-agent:
-  `/workbench-dev-team:setup` stamps the configured `model` and `effort` there
-  (Step 6a), so the knobs are live on this path rather than inert. A
-  per-project `CLAUDE_CODE_SUBAGENT_MODEL` reaches a pinned agent only with
-  `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` beside it, which is the deliberate
-  opt-out. None of it asks anything of you at dispatch time.
-  **After editing the config, re-run setup** — the scheduled path re-reads the
-  file every tick, while this one keeps the last stamped value until setup runs
-  again. `maxBudgetUsd` and `fallback` have no such
-  route and stay CLI-only — neither applies to interactive dispatch (the Agent
-  tool has no budget or fallback-model parameter; a model error on this path
-  surfaces immediately for the human to handle).
-- **Scheduled (Dispatch):** the `model`, `effort`, `fallback`, and budget knobs
-  are passed as `--model`, `--effort`, `--fallback-model`, and `--max-budget-usd`
-  flags, each only when set. An absent `model` or `effort` leaves the run on
-  the agent definition's value, or on Claude Code's own default where the
-  definition has none. Not your concern here, but it is the same config file — one edit still
-  moves both paths: this one on the next tick, the interactive one at the next
-  setup run.
+**Never pass the Agent tool's `model` parameter to a dev-team agent.** It
+accepts only an alias (`sonnet`, `opus`, `haiku`, `fable`), so it cannot carry
+the exact ID, and it overrides the frontmatter, so `opus` would silently replace
+the pin with whatever the alias points at today. The Agent tool has no effort,
+budget, or fallback parameter, so `maxBudgetUsd` and `fallback` reach only the
+scheduled path. When the human edits the config, the scheduled path picks it up
+on its next tick. This path picks it up at the next setup run, so say so.
 
 ## Check the workspace before you dispatch
 
@@ -185,7 +132,7 @@ slot: `references/brief-rationale.md`.
    Foreground only when the user explicitly wants to wait on a quick result.
 2. **No `model` parameter.** Never pass the Agent tool's `model` to a dev-team
    agent. The agent's frontmatter carries the configured model, and the
-   alias-only parameter would override it (see "How the knobs land" above).
+   alias-only parameter would override it (see "Model and effort" above).
 3. **Every handoff is a brief.** Sub-agents have no memory of this
    conversation, so send the five slots defined below and nothing else — for
    Watson's Direct mode, Holmes's Local mode, and the read-only `Explore`,
@@ -206,9 +153,12 @@ slot: `references/brief-rationale.md`.
    bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>
    ```
 
-   It reads the same config — model, effort, fallback, budget — backgrounds the
-   run, and prints the log path. Track it from that log rather than from a
-   completion notification, and keep the roster line updated from it. The Agent
+   It reads the same config — model, effort, fallback, budget — runs the
+   circuit-breaker pre-flight, backgrounds the run, and prints the log path. A
+   first line of `SKIP` (a run on that item is still alive) or `ESCALATE` (the
+   breaker judges the item wedged) means nothing was spawned: relay it to the
+   human rather than retrying. Track a spawned run from its log rather than from
+   a completion notification, and keep the roster line updated from it. The Agent
    tool stays right for everything that writes no commit: Watson's Direct mode,
    Lestrade, Holmes, and every read-only dispatch.
 
@@ -234,8 +184,8 @@ Agent(
              and every dependency is a manual review there.
            - Do not change the shape of the cache interface. Three other
              services call it and none of them are in this repo.
-           Done when: Expiry is covered by tests, the suite is green, and a
-           PR is open."
+           Done when: Expiry is covered by tests, the suite is green, and the
+           change comes back uncommitted with a proposed commit message."
 )
 ```
 
@@ -335,8 +285,10 @@ which `/develop` tells it to refuse rather than guess.
   not change, files that are out of bounds, a dependency ban, answers to forks
   already settled in chat.
 - **The acceptance criterion**: what must be true of the result for it to count.
-- **The definition of done**: the state that ends the task — PR open, tests
-  green, or "stop before committing and report."
+- **The definition of done**: the state that ends the task, and one the agent's
+  lane can reach. A sub-agent cannot commit, push, or open a PR, so a Direct-mode
+  or research brief ends at tests green and the work reported back; "a PR is
+  open" belongs only to an Index-mode run.
 - **The reasoning, in `Context:`** — the measurement, the incident, the argument
   that settled a fork, the reason this outcome is wanted over the obvious one.
   A constraint with its reason survives contact with a surprise in the repo; a
@@ -352,6 +304,11 @@ which `/develop` tells it to refuse rather than guess.
 - Function, class, and variable names not already in the repo.
 - Patches, code blocks, or file contents you want written verbatim.
 - The commit message. That is `/workbench-dev-team:git-commit`'s job.
+- Where the work runs or what it is written in: "outside the app", "a
+  standalone script", "a one-off", "a quick Python check". That framing once
+  sent Watson to edit PHP with a Python script and to diff a Laravel app's data
+  in Python instead of the app's own console and test suite. The repo answers
+  both questions.
 
 `Context:` is reasoning, never instruction. A step list does not become
 acceptable by moving under it, and neither does a shell command.
@@ -390,7 +347,8 @@ Constraints:
 - No new dependencies. The retry helpers on offer all pull a scheduler
   we would then have to keep.
 Done when: Retry timing and the attempt cap are covered by tests, the
-full suite is green, and a PR is open.
+full suite is green, and the change comes back uncommitted with a
+proposed commit message.
 ```
 
 The scripted version pins the file, the runner, the command order, and the
@@ -447,16 +405,11 @@ report carries a diff summary and a proposed commit message instead, and the
 tree is left as the change made it.
 
 **Committing it is yours, and so is the push.** Show the human the diff and
-that message, then attempt the commit and let the gate prompt: run the approval
-command its denial prints, and commit once they have answered the prompt. A push
-takes the same route. Attempt it, and let the gate ask. Do not tell the human to
-run it themselves. Write either as the plain form — one line, `git [-C <path>]
-commit …`, `git [-C <path>] push …`, or the two joined by `&&` — because the gate
-refuses any other command that names one. Stage with `git add` as its own call,
-and put a multi-line message in a scratchpad file committed with
-`git commit -F <absolute path>`; the heredoc form is refused. Never send the agent back to try again, and never grant it
-an approval by any route: the prompt is the whole mechanism, and only a
-foreground session can raise one.
+that message, then attempt the commit yourself and let the gate prompt them. The
+plain form it prompts for, and the approval steps, are canonical in the
+`/workbench-dev-team:git-commit` skill ("Committing and pushing"). Never send
+the agent back to commit, and never grant it an approval by any route: only a
+foreground session can raise the prompt.
 
 **Holmes can review it first.** An uncommitted tree is exactly what Local mode
 takes, so a Watson Direct-mode result can go to Holmes on a five-slot brief
@@ -514,7 +467,9 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   it quickly," stop — that's a Watson dispatch, and so is that same fix handed
   to a generic agent. A `PreToolUse` hook holds this line for you: `Edit`,
   `Write`, and `NotebookEdit` are denied when the main agent calls them, and
-  reads and Bash stay open. A deny means the rule worked. Report it, then
+  reads and Bash stay open. A file written through Bash — `sed -i`, a heredoc,
+  a redirect, a script — is still a write. The gate cannot see it, so the rule
+  binds you there on your own. A deny means the rule worked. Report it, then
   dispatch. Never run `/workbench-core:orchestrator off` to clear your own deny
   — only the human asks for that toggle, and only then does inline writing open
   up.
@@ -588,10 +543,7 @@ works on governed repos (App-signed), and degrades to no Type on user-owned ones
 
 - A one-line answer, a file lookup, a quick read — do it inline. Dispatch
   overhead isn't free, and reads and Bash stay open to you. Writing a file is
-  the delegation gate's business rather than this list's — see "You never do
-  the work" above. Code that does get written inline still holds to YAGNI and
-  the most concise *readable* solution, the same `/develop` standard Watson
-  follows.
+  never on this list — see "You never do the work" above.
 - Work the scheduled Dispatch pipeline already owns (board items flowing
   through lanes) — leave it to the 20-minute tick unless the user asks for an
   immediate manual run.

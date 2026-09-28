@@ -165,13 +165,14 @@ pr chore/317-harden-mutex-poisoning-recovery 401 MERGED
 expect "watson branch, merged PR -> drift" \
   "DRIFT${tab}chore/317-harden-mutex-poisoning-recovery${tab}401" "$(run)"
 
-# 5. Same, closed unmerged -> DRIFT.
+# 5. Same, closed unmerged -> CLOSED, its own outcome. A human closing the PR is
+#    a "no", not finished work, so it must not be repaired to In Review as a merge is.
 ISSUE=317; newcase c5
 branch chore/317-harden-mutex-poisoning-recovery
 watson_commits chore/317-harden-mutex-poisoning-recovery
 pr chore/317-harden-mutex-poisoning-recovery 401 CLOSED
-expect "watson branch, closed PR -> drift" \
-  "DRIFT${tab}chore/317-harden-mutex-poisoning-recovery${tab}401" "$(run)"
+expect "watson branch, closed unmerged PR -> closed" \
+  "CLOSED${tab}chore/317-harden-mutex-poisoning-recovery${tab}401" "$(run)"
 
 # 6. Legacy `watson/` prefix with no trailer (pre-provenance branch) -> RESUME on the prefix alone.
 ISSUE=83; newcase c6

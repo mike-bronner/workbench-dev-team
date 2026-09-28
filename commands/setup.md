@@ -64,7 +64,7 @@ Run a single Bash check for the host tools the rest of the script needs:
 
 ```bash
 missing=()
-for cmd in gh jq security; do
+for cmd in gh jq security git python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     missing+=("$cmd")
   fi
@@ -74,13 +74,21 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "   Install the missing tools and re-run /workbench-dev-team:setup."
   exit 1
 fi
-echo "✅ gh, jq, security all present"
+echo "✅ gh, jq, security, git, python3 all present"
 ```
 
 Do not check for `claude` — we're already running inside a Claude Code session.
 
+`git` and `python3` are here because both hooks need them. The commit gate and
+the local-review guard classify every command in `python3`, and the gate reads
+the repository with `git` to bind an approval. Without `python3` the gate
+refuses any command that names git, gh, or yadm, and the guard refuses every
+Bash and editing call from a sub-agent while a review record exists. So a
+missing interpreter blocks work rather than letting it through unchecked.
+
 If any prerequisite is missing, stop and tell the user how to install it
-(`brew install gh jq` for the common case; `security` ships with macOS).
+(`brew install gh jq` for the common case; `security` ships with macOS; `git`
+and `python3` come with the Xcode Command Line Tools, `xcode-select --install`).
 
 ## Step 3 — Seed Keychain credentials
 
@@ -1079,7 +1087,7 @@ grep -qF -- 'name: dispatch-orchestrator' "$BODY_OUT" && og_reject "frontmatter 
 
 # 2. Non-trivial size — catches truncation and wrong-file.
 og_lines=$(wc -l < "$BODY_OUT" | tr -d ' ')
-[ "$og_lines" -ge 200 ] || og_reject "body is only $og_lines lines (expected >= 200) — truncated or not the orchestrator"
+[ "$og_lines" -ge 120 ] || og_reject "body is only $og_lines lines (expected >= 120) — truncated or not the orchestrator"
 
 # 3. Lane structure, DERIVED from the body — no agent names appear here, so
 #    renaming a lane or adding a fourth one needs no edit in this file. Every
@@ -1092,15 +1100,17 @@ og_lines=$(wc -l < "$BODY_OUT" | tr -d ' ')
 #    into the wrapper script when the dispatch block collapsed into one command,
 #    and 7a-ter verifies it by RUNNING the script's own test suite — an executed
 #    assertion rather than a grep for a string in a prompt.
-og_agents=$(grep -oE -- 'dispatch-agent\.sh"? +[a-z-]+' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
+#    The agent token starts with a letter, so the `--check` and `--mark-escalated`
+#    modes are not counted as lanes.
+og_agents=$(grep -oE -- 'dispatch-agent\.sh"? +[a-z][a-z-]*' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
 [ "$og_agents" -ge 3 ] || og_reject "only $og_agents distinct agent lane(s) dispatched (expected >= 3) — a lane is missing"
 
-# 4. The circuit-breaker sentinel pair. This is the guard's only literal, and it
-#    is not new maintenance: scheduled-tasks/test-circuit-breaker.sh already
-#    extracts the pre-flight from between this exact pair, so the markers are
-#    load-bearing whether or not this guard names them.
-grep -qF -- '>>> circuit-breaker-preflight >>>' "$BODY_OUT" || og_reject "missing the circuit-breaker-preflight opening sentinel"
-grep -qF -- '<<< circuit-breaker-preflight <<<' "$BODY_OUT" || og_reject "missing the circuit-breaker-preflight closing sentinel"
+# 4. The circuit breaker's two calls back into the wrapper. The pre-flight itself
+#    runs inside dispatch-agent.sh, and 7a-ter runs its suite. What the body must
+#    still carry is the escalation record, without which a human's re-activation
+#    is never recognised, and the stale-claim sweep's liveness check.
+grep -qF -- 'dispatch-agent.sh" --mark-escalated' "$BODY_OUT" || og_reject "missing the circuit breaker's --mark-escalated call"
+grep -qF -- 'dispatch-agent.sh" --check' "$BODY_OUT" || og_reject "missing the stale-claim sweep's --check call"
 
 if [ "$og_fail" -ne 0 ]; then
   cat <<EOF
@@ -1143,22 +1153,25 @@ Run from the resolved `$SRC_ROOT` (Step 7a), not `${CLAUDE_PLUGIN_ROOT}`:
 set -u
 WRAPPER_SRC="$SRC_ROOT/bin/dispatch-agent.sh"
 WRAPPER_TEST="$SRC_ROOT/bin/test-dispatch-agent.sh"
+BREAKER_TEST="$SRC_ROOT/scheduled-tasks/test-circuit-breaker.sh"
 WRAPPER_DST="$HOME/.claude-workbench/bin/dispatch-agent.sh"
 
-if [ ! -f "$WRAPPER_SRC" ] || [ ! -f "$WRAPPER_TEST" ]; then
-  echo "❌ Dispatch wrapper or its test is missing under $SRC_ROOT/bin — cannot deploy."
+if [ ! -f "$WRAPPER_SRC" ] || [ ! -f "$WRAPPER_TEST" ] || [ ! -f "$BREAKER_TEST" ]; then
+  echo "❌ Dispatch wrapper or one of its tests is missing under $SRC_ROOT — cannot deploy."
   exit 1
 fi
 
-# Prove the shipped script behaves before installing it. The suite covers the
-# per-item in-flight lock (#39), the budget cap and its reprieve multiple, and
-# the per-agent defaults that survive a missing or malformed config — the
-# assertions the body guard used to approximate with a grep.
-if ! bash "$WRAPPER_TEST" >/dev/null 2>&1; then
-  echo "❌ bin/test-dispatch-agent.sh FAILED — refusing to install a wrapper that does not pass its own suite."
-  echo "   Re-run it directly for the detail:  bash $WRAPPER_TEST"
-  exit 1
-fi
+# Prove the shipped script behaves before installing it. The two suites cover
+# the per-item in-flight lock (#39), the budget cap and its reprieve multiple,
+# the per-agent defaults that survive a missing or malformed config, and the
+# circuit-breaker pre-flight with its one-shot reprieve marker.
+for suite in "$WRAPPER_TEST" "$BREAKER_TEST"; do
+  if ! bash "$suite" >/dev/null 2>&1; then
+    echo "❌ $suite FAILED — refusing to install a wrapper that does not pass its own suite."
+    echo "   Re-run it directly for the detail:  bash $suite"
+    exit 1
+  fi
+done
 
 mkdir -p "$HOME/.claude-workbench/bin"
 install -m 755 "$WRAPPER_SRC" "$WRAPPER_DST"
@@ -1291,7 +1304,7 @@ Print a clean summary block:
   {STALE_ROOT_WARNING}
 
   Agents:           Lestrade — {LESTRADE_STAMP}
-                    Holmes ($7 cap) — {HOLMES_STAMP}
+                    Holmes ($10 cap) — {HOLMES_STAMP}
                     Watson ($10 cap) — {WATSON_STAMP}
                     — models/effort/fallback/budget editable in the agent config
                     — model and effort also stamped into
@@ -1375,22 +1388,20 @@ failure this summary exists to surface.
   its frontmatter. It fails closed: a body that cannot be verified is never
   written to the scheduled task.
   **The lane checks are derived, not listed.** They count distinct dispatched
-  lanes and distinct lanes writing a per-item in-flight lock, so no agent name
-  appears in this file — renaming a lane or adding a fourth needs no edit here.
-  The guard's one literal is the `circuit-breaker-preflight` sentinel pair, and
-  that is not new maintenance: `scheduled-tasks/test-circuit-breaker.sh`
-  already extracts the pre-flight from between those exact markers. The pair
-  now appears in three files — `orchestrator.md` declares it, the circuit-breaker
-  test extracts between it, this guard asserts it — so a test case pins all
-  three together; drift in any one turns that file into a silent no-op.
+  lanes, so no agent name appears in this file — renaming a lane or adding a
+  fourth needs no edit here. The guard's literals are the two circuit-breaker
+  calls the body makes back into `dispatch-agent.sh` (`--mark-escalated` and
+  `--check`). The pre-flight itself lives in that script, where
+  `scheduled-tasks/test-circuit-breaker.sh` runs it and Step 7a-ter runs the
+  wrapper's own suite before installing it.
   *Scope note: this guards integrity, not staleness.* `setup.md` and the
   orchestrator resolve from the same root, so a frozen root carries a frozen
   guard — staleness is Step 7a's job, via the registry and the version
   comparison.
-  Tests: `scheduled-tasks/test-setup-orchestrator-guard.sh` (15 cases — happy
-  path, absent/unreadable input, strip failures, truncation, one case per
-  derived check, a boundary case pinning the two-lock floor so the Lestrade
-  sweep isn't falsely rejected, and cross-file agreement on the sentinel pair)
+  Tests: `scheduled-tasks/test-setup-orchestrator-guard.sh` (happy path,
+  absent/unreadable input, strip failures, truncation, one case per derived
+  check, a boundary case so the Lestrade sweep cannot stand in for a lane, and
+  one case per circuit-breaker call)
   extracts the *shipped* guard from between this file's
   `orchestrator-body-guard` sentinels, so the test cannot drift from the logic
   it guards.

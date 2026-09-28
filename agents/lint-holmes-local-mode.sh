@@ -37,8 +37,9 @@
 #      leaves an agent to invent one.
 #   5. No destructive command inside any fenced block in the reference, and the
 #      prohibition reaches every sub-agent Local mode dispatches. Index mode §4b
-#      opens with `rm -rf "$CLONE"`, and the local target is the human's live
-#      tree — a copied command there deletes the work under review. What counts
+#      clones into a `mktemp -d` directory it later removes with `rm -rf`, and
+#      the local target is the human's live tree — a copied command there
+#      deletes the work under review. What counts
 #      as destructive is not decided here: the fenced blocks are fed to the
 #      shipped guard's own classifier, so the documentation is held to the rule
 #      the harness enforces rather than to a second copy of it that can drift.
@@ -73,7 +74,7 @@ FAIL=0
 # The reference substitutes it for the human's workdir by matching this literal
 # text, so the check below holds the skeletons and the substitution row to the
 # same string rather than to two hand-kept copies of it.
-EVIDENCE='Checkout (already prepared, do not re-clone): /tmp/holmes-<issue_number>'
+EVIDENCE='Checkout (already prepared, do not re-clone): <checkout path>'
 
 report() {
   local label="$1"; shift
@@ -203,7 +204,7 @@ report "steps — every board-coupled step has a local replacement" ${steps[@]+"
 # Prose that merely names the verbs names them mid-sentence ("every other git
 # verb is forbidden. That includes restore, stash..."), which is never a command
 # position, so the warning text stays legal and nobody is taught to delete it to
-# get green. Index mode's §4b opens with `rm -rf "$CLONE"`; copied here that
+# get green. Index mode removes its clone with `rm -rf <checkout path>`; copied here that
 # deletes the work under review.
 fenced="$(awk '/^```/{f=!f; next} f' "$LOCAL")"
 destructive=()

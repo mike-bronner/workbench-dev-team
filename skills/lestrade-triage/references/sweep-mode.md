@@ -53,6 +53,8 @@ gh issue view <number> -R <owner/repo> --json comments \
   --jq '[.comments[] | select(.body | test("<!-- expand-from:"))]'
 ```
 
+Search the vault's `feedback/` folder before you fold a case in — **required**, as in Item mode step 4. A folded case is new AC, and Mike's corrections bind it the same way. Run at least two searches with `folder: "feedback"`: one for the repo, and one for the case's subject, in the words a rule about it would use. When a case contradicts a rule you confirm, fold it in reworded to agree with the rule, and name the rule in your report.
+
 Resolve the issue to its board item, then append the new case(s) to its checklist. Read the current AC first — from the managed AC comment (first line `<!-- acceptance-criteria -->`), or from the issue body's `## Acceptance Criteria` section on a legacy issue that has no such comment yet. `set_acceptance_criteria` rewrites the whole managed comment, so pass the existing items **plus** the new ones (no `## Acceptance Criteria` heading; the server adds it):
 
 ```

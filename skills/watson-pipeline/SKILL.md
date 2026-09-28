@@ -1,19 +1,20 @@
 ---
 name: watson-pipeline
-description: On-demand detail for Dr. Watson's The Index-mode pipeline — the board claim, the status and blocker gates, resume detection, branch and draft PR, implementation and fork routing, pre-submit self-review, CI, status transitions, cleanup, and report. Agent-internal reference loaded from agents/watson.md at the start of every Index-mode run; Direct mode never uses it.
+description: On-demand detail for Dr. Watson's The Index-mode pipeline — the pipeline-flag check, the board claim, the status and blocker gates, resume detection, branch and draft PR, implementation and fork routing, pre-submit self-review, CI, status transitions, cleanup, and report. Agent-internal reference loaded from agents/watson.md at the start of every Index-mode run; Direct mode never uses it.
 ---
 
 # Watson — The Index Mode Pipeline
 
 `agents/watson.md` is the router. It holds mode detection, the Direct-mode
 workflow, the Index-mode input contract and tools, and the standing `## Rules`.
-The eleven-step Index-mode procedure is long and only applies to one of the two
-modes, so it lives here.
+The Index-mode procedure is long and only applies to one of the two modes, so it
+lives here.
 
 ## What's here
 
-- `references/index-mode-pipeline.md` — steps 1 through 11, verbatim: claim the
-  item, fetch fresh state, the status gate, the blocker gate, resume detection
+- `references/index-mode-pipeline.md` — steps 0 through 11, verbatim: the
+  pipeline-flag check that runs before anything else, claim the item, fetch
+  fresh state, the status gate, the blocker gate, resume detection
   and branch provenance, the fresh-work path, clone/branch/draft PR, implement
   and test (including the fork-classification routing), the pre-submit diff
   self-review, marking the PR ready, driving CI green, moving to In Review,

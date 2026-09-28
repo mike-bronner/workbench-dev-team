@@ -205,6 +205,23 @@ expect_status "a label on a push-only id is refused" 1 "$STATUS"
 case "$OUT" in *"a push takes no subject"*) ok "...and it says why" ;; *) bad "the push-label refusal does not say why: $OUT" ;; esac
 if [ "$(gate_verdict "$PUSH")" = deny ]; then ok "...and the push is still denied"; else bad "the refused label approved the push anyway"; fi
 
+echo "A GitHub-side write takes the same route — deny, approve, run once:"
+GHW='gh api -X PUT repos/o/r/contents/README.md -f message=m -f content=eA=='
+if [ "$(gate_verdict "$GHW")" = deny ]; then ok "a foreground gh api write is denied"; else bad "a foreground gh api write ran unprompted"; fi
+ID=$(gate_request_id "$GHW")
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "the gh write is approved with no subject" 0 "$STATUS"
+case "$OUT" in
+  *"✅ Approved: $GHW"*) ok "...and the receipt names the gh command" ;;
+  *) bad "the receipt does not name the gh command: $OUT" ;;
+esac
+if [ "$(gate_verdict "$GHW")" = silent ]; then ok "...and the gate lets that write through"; else bad "the gate still denied the approved gh write"; fi
+if [ "$(gate_verdict "$GHW")" = deny ]; then ok "...once, and only once"; else bad "the approval survived the gh write it covered"; fi
+ID=$(gate_request_id "$GHW")
+OUT=$(approve "$ID" "message=m"); STATUS=$?
+expect_status "a label on a gh write is refused" 1 "$STATUS"
+case "$OUT" in *"a GitHub write takes no subject"*) ok "...and it says why" ;; *) bad "the gh-label refusal does not say why: $OUT" ;; esac
+
 # Only the plain form is ever issued an id, so nothing but the plain form can
 # reach this script. An env prefix is not the plain form.
 if [ -z "$(gate_request_id 'GIT_TRACE=0 git push -u origin feature')" ]; then

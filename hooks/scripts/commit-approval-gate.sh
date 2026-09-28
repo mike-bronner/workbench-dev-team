@@ -15,8 +15,10 @@
 #      commit` or `git push` needs an approval the human answered a prompt for,
 #      minutes earlier. Anything else that could hide one is refused, and asked
 #      for in the plain form. A push that forces or deletes remote refs is refused
-#      outright. Merge, rebase, pull, revert, cherry-pick, am, and `gh pr merge`
-#      stay the human's own, and this gate has no opinion on them.
+#      outright. A gh call that is neither a read (GH_READS) nor one of the
+#      human's everyday actions (GH_OWN) is prompted like a push, as one plain
+#      gh line. gh text the gate cannot read is refused. Merge, rebase, pull, revert, cherry-pick, am, and `gh pr merge` stay the
+#      human's own, and this gate has no opinion on them.
 #
 # WHY PUSH IS IN LANE 3. The gate used to wave a foreground push through, and the
 # prose said push was "the human's own". Agents read that as "hand the push to
@@ -51,30 +53,81 @@
 #   (b) COULD HIDE ONE, refused with no request id, and asked for in the plain
 #       form. Decided by substring tests over the raw text, case-insensitive,
 #       with no parsing at all, so no quote, comment, or line break can move a
-#       word out of view. A command is class (b) when it is not class (a) and
+#       word out of view. A command is class (b) when it is neither class (a)
+#       nor a read-only chain (below), and
 #         - it names git or yadm (`git` not followed by a letter, so `github` is
-#           not git) and either names a verb word — commit, push, send-pack
+#           not git, and not preceded by a letter, a digit, or a dot, so `.git`
+#           the directory and `digit` are not git either — `/usr/bin/git` and
+#           `git-push` still are) and either names a verb word — commit, push, send-pack
 #           (the plumbing under push), autocorrect (which turns a typo into
 #           either), or alias (which renames one) — or
 #           holds a character that lets the shell build a word the text does not
 #           show: $ ` \ ' " { } * ? [ ], or
-#         - it names gh as a word, and a verb.
+#         - it names gh as a word, and a verb as a whole word (GH_VERBS), so
+#           `gh pr view --json mergedAt` names none. `gh api` keeps the
+#           substring test, because a GraphQL mutation is camelCase. The one
+#           exception is text whose every gh call is a `gh api` read (a GET with
+#           no field or --input): a read runs no verb, so a path such as
+#           `pulls/1/comments` or `pulls/1/merge` is not a verb. Text the gate
+#           cannot read, or any other gh call beside it, keeps the test.
 #       Lane 2 adds merge, rebase, pull, revert, cherry-pick, and `am` as a word to
-#       the verbs, because a sub-agent may do none of them.
+#       the verbs, because a sub-agent may do none of them. It also refuses
+#       every gh call that is not a read, and gh text it cannot read (see "gh
+#       is decided by ALLOWLIST" below). This holds even in a read-only chain.
 #   (c) EVERYTHING ELSE passes untouched. That includes a plain one-line git
 #       command whose verb is not gated in the lane (`git status`, `git log`),
 #       unless it names a verb and is not one of the commands that cannot run
 #       another command from their arguments (SAFE_VERBS). `git log --grep
 #       push` stays silent; `git rebase --exec 'git push'` does not.
+#       It also includes a READ-ONLY CHAIN: the plain-word alphabet above, with
+#       segments joined by a standalone `|`, `&&`, `||`, or `;`, and optionally
+#       a standalone `2>&1` or `2>/dev/null`, where every segment is either
+#       `git [-C <path>] <SAFE_VERBS verb>` or a no-exec reader (NO_EXEC_READERS:
+#       grep, head, cat, jq, and the like). No segment can run another program,
+#       so no segment can commit or push, whatever words it prints or greps for.
+#       sed, awk, xargs, find, and every interpreter are left out on purpose,
+#       because each one can run a command from its arguments.
+#       A plain `gh` call is a segment too, when it names no gated verb outside
+#       the value of a text option (GH_DATA_OPTIONS: --body, --title, --notes,
+#       --comment, --jq, --json, --template), or when it is a `gh api` read.
+#       gh may write to GitHub, and a few of its
+#       commands run git (`pr checkout` and `repo clone` fetch, `pr create` can
+#       push), but which ones is decided by gh's own words, never by a body or a
+#       title. A PR body that says "commit" is text it posts. Whether the gh
+#       call may run at all is decided apart from this, by the gh allowlist
+#       below. In a chain a quoted string
+#       may span lines, because the shell expands nothing inside it. A line
+#       break outside quotes, or a `#`, still ends the chain rule, so an
+#       apostrophe in a comment never opens a quote.
 #
-# The cost is real and deliberate: some innocent commands are refused, such as
-# `cd repo && git log --format='%h'` or `echo "commit"` beside a git word. The
+# FAST PATH. Before python3 starts, python-fallback.sh's payload_may_name_git
+# checks the raw payload. When it cannot name git, gh, or yadm, no class above
+# can refuse it, so the gate exits with no opinion. The test errs only toward
+# running the full check: a JSON escape, a `\u`, or any non-ASCII byte sends
+# the payload on.
+#
+# The cost is real and deliberate: some innocent commands are still refused,
+# such as `cd repo && git log --format='%h'` or a `$var` beside a git word. The
 # refusal says how to run them instead. A false refusal costs one retry; a false
-# silence is an unapproved push.
+# silence is an unapproved push. The read-only chain exists because the cost was
+# measured and was not small: 61 refusals in 2,933 Bash calls in one day, and 6
+# of them held a real commit, push, or merge. Every innocent refusal teaches an
+# agent to move the command into a script file, which this gate cannot read.
 #
-# What stays outside, stated plainly. This is not anti-evasion machinery, and a
-# command built to hide from a substring test can: a program name spelled in
-# pieces the text never shows whole, a script file, or a gitconfig alias or
+# THREAT MODEL, stated plainly. This gate catches ordinary and mistaken
+# commands. It does not catch deliberate obfuscation, and no command-text gate
+# can. Deliberate obfuscation means building the program name from variables,
+# substitutions, or split quoting (`g''h`), or moving the command into a script
+# file. A script file bypasses any parser of the command text, so an agent that
+# sets out to evade this gate can. The backstop for that agent is the harness
+# permission system and human review, not this gate. Where a rule can refuse an
+# obfuscated shape at no cost to ordinary use, it does: a gh word stored in a
+# variable, a program word the shell builds, a gh call through xargs, and a
+# `gh api` word that could split into flags are all refused. Those rules narrow
+# the gap. They do not close it.
+#
+# What stays outside, concretely: a program name spelled in pieces the text
+# never shows whole, a script file, or a gitconfig alias or
 # help.autocorrect setting reached through a command that names neither verb.
 # SHELL ALIASES AND FUNCTIONS ARE THE LIVE CASE. The Bash tool runs zsh with the
 # user's shell snapshot, and that snapshot defines oh-my-zsh's git aliases and
@@ -130,7 +183,8 @@
 # the hole this lane closes.
 #
 # WHAT LANE 2 MATCHES is a rule, not a list: every git verb that writes a commit,
-# integrates another history, or publishes one, plus `gh pr merge`. GATED_GIT
+# integrates another history, or publishes one, plus every gh call that is not
+# a read (GH_READS). GATED_GIT
 # below is that rule's current membership and the only place it is enumerated —
 # a verb belongs there when it satisfies the rule, and prose elsewhere states the
 # rule rather than copying the list. Matching `git commit` alone is what left
@@ -213,6 +267,32 @@ GATE_PAYLOAD="$(cat)"
 export GATE_PAYLOAD
 export GATE_STATE_DIR="${WORKBENCH_COMMIT_APPROVAL_DIR:-${HOME:-}/.claude-workbench/commit-approvals}"
 
+# Without a working python3 the classifier below never runs. A hook that exits
+# 127 or 1 is a non-blocking error to the harness, so the call would run with no
+# opinion at all: every commit and push unapproved. So that case fails closed
+# for any Bash call whose payload names git, gh, or yadm, and stays out of the
+# way for everything else.
+#
+# The helper that does that is a file of its own, so its absence is the same
+# failure one step earlier: payload_may_name_git would exit 127 below, and the
+# `|| exit 0` would let every commit and push through. So a helper that did not
+# load refuses any Bash call whose payload names git, gh, or yadm as a word.
+. "$(dirname "$0")/python-fallback.sh" 2>/dev/null
+if ! declare -F payload_may_name_git python_fallback >/dev/null; then
+  if printf '%s' "$GATE_PAYLOAD" | grep -Eiq '(^|[^a-z0-9])(git|gh|yadm)([^a-z0-9]|$)'; then
+    printf '%s\n' '{"hookSpecificOutput": {"hookEventName": "PreToolUse", "permissionDecision": "deny", "permissionDecisionReason": "🛑 Blocked: a git command. python-fallback.sh is missing, so the Commit approval gate cannot read it.", "additionalContext": "Commit approval gate (workbench-dev-team). hooks/scripts/python-fallback.sh did not load, so the gate refuses any command that names git, gh, or yadm. Report this to the human: reinstall workbench-dev-team. Do not try another spelling of the command."}}'
+  fi
+  exit 0
+fi
+
+# Fast path. Every refusal below needs the command to name git, gh, or yadm, so
+# a payload that cannot name one gets no opinion without starting python3, which
+# measured about 57 ms on every Bash call. payload_may_name_git errs only toward
+# the full check, so nothing that could run git skips it.
+payload_may_name_git "$GATE_PAYLOAD" || exit 0
+
+command -v python3 >/dev/null 2>&1 || python_fallback "Commit approval gate"
+
 python3 - <<'PYEOF'
 import hashlib
 import json
@@ -247,6 +327,7 @@ APPROVE_CMD = 'bash "$HOME/.claude-workbench/bin/approve-commit.sh"'
 APPROVE_DESC = "Commit: <first line of the commit message>"
 APPROVE_DESC_PUSH = "Push: <branch> to <remote>"
 APPROVE_DESC_COMMIT_PUSH = "Commit and push: <first line of the commit message>, <branch> to <remote>"
+APPROVE_DESC_GH = "GitHub write: <what it writes> to <owner/repo>"
 
 GATE = "Commit approval gate (workbench-dev-team)."
 
@@ -309,13 +390,49 @@ SAFE_VERBS = {"add", "blame", "branch", "cat-file", "check-ignore", "checkout", 
               "rev-parse", "rm", "shortlog", "show", "show-ref", "stash", "status", "switch", "tag",
               "whatchanged"}
 
+# Programs that read and print and cannot run another program from their
+# arguments. A read-only chain may use these beside SAFE_VERBS git calls. sort
+# and uniq are here with exceptions no_exec() refuses: sort's
+# --compress-program runs a program, and sort -o and a second uniq operand write
+# a file. sed (e), awk (system), xargs, find (-exec), and every interpreter are
+# absent because each one can run a command.
+NO_EXEC_READERS = {"cat", "cut", "diff", "echo", "grep", "head", "jq", "ls", "pwd", "sort", "tail",
+                   "tr", "uniq", "wc"}
+
+# The standalone words a read-only chain may use between or after its segments.
+# Each is recognised only as a whole word, so `a|b` or `x;` stays unreadable.
+CHAIN_WORDS = {"&&": "and", "||": "sep", "|": "sep", ";": "sep", "2>&1": "redir", "2>/dev/null": "redir"}
+
 # The substring tests for class (b). Raw text, case-insensitive, no parsing.
-GIT_NAME = re.compile(r"(?i)(git(?![a-z])|yadm)")
+# `.git` is a directory, not a program, and `digit` is a word, so neither names
+# git. `/usr/bin/git`, `git-push`, and `GIT` still do.
+GIT_NAME = re.compile(r"(?i)((?<![a-z0-9.])git(?![a-z])|yadm)")
 GH_NAME = re.compile(r"(?i)(?<![a-z0-9])gh(?![a-z0-9])")
+FOREGROUND_VERBS = ("commit", "push", "send-pack", "autocorrect", "alias")
+SUB_AGENT_VERBS = FOREGROUND_VERBS + ("merge", "rebase", "pull", "revert", "cherry")
+# Beside git or yadm a verb is any substring, so `git -c alias.p=push p` and
+# `git-push` are caught.
 VERBS = {
-    "foreground": re.compile(r"(?i)commit|push|send-pack|autocorrect|alias"),
-    "sub-agent": re.compile(r"(?i)commit|push|send-pack|autocorrect|alias|merge|rebase|pull|revert|cherry|(?<![a-z])am(?![a-z])"),
+    "foreground": re.compile("(?i)" + "|".join(FOREGROUND_VERBS)),
+    "sub-agent": re.compile("(?i)" + "|".join(SUB_AGENT_VERBS) + r"|(?<![a-z])am(?![a-z])"),
 }
+# Beside gh a verb is a whole word, so `gh pr merge` and `--merge` are caught
+# while `mergedAt` and `--state merged` are not. gh names a subcommand by its
+# whole word, so no spelling of `pr merge` hides inside a longer one. `gh api`
+# is the exception: it reaches the REST path `.../merges` and the GraphQL
+# mutation `mergePullRequest`, so an api call keeps the substring test.
+GH_VERBS = {
+    lane: re.compile(r"(?i)(?<![a-z])(?:" + "|".join(verbs) + r")(?![a-z])")
+    for lane, verbs in (("foreground", FOREGROUND_VERBS), ("sub-agent", SUB_AGENT_VERBS + ("am",)))
+}
+GH_API = re.compile(r"(?i)(?<![a-z])api(?![a-z])")
+# gh options whose value is text gh sends to GitHub or uses to format its own
+# output: a body, a title, release notes, a jq filter, a JSON field list, or a Go
+# template. None of them names a command gh runs, so their value is not searched
+# for a verb. That is what lets `--body 'All commits ...'` and `--json commits`
+# through. Long forms only: a short flag can mean different things across gh's
+# commands, and skipping the word after the wrong one could skip a real verb.
+GH_DATA_OPTIONS = {"--body", "--title", "--notes", "--comment", "--jq", "--json", "--template"}
 # A character that lets the shell build a word the text does not show whole.
 SHELL_BUILDS = re.compile(r"[$`\\'\"{}*?\[\]]")
 
@@ -323,14 +440,22 @@ SHELL_BUILDS = re.compile(r"[$`\\'\"{}*?\[\]]")
 BARE = set(string.ascii_letters + string.digits + "-_./:=+@,%^")
 
 
-def plain_words(text: str):
+def plain_words(text: str, quoted_lines: bool = False):
     """[(word, kind)] for a one-line command of plain words, or None.
 
-    kind is "bare", "quoted", or "and" for a standalone `&&`. The word is what
-    git receives: quotes removed, nothing expanded, because nothing that bash or
-    zsh would expand is allowed to be there. The Bash tool runs zsh here, and zsh
-    expands a bare word that starts with `=` (`=ls` becomes /bin/ls), so that
-    word is refused too.
+    kind is "bare", "quoted", "and" for a standalone `&&`, "sep" for a standalone
+    `|`, `||`, or `;`, or "redir" for a standalone `2>&1` or `2>/dev/null`. The
+    word is what git receives: quotes removed, nothing expanded, because nothing
+    that bash or zsh would expand is allowed to be there. The Bash tool runs zsh
+    here, and zsh expands a bare word that starts with `=` (`=ls` becomes
+    /bin/ls), so that word is refused too.
+
+    With quoted_lines, a quoted string may span lines. Its text is still one
+    word the program receives, and the shell expands nothing in it, so a PR body
+    in `--body '...'` is data. A line break OUTSIDE quotes is still refused, as
+    is `#`, so an apostrophe in a comment cannot open a quote here: the scan
+    reaches the `#` first and gives up. The plain form never passes this, so an
+    approved command stays one line.
     """
     line = text.strip(" \t\n")
     words = []
@@ -339,9 +464,12 @@ def plain_words(text: str):
         if line[i] in " \t":
             i += 1
             continue
-        if line.startswith("&&", i) and (i + 2 == len(line) or line[i + 2] in " \t"):
-            words.append(("&&", "and"))
-            i += 2
+        end = line.find(" ", i)
+        token = line[i:] if end < 0 else line[i:end]
+        token = token.split("\t", 1)[0]
+        if token in CHAIN_WORDS:
+            words.append((token, CHAIN_WORDS[token]))
+            i += len(token)
             continue
         word, kind = "", "bare"
         while i < len(line) and line[i] not in " \t":
@@ -356,7 +484,7 @@ def plain_words(text: str):
                 if end < 0:
                     return None
                 inner = line[i + 1:end]
-                if "\n" in inner or (char == '"' and any(c in inner for c in "$`\\")):
+                if ("\n" in inner and not quoted_lines) or (char == '"' and any(c in inner for c in "$`\\")):
                     return None
                 word, kind, i = word + inner, "quoted", end + 1
             else:
@@ -372,7 +500,9 @@ def plain_form(text: str):
     are exactly a commit and then a push.
     """
     words = plain_words(text)
-    if not words:
+    # A pipe, a `;`, an `||`, or a redirect is never part of the plain form: the
+    # approval covers the words git receives, and nothing else may run beside it.
+    if not words or any(kind in ("sep", "redir") for _, kind in words):
         return None
     statements = [[]]
     for word, kind in words:
@@ -408,12 +538,93 @@ def plain_form(text: str):
     return invocations
 
 
+def no_exec(segment: list) -> bool:
+    """True when one chain segment can run no program but the one it names."""
+    program, kind = segment[0]
+    if kind != "bare":
+        return False
+    if program == "git":
+        index = 3 if len(segment) > 2 and segment[1] == ("-C", "bare") else 1
+        return index < len(segment) and segment[index][1] == "bare" and segment[index][0] in SAFE_VERBS
+    args = [word for word, _ in segment[1:]]
+    if program == "sort":
+        # --compress-program runs a program, and -o / --output writes a file.
+        # Unique long-option prefixes reach them from `--c` and `--o`, and `-o`
+        # can sit in a short cluster, so every spelling that could be either is
+        # refused.
+        return not any(w.startswith(("--c", "--o")) or (w.startswith("-") and not w.startswith("--")
+                                                        and "o" in w) for w in args)
+    if program == "uniq":
+        # A second operand is an output file, and a chain here only reads.
+        return len([w for w in args if w == "-" or not w.startswith("-")]) <= 1
+    return program in NO_EXEC_READERS
+
+
+def gh_verbs(text: str, lane: str):
+    """The verb test for gh text: whole words, or substrings for `gh api`."""
+    return (VERBS if GH_API.search(text) else GH_VERBS)[lane]
+
+
+def gh_api_read(args: list) -> bool:
+    """True when the words after gh are a `gh api` GET with no body."""
+    path, index = gh_path(args)
+    return path == ("api",) and gh_api_reads(args[index:])
+
+
+def gh_all_api_reads(text: str) -> bool:
+    """True when the text makes at least one gh call and every one is a `gh api`
+    read. A GET runs no verb, whatever its path names: `pulls/.../comments`
+    holds `pull`, and `pulls/1/merge` holds `merge`. Text the gate cannot read
+    (gh_calls is None) and any other gh call keep the substring test."""
+    calls = gh_calls(text)
+    return bool(calls) and all(gh_api_read(call) for call in calls)
+
+
+def gh_names_no_verb(segment: list, lane: str) -> bool:
+    """True when a gh call names no gated verb outside its GH_DATA_OPTIONS text.
+
+    What gh does is decided by its own words, and a body or a jq filter is text
+    it sends or formats. A `gh api` read runs no verb. Whether the gh call may
+    run is gh_kind()'s, below.
+    """
+    # plain_words expanded nothing, so each word is also its own raw text.
+    if gh_api_read([(word, word) for word, _ in segment[1:]]):
+        return True
+    kept, skip = [], False
+    for word, _ in segment[1:]:
+        if skip:
+            skip = False
+        elif word.split("=", 1)[0] in GH_DATA_OPTIONS:
+            skip = "=" not in word
+        else:
+            kept.append(word)
+    verbs = gh_verbs(" ".join(kept), lane)
+    return not any(verbs.search(word) for word in kept)
+
+
+def read_only_chain(text: str, lane: str) -> bool:
+    """True for plain words joined by standalone separators, where every segment
+    is a SAFE_VERBS git call, a no-exec reader, or a gh call that names no gated
+    verb. A quoted string may span lines here. See class (c) in the header."""
+    words = plain_words(text, quoted_lines=True)
+    if not words:
+        return False
+    segments = [[]]
+    for word, kind in words:
+        if kind in ("and", "sep"):
+            segments.append([])
+        elif kind != "redir":
+            segments[-1].append((word, kind))
+    return all(segment and (no_exec(segment) or (segment[0] == ("gh", "bare")
+                                                 and gh_names_no_verb(segment, lane)))
+               for segment in segments)
+
+
 def could_hide(text: str, lane: str) -> bool:
     """Class (b): the text could run a gated verb the gate cannot see whole."""
-    verbs = VERBS[lane]
-    if GIT_NAME.search(text) and (verbs.search(text) or SHELL_BUILDS.search(text)):
+    if GIT_NAME.search(text) and (VERBS[lane].search(text) or SHELL_BUILDS.search(text)):
         return True
-    return bool(GH_NAME.search(text) and verbs.search(text))
+    return bool(GH_NAME.search(text) and gh_verbs(text, lane).search(text) and not gh_all_api_reads(text))
 
 
 def classify(text: str, lane: str, gated: set):
@@ -425,71 +636,475 @@ def classify(text: str, lane: str, gated: set):
         if invocations[0]["verb"] in SAFE_VERBS or not VERBS[lane].search(text):
             return "silent", None
         return "hidden", None
+    if read_only_chain(text, lane):
+        return "silent", None
     return ("hidden", None) if could_hide(text, lane) else ("silent", None)
 
+
+# gh is decided by ALLOWLIST, never by a list of write spellings. gh api reaches
+# every GitHub endpoint, REST and GraphQL, so a list of the calls that write can
+# never be finished: six review rounds each found a spelling the last one missed
+# (a flag before the subcommand, a repository by id, a GraphQL ref mutation,
+# `pr update-branch`, `release edit`). So each gh call is named by the command
+# path gh itself runs, and the path decides:
+#
+#   read   GH_READS, or `gh api` sending a GET with no field or --input. Silent
+#          in both lanes.
+#   own    GH_OWN, Mike's everyday actions in his own voice, none of which
+#          moves a ref: comments, issue create and edit, pr create naming its
+#          --head, pr edit, reviews, labels, pr ready, and pr and issue close
+#          and reopen. A pr close that deletes its head branch (--delete-branch,
+#          or -d in a short flag cluster) moves a ref, so it is a write, and so
+#          is one holding a word the shell builds. Silent in the foreground,
+#          refused to a sub-agent.
+#   merge  `gh pr merge`. The human's own in the foreground, as before, and
+#          refused to a sub-agent.
+#   write  everything else, an unknown path included: an alias, an extension,
+#          or a flag whose arity decides the path. Prompted in the foreground as
+#          one plain gh line, refused to a sub-agent.
+#
+# Text the gate cannot read, where gh is named, is refused in both lanes with no
+# approval: an unbalanced quote, a gh word the shell builds, gh inside a string
+# another program runs, a gh word in a variable's value, or a program word the
+# shell builds (`$G`, `$(printf gh)`). A gh call through xargs reads as a write,
+# since xargs adds words the text never shows.
+GH_READS = ({("pr", verb) for verb in ("view", "list", "diff", "status", "checks", "checkout")}
+            | {("issue", verb) for verb in ("view", "list", "status")}
+            | {("repo", verb) for verb in ("view", "list", "clone")}
+            | {("release", verb) for verb in ("view", "list")}
+            | {("run", verb) for verb in ("view", "list", "watch")}
+            | {("workflow", verb) for verb in ("view", "list")}
+            | {("search", verb) for verb in ("issues", "prs", "repos", "code", "commits")}
+            | {("label", "list"), ("auth", "status"), ("status",), ("version",)})
+GH_OWN = {("pr", "comment"), ("issue", "comment"), ("issue", "create"), ("issue", "edit"),
+          ("pr", "edit"), ("pr", "review"), ("label", "create"), ("label", "edit"),
+          ("pr", "ready"), ("pr", "close"), ("pr", "reopen"), ("issue", "close"), ("issue", "reopen")}
+# gh commands that take no subcommand, so their path is one word.
+GH_ONE_WORD = {"api", "status", "version"}
+# Flags gh takes before a subcommand whose arity the gate knows. cobra reads the
+# word after any other `--flag` or `-x` as that flag's value, and gh reads it as
+# a subcommand when the flag is a switch, so both readings are tried below and
+# must agree.
+GH_VALUE_FLAGS = {"-R", "--repo"}
+GH_SWITCHES = {"-h", "--help", "--version"}
+# `gh pr create` pushes the current branch unless --head (-H) names one.
+GH_HEAD = re.compile(r"--head(=|$)|-H")
+# `gh pr create`'s flags, from its --help: the ones that take a value, and the
+# switches. pr_create_head() walks them to find what --head really receives.
+PR_CREATE_VALUE_LONG = {"--base", "--head", "--body", "--body-file", "--title", "--template", "--label",
+                        "--assignee", "--reviewer", "--milestone", "--project", "--repo", "--recover"}
+PR_CREATE_VALUE_SHORT = set("BHbFtTlarmpR")
+PR_CREATE_SWITCH_LONG = {"--draft", "--fill", "--fill-first", "--fill-verbose", "--web", "--editor",
+                         "--dry-run", "--no-maintainer-edit", "--help"}
+PR_CREATE_SWITCH_SHORT = set("dfweh")
+# An expansion that stays one word inside double quotes: $NAME not followed by
+# a subscript, or ${NAME}. See stays_one_word().
+PLAIN_EXPANSION = re.compile(r"\$(?:[A-Za-z_][A-Za-z0-9_]*(?![A-Za-z0-9_\[])|\{[A-Za-z_][A-Za-z0-9_]*\})")
+# gh api's flags, by what the gate needs to know about them.
+GH_API_FIELDS = {"--field", "--raw-field", "--input"}
+GH_API_VALUE_LONG = {"--jq", "--template", "--header", "--hostname", "--cache", "--preview"}
+GH_API_VALUE_SHORT = set("Hpqt")
+GH_PROGRAM = re.compile(r"(?i)(?:.*/)?gh")
+# gh as a word in text: bounded by anything but a letter, a digit, `.`, `_`, or
+# `-`, so `gh-tools` and `github` are not gh, and `/gh/` and `\gh` are.
+GH_WORD = re.compile(r"(?i)(?<![a-z0-9_.-])gh(?![a-z0-9_.-])")
+# Programs that run the command in their arguments, and programs whose arguments
+# are only data. A gh word anywhere else is text the gate cannot read.
+GH_WRAPPERS = {"env", "command", "exec", "nohup", "sudo", "nice", "timeout", "xargs", "noglob",
+               "builtin", "time", "caffeinate"}
+GH_DATA_PROGRAMS = NO_EXEC_READERS | {"which", "type", "whence", "where", "printf"}
+SHELL_KEYWORDS = {"if", "then", "else", "elif", "do", "while", "until", "!", "{", "}"}
+ASSIGNMENT = re.compile(r"[A-Za-z_][A-Za-z0-9_]*=")
+SEGMENT_ENDS = set(";&|()\n`")
+REDIRECTS = set("<>")
+
+
+def shell_segments(text: str):
+    """[[(value, raw)]] per command segment, or None when a quote is unbalanced.
+
+    A lexer, not a parser: it splits words the way the shell does and never
+    guesses what an expansion yields. value is the word the program receives, or
+    None when the shell could change it ($, a glob, a brace, a tilde, a
+    backslash). A segment ends at an unquoted ; & | ( ) newline or backtick, so a
+    `$( )` or backtick substitution is a segment of its own. The word after a
+    redirect is a file and is dropped. `#` at the start of a word ends the line.
+    Every mistake it can make splits a word the shell would not, which only ever
+    shows the gate more to refuse.
+    """
+    segments, i, n, redirect = [[]], 0, len(text), False
+    while i < n:
+        char = text[i]
+        if char in " \t":
+            i += 1
+        elif char in SEGMENT_ENDS:
+            segments.append([])
+            i, redirect = i + 1, False
+        elif char in REDIRECTS:
+            i, redirect = i + 1, True
+        elif char == "#":
+            end = text.find("\n", i)
+            i = n if end < 0 else end
+        else:
+            start, value, dynamic = i, "", False
+            while i < n and text[i] not in " \t" and text[i] not in SEGMENT_ENDS and text[i] not in REDIRECTS:
+                char = text[i]
+                if char == "'":
+                    end = text.find("'", i + 1)
+                    if end < 0:
+                        return None
+                    value, i = value + text[i + 1:end], end + 1
+                elif char == '"':
+                    end = i + 1
+                    while end < n and text[end] != '"':
+                        end += 2 if text[end] == "\\" else 1
+                    if end >= n:
+                        return None
+                    inner = text[i + 1:end]
+                    dynamic = dynamic or any(c in inner for c in "$`\\")
+                    value, i = value + inner, end + 1
+                elif char == "\\":
+                    dynamic, value, i = True, value + text[i + 1:i + 2], i + 2
+                else:
+                    dynamic = dynamic or char in "$*?[]{}~!" or (char == "=" and i == start)
+                    value, i = value + char, i + 1
+            if not redirect:
+                segments[-1].append((None if dynamic else value, text[start:i]))
+            redirect = False
+    return segments
+
+
+def gh_calls(text: str):
+    """[[(value, raw)] of the words after gh] for every gh call the text makes,
+    or None when it names gh somewhere the gate cannot read."""
+    if not GH_NAME.search(text):
+        return []
+    segments = shell_segments(text)
+    if segments is None:
+        return None
+    # A gh word the shell builds, or gh inside a string it substitutes, runs a
+    # command the gate cannot name.
+    if any(value is None and GH_WORD.search(raw) for segment in segments for value, raw in segment):
+        return None
+    calls = []
+    for words in segments:
+        index = 0
+        while index < len(words) and (ASSIGNMENT.match(words[index][1]) or words[index][0] in SHELL_KEYWORDS):
+            # `G=gh; $G api ...`: a gh word stored in a variable is run later
+            # by a program word the shell builds.
+            if ASSIGNMENT.match(words[index][1]) and GH_WORD.search(words[index][1].split("=", 1)[1]):
+                return None
+            index += 1
+        words = words[index:]
+        if not words:
+            continue
+        program = words[0][0]
+        if program is None:
+            # A program word the shell builds, such as `$G` or the `$` of
+            # `$(printf gh)`, could be gh.
+            return None
+        if GH_PROGRAM.fullmatch(program):
+            calls.append(words[1:])
+        elif program in GH_WRAPPERS and not (program == "command" and words[1:2] and words[1][0] in ("-v", "-V")):
+            for position, (value, raw) in enumerate(words[1:], start=1):
+                if value is not None and GH_PROGRAM.fullmatch(value):
+                    call = words[position + 1:]
+                    if program == "xargs" or ("xargs", "xargs") in words[1:position]:
+                        # xargs adds words from its input that the text never
+                        # shows, so the call reads as one the gate cannot name.
+                        call = [(None, "xargs")] + call
+                    calls.append(call)
+                    break
+                if GH_WORD.search(raw) or (value is None and not ASSIGNMENT.match(raw)):
+                    return None  # a gh word, or a word the shell builds, as the wrapped program
+        elif program not in GH_DATA_PROGRAMS and program != "command" \
+                and any(GH_WORD.search(raw) for _, raw in words):
+            return None  # gh in the arguments of a program that may run them
+    return calls
+
+
+def gh_path(args: list):
+    """(path, index of the word after it) for the gh call, or (None, 0) when a
+    word the shell builds or a flag's arity decides the path.
+
+    cobra skips flags to find the subcommand, and takes the word after a flag it
+    does not know as that flag's value. So the path is read twice, once with
+    every unknown flag taking a value and once with none, and must agree.
+    """
+    readings = []
+    for greedy in (False, True):
+        path, index = [], 0
+        while index < len(args) and len(path) < (1 if path[:1] and path[0] in GH_ONE_WORD else 2):
+            value = args[index][0]
+            if value is None:
+                return None, 0
+            if value == "--":
+                break
+            if value.startswith("-") and value != "-":
+                takes = "=" not in value and value not in GH_SWITCHES and (
+                    value in GH_VALUE_FLAGS or (greedy and (value.startswith("--") or len(value) == 2)))
+                index += 2 if takes else 1
+                continue
+            path.append(value)
+            index += 1
+        readings.append((tuple(path), index))
+    if readings[0][0] != readings[1][0]:
+        return None, 0
+    return readings[0]
+
+
+def starts_literal(raw: str) -> bool:
+    """True when a word's first character is a literal that is not a dash, so
+    no expansion can turn the word into a flag."""
+    first, second = raw[:1], raw[1:2]
+    return (first in BARE and first not in "-=") or (first in "'\"" and bool(second) and second not in "-$`\\'\"")
+
+
+def stays_one_word(raw: str) -> bool:
+    """True when a word the shell builds still reaches the program as exactly one
+    word: literal text, single quotes, and double quotes whose only expansions
+    are a plain $NAME or ${NAME}. Unquoted, $( ), $NAME, and zsh's ${=X} split on
+    whitespace or vanish when empty, and "${=X}", "$@", and zsh's "$a[@]" split
+    even inside double quotes. So every other expansion fails."""
+    index = 0
+    while index < len(raw):
+        char = raw[index]
+        if char == "'":
+            index = raw.find("'", index + 1) + 1
+        elif char == '"':
+            end = raw.find('"', index + 1)
+            inner = raw[index + 1:end]
+            if end < 0 or "`" in inner or "\\" in inner or "$" in PLAIN_EXPANSION.sub("", inner):
+                return False
+            index = end + 1
+        elif char in BARE:
+            index += 1
+        else:
+            return False
+    return True
+
+
+def pr_create_head(args: list) -> bool:
+    """True when `gh pr create`'s words give --head (-H) a non-empty value.
+
+    cobra gives a value flag the next word whatever it looks like, so in
+    `--base --head` the --head is --base's value and names no head. A flag of
+    unknown arity, or a word the shell builds, could swallow the --head the same
+    way, so either one names none. The last --head wins, as it does in gh.
+    """
+    head, index = "", 0
+    while index < len(args):
+        value = args[index][0]
+        following = args[index + 1] if index + 1 < len(args) else ("", "")
+        if value is None:
+            return False
+        if value == "--":
+            break
+        # taken is the (value, raw) word a value flag takes, else None.
+        name, taken, step = None, None, 1
+        if value.startswith("--"):
+            name, eq, attached = value.partition("=")
+            if name in PR_CREATE_VALUE_LONG:
+                taken, step = ((attached, attached), 1) if eq else (following, 2)
+            elif name not in PR_CREATE_SWITCH_LONG:
+                return False
+        elif value.startswith("-") and len(value) > 1:
+            for position, letter in enumerate(value[1:], start=2):
+                if letter in PR_CREATE_SWITCH_SHORT:
+                    continue
+                if letter not in PR_CREATE_VALUE_SHORT:
+                    return False
+                name = "--head" if letter == "H" else "-" + letter
+                rest = value[position:]
+                rest = rest[1:] if rest.startswith("=") else rest
+                taken, step = ((rest, rest), 1) if value[position:] else (following, 2)
+                break
+        if taken is not None:
+            word, raw = taken
+            if word is None and (name == "--head" or not stays_one_word(raw)):
+                # A head the shell builds could be empty, and an unquoted $T
+                # that is empty vanishes, so its flag takes the word after it.
+                return False
+            if name == "--head":
+                head = word
+        index += step
+    return bool(head)
+
+
+def gh_api_reads(args: list) -> bool:
+    """True when the words after `gh api` send a GET with no body.
+
+    gh api sends a POST when a field (-f, -F, --field, --raw-field) or --input is
+    given with no method, and whatever -X/--method names otherwise. A field makes
+    a GET into a query string, and it is still refused: a read needs none.
+    """
+    # A word the shell builds is harmless only when it stays one word that
+    # cannot start with a dash. Any other one could hold `-X POST`.
+    if any(value is None and not (starts_literal(raw) and stays_one_word(raw)) for value, raw in args):
+        return False
+    method, index = "GET", 0
+    while index < len(args):
+        value, raw = args[index]
+        # A method the shell builds is None here, and None is never GET.
+        following = args[index + 1][0] if index + 1 < len(args) else ""
+        if value is None:
+            index += 1
+            continue
+        if value == "--":
+            break
+        if value.startswith("--"):
+            name, eq, attached = value.partition("=")
+            if name in GH_API_FIELDS:
+                return False
+            if name == "--method":
+                method = attached if eq else following
+                index += 1 if eq else 2
+                continue
+            index += 2 if name in GH_API_VALUE_LONG and not eq else 1
+            continue
+        if value.startswith("-") and len(value) > 1:
+            letters, step = value[1:], 1
+            for position, letter in enumerate(letters):
+                rest = letters[position + 1:]
+                if letter == "i":
+                    continue
+                if letter in "fF":
+                    return False
+                if letter == "X":
+                    method = rest.lstrip("=") if rest else following
+                elif letter not in GH_API_VALUE_SHORT:
+                    return False  # a flag the gate does not know
+                step = 1 if rest else 2
+                break
+            index += step
+            continue
+        index += 1
+    return method is not None and method.upper() == "GET"
+
+
+def gh_kind(args: list):
+    """("read" | "own" | "merge" | "write", the action named in a refusal)."""
+    path, index = gh_path(args)
+    if path is None:
+        return "write", "a `gh` command whose subcommand the gate cannot read"
+    if path == ("api",):
+        return ("read" if gh_api_reads(args[index:]) else "write"), "`gh api` writing to GitHub"
+    label = "`gh " + " ".join(path) + "`"
+    if path in GH_READS or (not path and args and all(v in GH_SWITCHES for v, _ in args)):
+        return "read", label
+    if path == ("pr", "merge"):
+        return "merge", label
+    if path in (("pr", "create"), ("pr", "close")):
+        kept, skip = [], False
+        for value, _ in args:
+            if skip:
+                skip = False
+            elif value is not None and value.split("=", 1)[0] in GH_DATA_OPTIONS:
+                skip = "=" not in value
+            else:
+                kept.append(value)
+        if path == ("pr", "create"):
+            # Both tests must pass: the spelling test that always stood, and the
+            # parse that sees --base swallow --head or an empty --head=.
+            names_head = any(w is not None and GH_HEAD.match(w) for w in kept)
+            return ("own" if names_head and pr_create_head(args) else "write"), label
+        # Deleting the head branch moves a ref, and the own list moves none. A
+        # word the shell builds could be -d, so it counts as one.
+        deletes = any(w is None or w.split("=", 1)[0] == "--delete-branch"
+                      or (w.startswith("-") and not w.startswith("--") and "d" in w) for w in kept)
+        return ("write" if deletes else "own"), label
+    return ("own" if path in GH_OWN else "write"), label
+
+
+gh_found = gh_calls(command)
+gh_kinds = None if gh_found is None else [gh_kind(call) for call in gh_found]
 
 # Lane 2. Before any record is read, so a planted approval cannot be spent, and
 # before one is written, so no id exists for the agent to approve.
 if agent_id:
     verdict, invocations = classify(command, "sub-agent", GATED_GIT)
-    if verdict == "silent":
+    gh_reads = gh_kinds is not None and all(kind == "read" for kind, _ in gh_kinds)
+    if verdict == "silent" and gh_reads:
         sys.exit(0)
+    if verdict == "silent":
+        deny(
+            "a `gh` command the gate cannot read" if gh_kinds is None
+            else next(label for kind, label in gh_kinds if kind != "read"),
+            "A sub-agent only reads through gh.",
+            f"This sub-agent ({agent_id[:8]}) has no pipeline flag, and a sub-agent "
+            "uses gh only to read: pr view, list, diff, status, checks, and "
+            "checkout; issue view, list, and status; repo view, list, and clone; "
+            "release, run, and workflow view and list; search; and `gh api` with no "
+            "-X other than GET and no field or --input. A GitHub action in your own "
+            "voice goes through the Index MCP tools, and anything else goes back "
+            "to the session that dispatched you, in your report. Write the command "
+            "with gh and its subcommand as literal words, or it cannot be read."
+        )
     action = (f"`git {invocations[0]['verb']}`" if invocations
               else "a command that names a git commit, merge, or push")
     deny(
         action,
         "A sub-agent does not commit, merge, or push.",
-        f"This call comes from a sub-agent (agent {agent_id[:8]}) that carries no "
-        "pipeline flag, so no human is reachable to approve it. There is no "
-        "approval command for you to run, by design: any command you can run "
-        "yourself is not an approval.\n\n"
-        "Hand the work back instead. Leave the tree uncommitted, and report the "
-        "diff and the proposed commit message to the session that dispatched "
-        "you. That session commits it, where a prompt does reach a human.\n\n"
-        "The two lanes that may write history are the scheduled Index pipeline, "
-        "which bin/dispatch-agent.sh marks with WORKBENCH_DEV_TEAM_PIPELINE=1, "
-        "and the foreground session. An Index item dispatched from a "
-        "conversation lands here too: re-dispatch it through "
-        "bin/dispatch-agent.sh, which sets that flag. Never set the flag "
-        "yourself, and never write an approval record by hand."
+        f"This sub-agent ({agent_id[:8]}) has no pipeline flag, so no human can approve "
+        "this, and no approval command exists for you. Hand the work back: leave "
+        "the tree uncommitted, and report the diff and a proposed commit message "
+        "to the session that dispatched you. If you were sent to work an Index "
+        "item, report that to the dispatching session and stop. Never run "
+        "bin/dispatch-agent.sh, set WORKBENCH_DEV_TEAM_PIPELINE, or write an "
+        "approval record. If the command only reads, run the git or gh "
+        "part as a plain line of its own, with -C <path> in place of cd."
     )
 
 # Lane 3.
-verdict, invocations = classify(command, "foreground", APPROVABLE)
+if gh_kinds is None:
+    deny(
+        "this command runs `gh` in a way the gate cannot read",
+        "Run the gh call as a plain line of its own.",
+        "The gate decides a gh call by the subcommand gh runs, so gh and its "
+        "subcommand must be literal words: no quote left open, no gh word the "
+        "shell builds, and no gh inside a string another program runs."
+    )
+github_write = next((label for kind, label in gh_kinds if kind == "write"), None)
+if github_write:
+    # Prompted like a push, but only as one plain line that is the gh call and
+    # nothing else, so the approval covers exactly the words gh receives.
+    words = plain_words(command)
+    if not words or words[0] != ("gh", "bare") or any(kind not in ("bare", "quoted") for _, kind in words):
+        deny(
+            f"this command could hide {github_write}",
+            "Run it as a plain line of its own.",
+            "A gh call that is neither a read nor one of your everyday actions "
+            "(comments, issue create or edit, pr create with --head, pr edit, "
+            "reviews, labels, pr ready, pr or issue close and reopen, but not "
+            "pr close --delete-branch) is prompted only as one plain line of the gh call "
+            "alone, words bare or quoted, with no $, backtick, or backslash in "
+            "double quotes, and no cd, pipe, redirect, separator, variable, or "
+            "wrapper."
+        )
+    verdict, invocations = "gated", []
+else:
+    verdict, invocations = classify(command, "foreground", APPROVABLE)
 if verdict == "silent":
     sys.exit(0)
 
-PLAIN_FORM = (
-    "The gate prompts only for the plain form, one line on its own:\n\n"
-    "  git [-C <path>] commit <args>\n"
-    "  git [-C <path>] push <args>\n"
-    "  git [-C <path>] commit <args> && git [-C <path>] push <args>\n\n"
-    "Every word plain or quoted, and no bare word starting with =: no $, "
-    "backtick, backslash, glob, brace, "
-    "redirect, pipe, comment, heredoc, variable assignment, wrapper such as env "
-    "or time, or other separator. A double-quoted string may not hold $, a "
-    "backtick, or a backslash. Run git add as its own call. Write a multi-line "
-    "commit message to a file in the session scratchpad and use -F <absolute "
-    "path>; the heredoc form -m \"$(cat <<'EOF' ... EOF)\" is refused. Use -C "
-    "<path> rather than cd."
-)
-
 if verdict == "hidden":
-    # Class (b): refused with no id, before any record is read or written.
+    # Class (b): refused with no id, before any record is read or written. The
+    # context is short on purpose: it fires more than any other, and every
+    # character reaches the model's context on every refusal.
     deny(
         "this command could hide a `git commit` or `git push`",
         "Run it as a plain line of its own.",
-        "This command names git and a commit or push, or holds shell the gate "
-        "does not read, and it is not the plain form. The gate refuses it rather "
-        "than guess what it runs. " + PLAIN_FORM + " A git command that cannot run "
-        "another command from its arguments — log, show, diff, status, and the "
-        "like — can run as a plain line of its own too."
+        "Only the plain form is prompted: one line, `git [-C <path>] commit|push "
+        "<args>`, or a commit && a push. Words bare or quoted, no $, backtick, or "
+        "backslash in double quotes, and no cd, pipe, redirect, comment, heredoc, "
+        "variable, wrapper, or other separator. Run git add on its own, and give "
+        "a multi-line message as -F <absolute path> to a scratchpad file. A read "
+        "(log, show, diff, status, or gh) runs silently as a plain line of its own."
     )
 
 # Class (a) from here on: the gate knows exactly which words git receives.
 commits = [i for i in invocations if i["verb"] == "commit"]
 pushes = [i for i in invocations if i["verb"] == "push"]
-gated = " and ".join(f"`git {i['verb']}`" for i in invocations)
+gated = github_write or " and ".join(f"`git {i['verb']}`" for i in invocations)
 
 # Long push options that refuse the push, matched as git matches them: a word is
 # the option when it is a prefix of the option's name. An ambiguous prefix such as
@@ -688,6 +1303,44 @@ def push_state(push: dict):
     }
 
 
+def gh_state(words: list):
+    """What a GitHub write reads when it runs, or None when git cannot run.
+
+    The command text does not say what gh sends when a word names a file:
+    `--input <path>`, `-F key=@<path>`, `--notes-file <path>`, or a release
+    asset `<path>#label`. So every spelling of every word that names a file is
+    bound by that file's content, and a file that appears later changes the
+    binding too. gh resolves `{owner}/{repo}` and a release's repository from
+    the git remote, so the remote config is bound as well.
+    """
+    files = {}
+    for word, _ in words:
+        value = word.split("=", 1)[-1]
+        for candidate in {word, value, value.lstrip("@"), value.lstrip("@").split("#", 1)[0]}:
+            path = os.path.join(cwd, candidate) if candidate else ""
+            if path and os.path.isfile(path):
+                try:
+                    with open(path, "rb") as handle:
+                        files[candidate] = digest(handle.read())
+                except OSError:
+                    files[candidate] = "unreadable"
+    remote = git(".", "config", "--get-regexp", r"^remote\.")
+    if remote is None:
+        return None
+    return {"files": files,
+            "remote": remote.stdout.decode(errors="replace").strip() if remote.returncode == 0 else ""}
+
+
+gh_bound = gh_state(plain_words(command)) if github_write else None
+if github_write and gh_bound is None:
+    deny(
+        gated,
+        "The gate cannot read the repository this write runs in.",
+        "The gate binds a GitHub-write approval to the files the command names "
+        "and to the git remote gh reads its repository from. git could not run "
+        "here, so nothing can be bound."
+    )
+
 staged = commit_state(commits[0]) if commits else None
 if commits and staged is None:
     deny(
@@ -769,7 +1422,7 @@ def sweep(directory: str) -> None:
 
 
 staged_print = digest(staged) if staged else ""
-state_print = digest(state) if state else ""
+state_print = digest(state) if state else digest(gh_bound) if gh_bound else ""
 record = read_record(record_path)
 why = "new"
 
@@ -820,9 +1473,10 @@ try:
             "cwd": cwd,
             "command": command,
             "requested_at": time.time(),
-            "verbs": [i["verb"] for i in invocations],
+            "verbs": ["gh"] if github_write else [i["verb"] for i in invocations],
             "commit_words": commits[0]["words"] if commits else None,
             "push": shlex.join(push["words"]) if push else None,
+            "gh": command if github_write else None,
             "branch": state["branch"] if state else None,
             "head": state["head"] if state else None,
             "staged": staged_print,
@@ -843,7 +1497,8 @@ clause = {
     "new": "It needs your approval first.",
     "expired": f"Your approval expired after {APPROVAL_TTL_SECONDS // 60} minutes.",
     "staged": "The staged changes differ from what you approved.",
-    "changed": "The repository changed since you approved it.",
+    "changed": ("A file or the remote it reads changed since you approved it." if github_write
+                else "The repository changed since you approved it."),
 }[why]
 
 # What the human is shown, what the approval command carries, and what the
@@ -854,6 +1509,11 @@ if commits:
     show = "the staged diff and the proposed commit message"
     approve_line = f'{APPROVE_CMD} {request_id} "<commit subject>"'
     description = APPROVE_DESC_COMMIT_PUSH if pushes else APPROVE_DESC
+elif github_write:
+    show = ("the exact gh command and what it writes: the repository, the path, "
+            "ref, or tag, and the content it sends")
+    approve_line = f"{APPROVE_CMD} {request_id}"
+    description = APPROVE_DESC_GH
 else:
     show = "what the push publishes: the branch, the remote, and the commits it sends"
     approve_line = f"{APPROVE_CMD} {request_id}"
@@ -871,6 +1531,10 @@ if state:
               f"{state['git_dir']}: any change to the repository's branches, tags, "
               "HEAD, or remote, branch, push, or url config before it runs voids "
               "the approval.")
+if gh_bound:
+    bound += (" The write is bound to the content of every file the command names "
+              "and to the git remote config: any change before it runs voids the "
+              "approval.")
 
 deny(
     gated,
@@ -890,3 +1554,4 @@ deny(
     "the scheduled pipeline alone."
 )
 PYEOF
+[ $? -eq 0 ] || python_fallback "Commit approval gate"
