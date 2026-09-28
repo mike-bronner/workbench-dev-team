@@ -48,20 +48,28 @@ git -C "$WORK" remote add origin "$SANDBOX/no-such-remote.git"
 ok()  { PASS=$((PASS + 1)); echo "  ✅ $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
 
-# The two rules /workbench-dev-team:setup adds. Written here the way setup
-# writes them: the "$HOME" spelling a caller types, and the absolute path it
-# expands to.
-write_settings() { # write_settings <both|home-only|none>
+# The three rules /workbench-dev-team:setup adds. Written here the way setup
+# writes them: `approve`, the "$HOME" spelling of the long form a caller types,
+# and the absolute path it expands to. `long-only` is an install set up before
+# `approve` existed, and `short-allowed` puts the short rule in allow, where it
+# prompts nobody.
+write_settings() { # write_settings <both|long-only|home-only|short-allowed|none>
   python3 - "$SETTINGS" "$1" "$HOME_DIR" <<'PY'
 import json, sys
 path, which, home = sys.argv[1], sys.argv[2], sys.argv[3]
 rules = {
+    "short": 'Bash(approve:*)',
     "home": 'Bash(bash "$HOME/.claude-workbench/bin/approve-commit.sh":*)',
     "abs": f'Bash(bash {home}/.claude-workbench/bin/approve-commit.sh:*)',
 }
-ask = {"both": [rules["home"], rules["abs"]], "home-only": [rules["home"]], "none": []}[which]
+long = [rules["home"], rules["abs"]]
+ask = {"both": long + [rules["short"]], "long-only": long, "home-only": [rules["home"]],
+       "short-allowed": long, "none": []}[which]
+permissions = {"ask": ask}
+if which == "short-allowed":
+    permissions["allow"] = [rules["short"]]
 with open(path, "w") as handle:
-    json.dump({"permissions": {"ask": ask}}, handle)
+    json.dump({"permissions": permissions}, handle)
 PY
 }
 
@@ -127,7 +135,15 @@ if [ "$check_verdict" = deny ]; then ok "...and the commit is still denied"; els
 
 write_settings home-only
 OUT=$(approve "$ID"); STATUS=$?
-expect_status "one rule of the two is not enough" 1 "$STATUS"
+expect_status "one rule of the three is not enough" 1 "$STATUS"
+if [ "$(gate_verdict "$CMD")" = deny ]; then ok "...and the commit is still denied"; else bad "the commit was approved anyway"; fi
+
+# The shape of an install set up before `approve` existed: both long-form rules,
+# and no rule for the short name. `approve` would run unprompted there.
+write_settings long-only
+OUT=$(approve "$ID"); STATUS=$?
+expect_status "the long form's two rules without approve's are not enough" 1 "$STATUS"
+case "$OUT" in *"Bash(approve:*)"*) ok "...and it names the missing short rule" ;; *) bad "it does not name the short rule: $OUT" ;; esac
 if [ "$(gate_verdict "$CMD")" = deny ]; then ok "...and the commit is still denied"; else bad "the commit was approved anyway"; fi
 
 echo "Only the installed copy can approve — the rules name that path and no other:"
@@ -177,6 +193,71 @@ case "$OUT" in
 esac
 if [ "$(gate_verdict "$CMD")" = silent ]; then ok "...and the gate lets that commit through"; else bad "the gate still denied the approved commit"; fi
 if [ "$(gate_verdict "$CMD")" = deny ]; then ok "...once, and only once"; else bad "the approval survived the commit it covered"; fi
+
+echo "The short command, exactly as the gate prints it, with a subject naming gh, git, and push:"
+# bin/approve is on PATH in a real session, because the harness puts the
+# plugin's bin/ there. Here the repository's bin/ stands in for it. The command
+# runs through a shell, as the Bash tool runs it, so the quoting is the real one.
+short() { # short <command line> -> status, output on stdout+stderr
+  env -u WORKBENCH_COMMIT_APPROVAL_DIR -u WORKBENCH_SETTINGS_FILE \
+    HOME="$HOME_DIR" TMPDIR="$SANDBOX" PATH="$REPO/bin:$PATH" bash -c "$1" 2>&1
+}
+# The message is in a file: a -m message that names gh is gh text the gate
+# cannot read, and -F is the shape the git-commit skill prefers anyway.
+GH_SUBJECT='fix: 🐛 Let the gate read gh bodies, and git commit and git push words.'
+printf '%s\n\nBody.\n' "$GH_SUBJECT" > "$SANDBOX/gh-message.txt"
+GH_CMD="git commit -F $SANDBOX/gh-message.txt"
+ID=$(gate_request_id "$GH_CMD")
+LINE=$(gate_answer "$GH_CMD" \
+  | python3 -c 'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"].get("additionalContext",""))' \
+  | grep -E "^  approve $ID " | sed 's/^  //')
+case "$LINE" in
+  "approve $ID '<commit subject>'") ok "the gate prints the short command, subject in single quotes" ;;
+  *) bad "the gate does not print the short command: $LINE" ;;
+esac
+LINE="${LINE/<commit subject>/$GH_SUBJECT}"
+# The rule setup installs is a prefix rule, so the line must start with its name.
+case "$LINE" in approve\ *) ok "the line starts with the name Bash(approve:*) matches" ;; *) bad "the line escapes the rule: $LINE" ;; esac
+if [ "$(gate_verdict "$LINE")" = silent ]; then ok "the gate gives the approval command no opinion"; else bad "the gate refused the approval command over its subject"; fi
+OUT=$(short "$LINE"); STATUS=$?
+expect_status "approve grants it" 0 "$STATUS"
+case "$OUT" in
+  *"✅ Approved: $GH_SUBJECT"*) ok "...and the receipt names the commit it covers" ;;
+  *) bad "the receipt does not name the commit: $OUT" ;;
+esac
+if [ "$(gate_verdict "$GH_CMD")" = silent ]; then ok "...and the gate lets that commit through"; else bad "the gate still denied the approved commit"; fi
+if [ "$(gate_verdict "$GH_CMD")" = deny ]; then ok "...once, and only once"; else bad "the approval survived the commit it covered"; fi
+
+ID=$(gate_request_id "$GH_CMD")
+OUT=$(short "approve $ID 'fix: some other subject'"); STATUS=$?
+expect_status "approve still refuses a subject that is not the commit's" 1 "$STATUS"
+if [ "$(gate_verdict "$GH_CMD")" = deny ]; then ok "...and the commit is still denied"; else bad "the commit was approved anyway"; fi
+
+echo "approve refuses before it runs anything when its own rule is not installed:"
+# An install set up before `approve` existed has the older installed script,
+# which checks only the long form's rules. Stand in for it with one that grants
+# whenever it runs, and prove approve never runs it.
+mv "$INSTALLED" "$INSTALLED.real"
+MARK="$SANDBOX/old-script-ran"
+printf '#!/bin/bash\ntouch "%s"\necho "granted"\n' "$MARK" > "$INSTALLED"
+for shape in long-only short-allowed none; do
+  write_settings "$shape"
+  rm -f "$MARK"
+  OUT=$(short "approve $ID"); STATUS=$?
+  expect_status "settings '$shape': approve refuses" 1 "$STATUS"
+  if [ ! -e "$MARK" ]; then ok "...and the installed script never ran"; else bad "approve ran the installed script with no rule to prompt for it"; fi
+done
+case "$OUT" in *"/workbench-dev-team:setup"*) ok "the refusal points at setup" ;; *) bad "the refusal does not point at setup: $OUT" ;; esac
+case "$OUT" in *"approve-commit.sh\" $ID"*) ok "...and names the long form that still prompts" ;; *) bad "the refusal does not name the long form: $OUT" ;; esac
+printf '{not json' > "$SETTINGS"
+rm -f "$MARK"
+OUT=$(short "approve $ID"); STATUS=$?
+expect_status "unreadable settings: approve refuses" 1 "$STATUS"
+if [ ! -e "$MARK" ]; then ok "...and the installed script never ran"; else bad "approve ran the installed script on unreadable settings"; fi
+write_settings both
+OUT=$(short "approve $ID"); STATUS=$?
+if [ -e "$MARK" ]; then ok "with the rule installed, approve runs the installed script"; else bad "approve did not run the installed script: $OUT"; fi
+mv "$INSTALLED.real" "$INSTALLED"
 
 echo "A push takes the same route — deny, approve, push once:"
 # The request record is keyed by the command text, so the same script approves a

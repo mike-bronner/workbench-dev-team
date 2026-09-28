@@ -4,9 +4,13 @@
 # seen what it does: the staged diff and the proposed commit message for a commit,
 # and the branch, remote, and commits it sends for a push.
 #
-#   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"
-#   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id>      (a push)
-#   bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id>      (a GitHub write)
+#   approve <request-id> '<commit subject>'
+#   approve <request-id>                      (a push)
+#   approve <request-id>                      (a GitHub write)
+#
+# `approve` is bin/approve, which runs this script at its installed path. The
+# long form, bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id>,
+# does the same thing, and its own ask rules prompt for it.
 #
 # ONE SCRIPT FOR BOTH, BECAUSE THE RECORD ALREADY IS. The gate keys a request by
 # session, agent, working directory, and the exact command text, and this script
@@ -81,8 +85,9 @@
 # the classifier answers it and no human sees anything. A permission RULE is
 # different — rules are evaluated before the classifier in every mode, so a rule
 # forces a real prompt. /workbench-dev-team:setup therefore installs this script
-# at a stable path and adds two permissions.ask rules covering it. Running it is
-# the act the human is prompted on, and their answer is the approval.
+# at a stable path and adds three permissions.ask rules: `Bash(approve:*)` for
+# the short form, and one for each spelling of the long form. Running it is the
+# act the human is prompted on, and their answer is the approval.
 #
 # THIS SERVES THE FOREGROUND SESSION, AND ONLY THAT. The reasoning above holds
 # where a human is attached to answer the prompt, and it fails in a sub-agent:
@@ -101,10 +106,18 @@
 #   2. If this copy is not the one at the stable path the rules name — the
 #      plugin-cache copy, say — the rules cannot match it, so it grants nothing.
 #
-# What is left uncovered, stated plainly: an invocation spelled differently from
-# the rules (`sh <path>`, or the path without the `bash` prefix) is not matched
-# by them and is not prompted, and in the foreground session anything holding
-# Bash can write the approval record directly. This is a protocol gate for that
+# What is left uncovered, stated plainly. An invocation spelled differently from
+# the rules (`sh <path>`, the path without the `bash` prefix, or the plugin's
+# bin/approve by its path) is not matched by them and is not prompted. The
+# commit gate refuses every such spelling whose text shows an approval name:
+# quoted, escaped, behind a zsh precommand modifier or a wrapper, inside `sh -c`
+# or `env -S`, or held in a variable filled on the same line, by assignment, a
+# declaration builtin, `read`, or `printf -v`. An unknown program is refused
+# when the word it would run is the name with an id after it. A name the shell
+# builds from pieces the text never shows whole gets past it in both lanes: a
+# variable set in an earlier command or a file, a command substitution
+# (`$(printf appr)ove`), or a glob (`appr?ve`). So does a script file. In the foreground session anything holding Bash can also write the
+# approval record directly. This is a protocol gate for that
 # lane. It makes an unapproved foreground commit or push the gate can read
 # impossible to perform SILENTLY; it is not a barrier against a main agent that
 # sets out to defeat it.
@@ -117,7 +130,7 @@ set -u
 
 STABLE_DIR="${HOME:-}/.claude-workbench/bin"
 STABLE_PATH="$STABLE_DIR/approve-commit.sh"
-SANCTIONED_CMD='bash "$HOME/.claude-workbench/bin/approve-commit.sh"'
+SANCTIONED_CMD='approve'
 
 REQUEST_ID="${1:-}"
 LABEL="${2:-}"
@@ -172,10 +185,12 @@ settings_path = os.environ["APPROVE_SETTINGS"]
 state_dir = os.environ["APPROVE_STATE_DIR"]
 home = os.environ["APPROVE_HOME"]
 
-# Both spellings of the one sanctioned invocation: the "$HOME" form a caller
-# types, and the absolute path it expands to. /workbench-dev-team:setup adds
-# both, the same way it does for the dispatch wrapper.
+# Every spelling that reaches this script: the short `approve` (bin/approve),
+# and both spellings of the long form, the "$HOME" one a caller types and the
+# absolute path it expands to. /workbench-dev-team:setup adds all three. Each
+# one is required, because a spelling with no rule runs unprompted.
 REQUIRED_ASK_RULES = [
+    'Bash(approve:*)',
     'Bash(bash "$HOME/.claude-workbench/bin/approve-commit.sh":*)',
     f'Bash(bash {home}/.claude-workbench/bin/approve-commit.sh:*)',
 ]

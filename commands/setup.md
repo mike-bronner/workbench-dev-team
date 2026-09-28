@@ -830,8 +830,17 @@ plain one-line `git commit` and `git push` in a foreground session that the huma
 has not approved, and refuses outright any other command that names one. The same script approves both, because a request is keyed by the exact
 command text and its working directory.
 `bin/approve-commit.sh` is how the approval arrives, and **this step is what lets it
-grant anything**: it installs that script at a stable path and adds the two
-`permissions.ask` rules covering it.
+grant anything**: it installs that script at a stable path and adds the three
+`permissions.ask` rules covering it. Agents run it by its short name,
+`approve <request-id> '<subject>'`: that is `bin/approve`, which the harness
+puts on PATH from the plugin's `bin/`, and which runs the installed script. Its
+rule is `Bash(approve:*)`. The other two rules cover the long form,
+`bash "$HOME/.claude-workbench/bin/approve-commit.sh"`, in both spellings.
+
+**An install set up before `approve` existed needs this step re-run.** The
+plugin update puts `approve` on PATH before its rule is in settings. `approve`
+refuses until the rule is there, so nothing is granted unprompted. Until then,
+the long form still prompts and still works.
 
 The rules are the mechanism, not decoration. A `PreToolUse` hook can answer only
 allow / deny / ask, and its "ask" is *classifier-approvable* — under
@@ -898,11 +907,13 @@ install -m 755 "$APPROVE_ROOT/bin/approve-commit.sh" "$HOME/.claude-workbench/bi
 SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 cp "$SETTINGS" "$SETTINGS.bak-approve-$(date +%Y%m%d-%H%M%S)"
-# Additive, like every other settings write in this command: both spellings are
-# added, every other key is left exactly as it was.
+# Additive, like every other settings write in this command: the short `approve`
+# rule and both spellings of the long form are added, and every other key is
+# left exactly as it was.
 jq --arg abs "Bash(bash $HOME/.claude-workbench/bin/approve-commit.sh:*)" \
    --arg home 'Bash(bash "$HOME/.claude-workbench/bin/approve-commit.sh":*)' \
-   '.permissions.ask = ((.permissions.ask // []) + [$abs, $home] | unique)' \
+   --arg short 'Bash(approve:*)' \
+   '.permissions.ask = ((.permissions.ask // []) + [$abs, $home, $short] | unique)' \
    "$SETTINGS" > "$SETTINGS.tmp" \
   && jq empty "$SETTINGS.tmp" \
   && mv "$SETTINGS.tmp" "$SETTINGS" \

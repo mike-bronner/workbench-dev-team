@@ -73,6 +73,13 @@ case "$RULES" in
   *"Bash(bash $HOME_A/.claude-workbench/bin/approve-commit.sh:*)"*) ok "the absolute ask rule is present" ;;
   *) bad "the absolute ask rule is missing" ;;
 esac
+# `approve` is the spelling the gate prints, so its rule is the one that makes
+# the everyday prompt.
+if printf '%s\n' "$RULES" | grep -qxF 'Bash(approve:*)'; then
+  ok "the short approve ask rule is present"
+else
+  bad "the short approve ask rule is missing"
+fi
 case "$OUT" in
   *"Commit approval installed"*) ok "the end-to-end check passes and says so" ;;
   *) bad "the block did not confirm the end-to-end check: $OUT" ;;
@@ -104,6 +111,21 @@ if [ "$(jq -r '.attribution.commit' "$HOME_B/.claude/settings.json")" = "" ]; th
   ok "unrelated top-level keys are untouched"
 else
   bad "an unrelated top-level key was lost"
+fi
+
+echo "An install set up before approve existed gains its rule:"
+HOME_U="$(new_home u)"
+write_registry "$HOME_U" "$REPO"
+jq -n --arg abs "Bash(bash $HOME_U/.claude-workbench/bin/approve-commit.sh:*)" \
+  '{permissions: {ask: [$abs, "Bash(bash \"$HOME/.claude-workbench/bin/approve-commit.sh\":*)"]}}' \
+  > "$HOME_U/.claude/settings.json"
+OUT=$(run_block "$HOME_U"); STATUS=$?
+if [ "$STATUS" -eq 0 ]; then ok "the block succeeds over the older rules"; else bad "the block failed: $OUT"; fi
+RULES_U=$(ask_rules "$HOME_U")
+if printf '%s\n' "$RULES_U" | grep -qxF 'Bash(approve:*)' && [ "$(printf '%s\n' "$RULES_U" | grep -c .)" = 3 ]; then
+  ok "...and it adds the short rule beside the two it had, with no duplicate"
+else
+  bad "the rules after an upgrade are wrong: $RULES_U"
 fi
 
 echo "Re-running changes nothing:"

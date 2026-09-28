@@ -89,13 +89,13 @@ remote, and the commits it sends. General approval of the task, "looks good"
 about the code, or approval of a previous commit do not carry over: one approval
 covers one command.
 
-**Then run the command the denial prints**, exactly as printed:
-`bash "$HOME/.claude-workbench/bin/approve-commit.sh" <request-id> "<commit subject>"`
-for a commit, and the same command with no subject for a push. Set the Bash
-call's `description` to the line the denial dictates. Permission rules cover
-that command, so the harness raises a real prompt, and the human's answer is the
-approval. Then run the same `git commit` or `git push` again, from the same
-directory.
+**Then run the command the denial prints**, exactly as printed and alone on its
+line: `approve <request-id> '<commit subject>'` for a commit, and the same
+command with no subject for a push. Keep the subject in single quotes, and if it
+holds an apostrophe, leave it out. Set the Bash call's `description` to the line
+the denial dictates. A permission rule covers that command, so the harness
+raises a real prompt, and the human's answer is the approval. Then run the same
+`git commit` or `git push` again, from the same directory.
 
 **What an approval binds.** One run of one command, in that session and
 directory, for 15 minutes. A commit is also bound to HEAD and the staged diff,
@@ -109,9 +109,9 @@ voids the approval and asks again.
 refspec, `--prune`) is refused with no approval path. Merge stays an explicit
 human request.
 
-If `approve-commit.sh` refuses (missing permission rules, or an id with nothing
-waiting), report that and stop: `/workbench-dev-team:setup` installs the command
-and its rules. Never edit the gate, never set `WORKBENCH_DEV_TEAM_PIPELINE`, and
+If `approve` refuses (missing permission rules, or an id with nothing waiting),
+report that and stop: `/workbench-dev-team:setup` installs the command and its
+rules. Never edit the gate, never set `WORKBENCH_DEV_TEAM_PIPELINE`, and
 never write an approval record by hand.
 
 ## Passing a gh body — PRs, issues, comments, and release notes

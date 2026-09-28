@@ -166,8 +166,9 @@
 #
 # WHY LANE 2 EXISTS. Lane 3's approval arrives by a second route:
 # bin/approve-commit.sh, installed by /workbench-dev-team:setup at
-# $HOME/.claude-workbench/bin/ and covered by permissions.ask rules. A permission
-# RULE is evaluated before the auto-mode classifier in every mode, so running
+# $HOME/.claude-workbench/bin/, run as `approve` through bin/approve, and covered
+# by permissions.ask rules. A permission RULE is evaluated before the auto-mode
+# classifier in every mode, so running
 # that command does force a real prompt, and the human answering it is the
 # approval. approve-commit.sh refuses to grant anything unless those rules are
 # present, so a half-finished setup fails closed.
@@ -297,11 +298,16 @@ if ! declare -F payload_may_name_git python_fallback >/dev/null; then
   exit 0
 fi
 
-# Fast path. Every refusal below needs the command to name git, gh, or yadm, so
-# a payload that cannot name one gets no opinion without starting python3, which
-# measured about 57 ms on every Bash call. payload_may_name_git errs only toward
-# the full check, so nothing that could run git skips it.
-payload_may_name_git "$GATE_PAYLOAD" || exit 0
+# Fast path. Every refusal below needs the command to name git, gh, or yadm, or
+# the approval command, so a payload that names none of them gets no opinion
+# without starting python3, which measured about 57 ms on every Bash call.
+# payload_may_name_git errs only toward the full check, and so does the approval
+# test: the letters of "approve" in any case, with any run of punctuation
+# between them, send the payload on. So `appro\ve`, `ap''prove`, and the JSON
+# escapes of their backslashes and quotes all reach python3. A JSON `\u` escape
+# or a non-ASCII byte already does, through payload_may_name_git.
+APPROVE_RE='[Aa][^[:alnum:][:space:]]*[Pp][^[:alnum:][:space:]]*[Pp][^[:alnum:][:space:]]*[Rr][^[:alnum:][:space:]]*[Oo][^[:alnum:][:space:]]*[Vv][^[:alnum:][:space:]]*[Ee]'
+payload_may_name_git "$GATE_PAYLOAD" || [[ $GATE_PAYLOAD =~ $APPROVE_RE ]] || exit 0
 
 command -v python3 >/dev/null 2>&1 || python_fallback "Commit approval gate"
 
@@ -325,7 +331,34 @@ APPROVAL_TTL_SECONDS = 900
 # growing by one file per attempt forever.
 RECORD_MAX_AGE_SECONDS = 86400
 
-APPROVE_CMD = 'bash "$HOME/.claude-workbench/bin/approve-commit.sh"'
+APPROVE_CMD = "approve"
+
+# THE APPROVAL COMMAND ITSELF. Its subject is a label approve-commit.sh checks
+# against the waiting record, and the shell never runs it. So the command, spelled
+# exactly as one of its permissions.ask rules names it, is given no opinion, and
+# no word in the subject can refuse it: gh, git, commit, push, or anything else.
+# The spellings are `approve` (bin/approve, which the harness puts on PATH from
+# the plugin's bin/), and the long form in both of the ways setup's rules spell
+# it. After the spelling comes the request id, bare lowercase hex, then at most
+# one plain word or quoted string: the plain-word alphabet, one line, no
+# expansion, and nothing run beside it. A subject in single quotes may hold
+# anything but `'`, so `'$(git push)'` is text and runs nothing.
+#
+# Every other invocation the text shows is refused, in both lanes. A spelling no
+# rule names — another shell, a path, a wrapper, or a second command beside it —
+# runs with no prompt, and an approval nobody was prompted for is the failure
+# this gate exists to prevent. A sub-agent is refused the rules' own spellings
+# too: its request is non-interactive, so a rule prompts nobody there. A name the
+# shell builds from pieces the text never shows whole — a variable set elsewhere,
+# a command substitution, a glob — gets past this check. See runs_approval().
+_HOME = os.environ.get("HOME", "")
+APPROVAL_FORMS = ("approve ", 'bash "$HOME/.claude-workbench/bin/approve-commit.sh" ') + (
+    (f"bash {_HOME}/.claude-workbench/bin/approve-commit.sh ",) if _HOME else ())
+APPROVAL_NAMES = {"approve", "approve-commit.sh"}
+# An approval name as a word in text, the way a shell or a wrapper would receive
+# it: `/approve` and `"approve` count, `--approve` and `test-approve-commit.sh`
+# do not.
+APPROVAL_WORD = re.compile(r"(?i)(?<![a-z0-9_.-])(?:approve|approve-commit\.sh)(?![a-z0-9_.-])")
 
 # The description the approval prompt must carry. The prompt renders three lines
 # (the command, the Bash call's `description`, and the ask rule's reason), and
@@ -883,6 +916,199 @@ def gh_calls(text: str):
     return calls
 
 
+# Programs that run the program named after their own flags. Only that program is
+# checked, so `timeout 60 grep approve` stays a grep. zsh's precommand modifiers
+# are here too: `-`, `nocorrect`, and, through GH_WRAPPERS, `builtin`, `command`,
+# `exec`, and `noglob`. The rest run their argument as a program on macOS or
+# Linux. A program missing from this set is still caught when the word it would
+# run is the approval name with an id after it (see program_runs_approval), so
+# the set widens what is followed, and never decides alone what is refused.
+APPROVAL_WRAPPERS = GH_WRAPPERS | {
+    "nocorrect", "-", "stdbuf", "gstdbuf", "flock", "ionice", "chrt", "taskset", "taskpolicy",
+    "arch", "script", "unbuffer", "chronic", "lockf", "doas", "setsid", "gtimeout", "su", "runuser",
+    "unshare", "nsenter", "systemd-run", "firejail", "sandbox-exec", "strace", "ltrace", "dtruss",
+    "valgrind", "faketime", "proxychains", "proxychains4", "torsocks", "rlwrap", "entr", "catchsegv"}
+# Wrappers that take one operand before the program: a lock file, a CPU mask, a
+# priority, a transcript file, or a user. The walk reads them a third way, with
+# that operand skipped.
+OPERAND_WRAPPERS = {"flock", "lockf", "taskset", "chrt", "script", "su", "runuser"}
+# Shells, and `source`, run a script file named after their flags, so that file
+# is checked and its arguments are not: `bash run-tests.sh --filter approve` runs
+# run-tests.sh. A shell given `-c` runs its arguments as code, and so do `su -c`
+# and `script -c`, so every argument is checked there.
+APPROVAL_SHELLS = {"bash", "sh", "zsh", "dash", "ksh", "source", "."}
+STRING_RUNNERS = APPROVAL_SHELLS - {"source", "."} | {"su", "script"}
+# Programs that run all their arguments as one command line: every argument is
+# checked.
+CODE_RUNNERS = {"eval", "watch", "parallel"}
+# A short flag cluster holding `c`, as in `-c`, `-lc`, or `-ec`.
+SHELL_STRING_FLAG = re.compile(r"-[A-Za-z]*c[A-Za-z]*")
+# Programs that only read their arguments, so an approval name after them is a
+# pattern or a file, not a program. Leaving one out costs a false refusal only.
+APPROVAL_READERS = GH_DATA_PROGRAMS | {"rg", "ag", "ack", "fd", "man", "file", "stat", "bat", "git"}
+# A request id, as the gate prints it.
+REQUEST_ID = re.compile(r"[0-9a-f]+")
+# A word a wrapper takes that is not a program: a duration or a count, as in
+# `timeout 60` or `nice -n 5`.
+PLAIN_NUMBER = re.compile(r"[0-9]+(?:\.[0-9]+)?[smhd]?")
+# A ${...} expansion, which can yield the name from anywhere inside it.
+BRACED = re.compile(r"\$\{[^}]*\}")
+# The marks a shell removes or acts on while it builds a word.
+SHELL_MARKS = re.compile(r"[\\'\"$]")
+
+
+def shell_text(value, raw: str) -> str:
+    """The word a program could receive: its value, or, for a word the shell
+    builds, its raw text with backslashes, quotes, and `$` removed.
+    `\\approve`, `appro\\ve`, and `$'approve'` all run bin/approve, and each one
+    reads as `approve` here. `=approve` reads as itself, and APPROVAL_WORD still
+    finds the name behind the `=`."""
+    return value if value is not None else SHELL_MARKS.sub("", raw)
+
+
+def names_approval(value, raw: str) -> bool:
+    """True when one word could be, or could carry, the approval command.
+
+    A word the shell builds is read with its quoting and expansion marks
+    removed, the fail-closed rule gh_calls() applies to a gh word. A `${...}`
+    expansion in it fails closed on `approve` anywhere inside the braces,
+    because ${X:-approve} yields the name from behind a dash.
+    """
+    if value is None and any("approve" in part.lower() for part in BRACED.findall(raw)):
+        return True
+    return bool(APPROVAL_WORD.search(shell_text(value, raw)))
+
+
+def assigns_approval(raw: str) -> bool:
+    """True when the word is an assignment whose value names the approval
+    command, as in `A=approve; $A`. The same rule gh_calls() applies to a gh
+    word in a variable's value."""
+    return bool(ASSIGNMENT.match(raw)) and names_approval(None, raw.split("=", 1)[1])
+
+
+def split_strings(args: list) -> list:
+    """The command lines `env -S` (--split-string) is given, as (value, raw).
+    env splits that value into words and runs them, so it is read as a command
+    line of its own. `-S` may close a short cluster, as in `-iS`, and take its
+    value attached or as the next word."""
+    found = []
+    for index, (value, raw) in enumerate(args):
+        following = args[index + 1] if index + 1 < len(args) else ("", "")
+        if value is None:
+            continue
+        if value.startswith("--split-string"):
+            found.append((value.split("=", 1)[1], raw) if "=" in value else following)
+        elif value.startswith("-") and not value.startswith("--") and "S" in value:
+            rest = value[value.index("S") + 1:]
+            found.append((rest, raw) if rest else following)
+    return found
+
+
+def program_runs_approval(words: list, loose: bool) -> bool:
+    """True when this program word, with its arguments, runs the approval command.
+
+    A wrapper, a shell, or `source` is followed to the program or script it runs.
+    Which word that is depends on which flags take a value, so the arguments are
+    read twice, as gh_path() reads a gh call: once with every flag taking no
+    value, and once with every flag taking the next word. Either reading finding
+    the command is enough. A word the shell builds may be a flag, so the walk
+    checks it and goes on past it.
+
+    An argument assigning the name is refused whatever the program, which covers
+    the declaration builtins: `export A=approve`, `typeset -x A=approve`,
+    `declare`, `local`, `readonly`, and `integer`.
+
+    Any other program is not followed, because the gate cannot tell whether it
+    runs its argument. It is refused only when the word it would run is the
+    approval name followed by an id, lowercase hex or a word the shell builds:
+    the command does nothing without one, and a pattern or a file rarely looks
+    like one. So `stdbuf -o0 approve <id>` is refused, and `grep approve file`
+    is not. A known reader (APPROVAL_READERS) is exempt outright.
+
+    loose is True when the command's text names the approval command anywhere.
+    A program word the shell builds is then refused, because it may take the
+    name from a variable filled by `read <<< approve`, `printf -v`, or an array.
+    """
+    value, raw = words[0]
+    name = os.path.basename(shell_text(value, raw)).lower()
+    if name in APPROVAL_NAMES or (value is None and (loose or names_approval(value, raw))):
+        return True
+    args = words[1:]
+    if name in CODE_RUNNERS or (name in STRING_RUNNERS
+                                and any(v is None or SHELL_STRING_FLAG.fullmatch(v) for v, _ in args)):
+        return any(names_approval(v, r) for v, r in args)
+    if name == "command" and args[:1] and args[0][0] in ("-v", "-V"):
+        return False  # a lookup, which runs nothing
+    if name == "env":
+        for split, split_raw in split_strings(args):
+            if (runs_approval(split) if split is not None else names_approval(split, split_raw)):
+                return True
+    if name in APPROVAL_READERS:
+        return False
+    follows = name in APPROVAL_WRAPPERS or name in APPROVAL_SHELLS
+    for greedy, operands in ((False, 0), (True, 0), (False, 1), (True, 1)):
+        if operands and name not in OPERAND_WRAPPERS:
+            continue
+        index = 0
+        while index < len(args):
+            arg, arg_raw = args[index]
+            if assigns_approval(arg_raw) or (arg is None and (loose or names_approval(arg, arg_raw))):
+                return True
+            if arg is None or ASSIGNMENT.match(arg_raw) or PLAIN_NUMBER.fullmatch(arg):
+                index += 1
+            elif len(arg) > 1 and arg[0] in "-+":
+                index += 2 if greedy and "=" not in arg else 1
+            elif operands:
+                operands, index = operands - 1, index + 1
+            else:
+                if follows and program_runs_approval(args[index:], loose):
+                    return True
+                if not follows and os.path.basename(arg).lower() in APPROVAL_NAMES:
+                    after = args[index + 1] if index + 1 < len(args) else None
+                    if after and (after[0] is None or REQUEST_ID.fullmatch(after[0])):
+                        return True
+                break
+    return False
+
+
+def runs_approval(text: str) -> bool:
+    """True when the text runs the approval command, in any spelling the text
+    shows.
+
+    A program word whose last path part is an approval name is an invocation, and
+    so is a program word the shell builds that holds one, and a variable assigned
+    the name. A wrapper, a shell, or `source` is followed to the program it runs
+    (program_runs_approval), so `nocorrect approve` and `sh <path>` are
+    invocations and `timeout 60 grep approve` is not. Names are compared in
+    lowercase, because macOS resolves `APPROVE` to `approve` on its default file
+    system. Text the lexer cannot split fails closed on any approval word.
+    """
+    segments = shell_segments(text)
+    if segments is None:
+        return bool(APPROVAL_WORD.search(text))
+    loose = bool(APPROVAL_WORD.search(SHELL_MARKS.sub("", text)))
+    for words in segments:
+        index = 0
+        while index < len(words) and (ASSIGNMENT.match(words[index][1]) or words[index][0] in SHELL_KEYWORDS):
+            if assigns_approval(words[index][1]):
+                return True
+            index += 1
+        if words[index:] and program_runs_approval(words[index:], loose):
+            return True
+    return False
+
+
+def approval_form(text: str) -> bool:
+    """True when the text is the approval command, spelled as a rule names it."""
+    for prefix in APPROVAL_FORMS:
+        if text.startswith(prefix):
+            words = plain_words(text[len(prefix):])
+            return (bool(words) and len(words) <= 2
+                    and all(kind in ("bare", "quoted") for _, kind in words)
+                    and words[0][1] == "bare" and re.fullmatch(r"[0-9a-f]+", words[0][0]) is not None)
+    return False
+
+
 def gh_path(args: list):
     """(path, index of the word after it) for the gh call, or (None, 0) when a
     word the shell builds or a flag's arity decides the path.
@@ -1126,6 +1352,15 @@ gh_kinds = None if gh_found is None else [gh_kind(call) for call in gh_found]
 # Lane 2. Before any record is read, so a planted approval cannot be spent, and
 # before one is written, so no id exists for the agent to approve.
 if agent_id:
+    if runs_approval(command):
+        deny(
+            "the commit approval command",
+            "A sub-agent has no approval route.",
+            f"This sub-agent ({agent_id[:8]}) has no pipeline flag. Approval belongs "
+            "to the foreground session, where a human answers the prompt. Hand the "
+            "work back: leave the tree uncommitted, and report the diff and a "
+            "proposed commit message to the session that dispatched you."
+        )
     verdict, invocations = classify(text, "sub-agent", GATED_GIT)
     gh_reads = gh_kinds is not None and all(kind == "read" for kind, _ in gh_kinds)
     if verdict == "silent" and gh_reads:
@@ -1159,7 +1394,21 @@ if agent_id:
         "part as a plain line of its own, with -C <path> in place of cd."
     )
 
-# Lane 3.
+# Lane 3. The approval command first: its subject is never run, so no word in it
+# may refuse the command, and a spelling no rule prompts for may not run it.
+if runs_approval(command):
+    if approval_form(command):
+        sys.exit(0)
+    deny(
+        "an approval command that no permission rule prompts for",
+        "Run it exactly as the gate printed it.",
+        "A permissions.ask rule raises the approval prompt, and it matches only "
+        "the spellings setup installed. Run the one the gate prints: "
+        f"`{APPROVE_CMD} <request-id> '<commit subject>'`, alone on one line. Any "
+        "other spelling, a second command beside it, or a subject the shell "
+        "expands would run with no prompt, so it is refused. Put the subject in "
+        "single quotes, or leave it out."
+    )
 if gh_kinds is None:
     deny(
         "this command runs `gh` in a way the gate cannot read",
@@ -1619,7 +1868,7 @@ clause = {
 # approval command takes no label: the receipt names the push itself.
 if commits:
     show = "the staged diff and the proposed commit message"
-    approve_line = f'{APPROVE_CMD} {request_id} "<commit subject>"'
+    approve_line = f"{APPROVE_CMD} {request_id} '<commit subject>'"
     description = APPROVE_DESC_COMMIT_PUSH if pushes else APPROVE_DESC
 elif github_write:
     show = ("the exact gh command and what it writes: the repository, the path, "
@@ -1654,7 +1903,9 @@ deny(
     f"Show the human {show}.{bound} "
     f"Then run this exact command, which prompts them to approve:\n\n"
     f"  {approve_line}\n\n"
-    f"Run it with the Bash tool's `description` parameter set to exactly "
+    + ("Keep the subject in single quotes. If it holds an apostrophe, leave the "
+       "subject out.\n\n" if commits else "")
+    + f"Run it with the Bash tool's `description` parameter set to exactly "
     f'"{description}". The prompt renders that description, and it is the line '
     "the human reads before answering. A description that names the action "
     "instead of what it does gives them nothing to decide on, so they learn to "

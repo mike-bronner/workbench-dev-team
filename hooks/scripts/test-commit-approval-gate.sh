@@ -202,8 +202,8 @@ case "$DENY_CONTEXT" in
   *) bad "the context does not name the gate" ;;
 esac
 case "$DENY_CONTEXT" in
-  *'bash "$HOME/.claude-workbench/bin/approve-commit.sh"'*) ok "the context names the approve-commit.sh command" ;;
-  *) bad "the context does not name the approve-commit.sh command" ;;
+  *"  approve "[0-9a-f]*" '<commit subject>'"$'\n'*) ok "the context names the short approval command, subject in single quotes" ;;
+  *) bad "the context does not name the short approval command" ;;
 esac
 if printf '%s' "$DENY_CONTEXT" | grep -qE '[0-9a-f]{16}'; then
   ok "the context carries a request id"
@@ -418,6 +418,11 @@ case "$SUB_OUT" in
   *approve-commit.sh*) bad "the sub-agent denial prints the approval command — it can run that itself" ;;
   *) ok "the sub-agent denial names no approval command, in either channel" ;;
 esac
+if printf '%s' "$SUB_OUT" | grep -qE 'approve [0-9a-f<]'; then
+  bad "the sub-agent denial prints the short approval command — it can run that itself"
+else
+  ok "the sub-agent denial prints no short approval command either"
+fi
 if printf '%s' "$SUB_OUT" | grep -qE '[0-9a-f]{16}'; then
   bad "the sub-agent denial carries a request id — that is half an approval"
 else
@@ -549,7 +554,7 @@ PUSH_ID=$(printf '%s' "$PUSH_CONTEXT" | grep -oE '[0-9a-f]{16}' | head -1)
 # A push has no subject, so its approval command carries no label to invent.
 # The denial prints the whole line, and the agent runs exactly that.
 case "$PUSH_CONTEXT" in
-  *"  bash \"\$HOME/.claude-workbench/bin/approve-commit.sh\" $PUSH_ID"$'\n'*)
+  *"  approve $PUSH_ID"$'\n'*)
     ok "the context prints the approval command with no subject label" ;;
   *) bad "the push context does not print the bare approval command: $PUSH_CONTEXT" ;;
 esac
@@ -695,7 +700,7 @@ check "...and names gh release create" \
 GH_CONTEXT=$(context_of "$GH_OUT")
 GH_ID=$(printf '%s' "$GH_CONTEXT" | grep -oE '[0-9a-f]{16}' | head -1)
 case "$GH_CONTEXT" in
-  *"  bash \"\$HOME/.claude-workbench/bin/approve-commit.sh\" $GH_ID"$'\n'*)
+  *"  approve $GH_ID"$'\n'*)
     ok "the context prints the approval command with no subject label" ;;
   *) bad "the gh write context does not print the bare approval command: $GH_CONTEXT" ;;
 esac
@@ -1557,6 +1562,14 @@ fast "git after an escaped quote reaches it"      "$(raw 'x \"git\" push')"     
 fast "git spelled with a \\u escape reaches it"   "$(raw 'ls; \u0067it push')"    yes deny
 fast "a dotless-i gıt reaches it, as python folds it" "$(raw 'gıt push')"            yes deny
 fast "a non-ASCII payload reaches it"             "$(raw 'echo ✅')"                   yes silent
+# The approval command names no git, and must still reach the classifier: a
+# sub-agent is refused it, and a spelling no rule prompts for is refused to all.
+fast "approve reaches python3"                    "$(raw 'approve 0123abcd')"          yes deny
+fast "APPROVE in capitals reaches python3"        "$(raw 'APPROVE 0123abcd')"          yes deny
+fast "the long form's path reaches python3"       "$(raw 'sh /h/.claude-workbench/bin/approve-commit.sh 0123abcd')" yes deny
+fast "appro\\ve, JSON-escaped, reaches python3"   "$(raw 'appro\\ve 0123abcd')"        yes deny
+fast "ap''prove reaches python3"                  "$(raw "ap''prove 0123abcd")"        yes deny
+fast "approval, which is not approve, skips it"   "$(raw 'echo approval')"             no  silent
 
 echo "Carve-out — the dispatcher's env flag, and nothing else:"
 PIPE_CMD='git commit -m "chore: pipeline"'
@@ -1645,6 +1658,171 @@ if grep -v '^[[:space:]]*#' "$GATE" | grep -q '"ask"'; then
 else
   ok "the gate never returns \"ask\""
 fi
+
+echo "The approval command — its subject is a label, and only a rule's spelling runs it:"
+# The subject is checked by approve-commit.sh against the waiting record, and
+# the shell never runs it. So no word in it may refuse the command. This subject
+# is the one the installed gate refused when 3aecf61 was approved.
+AID=0123456789abcdef
+SUBJ='fix: 🐛 Let the commit gate read quoted heredoc gh bodies and escaped grep patterns.'
+LONG='bash "$HOME/.claude-workbench/bin/approve-commit.sh"'
+run_case "approve with a subject naming gh, double-quoted"   "approve $AID \"$SUBJ\""              silent
+run_case "approve with a subject naming gh, single-quoted"   "approve $AID '$SUBJ'"                silent
+run_case "the long form with that subject (the 3aecf61 case)" "$LONG $AID \"$SUBJ\""             silent
+run_case "the long form by its absolute path"                "bash $SANDBOX/home/.claude-workbench/bin/approve-commit.sh $AID '$SUBJ'" silent
+run_case "a subject naming git commit and git push"          "approve $AID 'fix: quiet git commit and git push'" silent
+run_case "a subject naming yadm, merge, and rebase"          "approve $AID \"fix: yadm merge and rebase\""     silent
+run_case "a subject holding \$( ) in single quotes is text"  "approve $AID '\$(git push)'"         silent
+run_case "approve with no subject (a push)"                  "approve $AID"                        silent
+run_case "a bare one-word subject"                           "approve $AID fix"                    silent
+
+echo "...and every near miss is refused, gh or git beside it included:"
+run_case "approve && git push"                  "approve $AID 'x' && git push"                   deny
+run_case "approve && gh pr merge"               "approve $AID 'gh' && gh pr merge 1"             deny
+run_case "approve; gh api DELETE"               "approve $AID 'x'; gh api -X DELETE repos/o/r"   deny
+run_case "approve | cat"                        "approve $AID 'x' | cat"                         deny
+run_case "cd && approve"                        "cd /tmp && approve $AID 'x'"                    deny
+run_case "a \$( ) subject in double quotes runs" "approve $AID \"\$(git push)\""                 deny
+run_case "a backtick subject in double quotes runs" "approve $AID \"\`gh pr merge 1\`\""         deny
+run_case "a subject in two words"               "approve $AID fix: x"                            deny
+run_case "a redirect after approve"             "approve $AID 2>/dev/null"                       deny
+run_case "a quote the gate cannot close"        "approve $AID 'x"                                deny
+run_case "an id that is not hex"                "approve --help"                                 deny
+run_case "sh and the installed path"            "sh ~/.claude-workbench/bin/approve-commit.sh $AID" deny
+run_case "the installed path with no bash"      "~/.claude-workbench/bin/approve-commit.sh $AID" deny
+run_case "bin/approve by a path"                "bash /plugins/cache/x/bin/approve $AID 'x'"     deny
+run_case "approve quoted as a word"             "\"approve\" $AID 'x'"                           deny
+run_case "APPROVE in capitals"                  "APPROVE $AID 'x'"                               deny
+run_case "approve through env"                  "env approve $AID 'x'"                           deny
+run_case "approve through bash -c"              "bash -c 'approve $AID x'"                       deny
+run_case "approve in a substitution"            "echo \$(approve $AID)"                          deny
+NEAR_OUT=$(ask_gate "sh ~/.claude-workbench/bin/approve-commit.sh $AID" "" "" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "the human line says why a near miss is refused" "$(reason_of "$NEAR_OUT")" \
+  '🛑 Blocked: an approval command that no permission rule prompts for. Run it exactly as the gate printed it.'
+if printf '%s' "$NEAR_OUT" | grep -qE '[0-9a-f]{16}'; then
+  bad "a near miss is issued a request id"
+else
+  ok "a near miss is issued no request id"
+fi
+
+echo "...and text that only names the command is left alone:"
+run_case "cat the script"                       'cat bin/approve-commit.sh'                      silent
+run_case "run its test suite"                   'bash bin/test-approve-commit.sh'                silent
+run_case "grep for the name"                    'grep -n approve README.md'                      silent
+run_case "look the command up"                 'command -v approve'                             silent
+run_case "gh pr review --approve"               'gh pr review 5 --approve'                       silent
+
+echo "...and a sub-agent is refused the command in every spelling:"
+sub_case "approve with a subject"               "approve $AID 'x'"                               deny
+sub_case "approve with no subject"              "approve $AID"                                   deny
+sub_case "the long form"                        "$LONG $AID 'x'"                                 deny
+sub_case "cat the script stays open"            'cat bin/approve-commit.sh'                      silent
+sub_case "its test suite stays open"            'bash bin/test-approve-commit.sh'                silent
+echo "...and every spelling zsh still runs as approve is refused, in both lanes:"
+# Each of these runs bin/approve under zsh, and none is a spelling an ask rule
+# matches, so the gate is the only thing that can stop it. Holmes reproduced the
+# first two end to end: silent gate, Approved, commit through.
+both_deny() { # both_deny <desc> <command>
+  run_case "foreground: $1" "$2" deny
+  sub_case "sub-agent: $1" "$2" deny
+}
+both_deny "nocorrect approve"              "nocorrect approve $AID 'fix: a change'"
+both_deny "a backslash before approve"     "\\approve $AID 'fix: a change'"
+both_deny "a backslash inside approve"     "appro\\ve $AID 'fix: a change'"
+both_deny "=approve"                       "=approve $AID 'fix: a change'"
+both_deny "\$'approve'"                    "\$'approve' $AID 'fix: a change'"
+both_deny "split quotes, ap''prove"        "ap''prove $AID 'fix: a change'"
+both_deny "a backslash in the long name"   "a\\pprove-commit.sh $AID"
+both_deny "sh and a built long name"       "sh ~/.claude-workbench/bin/a\\pprove-commit.sh $AID"
+both_deny "a path built from a variable"   "\"\$D\"/approve $AID"
+both_deny "a default expansion"            "\${X:-approve} $AID"
+both_deny "zsh's - modifier"               "- approve $AID 'fix: a change'"
+both_deny "builtin approve"                "builtin approve $AID"
+both_deny "command approve"                "command approve $AID"
+both_deny "exec approve"                   "exec approve $AID"
+both_deny "noglob approve"                 "noglob approve $AID 'fix: a change'"
+both_deny "nocorrect behind a backslash"   "\\nocorrect approve $AID"
+run_case "a test suite path built from a variable stays open" 'bash "$REPO/bin/test-approve-commit.sh"' silent
+run_case "...and one built from a braced variable" 'bash "${REPO}/bin/test-approve-commit.sh"'   silent
+
+echo "...a wrapper is followed to the program it runs, and nothing past it:"
+# Holmes's second pass: each of these was refused because every argument of a
+# wrapper was searched. Each one runs a reader, and approve is only its argument.
+both_silent() { # both_silent <desc> <command>
+  run_case "foreground: $1" "$2" silent
+  sub_case "sub-agent: $1" "$2" silent
+}
+both_silent "timeout 60 grep"             'timeout 60 grep -rn approve README.md'
+both_silent "env LC_ALL=C grep"           'env LC_ALL=C grep approve README.md'
+both_silent "xargs grep"                  'xargs grep -l approve < files.txt'
+both_silent "time grep"                   'time grep approve README.md'
+both_silent "command grep"                'command grep approve README.md'
+both_silent "nice rg"                     'nice rg approve'
+both_silent "nice -n 5 grep"              'nice -n 5 grep approve README.md'
+run_case "bash runs a script, and approve is its argument" 'bash run-tests.sh --filter approve' silent
+# A flag that takes a value must not hide the program behind it.
+both_deny "timeout -s KILL 60 approve"     "timeout -s KILL 60 approve $AID"
+both_deny "env -u VAR approve"             "env -u VAR approve $AID"
+both_deny "xargs -I {} approve"            "xargs -I {} approve {}"
+both_deny "exec -a name approve"           "exec -a name approve $AID"
+both_deny "bash -o pipefail and the path"  "bash -o pipefail /h/.claude-workbench/bin/approve-commit.sh $AID"
+both_deny "nocorrect timeout approve"      "nocorrect timeout 5 approve $AID"
+
+echo "...and a variable assigned the name is refused, in both lanes:"
+both_deny "A=approve; \$A"                 "A=approve; \$A $AID"
+both_deny "A=<long path>; sh \$A"          "A=/h/.claude-workbench/bin/approve-commit.sh; sh \$A $AID"
+both_deny "env A=approve sh -c"            "env A=approve sh -c '\$A $AID'"
+both_silent "an unrelated APPROVE_DIR variable" 'APPROVE_DIR=/tmp ls'
+
+echo "...the coordinator's probe: named wrappers, unknown ones, env -S, and declarations:"
+for wrapper in "stdbuf -o0" "gstdbuf -o0" "flock /tmp/lock" "ionice -c 3" "chrt 10" "taskset 0x3" \
+               "taskpolicy -b" "arch -arm64" "script -q /dev/null" "unbuffer" "chronic" \
+               "lockf /tmp/lock" "doas" "setsid"; do
+  both_deny "$wrapper approve" "$wrapper approve $AID 'x'"
+  # Only following the wrapper finds this one: the word after it is sh, not
+  # approve, so the unknown-program rule alone would stay silent.
+  both_deny "$wrapper sh -c 'approve'" "$wrapper sh -c 'approve $AID x'"
+done
+# A wrapper the gate has never heard of: the word it would run is the approval
+# name with an id after it, so it is refused all the same.
+both_deny "an unknown wrapper, then approve and an id"   "mywrap -q approve $AID 'x'"
+both_deny "an unknown wrapper, then approve and \$ID"    "mywrap approve \"\$ID\""
+# ...while a pattern or a file after approve is not an id.
+both_silent "grep approve file"                          'grep approve README.md'
+both_silent "rg approve src"                             'rg approve src'
+both_silent "flock, then a grep for approve"             'flock /tmp/lock grep approve README.md'
+# A known reader is exempt even when its file looks like an id.
+both_silent "grep approve cafe (a file that looks like hex)" 'grep approve cafe'
+both_silent "rg approve \"\$DIR\""                       'rg approve "$DIR"'
+both_silent "an unknown program, approve, then a path"   'mytool approve README.md'
+both_silent "an unknown program, approve alone"          'mytool approve'
+# env -S splits its value into a command line and runs it.
+both_deny "env -S 'approve <id>'"                "env -S 'approve $AID' true"
+both_deny "env -S with the value attached"       "env -S'approve $AID' true"
+both_deny "env --split-string="                  "env --split-string='approve $AID' true"
+both_deny "env -iS"                              "env -iS 'approve $AID' true"
+both_silent "env -S running a grep"              "env -S 'grep approve README.md'"
+# Declarations assign, as a bare assignment does.
+for declarer in export typeset declare local readonly integer; do
+  both_deny "$declarer A=approve; \$A"           "$declarer A=approve; \$A $AID"
+  # Only the declaration check finds this one: no program word here is built,
+  # because the expansion happens inside the child shell's string.
+  both_deny "$declarer A=approve; sh -c '\$A'"   "$declarer A=approve; sh -c '\$A $AID'"
+done
+both_deny "typeset -x A=approve"                 "typeset -x A=approve; \$A $AID"
+both_silent "export APPROVE_DIR=/tmp"            'export APPROVE_DIR=/tmp'
+both_silent "export a path that is not approve"  'export PATH=/usr/bin:$PATH'
+# read, printf -v, and an array fill a variable the text names nowhere, so a
+# program word the shell builds is refused when the text names approve.
+both_deny "read A <<< approve; \$A"              "read A <<< approve; \$A $AID"
+both_deny "read from a here-doc"                 "read A <<'EOF'"$'\napprove\nEOF\n'"\$A $AID"
+both_deny "printf -v A approve; \$A"             "printf -v A approve; \$A $AID"
+both_deny "an array holding approve"             "A=(approve); \$A[1] $AID"
+both_silent "a built program with no approve"    '"$REPO/bin/test-approve-commit.sh"'
+
+SUB_APPROVE=$(ask_gate "approve $AID 'x'" "session-S" "agent-sub" -u WORKBENCH_DEV_TEAM_PIPELINE)
+check "the sub-agent's human line names the command" "$(reason_of "$SUB_APPROVE")" \
+  '🛑 Blocked: the commit approval command. A sub-agent has no approval route.'
 
 echo "hooks.json wiring survives a space in the plugin path:"
 # The harness expands ${CLAUDE_PLUGIN_ROOT} inside the hooks.json `command`

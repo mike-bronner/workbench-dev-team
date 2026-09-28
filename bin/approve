@@ -1,0 +1,48 @@
+#!/bin/bash
+# approve — the short spelling of the commit approval command.
+#
+#   approve <request-id> '<commit subject>'
+#   approve <request-id>                        (a push, or a GitHub write)
+#
+# It does one thing: run the installed approval command,
+# $HOME/.claude-workbench/bin/approve-commit.sh, with the same arguments. That
+# script does every check and grants the approval, and its header says why each
+# check exists.
+#
+# WHY IT CAN BE THIS SHORT. The harness puts each enabled plugin's bin/ on the
+# Bash tool's PATH, so `approve` resolves here with no change to the shell. The
+# approval prompt shows the command first, so a short name makes it readable at
+# a glance.
+#
+# THE ONE CHECK HERE, AND WHY IT CANNOT BE LEFT TO THE SCRIPT. The prompt comes
+# from the permissions.ask rule `Bash(approve:*)`. On an install set up before
+# this command existed, the plugin update puts `approve` on PATH, but the rule is
+# not in settings and the installed script is the older one, which checks only
+# the long form's rules. That script would grant an approval nobody was prompted
+# for. So this command refuses unless the rule is in permissions.ask, before it
+# runs anything. The fix is to re-run /workbench-dev-team:setup.
+
+set -u
+
+SETTINGS="${WORKBENCH_SETTINGS_FILE:-${HOME:-}/.claude/settings.json}"
+INSTALLED="${HOME:-}/.claude-workbench/bin/approve-commit.sh"
+
+if ! python3 - "$SETTINGS" <<'PY' 2>/dev/null
+import json
+import sys
+
+try:
+    with open(sys.argv[1], "r", encoding="utf-8") as handle:
+        rules = json.load(handle)["permissions"]["ask"]
+except (OSError, ValueError, KeyError, TypeError):
+    sys.exit(1)
+sys.exit(0 if isinstance(rules, list) and "Bash(approve:*)" in rules else 1)
+PY
+then
+  echo "❌ approve: the permission rule that makes this command prompt, Bash(approve:*), is not in permissions.ask in $SETTINGS." >&2
+  echo "   Without it this command runs unprompted, so it grants nothing. Run /workbench-dev-team:setup to add it." >&2
+  echo "   Until then, the long form still prompts:  bash \"\$HOME/.claude-workbench/bin/approve-commit.sh\" ${1:-<request-id>}" >&2
+  exit 1
+fi
+
+exec bash "$INSTALLED" "$@"
