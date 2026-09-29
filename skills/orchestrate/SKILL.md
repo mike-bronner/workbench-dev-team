@@ -143,8 +143,8 @@ slot: `references/brief-rationale.md`.
    fan-out, which stays inside the orchestrator boundary rather than crossing
    it.
 4. **A Watson Index-mode run goes through the dispatcher, never the Agent
-   tool.** That run ends in commits and pushes, and the commit-approval gate
-   refuses both to any sub-agent whose process does not carry
+   tool.** That run ends in commits and pushes, and the commit guard refuses
+   both to any sub-agent whose process does not carry
    `WORKBENCH_DEV_TEAM_PIPELINE=1`. The Agent tool cannot set an environment
    variable on the agent it spawns. `bin/dispatch-agent.sh` exports it, and
    takes the same item id:
@@ -398,18 +398,18 @@ this skill.
 
 ### Direct-mode work comes back uncommitted
 
-**Watson's Direct mode ends in a working tree, not a commit.** The commit
-approval gate refuses a sub-agent every commit, merge, and push, and offers it
-no approval path — anything the agent can run itself is not an approval. So its
-report carries a diff summary and a proposed commit message instead, and the
+**Watson's Direct mode ends in a working tree, not a commit.** The commit guard
+refuses a sub-agent every commit and push, and a sub-agent does not merge. So
+its report carries a diff summary and a proposed commit message instead, and the
 tree is left as the change made it.
 
-**Committing it is yours, and so is the push.** Show the human the diff and
-that message, then attempt the commit yourself and let the gate prompt them. The
-plain form it prompts for, and the approval steps, are canonical in the
+**Committing it is yours, and so is the push.** Tell the human the tree is
+ready for their review, and carry the proposed message. Commit only after they
+say "commit it" in chat, once their review is done. Then attempt the commit and
+the push yourself. Claude Code's permission prompt is the mechanical backstop,
+not the approval. The plain form the ask rules match is canonical in the
 `/workbench-dev-team:git-commit` skill ("Committing and pushing"). Never send
-the agent back to commit, and never grant it an approval by any route: only a
-foreground session can raise the prompt.
+the agent back to commit: only a foreground session reaches the human's prompt.
 
 **Holmes can review it first.** An uncommitted tree is exactly what Local mode
 takes, so a Watson Direct-mode result can go to Holmes on a five-slot brief
@@ -527,15 +527,14 @@ the issue/PR (Holmes's Local mode needs none — it reads no board):
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
 | "implement / fix / build X" | Item exists → **Watson** Index mode, dispatched with `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>` (the Agent tool cannot give that run its pipeline flag). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the five-slot brief, via the Agent tool; the diff comes back uncommitted) |
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
-| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool). Board status follows via webhook | same |
+| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool; the commit guard refuses a sub-agent's or the pipeline's `gh pr merge`). Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
 
 **Pass a gh body in a quoted heredoc or a file.** Before any `gh` call that
 carries prose (a comment, an issue, a PR body, or release notes), read "Passing
 a gh body" in `/workbench-dev-team:git-commit`. In short, write
 `--body-file - <<'EOF'` (or `--notes-file -`), or name a file. Never write a
-multi-line body in double quotes: the shell runs its backticks, and the gate
-refuses it.
+multi-line body in double quotes: the shell runs its backticks.
 
 **Issue creation, two identities.** When *you* ask for an issue in conversation,
 it's opened with `gh issue create` so **you** (the human) are the author — the

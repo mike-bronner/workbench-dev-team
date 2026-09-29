@@ -304,29 +304,21 @@ done
 
 # --- 11. a failed write reports failure, and keeps the file ------------------
 #
-# Only an environment fault reaches this now. Two are cheap to cause: a mktemp
-# that fails (a stub first on PATH, since macOS mktemp ignores a bad TMPDIR),
-# and a config directory that refuses the rename.
-mkdir -p "$WORK/failbin"; printf '#!/bin/sh\nexit 1\n' > "$WORK/failbin/mktemp"; chmod +x "$WORK/failbin/mktemp"
-cfg="$WORK/no-tmp.json"; printf '%s' "$OLD" > "$cfg"
-out=$( PATH="$WORK/failbin:$PATH" HOME="$WORK/nohome" DEVTEAM_CONFIG="$cfg" PIN_REPLACE="watson" bash "$REPLACE" 2>&1 ); rc=$?
-if [ "$OLD" = "$(cat "$cfg")" ] && [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q "Could not write"; then
-  ok "no temp file -> 'Could not write', exit 1, file untouched"
-else
-  bad "no temp file (rc=$rc): $out"
-fi
+# Only an environment fault reaches this now. The block writes the checked
+# config straight over the file, with no temporary file, so the cheap fault to
+# cause is a config file that refuses the write.
 if [ "$(id -u)" -ne 0 ]; then
-  ro="$WORK/ro"; mkdir -p "$ro"; cfg="$ro/config.json"; printf '%s' "$OLD" > "$cfg"; chmod 555 "$ro"
+  cfg="$WORK/ro-config.json"; printf '%s' "$OLD" > "$cfg"; chmod 444 "$cfg"
   out=$(replace "$cfg" "watson"); rc=$?
-  chmod 755 "$ro"
+  chmod 644 "$cfg"
   if [ "$OLD" = "$(cat "$cfg")" ] && [ "$rc" -eq 1 ] && printf '%s' "$out" | grep -q "Could not write" \
      && ! printf '%s' "$out" | grep -q "✅"; then
-    ok "a rename the directory refuses -> 'Could not write', exit 1, no success line, file untouched"
+    ok "a write the file refuses -> 'Could not write', exit 1, no success line, file untouched"
   else
-    bad "read-only config dir (rc=$rc): $out"
+    bad "read-only config file (rc=$rc): $out"
   fi
 else
-  echo "  skip — read-only directory case (root ignores directory permissions)"
+  echo "  skip — read-only file case (root ignores file permissions)"
 fi
 
 echo

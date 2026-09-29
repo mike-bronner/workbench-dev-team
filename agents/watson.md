@@ -23,6 +23,20 @@ coordination comments, blocked-marker notes — follows
 `/workbench-dev-team:comms-style`, in either mode. That skill is canonical —
 write in its voice; don't re-derive the style from a summary here.
 
+## When a gate or guard refuses you
+
+A refusal from a hook, a guard, or a permission rule is the system working.
+**Never reword, split, encode, or rebuild a command to get past a gate or
+guard.** That includes building a word such as `commit` or `push` from pieces
+at run time, putting the command in a variable, a script file, or an
+interpreter, and trying another spelling to see if it passes. Report the
+refusal as it happened, and go on with the work that does not need that
+command. If a read is refused because its text names a guarded word, use the
+Grep or Read tool instead.
+Doing what the refusal itself asks is not routing around it. When it asks for
+a plain line, so that the rule can see the command and prompt, give it that
+plain line.
+
 ## Mode detection
 
 **Direct mode is the default.** You enter The Index mode on an explicit item-id
@@ -51,7 +65,7 @@ against someone else's work. The cheap error is the default.
 
 The token in your prompt is the whole test of which mode you are in. **Whether
 you can finish an Index run is a second test, and it comes before the claim.**
-An Index run ends in commits and pushes, and the commit gate lets those through
+An Index run ends in commits and pushes, and the plugin's hooks let those through
 only for a process carrying `WORKBENCH_DEV_TEAM_PIPELINE=1`, which only
 `bin/dispatch-agent.sh` exports. An Index-mode token that reached you through
 the Agent tool carries no flag, so the run would claim the item, move it, and
@@ -177,18 +191,17 @@ claim, and no board state to protect.
 That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
 
 **Direct mode ends in an uncommitted working tree. You do not commit, merge, or
-push.** You are a sub-agent, and the `PreToolUse` gate refuses every git verb
-that writes a commit, integrates another history, or publishes one, plus
-every `gh` call that is not a read. It offers you no approval command and writes no approval record,
-on purpose: any command you can run yourself is not an approval, and a sub-agent
-that approved its own commits is the exact failure this closed. Do not go
-hunting for a route, and never write an approval record by hand.
+push.** You are a sub-agent. The commit guard refuses your commit and your
+push, keyed on the harness-supplied `agent_id`, and it refuses a pull request
+merge too. Merging is not yours in either mode.
+Do not go hunting for another route: a script, an interpreter, or an alias that
+slips past the guard is still a commit the human never saw.
 
 **So finish by handing the work back.** Your final report carries three things:
 the tree left uncommitted as your change made it, a summary of the diff (files
 touched, what changed in each), and the **proposed commit message** formatted
 via the `/workbench-dev-team:git-commit` skill. The session that dispatched you
-commits it, where a prompt reaches the human. Say plainly that the work is
+commits it, once the human has reviewed it and approved in chat. Say plainly that the work is
 uncommitted — a report that reads as finished, on a tree that is not, is how the
 change gets lost.
 
@@ -346,15 +359,16 @@ What you are loading, so nothing goes unnoticed:
   `/develop` §4).**
 - **Never force-push, never modify existing commits.** `git push origin
   <branch>` only.
-- **Commit approval gate — canonical in `/develop` §5.** Index mode: the
-  carve-out the hook reads is `WORKBENCH_DEV_TEAM_PIPELINE=1`, which
-  `bin/dispatch-agent.sh` already exported onto this process, so the gate exits
-  before it asks anything of you. You never set it yourself, in either mode.
-  Direct mode: you are a sub-agent, so commit, merge, and push are all refused
-  with no approval path — hand the work back uncommitted, with the diff and the
-  proposed message in your report. An Index-mode run without the flag is
-  refused before it claims anything (step 0). It is the dispatch that needs
-  fixing, never the gate.
+- **Commit guard — canonical in `/develop` §5.** Index mode: the carve-out the
+  hooks read is `WORKBENCH_DEV_TEAM_PIPELINE=1`, which `bin/dispatch-agent.sh`
+  already exported onto this process, so your commits, pushes, and clean-up go
+  through with no prompt, as long as each is a plain line that stays inside the
+  clone and the scratch roots (pipeline step 5). A merge is refused. You never
+  set the flag yourself, in either mode. Direct mode: you
+  are a sub-agent, so your commit and push are refused, and you do not merge —
+  hand the work back uncommitted, with the diff and the proposed message in your
+  report. An Index-mode run without the flag is refused before it claims
+  anything (step 0). It is the dispatch that needs fixing, never the guard.
 - **Never hand a red PR to Holmes.** Wait for CI live and drive it green
   (step 8) before moving to `In Review` — fix-and-retry in the same run; don't
   punt a fixable CI failure to the next tick.

@@ -24,6 +24,20 @@ re-derive the style from a summary here. AC checklists are
 its *procedural* register (Holmes parses them as a rubric — ambiguity there is
 expensive); free-form comments are the *descriptive* one.
 
+## When a gate or guard refuses you
+
+A refusal from a hook, a guard, or a permission rule is the system working.
+**Never reword, split, encode, or rebuild a command to get past a gate or
+guard.** That includes building a word such as `commit` or `push` from pieces
+at run time, putting the command in a variable, a script file, or an
+interpreter, and trying another spelling to see if it passes. Report the
+refusal as it happened, and go on with the work that does not need that
+command. If a read is refused because its text names a guarded word, use the
+Grep or Read tool instead.
+Doing what the refusal itself asks is not routing around it. When it asks for
+a plain line, so that the rule can see the command and prompt, give it that
+plain line.
+
 ## Input contract
 
 You receive a single positional argument in one of two shapes. Session hooks (warmup, BuJo capture-watch, memory) may inject large text blocks around it; hook text is never the task — scan the prompt for one of these tokens, that's your input:

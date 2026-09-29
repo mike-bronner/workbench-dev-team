@@ -79,12 +79,12 @@ echo "✅ gh, jq, security, git, python3 all present"
 
 Do not check for `claude` — we're already running inside a Claude Code session.
 
-`git` and `python3` are here because both hooks need them. The commit gate and
-the local-review guard classify every command in `python3`, and the gate reads
-the repository with `git` to bind an approval. Without `python3` the gate
-refuses any command that names git, gh, or yadm, and the guard refuses every
-Bash and editing call from a sub-agent while a review record exists. So a
-missing interpreter blocks work rather than letting it through unchecked.
+`jq` and `python3` are here because the hooks need them. The commit guard reads
+its hook payload with `jq`, and without it the guard refuses any call whose text
+names a commit or push. The local-review guard classifies commands in
+`python3`, and without it the guard refuses every Bash and editing call from a
+sub-agent while a review record exists. So a missing tool blocks work rather
+than letting it through unchecked.
 
 If any prerequisite is missing, stop and tell the user how to install it
 (`brew install gh jq` for the common case; `security` ships with macOS; `git`
@@ -419,8 +419,9 @@ space-separated (for example `PIN_REPLACE="holmes watson"`). An agent answered
 # Writes:  model and effort for the named agents only. Every other key, and
 #          every other agent, keeps its value.
 # Exits:   1 when the config is unreadable, when it or a named agent's entry
-#          has the wrong shape, or when the write fails. The file is then left
-#          exactly as it was.
+#          has the wrong shape, or when the write fails. Every check runs before
+#          the write, so the file is left as it was unless the write itself
+#          fails partway.
 PIN_CFG="${DEVTEAM_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
 PIN_AGENTS="lestrade holmes watson"
 PIN_MODEL="claude-opus-5-5[1m]"
@@ -462,19 +463,21 @@ elif PIN_SHAPE=$(jq -r "$PIN_SHAPE_JQ" "$PIN_CFG" --args $PIN_TARGETS 2>/dev/nul
   done
   exit 1
 else
-  PIN_TMP=$(mktemp)
-  if jq --arg m "$PIN_MODEL" --arg e "$PIN_EFFORT" \
+  # The new config is held in a variable and checked before it is written, so no
+  # temporary file is left to tidy up. This block must name no file-removal verb:
+  # workbench-core's destructive-scope guard refuses a whole command that removes
+  # a path it cannot resolve.
+  if PIN_NEW=$(jq --arg m "$PIN_MODEL" --arg e "$PIN_EFFORT" \
         'reduce $ARGS.positional[] as $a (.;
            .agents[$a] = ((.agents[$a] // {}) + {model: $m, effort: $e}))' \
-        "$PIN_CFG" --args $PIN_TARGETS > "$PIN_TMP" 2>/dev/null \
-     && [ -s "$PIN_TMP" ] && jq empty "$PIN_TMP" 2>/dev/null \
-     && mv "$PIN_TMP" "$PIN_CFG" 2>/dev/null; then
+        "$PIN_CFG" --args $PIN_TARGETS 2>/dev/null) \
+     && [ -n "$PIN_NEW" ] && printf '%s\n' "$PIN_NEW" | jq empty 2>/dev/null \
+     && printf '%s\n' "$PIN_NEW" 2>/dev/null > "$PIN_CFG"; then
     for PIN_AGENT in $PIN_TARGETS; do
       echo "✅ $PIN_AGENT — model: $PIN_MODEL, effort: $PIN_EFFORT (other keys unchanged)"
     done
   else
-    rm -f "$PIN_TMP"
-    echo "❌ Could not write $PIN_CFG — left exactly as it was."
+    echo "❌ Could not write $PIN_CFG."
     exit 1
   fi
 fi
@@ -649,23 +652,24 @@ for STAMP_FILE in "$STAMP_ROOT"/agents/*.md; do
 
   # Rewrite the frontmatter only. Drop every existing `model:` and `effort:`
   # line first, then put the configured ones back directly before the closing
-  # fence. Dropping first is what makes a re-run idempotent AND makes a deleted
-  # config key actually delete the line — without it the two paths drift apart
-  # silently, which is the whole defect this step exists to close.
-  STAMP_TMP="${STAMP_FILE}.stamp.$$"
-  if awk -v model="$STAMP_MODEL" -v val="$STAMP_VALUE" '
+  # fence. Dropping first is what makes a re-run idempotent AND makes a config
+  # key that was taken out also take out the line — without it the two paths
+  # drift apart silently, which is the whole defect this step exists to close.
+  # The new file is held in a variable, so no temporary file is left to tidy up,
+  # and this block names no file-removal verb for workbench-core's
+  # destructive-scope guard to refuse.
+  if STAMP_NEW=$(awk -v model="$STAMP_MODEL" -v val="$STAMP_VALUE" '
         NR==1 && $0=="---"      { print; fm=1; next }
         fm && $0=="---"         { if (model != "") print "model: " model
                                   if (val != "")   print "effort: " val
                                   print; fm=0; next }
         fm && /^(model|effort):/ { next }
                                 { print }
-      ' "$STAMP_FILE" > "$STAMP_TMP" && [ -s "$STAMP_TMP" ]; then
-    mv "$STAMP_TMP" "$STAMP_FILE"
+      ' "$STAMP_FILE") && [ -n "$STAMP_NEW" ] && printf '%s\n' "$STAMP_NEW" 2>/dev/null > "$STAMP_FILE"; then
     echo "✅ $STAMP_AGENT — model: ${STAMP_MODEL:-(none — inherits the session)}, effort: ${STAMP_VALUE:-(none — inherits the session)}"
   else
-    # Never leave a truncated agent definition behind: keep the original.
-    rm -f "$STAMP_TMP"
+    # The awk output is checked before the write, so an empty result never
+    # replaces the agent definition.
     echo "⚠  $STAMP_AGENT — frontmatter rewrite failed, left untouched"
     STAMP_WARNED=$((STAMP_WARNED + 1))
   fi
@@ -750,8 +754,10 @@ Run **only** the block matching `ATTR_CHOICE`. Both are non-destructive: `jq`
 reads the whole settings object and writes it back with only the two
 `attribution` keys touched, so unrelated settings (permissions, env, hooks,
 `outputStyle`) are preserved. Each branch refuses up front if the existing file
-isn't valid JSON, validates the produced file with `jq empty` before replacing,
-and makes **no write** when the file already matches the chosen end-state.
+isn't valid JSON, checks the new content with `jq empty` before it writes, and
+makes **no write** when the file already matches the chosen end-state. Neither
+uses a temporary file or a file-removal verb, so workbench-core's
+destructive-scope guard has nothing to refuse.
 
 **If `ATTR_CHOICE` is `suppress`:**
 
@@ -762,26 +768,24 @@ if [ -f "$SETTINGS" ] \
   echo "✅ already suppressed (commit + PR trailers) — no change"
   ATTR_RESULT="suppressed"
 else
-  tmp="$(mktemp)"
   if [ -f "$SETTINGS" ]; then
     # Refuse up front if the existing file isn't valid JSON — never clobber it.
     if ! jq empty "$SETTINGS" 2>/dev/null; then
-      rm -f "$tmp"
       echo "❌ Refusing to touch $SETTINGS — existing file is not valid JSON. Fix it by hand, then re-run."
       exit 1
     fi
-    jq '.attribution.commit = "" | .attribution.pr = ""' "$SETTINGS" > "$tmp"
+    NEW=$(jq '.attribution.commit = "" | .attribution.pr = ""' "$SETTINGS")
   else
     mkdir -p "$(dirname "$SETTINGS")"
-    jq -n '{ attribution: { commit: "", pr: "" } }' > "$tmp"
+    NEW=$(jq -n '{ attribution: { commit: "", pr: "" } }')
   fi
-  # Validate the produced file before replacing — never leave settings.json malformed.
-  if ! jq empty "$tmp" 2>/dev/null || [ ! -s "$tmp" ]; then
-    rm -f "$tmp"
+  # Check the new content before it is written — never leave settings.json
+  # malformed. It is held in a variable, so no temporary file is left to tidy up.
+  if [ -z "$NEW" ] || ! printf '%s\n' "$NEW" | jq empty 2>/dev/null; then
     echo "❌ Refusing to write — produced invalid JSON for $SETTINGS"
     exit 1
   fi
-  mv "$tmp" "$SETTINGS"
+  printf '%s\n' "$NEW" > "$SETTINGS" || { echo "❌ Could not write $SETTINGS"; exit 1; }
   echo "✅ attribution suppressed (commit + PR trailers)"
   ATTR_RESULT="suppressed"
 fi
@@ -802,19 +806,18 @@ else
     echo "❌ Refusing to touch $SETTINGS — existing file is not valid JSON. Fix it by hand, then re-run."
     exit 1
   fi
-  tmp="$(mktemp)"
   # Drop only our two keys; if that leaves .attribution an empty object, drop it
   # too so the harness default returns. Sibling attribution keys are preserved.
-  jq 'del(.attribution.commit, .attribution.pr)
+  NEW=$(jq 'del(.attribution.commit, .attribution.pr)
       | if (.attribution // {}) == {} then del(.attribution) else . end' \
-      "$SETTINGS" > "$tmp"
-  # Validate the produced file before replacing — never leave settings.json malformed.
-  if ! jq empty "$tmp" 2>/dev/null || [ ! -s "$tmp" ]; then
-    rm -f "$tmp"
+      "$SETTINGS")
+  # Check the new content before it is written — never leave settings.json
+  # malformed. It is held in a variable, so no temporary file is left to tidy up.
+  if [ -z "$NEW" ] || ! printf '%s\n' "$NEW" | jq empty 2>/dev/null; then
     echo "❌ Refusing to write — produced invalid JSON for $SETTINGS"
     exit 1
   fi
-  mv "$tmp" "$SETTINGS"
+  printf '%s\n' "$NEW" > "$SETTINGS" || { echo "❌ Could not write $SETTINGS"; exit 1; }
   echo "✅ attribution left in (default Co-Authored-By trailer restored)"
   ATTR_RESULT="default (visible)"
 fi
@@ -823,126 +826,138 @@ fi
 Carry `ATTR_RESULT` (`suppressed` or `default (visible)`) into the Step 8
 summary.
 
-## Step 6.6 — Install the commit-approval command and its permission rules
+## Step 6.6 — Install the commit, push, and merge ask rules
 
-The commit-approval gate (`hooks/scripts/commit-approval-gate.sh`) denies every
-plain one-line `git commit` and `git push` in a foreground session that the human
-has not approved, and refuses outright any other command that names one. The same script approves both, because a request is keyed by the exact
-command text and its working directory.
-`bin/approve-commit.sh` is how the approval arrives, and **this step is what lets it
-grant anything**: it installs that script at a stable path and adds the three
-`permissions.ask` rules covering it. Agents run it by its short name,
-`approve <request-id> '<subject>'`: that is `bin/approve`, which the harness
-puts on PATH from the plugin's `bin/`, and which runs the installed script. Its
-rule is `Bash(approve:*)`. The other two rules cover the long form,
-`bash "$HOME/.claude-workbench/bin/approve-commit.sh"`, in both spellings.
+The human approves a commit in chat, after reviewing the tree. Claude Code's
+own permission prompt is the mechanical backstop on every commit, push, and
+pull request merge. This step adds ten `permissions.ask` rules to
+`~/.claude/settings.json`:
 
-**An install set up before `approve` existed needs this step re-run.** The
-plugin update puts `approve` on PATH before its rule is in settings. `approve`
-refuses until the rule is there, so nothing is granted unprompted. Until then,
-the long form still prompts and still works.
+- `Bash(git commit *)`
+- `Bash(git push *)`
+- `Bash(git * commit *)`
+- `Bash(git * push *)`
+- `Bash(git * commit)`
+- `Bash(git * push)`
+- `Bash(gh pr merge:*)`
+- `Bash(gh * pr merge *)`
+- `Bash(gh * pr merge)`
+- `Bash(gh api *pulls/*/merge*)`
 
-The rules are the mechanism, not decoration. A `PreToolUse` hook can answer only
-allow / deny / ask, and its "ask" is *classifier-approvable* — under
-`permissions.defaultMode "auto"` the auto-mode classifier answers it and no human
-is prompted, which is why the gate never once stopped a commit before v0.44.0.
-A permission **rule** is evaluated before the classifier in every mode, so
-running a command a rule names does produce a real prompt. The human answering
-that prompt is the approval.
+The mid-rule `*` forms catch `git -C <dir> push`, `git -c <key>=<value>
+commit`, and `gh -R <owner/repo> pr merge <n>`. A trailing ` *` also matches
+the bare command only when it is the rule's only wildcard, so each mid-rule form
+has a twin with no trailing `*`. `git * push` catches a bare
+`git -C <dir> push`, `git * commit` a bare `git -C <dir> commit`, and
+`gh * pr merge` a bare `gh -R <owner/repo> pr merge`, which merges the current
+branch's pull request. `gh pr merge:*` is the rule
+workbench-core's setup also installs, so the two do not duplicate. The last rule
+catches a merge through the REST API. An ask rule applies to every subcommand of
+a compound command, including `$( … )`, subshells, and loop bodies. It is
+checked before auto mode and before `bypassPermissions`, and the harness strips
+`timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`, `builtin`, and
+`noglob` before it matches. Some reads prompt too: `git stash push`,
+`git log --grep commit`, and a `gh api` read of `pulls/<n>/merge`. The commit
+guard refuses the git ones outright for a sub-agent.
 
-**This lane is the foreground session's, and only that.** A sub-agent's request
-is background and non-interactive, so the same rule prompts nobody there — which
-is how 48 sub-agent self-approvals landed in the gate's first day, a median 3.4
-seconds after each denial. Since v0.45.0 the gate refuses a sub-agent's commit,
-merge, and push outright, issues it no request id, and writes it no record, so
-nothing installed here can approve anything for one. A sub-agent hands its work
-back uncommitted instead.
+The rules do not see a commit, push, or merge behind `bash -c`, `sh -c`, `env`,
+`eval`, a leading `NAME=value` such as `HUSKY=0`, or a program named by its
+path. The plugin's commit guard (`hooks/scripts/commit-guard.sh`) refuses those
+forms and asks for the plain line. It also refuses a sub-agent's commit or push,
+any merge by a sub-agent or by the pipeline, and any push that forces or deletes.
 
-**Do not "simplify" this by putting `Bash(git commit:*)` or `Bash(git push:*)`
-in the ask list.** An ask rule always prompts, a headless `claude -p` run has
-nobody to answer, and the pipeline would die at its first commit or push. workbench-core's rails exclude it for
-that reason, and `hooks/test-permissions.sh` there asserts the absence.
+**This is a mistake-catcher, not a security boundary.** A script file, an
+interpreter such as `python3 -c`, or a shell alias gets past the rules and the
+guard alike. The design stops an honest agent that moves too fast. It does not
+stop an agent that sets out to evade it.
+
+**The scheduled pipeline still commits unattended.** `claude -p` denies a prompt
+nobody answers, and `--dangerously-skip-permissions` does not skip ask rules.
+The plugin's `PermissionRequest` hook (`hooks/scripts/pipeline-scope.sh`)
+answers a pipeline prompt with "allow", and only when
+`WORKBENCH_DEV_TEAM_PIPELINE=1` is in its own environment. It allows one plain
+`git -C <dir>`, `rm`, or `rmdir` command per call, and only when every path is
+absolute and stays inside the roots: all of `$TMPDIR`, where every `mktemp -d`
+folder lands, so another run's clone is in scope too, and the scratch roots.
+The git subcommand must be one the pipelines use: `add`, `checkout`, `commit`,
+`diff`, `log`, `merge`, or `push`. It never allows a pull request merge, a force
+push, a push to the default branch, or a command that one of your deny rules
+matches. `bin/dispatch-agent.sh` exports the flag,
+and starts each run in a fresh, empty `mktemp -d` folder rather than in this
+repo. A sub-agent of an interactive session does not carry the flag unless the
+session itself does.
+
+**Do not set `WORKBENCH_DEV_TEAM_PIPELINE=1` with a shell `export` or in a
+settings `env` block.** Either one puts the flag on an interactive session. The
+hook then allows that session's in-scope commit and push prompts with no human
+asked, and the guard stops refusing a sub-agent's commit or push.
+
+The block also removes the old approval gate's three `approve` ask rules from
+the settings file. It does not remove the gate's files, because workbench-core's
+destructive-scope guard refuses a removal outside the project, and would refuse
+the whole block with it. Instead it prints one `LEGACY_LEFT <path>` line for
+each file that is still there.
 
 Run it from anywhere:
 
 ```bash
-# >>> commit-approval-install >>>
+# >>> commit-ask-rules-install >>>
 set -u
-REGISTRY="$HOME/.claude/plugins/installed_plugins.json"
-PLUGIN_KEY="workbench-dev-team@claude-workbench"
-APPROVE_ROOT=""
-
-# Registry first, running root second — the same stale-snapshot trap Step 7a
-# documents in full. `$CLAUDE_PLUGIN_ROOT` in a resumed session can be weeks old.
-if [ -f "$REGISTRY" ] && jq empty "$REGISTRY" 2>/dev/null; then
-  CAND=$(jq -r --arg key "$PLUGIN_KEY" '
-    (.plugins[$key] // [])
-    | map(select((.enabled != false) and ((.installPath // "") != "")))
-    | sort_by((.version // "0") | split(".") | map(tonumber? // 0))
-    | (last // {}).installPath // empty' "$REGISTRY" 2>/dev/null || true)
-  if [ -n "$CAND" ] && [ -f "$CAND/bin/approve-commit.sh" ]; then APPROVE_ROOT="$CAND"; fi
-fi
-if [ -z "$APPROVE_ROOT" ] && [ -f "${CLAUDE_PLUGIN_ROOT:-}/bin/approve-commit.sh" ]; then
-  APPROVE_ROOT="$CLAUDE_PLUGIN_ROOT"
-  echo "⚠  Installing approve-commit.sh from the running plugin root — a resumed session's copy can be stale."
-fi
-if [ -z "$APPROVE_ROOT" ]; then
-  echo "❌ Could not locate bin/approve-commit.sh in the installed or running plugin root."
-  echo "   Re-install or update the plugin, then re-run /workbench-dev-team:setup."
-  exit 1
-fi
-
-# Prove the shipped script before installing it. An approval command that
-# misbehaves is worse than none: it is the only thing standing between an agent
-# and an unreviewed commit.
-if ! bash "$APPROVE_ROOT/bin/test-approve-commit.sh" >/dev/null 2>&1; then
-  echo "❌ bin/test-approve-commit.sh FAILED — refusing to install it."
-  echo "   Re-run it directly for the detail:  bash $APPROVE_ROOT/bin/test-approve-commit.sh"
-  exit 1
-fi
-
-mkdir -p "$HOME/.claude-workbench/bin"
-install -m 755 "$APPROVE_ROOT/bin/approve-commit.sh" "$HOME/.claude-workbench/bin/approve-commit.sh"
-
 SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+mkdir -p "$(dirname "$SETTINGS")"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-cp "$SETTINGS" "$SETTINGS.bak-approve-$(date +%Y%m%d-%H%M%S)"
-# Additive, like every other settings write in this command: the short `approve`
-# rule and both spellings of the long form are added, and every other key is
-# left exactly as it was.
-jq --arg abs "Bash(bash $HOME/.claude-workbench/bin/approve-commit.sh:*)" \
-   --arg home 'Bash(bash "$HOME/.claude-workbench/bin/approve-commit.sh":*)' \
-   --arg short 'Bash(approve:*)' \
-   '.permissions.ask = ((.permissions.ask // []) + [$abs, $home, $short] | unique)' \
-   "$SETTINGS" > "$SETTINGS.tmp" \
-  && jq empty "$SETTINGS.tmp" \
-  && mv "$SETTINGS.tmp" "$SETTINGS" \
-  || { rm -f "$SETTINGS.tmp"; echo "❌ Could not update $SETTINGS — no commit can be approved until the rules are there."; exit 1; }
+cp "$SETTINGS" "$SETTINGS.bak-commit-rules-$(date +%Y%m%d-%H%M%S)"
 
-# End-to-end check: the installed copy must see its own rules. It refuses for
-# one of two reasons, and only one of them is the healthy one.
-CHECK=$(bash "$HOME/.claude-workbench/bin/approve-commit.sh" 0000000000000000 2>&1 || true)
-case "$CHECK" in
-  *"no commit is waiting"*)
-    echo "✅ Commit approval installed: $HOME/.claude-workbench/bin/approve-commit.sh, rules in $SETTINGS" ;;
-  *"permission rules"*)
-    echo "❌ approve-commit.sh cannot see its permission rules in $SETTINGS. Interactive commits stay blocked."
-    exit 1 ;;
-  *)
-    echo "⚠  approve-commit.sh answered unexpectedly: $CHECK"
-    exit 1 ;;
-esac
-# <<< commit-approval-install <<<
+# Additive for everything this step does not own: every other rule and key is
+# left exactly as it was. The three legacy approval rules are the only removals.
+# The new file is held in a variable and checked before it is written, so no
+# temporary file is left to tidy up. This block must name no file-removal verb:
+# workbench-core's destructive-scope guard refuses a whole command that removes
+# a path outside the project, and ~/.claude sits outside every project.
+RULES='["Bash(git commit *)", "Bash(git push *)", "Bash(git * commit *)", "Bash(git * push *)",
+        "Bash(git * commit)", "Bash(git * push)", "Bash(gh pr merge:*)", "Bash(gh * pr merge *)", "Bash(gh * pr merge)", "Bash(gh api *pulls/*/merge*)"]'
+NEW=$(jq --arg legacy_abs "Bash(bash $HOME/.claude-workbench/bin/approve-commit.sh:*)" \
+   --arg legacy_home 'Bash(bash "$HOME/.claude-workbench/bin/approve-commit.sh":*)' \
+   --argjson rules "$RULES" \
+   '.permissions.ask = (((.permissions.ask // [])
+       - [$legacy_abs, $legacy_home, "Bash(approve:*)"]) + $rules | unique)' \
+   "$SETTINGS") \
+  && printf '%s\n' "$NEW" | jq -e 'type == "object"' >/dev/null \
+  && printf '%s\n' "$NEW" > "$SETTINGS" \
+  || { echo "❌ Could not update $SETTINGS — commits, pushes, and merges are not prompted until the rules are there."; exit 1; }
+
+# The old gate's script and records do nothing now. The human removes them.
+for LEGACY in "$HOME/.claude-workbench/bin/approve-commit.sh" "$HOME/.claude-workbench/commit-approvals"; do
+  [ -e "$LEGACY" ] && echo "LEGACY_LEFT $LEGACY"
+done
+
+MISSING=$(jq -r --argjson rules "$RULES" '$rules - (.permissions.ask // []) | .[]' "$SETTINGS")
+if [ -n "$MISSING" ]; then
+  echo "❌ These ask rules are not in $SETTINGS: $MISSING"
+  exit 1
+fi
+echo "✅ Commit, push, and merge ask rules installed in $SETTINGS"
+# <<< commit-ask-rules-install <<<
 ```
 
-**If this block exits non-zero, say so plainly in the Step 8 summary: the
-foreground session's `git commit` is blocked until it succeeds.** That is the
-gate failing closed, which is the designed direction — an approval command that
-cannot prompt must not approve — but the human has to know the remedy is
-re-running setup. The scheduled pipeline is untouched either way: it carries
-`WORKBENCH_DEV_TEAM_PIPELINE=1`, and the gate exits before any of this. Sub-agent
-dispatches are untouched too, for the opposite reason — they have no commit path
-to lose.
+**If the block printed a `LEGACY_LEFT` line, give the human the removal
+commands to run.** Do not run them yourself. Show only the lines whose path was
+printed, exactly as written here, and repeat them in the Step 8 summary:
+
+```
+! rm -f ~/.claude-workbench/bin/approve-commit.sh
+! rm -rf ~/.claude-workbench/commit-approvals
+```
+
+Both files are inert, so leaving them in place is safe.
+
+**If this block exits non-zero, say so plainly in the Step 8 summary.** Until
+the rules are in place, a foreground commit, push, or merge runs with no prompt.
+The guard still refuses a sub-agent's commit, push, or merge, so the sub-agent
+lane is safe either way. The scheduled pipeline keeps running, but with no rule
+its commits and pushes raise no prompt, so the scope hook never judges them. The
+guard still refuses its merges and force pushes, and workbench-core's
+destructive-scope guard still holds its deletes to scope.
 
 ## Step 7 — Register the scheduled Dispatch task
 
@@ -1203,14 +1218,17 @@ orchestrator writes, and the absolute path it expands to.
 SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 [ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
 cp "$SETTINGS" "$SETTINGS.bak-wrapper-$(date +%Y%m%d-%H%M%S)"
-jq --arg abs "Bash(bash $HOME/.claude-workbench/bin/dispatch-agent.sh:*)" \
+# The new file is held in a variable and checked before it is written, so no
+# temporary file is left to tidy up, and workbench-core's destructive-scope
+# guard finds no file-removal verb to refuse.
+NEW=$(jq --arg abs "Bash(bash $HOME/.claude-workbench/bin/dispatch-agent.sh:*)" \
    --arg home 'Bash(bash "$HOME/.claude-workbench/bin/dispatch-agent.sh":*)' \
    '.permissions.allow = ((.permissions.allow // []) + [$abs, $home] | unique)' \
-   "$SETTINGS" > "$SETTINGS.tmp" \
-  && jq empty "$SETTINGS.tmp" \
-  && mv "$SETTINGS.tmp" "$SETTINGS" \
+   "$SETTINGS") \
+  && printf '%s\n' "$NEW" | jq -e 'type == "object"' >/dev/null \
+  && printf '%s\n' "$NEW" > "$SETTINGS" \
   && echo "✅ Dispatch permission rules present in $SETTINGS" \
-  || { rm -f "$SETTINGS.tmp"; echo "⚠  Could not update $SETTINGS — add the rules by hand or Dispatch stays under the classifier."; }
+  || echo "⚠  Could not update $SETTINGS — add the rules by hand or Dispatch stays under the classifier."
 ```
 
 A failure here is a **warning, not a stop**: the task is still worth registering,
@@ -1252,6 +1270,14 @@ actual value lives outside the MCP tool surface, in the app's own per-profile
 `scheduled-tasks.json` registry — a separate file from the `SKILL.md` Step 7c
 just wrote.
 
+The working directory pinned here is the router's own. The agents it dispatches
+do not inherit it: `bin/dispatch-agent.sh` starts each one in a fresh, empty
+`mktemp -d` folder and unsets `CLAUDE_PROJECT_DIR`. A run started in this repo
+would take the live plugin repo as its project folder, where workbench-core's
+destructive-scope guard lets a delete run unprompted. The cost is that a run
+loads no project `CLAUDE.md` and no project `settings.local.json` deny rules.
+User-level settings still apply.
+
 ```bash
 TARGET_CWD="$HOME/Developer/workbench-dev-team"
 PATCHED=0
@@ -1261,22 +1287,21 @@ while IFS= read -r -d '' REG; do
     echo "⚠  $REG is not valid JSON — skipping"
     continue
   fi
-  tmp="$(mktemp)"
+  # Held in a variable and checked before it is written: no temporary file, and
+  # no file-removal verb for workbench-core's destructive-scope guard to refuse.
   if [ -d "$TARGET_CWD" ]; then
-    jq --arg cwd "$TARGET_CWD" \
+    NEW=$(jq --arg cwd "$TARGET_CWD" \
       '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = "claude-sonnet-5" | .cwd = $cwd)' \
-      "$REG" > "$tmp"
+      "$REG")
   else
-    jq '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = "claude-sonnet-5")' \
-      "$REG" > "$tmp"
+    NEW=$(jq '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = "claude-sonnet-5")' \
+      "$REG")
   fi
-  if jq empty "$tmp" 2>/dev/null && [ -s "$tmp" ]; then
-    mv "$tmp" "$REG"
+  if [ -n "$NEW" ] && printf '%s\n' "$NEW" | jq empty 2>/dev/null && printf '%s\n' "$NEW" > "$REG"; then
     echo "✅ pinned model=claude-sonnet-5 in $REG"
     PATCHED=$((PATCHED + 1))
   else
-    rm -f "$tmp"
-    echo "⚠  produced invalid JSON patching $REG — left untouched"
+    echo "⚠  produced invalid JSON patching $REG, or could not write it"
   fi
 done < <(find "$HOME/Library/Application Support" -path "*/claude-code-sessions/*/scheduled-tasks.json" -print0 2>/dev/null)
 
@@ -1305,6 +1330,9 @@ Print a clean summary block:
   Agent config:     ~/.claude-workbench/dev-team-config.json
   Attribution:      {ATTR_RESULT} in ~/.claude/settings.json
                     (suppressed = no Co-Authored-By; default (visible) = trailer on)
+  Commit prompts:   10 commit, push, and merge ask rules in ~/.claude/settings.json
+                    (or: ⚠ not installed — foreground commits and merges are not prompted)
+                    {LEGACY_COMMANDS}
   Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
                     (or: ⚠ not registered — re-run setup to register)
   Prompt source:    {SRC_ROOT}/scheduled-tasks/orchestrator.md (v{SRC_VERSION})
@@ -1340,6 +1368,9 @@ pin when the user kept their own at the pin check. Never print the pin in their
 place,
 and adjust the scheduled-task, prompt-source and router-model lines if
 registration was skipped or the patch found nothing.
+
+`{LEGACY_COMMANDS}` is the `! rm` command for each `LEGACY_LEFT` line Step 6.6
+printed, one per line. When Step 6.6 printed none, omit that line.
 
 `{STALE_ROOT_WARNING}` is Step 7a's one-liner. **When it is empty (the common
 case — the running root is current) omit that line and the blank line above it

@@ -47,8 +47,10 @@ FAILED=()
 run_group() {
   local label="$1" prefix="$2" script
   local scripts=()
+  # A tracked script deleted in the working tree is skipped: the suite is the
+  # tree as it stands, and a deletion not yet staged is still a deletion.
   while IFS= read -r script; do
-    [ -n "$script" ] && scripts+=("$script")
+    [ -f "$script" ] && scripts+=("$script")
   done < <(git ls-files --cached --others --exclude-standard \
     "*/${prefix}-*.sh" "${prefix}-*.sh" | sort -u)
 

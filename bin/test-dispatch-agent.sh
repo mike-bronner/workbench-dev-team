@@ -3,6 +3,7 @@
 #
 # Runs the real script in DISPATCH_DRY_RUN mode against fixture configs, so the
 # assertions cover the shipped argument-building logic without spawning agents.
+# The run-folder cases spawn for real, against a stub `claude` on PATH.
 #
 # Run: bash bin/test-dispatch-agent.sh
 set -u
@@ -95,9 +96,9 @@ expect_has  "sweep log slug"     "lestrade-sweep-mike-bronner-phpcs-rules-" "$ou
 expect_has  "sweep takes no lock" "lock=none"          "$out"
 
 echo "— pipeline carve-out"
-# Every dispatch is headless, so every dispatch must carry the flag the
-# commit-approval gate reads. A lane that misses it is denied at its first
-# commit, and the approval it is told to ask for needs a human who is not there.
+# Every dispatch is headless, so every dispatch must carry the flag the commit
+# guard reads. A lane that misses it is denied at its first commit, because the
+# ask-rule prompt needs a human who is not there.
 for agent in lestrade holmes watson; do
   expect_has "$agent dispatch is flagged as pipeline" "pipeline=1" "$(run "$FULL" "$agent" 7)"
 done
@@ -198,6 +199,58 @@ out=$(run "$FULL" lestrade 8)
 expect_lacks "no budget stays absent under reprieve" "--max-budget-usd" "$out"
 out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
 expect_has  "an env REPRIEVE=1 buys nothing without a marker" "--max-budget-usd 10 " "$out"
+
+echo "— the run starts in a fresh, empty folder"
+# A real spawn, with `claude` and `security` stubbed on PATH, so no agent starts
+# and no Keychain is read. The stub records where it started. `mktemp` is stubbed
+# too, because macOS mktemp -d uses DARWIN_USER_TEMP_DIR before TMPDIR: the stub
+# accepts exactly `-d` and makes the folder under this suite's work directory.
+# The caller stands in for Dispatch in the plugin repo: its cwd is the repo,
+# CLAUDE_PROJECT_DIR names it, and LOGDIR is relative, so the log must still
+# land beside the caller.
+STUB="$WORK/stub"; FAILSTUB="$WORK/failstub"; CALLER="$WORK/caller"; RUNTMP="$WORK/tmp"
+mkdir -p "$STUB" "$FAILSTUB" "$CALLER" "$RUNTMP"
+printf '#!/bin/sh\nexit 1\n' > "$STUB/security"
+printf '#!/bin/sh\nexit 1\n' > "$FAILSTUB/mktemp"
+printf '#!/bin/sh\n[ "$*" = -d ] || exit 2\nexec "%s" -d "%s/run.XXXXXX"\n' "$(command -v mktemp)" "$RUNTMP" > "$STUB/mktemp"
+printf '%s\n' '#!/bin/sh' \
+  '{ pwd -P; ls -A | wc -l | tr -d " "; echo "${CLAUDE_PROJECT_DIR-unset}"; echo "${WORKBENCH_DEV_TEAM_PIPELINE-unset}"; echo $$; } > "$STUB_OUT.part"' \
+  'mv "$STUB_OUT.part" "$STUB_OUT"; echo "stub ran"' > "$STUB/claude"
+chmod +x "$STUB/security" "$STUB/mktemp" "$STUB/claude" "$FAILSTUB/mktemp"
+# spawn <item> [extra PATH prefix] -> echoes the script's output
+spawn() {
+  (cd "$CALLER" && env -u WORKBENCH_DEV_TEAM_PIPELINE PATH="${2:+$2:}$STUB:$PATH" STUB_OUT="$WORK/stub-$1" \
+    CLAUDE_PROJECT_DIR="$CALLER" DISPATCH_CONFIG="$FULL" LOGDIR=logs bash "$SCRIPT" watson "$1" 2>&1)
+}
+wait_for() { local i=0; while [ ! -s "$1" ] && [ "$i" -lt 50 ]; do sleep 0.2; i=$((i + 1)); done; }
+out=$(spawn 9); wait_for "$WORK/stub-9"
+expect_has "the dispatch reports a spawn" "dispatched watson pid=" "$out"
+started=$(sed -n 1p "$WORK/stub-9" 2>/dev/null)
+real_tmp=$(cd -P "$RUNTMP" && pwd -P)
+case "$started" in "$real_tmp"/run.?*) echo "  ok   — the run starts in the folder mktemp -d made"; pass=$((pass+1)) ;;
+  *) echo "  FAIL — the run started in '$started', not in a mktemp -d folder under $real_tmp"; fail=$((fail+1)) ;; esac
+expect_lacks "the run does not start in the caller's cwd" "$CALLER" "$started"
+expect_eq "the run's folder is empty"       "0"     "$(sed -n 2p "$WORK/stub-9" 2>/dev/null)"
+expect_eq "CLAUDE_PROJECT_DIR is not inherited" "unset" "$(sed -n 3p "$WORK/stub-9" 2>/dev/null)"
+expect_eq "the pipeline flag reaches the run" "1"   "$(sed -n 4p "$WORK/stub-9" 2>/dev/null)"
+log=$(ls "$CALLER/logs/watson-9-"*.log 2>/dev/null | head -1)
+expect_has "a relative LOGDIR still gets the run's output" "stub ran" "$(cat "$log" 2>/dev/null)"
+expect_has "the lock holds the spawned PID" "pid=$(cat "$CALLER/logs/watson-9.lock" 2>/dev/null) " "$out"
+# The stub records its own $$. Without the exec, the lock would hold the PID of
+# the subshell that forked it, and the two would differ.
+expect_eq "the lock holds the agent's own PID" "$(sed -n 5p "$WORK/stub-9" 2>/dev/null)" "$(cat "$CALLER/logs/watson-9.lock" 2>/dev/null)"
+spawn 10 >/dev/null; wait_for "$WORK/stub-10"
+second=$(sed -n 1p "$WORK/stub-10" 2>/dev/null)
+if [ -n "$second" ] && [ "$second" != "$started" ]; then echo "  ok   — each run gets its own folder"; pass=$((pass+1))
+else echo "  FAIL — two runs shared '$second'"; fail=$((fail+1)); fi
+# No folder, no run: a fallback to the caller's cwd is the case this prevents.
+out=$(spawn 11 "$FAILSTUB"); code=$?
+expect_eq  "a failed mktemp exits non-zero" "1" "$code"
+expect_has "...and says nothing was dispatched" "nothing dispatched" "$out"
+sleep 0.5
+expect_eq  "...and spawns nothing" "absent" "$([ -e "$WORK/stub-11" ] && echo present || echo absent)"
+leftover=absent; for f in "$CALLER/logs/"*-11[.-]*; do [ -e "$f" ] && leftover=present; done
+expect_eq  "...and writes no log or lock" "absent" "$leftover"
 
 echo
 echo "passed: $pass  failed: $fail"

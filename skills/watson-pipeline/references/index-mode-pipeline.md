@@ -12,7 +12,7 @@ Direct mode never uses this file.
 
 ### 0. Confirm this run can commit — before the claim
 
-An Index run ends in commits and pushes, and the commit gate lets them through
+An Index run ends in commits and pushes, and the plugin's hooks let them through
 only for a process that `bin/dispatch-agent.sh` spawned with
 `WORKBENCH_DEV_TEAM_PIPELINE=1`. The Agent tool cannot set that variable. A run
 without it would claim the item, move it to `In Progress`, and then die at its
@@ -348,22 +348,63 @@ duplicate branch.
 TYPE=feature   # set to fix or chore when the issue calls for it
 SLUG="$(echo '<title>' | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | cut -c1-50)"
 BRANCH="$TYPE/<issue_number>-$SLUG"
+echo "$BRANCH"
 
 # A fresh mktemp -d directory per run. With no host-wide lock two Watsons run
 # side by side, and a directory of its own means no `rm -rf` can take the other's
-# uncommitted work, whatever repo or issue number each carries. Note the path it
-# prints: step 10 removes it by that path, written out in full.
+# uncommitted work, whatever repo or issue number each carries. The run itself
+# starts in another empty mktemp -d folder, which bin/dispatch-agent.sh made,
+# so no repo is ever the run's working directory until this clone exists.
 CLONE=$(mktemp -d)
 echo "$CLONE"
 gh repo clone <repo> "$CLONE"
 cd "$CLONE"
 git checkout -b "$BRANCH"
-# The trailer is Watson's provenance mark. Step 3 reads it to tell its own branch from a human's,
-# so keep it exactly as written, on its own line, on this first commit. Without it, the next run
-# treats this branch as a human's and hands off instead of resuming.
-git commit --allow-empty -m "chore: start work on #<issue_number>" -m "Watson-Branch: #<issue_number>"
-git push -u origin "$BRANCH"
 ```
+
+This block prints two values: `<branch>` and `<clone path>`. Write both out in
+full in every command that commits, pushes, or removes a path. The hooks that
+judge those commands cannot read a variable.
+
+Then make the first commit and push it, as two plain lines. The trailer is
+Watson's provenance mark. Step 3 reads it to tell its own branch from a human's,
+so keep it exactly as written, on its own line, on this first commit. Without
+it, the next run treats this branch as a human's and hands off instead of
+resuming.
+
+```bash
+git -C <clone path> commit --allow-empty -m 'chore: start work on #<issue_number>' -m 'Watson-Branch: #<issue_number>'
+git -C <clone path> push -u origin <branch>
+```
+
+**Every commit, push, and cleanup in this run is a plain line like these.**
+`--dangerously-skip-permissions` does not skip the commit and push ask rules,
+and a `-p` run denies a prompt nobody answers. The plugin's `PermissionRequest`
+hook (`hooks/scripts/pipeline-scope.sh`) answers the prompt for a pipeline
+run, and only when it can read every path:
+
+- The call is one command: `git -C <clone path> …`, `rm …`, or `rmdir …`. No
+  `cd`, and no `&&`, `;`, or new line joining two commands. Run each one as a
+  call of its own.
+- Every path is absolute, with no `.` or `..` part, and inside a root: the
+  session scratchpad, `~/Developer/scratchpad`, or `$TMPDIR`, where every
+  `mktemp -d` directory lands. `rm` and `rmdir` act strictly beneath one of
+  them, and git's repository must be in one too. The working directory does not
+  count, so a bare `git commit` in the clone is denied.
+- `rmdir` takes no option. `rm` takes its options before its first path, never
+  after it.
+- No `$VARIABLE`, `$( … )`, backtick, glob, pipe, redirect, `~`, `^`, or
+  subshell. Pass a one-line message in single quotes. Write a longer one to the
+  session scratchpad and pass `-F <absolute path>`.
+- No git option before the subcommand (`-c`, `--git-dir`, `--work-tree`). The
+  subcommand is `add`, `checkout`, `commit`, `diff`, `log`, `merge`, or `push`.
+- A push names one branch: `git -C <clone path> push [-u] origin <branch>`.
+  Its source is a local branch in the clone, never a tag. Never a bare push, `HEAD`, `@`, or `--all`, never a force or a delete, never
+  a destination that starts with `heads/`, `tags/`, or `remotes/`, and never
+  the repo's default branch. You never merge a pull request.
+
+Anything else is denied. That is the hook working. Rewrite the command as a plain
+line that fits. Never reword, split, encode, or rebuild a command to get past it.
 
 Then open the draft PR **locally with `gh`** — gh is authenticated as *you* (the
 human), so you own the PR, not a bot:
@@ -388,10 +429,10 @@ merge — no separate linking step needed.
 On a resume: clone fresh into a new `mktemp -d` directory, as above. A prior
 run's clone is never reused: every run pushes its work before it exits and
 removes its clone in step 10, so the branch on the remote is the whole state.
-Check out `$BRANCH`, bring in the default branch with `git merge "origin/$BASE"`,
-and continue. **Merge, never rebase.** The branch is already pushed, so a rebase
-rewrites its history, and the next push then needs a force push. The commit gate
-refuses every force push with no approval path, and Watson never force-pushes.
+Check out `<branch>`, bring in the default branch with
+`git -C <clone path> merge origin/<default branch>`, and continue. **Merge, never rebase.** The branch is already pushed, so a rebase
+rewrites its history, and the next push then needs a force push. The commit guard
+refuses every force push outright, and Watson never force-pushes.
 Resolve any conflict in a merge commit of its own.
 
 ### 6. Implement, test, commit
@@ -604,7 +645,7 @@ gh pr checks $PR_NUM -R <repo> --watch --interval 30
 - **Any check red** → this is your work to finish *now*, on the same branch:
   1. Read the failure — `gh pr checks $PR_NUM -R <repo>` for the summary, then
      `gh run view <run-id> -R <repo> --log-failed` for the failing job's log.
-  2. Fix it, commit, and `git push origin "$BRANCH"`.
+  2. Fix it, commit, and push with `git -C <clone path> push origin <branch>`.
   3. Re-run the `--watch` above. Repeat until green.
 
   Treat every failing check as yours regardless of whether your diff "caused" it
@@ -639,13 +680,13 @@ mcp__the-index__release_item(<ITEM_ID>)
 ```
 
 ```bash
-rm -rf <the clone path step 5 printed>
+rm -rf <clone path>
 ```
 
-Write the path out in full. workbench-core's destructive-scope guard permits an
-`rm` inside a `mktemp -d` directory, and it refuses one whose target is a
-variable such as `"$CLONE"` or a glob, because it cannot tell what it would
-delete.
+Write the path step 5 printed out in full. workbench-core's destructive-scope
+guard and this plugin's pipeline scope hook both permit an `rm` inside a
+`mktemp -d` directory, and both refuse one whose target is a variable such as
+`"$CLONE"` or a glob, because neither can tell what it would delete.
 
 The claim has no automatic release — if you exit early (blocked, wrong lane,
 hands-off, budget), release it yourself on the way out.

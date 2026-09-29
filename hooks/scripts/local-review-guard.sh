@@ -9,10 +9,9 @@
 # a lens sub-agent ran `chmod` against that directory anyway and changed a
 # script from 755 to 644. Prose in an agent prompt is advisory. This hook is not.
 #
-# It is a sibling of commit-approval-gate.sh, never an extension of it: that
-# gate's lanes and its approval records are load-bearing for every commit in
-# this repository, and they are left exactly as they are. What is borrowed is
-# its reasoning, including the two traps its header records.
+# It is a sibling of commit-guard.sh, never an extension of it. What is borrowed
+# is the reasoning of the commit approval gate that guard replaced, including the
+# two traps recorded below.
 #
 # ── WHAT IT DOES ──────────────────────────────────────────────────────────────
 #
@@ -45,7 +44,7 @@
 # Enforcement also requires a non-empty `agent_id`, which means a sub-agent. The
 # main thread of the dispatching session keeps editing its own tree while the
 # review reads it, which is the difference between a guard and a lock. `agent_id`
-# is the same field the commit gate settled on, for the same reason: the harness
+# is the same field the commit guard keys on, for the same reason: the harness
 # supplies it, and it is empty for a main session and non-empty for every
 # sub-agent.
 #
@@ -191,8 +190,7 @@
 # reads, so it is ONE line naming the action that was gated.
 # `additionalContext` survives a deny and arrives in its own block that only the
 # model reads, so every recovery instruction lives there. Nothing is cut; it
-# stops being in the human's way. Same shape as commit-approval-gate.sh, which
-# is the sibling this borrows its reasoning from.
+# stops being in the human's way. Same shape as commit-guard.sh.
 #
 # Exit 0 with no output = no opinion (normal permission flow applies).
 # Exit 0 with permissionDecision "deny" = the harness refuses the call.
@@ -205,8 +203,8 @@
 
 set -u
 
-# Pipeline carve-out, checked first and for the same reason as the commit gate's:
-# the scheduled Index pipeline is the board's only review path, it never reviews
+# Pipeline carve-out, checked first, before the payload is read: the scheduled
+# Index pipeline is the board's only review path, it never reviews
 # a live working tree, and it must not inherit a rule written for one.
 if [ "${WORKBENCH_DEV_TEAM_PIPELINE:-0}" = "1" ]; then
   exit 0
@@ -222,8 +220,8 @@ export GUARD_MODE
 GUARD_STDIN="$(cat)"
 export GUARD_STDIN
 
-# HOME is the normal home for this state. Unlike the commit gate, an unaddressable
-# HOME falls back to the temp directory rather than refusing: a record here is a
+# HOME is the normal home for this state. An unaddressable HOME falls back to
+# the temp directory rather than refusing: a record here is a
 # RESTRICTION keyed to one session, so a shared directory cannot hand anybody a
 # capability. The worst a planted record does is hold one session's sub-agents to
 # reading, which is the direction this guard already fails in.
@@ -267,9 +265,8 @@ fi
 
 # Without a working python3 the classifier never runs, and a hook that errors is
 # a non-blocking error to the harness: the call runs as if no guard existed. So
-# this path refuses on its own terms, and they are the guard's, not the commit
-# gate's. The gate's fallback refuses text that names git, which is what the gate
-# guards. This guard stops rm, mv, chmod, redirects, and edits into the tree, and
+# this path refuses on its own terms. A fallback that refused text naming git
+# would miss everything this guard is for. This guard stops rm, mv, chmod, redirects, and edits into the tree, and
 # none of those name git.
 #
 # Without python3 nothing can be judged: not the command, not the session a
@@ -548,7 +545,7 @@ IN_PLACE_EDITORS = {
 }
 
 # git options that consume the next token as their value, so the verb search
-# must step over both. Same shape as the commit gate's.
+# must step over both.
 GIT_OPTS_WITH_ARG = {"-C", "-c", "--git-dir", "--work-tree", "--namespace", "--exec-path"}
 
 # A `|` or `&` straight after `>` or `<` belongs to a redirect operator (`>|`,

@@ -15,10 +15,10 @@ Three lanes run this skill, and several steps below end differently in each.
 Know which one you are in before you start.
 
 - **Foreground session** — a human is in the conversation. You can ask and wait,
-  and you commit and push through the approval gate (§5).
+  and you commit only after the human says "commit it" in chat (§5).
 - **Sub-agent** — dispatched through the Agent tool, Watson's Direct mode
-  included. No human is reachable, and the commit gate refuses every commit,
-  merge, and push. You finish with an **uncommitted working tree and a report**:
+  included. No human is reachable, the commit guard refuses every commit and
+  push, and you do not merge. You finish with an **uncommitted working tree and a report**:
   the diff summary and a proposed commit message. There is no PR to open.
 - **Scheduled Index pipeline** — `bin/dispatch-agent.sh` spawned you with
   `WORKBENCH_DEV_TEAM_PIPELINE=1`. You commit, push, and open the PR unattended;
@@ -226,17 +226,17 @@ files, flag it — don't guess.
 
 ## 5. Commit
 
-**Which lane you are in decides what you may do at all.** A plugin
-`PreToolUse` hook (`hooks/scripts/commit-approval-gate.sh`) sorts every Bash
-call by lane, and its verdict is `deny`, in every permission mode.
+**Which lane you are in decides what you may do at all.** Claude Code
+`permissions.ask` rules, installed by `/workbench-dev-team:setup`, prompt the
+human for every `git commit`, `git push`, and pull request merge. A plugin hook
+(`hooks/scripts/commit-guard.sh`) refuses what those rules cannot cover. It is
+a mistake-catcher, not a security boundary.
 
-**Sub-agent → you do not commit, merge, or push.** The hook refuses every git
-verb that writes a commit, integrates another history, or publishes one, plus
-every `gh` call that is not a read. No approval command is offered to you, and that is deliberate:
-anything you can run yourself is not an approval. The denial writes no pending
-record and ignores any record you might write by hand, so there is no route to
-find. Do not go looking for one. **Hand the work back instead**, in your final
-report:
+**Sub-agent → you do not commit, merge, or push.** The hook refuses your commit,
+your push, and your pull request merge, keyed on the harness-supplied
+`agent_id`. Do not look for another route, and never reword, split, encode, or
+rebuild a command to get past a refusal. **Hand the work back instead**, in
+your final report:
 
 1. Leave the working tree **uncommitted**, exactly as your change left it.
 2. Summarize the diff — files touched and what changed in each.
@@ -245,20 +245,27 @@ report:
 4. Say plainly that the work is uncommitted. A report that reads as finished,
    on a tree that is not, is how a change gets lost.
 
-The session that dispatched you commits it, where a prompt reaches a human. An
+The session that dispatched you commits it, once the human has reviewed it and
+approved in chat. An
 Index-mode run that finds its commits refused was dispatched without the
 pipeline flag: report that to the session that dispatched you, and stop.
 
-**Foreground session → attempt the commit or the push yourself, and let the gate
-prompt.** The human approves each `git commit` and each `git push` by answering a
-real prompt. The plain form the gate prompts for, and the approval steps, are
-canonical in the `/workbench-dev-team:git-commit` skill ("Committing and
-pushing"). Read it before your first commit.
+**Foreground session → commit after the human's explicit "commit it" in
+chat.** That chat approval, given after they review the tree, is the approval.
+Then attempt the commit yourself, and after it attempt the push, and let Claude
+Code ask. The harness's prompt is the mechanical backstop, not the approval,
+because a prompt that appears mid-flow gets answered without a review. The
+plain form the rules match is canonical in the `/workbench-dev-team:git-commit`
+skill ("Committing and pushing"). Read it before your first commit.
 
-**Scheduled pipeline → commit and push unattended.** The hook recognizes the
+**Scheduled pipeline → commit and push unattended.** The hooks recognize the
 pipeline by `WORKBENCH_DEV_TEAM_PIPELINE=1`, which `bin/dispatch-agent.sh`
-exports onto the process it spawns. Never set that variable yourself, never
-write an approval record by hand, and never edit the gate.
+exports onto the process it spawns. `hooks/scripts/pipeline-scope.sh` answers
+the prompt for one plain `git -C <clone>`, rm, or rmdir line whose every path is
+absolute and stays inside the roots, and nothing else. The roots are all of
+`$TMPDIR`, so another run's clone is in scope too, and the scratch roots. The
+pipeline never merges a pull request.
+Never set that variable yourself, and never edit the guard.
 
 ### Message format and hygiene
 

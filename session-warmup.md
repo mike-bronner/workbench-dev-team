@@ -6,7 +6,7 @@ For code implementation, bug fixes, refactors, and tests, use the `/workbench-de
 
 For any git commit message — manual, scripted, or agent-driven — use the `/workbench-dev-team:git-commit` skill. It enforces Conventional Commits + Gitmoji format with full type/emoji references. This applies universally, not just to dev-team automation.
 
-**Commit approval gate.** A sub-agent does not commit, merge, or push. It leaves the tree uncommitted and hands back the diff and the proposed commit message. The foreground session attempts the commit or push itself and lets the gate prompt the human.
+**Commit approval.** A sub-agent does not commit, merge, or push. It leaves the tree uncommitted and hands back the diff and the proposed commit message. The foreground session commits only after the human reviews the tree and says "commit it" in chat. It then attempts the commit and the push itself as plain `git` lines. Claude Code's permission prompt is the mechanical backstop, not the approval.
 
 ## Dev-team delegation
 

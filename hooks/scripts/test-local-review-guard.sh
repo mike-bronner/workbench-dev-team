@@ -116,8 +116,9 @@ run_guard "$(agent_payload PreToolUse "Explore" "$BRIEF")" >/dev/null
 check "a generic lens dispatch does not arm" "$(records)" 0
 
 # The scheduled pipeline never reviews a live working tree, and must not inherit
-# a rule written for one. Same carve-out signal the commit gate uses, checked
-# first so no state is even consulted.
+# a rule written for one. The signal is WORKBENCH_DEV_TEAM_PIPELINE=1, which
+# bin/dispatch-agent.sh exports. The guard checks it before it reads the
+# payload, so no state is even consulted.
 reset_state
 run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "$BRIEF")" WORKBENCH_DEV_TEAM_PIPELINE=1 >/dev/null
 check "the pipeline carve-out suppresses arming" "$(records)" 0
@@ -946,8 +947,7 @@ printf '%s' "$DENIAL" | grep -qi 'local-review guard' && ok "the denial names th
   || bad "the denial does not name the guard"
 printf '%s' "$DENIAL" | grep -q "$WORKDIR" && ok "the denial names the tree it protects" \
   || bad "the denial does not name the tree it protects"
-# The commit gate's lane 2 offers no approval path on purpose, and neither does
-# this. A denial that prints a way out is an invitation to take it.
+# The denial offers no approval path, on purpose. A denial that prints a way out is an invitation to take it.
 printf '%s' "$DENIAL" | grep -qi 'approve\|override\|WORKBENCH_LOCAL_REVIEW_DIR' \
   && bad "the denial leaks a way around itself" \
   || ok "the denial offers no way around itself"

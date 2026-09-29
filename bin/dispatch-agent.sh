@@ -40,13 +40,15 @@
 #   LOGDIR, DISPATCH_CONFIG  test overrides
 #
 # Environment set on the child:
-#   WORKBENCH_DEV_TEAM_PIPELINE=1   tells the commit-approval gate this run is
-#                                   the autonomous pipeline. See the export below.
+#   WORKBENCH_DEV_TEAM_PIPELINE=1   tells the plugin's hooks this run is the
+#                                   autonomous pipeline. See the export below.
 #
-# Exits non-zero on bad arguments only. A malformed or absent config never
-# blocks a dispatch — every knob falls back to its default, and a knob with no
-# default (model, effort) is left off, so the agent definition's own pin
-# applies where it has one and Claude Code's default applies where it has none.
+# Exits non-zero on bad arguments, and when mktemp -d cannot create the run's
+# folder. That check comes before any log or lock is written. A malformed or
+# absent config never blocks a dispatch — every knob falls back to its default,
+# and a knob with no default (model, effort) is left off, so the agent
+# definition's own pin applies where it has one and Claude Code's default
+# applies where it has none.
 set -u
 
 CONFIG="${DISPATCH_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
@@ -256,11 +258,18 @@ set -- --agent "workbench-dev-team:${AGENT}"
 [ -n "$BUDGET" ]   && set -- "$@" --max-budget-usd "$BUDGET"
 set -- "$@" --dangerously-skip-permissions "$PROMPT"
 
-# Mark the child as the autonomous pipeline. `hooks/scripts/commit-approval-gate.sh`
-# reads this and lets the run's commits through: nobody is at the keyboard, and a
-# headless `ask` prompt auto-denies, so an ungated commit rule would deadlock every
-# scheduled run at its first commit. The approval chain here is board dispatch,
-# Holmes review, and the human's own PR merge.
+# Mark the child as the autonomous pipeline. Two hooks read it.
+# `hooks/scripts/commit-guard.sh` (PreToolUse) skips the sub-agent refusal, which
+# `--agent` would otherwise trigger, because it puts an agent_id in every payload.
+# It still refuses the pipeline's merges. `hooks/scripts/pipeline-scope.sh`
+# (PermissionRequest) answers a prompt for one plain `git -C <dir>`, rm, or rmdir
+# line with "allow" when every path is absolute and stays inside the roots: all
+# of $TMPDIR, where every mktemp -d folder lands, so another run's clone is in
+# scope too, and the scratch roots.
+# Nobody is at the keyboard, `-p` denies a prompt nobody answers, and
+# --dangerously-skip-permissions does not skip ask rules, so without the flag
+# every scheduled run would die at its first commit. The approval chain here is
+# board dispatch, Holmes review, and the human's own PR merge.
 #
 # The dispatcher sets it, never the agent. It reaches exactly the process this
 # script spawns and its children, so an interactive session on the same machine
@@ -277,6 +286,18 @@ if [ "${DISPATCH_DRY_RUN:-0}" = 1 ]; then
   exit 0
 fi
 
+# The run starts in a fresh, empty mktemp -d folder, never in the caller's cwd.
+# Dispatch itself runs in ~/Developer/workbench-dev-team, and a child started
+# there would take the live plugin repo as its project folder. workbench-core's
+# destructive-scope guard treats the project folder as in scope, so a pipeline
+# `git reset --hard` or `rm -rf` there would run unprompted. The cost, accepted:
+# the run loads no project CLAUDE.md and no project settings.local.json deny
+# rules. User-level settings still apply. CLAUDE_PROJECT_DIR is unset, so the
+# child can only take its project folder from the new cwd. No folder, no run:
+# falling back to the caller's cwd is the case this exists to prevent.
+RUNDIR=$(mktemp -d) || { echo "$(basename "$0"): could not create a run folder with mktemp -d; nothing dispatched" >&2; exit 1; }
+unset CLAUDE_PROJECT_DIR
+
 mkdir -p "$LOGDIR"
 
 # The one thing the classifier reliably flagged: a Keychain read feeding a
@@ -285,7 +306,9 @@ mkdir -p "$LOGDIR"
 CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 export CLAUDE_CODE_OAUTH_TOKEN
 
-nohup claude -p "$@" > "$LOG" 2>&1 &
+# The redirect opens in this script's cwd, so a relative LOGDIR still resolves
+# where the pre-flight reads it. exec keeps $! the agent's own PID for the lock.
+(cd "$RUNDIR" && exec nohup claude -p "$@") > "$LOG" 2>&1 &
 DISPATCHED=$!
 [ -n "$LOCK" ] && printf '%s' "$DISPATCHED" > "$LOCK"
 disown 2>/dev/null || true

@@ -137,11 +137,11 @@ bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <ITEM_ID>
 
 Watson is serialized per item, not per host. The server returns at most one item per tick, and the **board claim** stops any later tick offering that same item to a second Watson, across hosts and visibly. Two Watsons on two *different* items are fine and expected — each gets its own clone, and neither can see the other's work. Nothing here caps how many run at once.
 
-There is no `/tmp/watson.lock` any more, and reintroducing one would be a regression. It capped the whole host at one Watson, and its live PID also told `hooks/scripts/commit-approval-gate.sh` to waive commit approval for every process on the machine, interactive sessions included. `bin/dispatch-agent.sh` now exports `WORKBENCH_DEV_TEAM_PIPELINE=1` onto the agent it spawns, which carries that signal to exactly the right process and no others.
+There is no `/tmp/watson.lock` any more, and reintroducing one would be a regression. It capped the whole host at one Watson, and its live PID also told the commit gate of that time to waive commit approval for every process on the machine, interactive sessions included. `bin/dispatch-agent.sh` now exports `WORKBENCH_DEV_TEAM_PIPELINE=1` onto the agent it spawns, which carries that signal to exactly the right process and no others.
 
 ## Rules
 
-- **Fire-and-forget.** `dispatch-agent.sh` backgrounds every run with `nohup ... &` + `disown` and returns immediately. Never wait for an agent to complete — Watson alone can run for hours.
+- **Fire-and-forget.** `dispatch-agent.sh` backgrounds every run with `nohup ... &` + `disown`, in a fresh `mktemp -d` folder, and returns immediately. Never wait for an agent to complete — Watson alone can run for hours.
 - **Copy the dispatch command byte-for-byte.** The only thing you substitute is the trailing target — the item's `id`, or `owner/repo` for a Lestrade sweep — and, for `--check` and `--mark-escalated`, the agent token. The path and the quoting are pasted verbatim, with nothing before `bash`: the command is matched against a `permissions.allow` prefix rule, and any reformatting (an environment prefix included) drops it back under the auto-mode classifier, which refuses the spawn nondeterministically.
 - **One Bash call per dispatch.** Don't batch multiple dispatches into one shell command — each needs its own log file and backgrounding.
 - **ITEM_ID is the `id` field** (`project_items.id`) of the item the lane tool returned — never `issue_number` or `pr_number`. Mixing them up dispatches an agent at a nonexistent item.
@@ -160,5 +160,5 @@ There is no `/tmp/watson.lock` any more, and reintroducing one would be a regres
 ## Failure modes
 
 - **MCP tool fails** — if any of the three list tools returns an error, log it, skip that lane, continue with the others. Do not retry in-process (the next tick retries naturally).
-- **Dispatch command fails** — `dispatch-agent.sh` exits non-zero only on a bad argument (unknown agent, non-numeric item id, a sweep target on a non-Lestrade lane) or a missing script. Log the exit code and the lane, skip that item, and continue with the rest — a re-dispatch on the next tick is free, a wedged tick is not.
+- **Dispatch command fails** — `dispatch-agent.sh` exits non-zero only on a bad argument (unknown agent, non-numeric item id, a sweep target on a non-Lestrade lane), a missing script, or a failed `mktemp -d` for the run's folder, which spawns nothing. Log the exit code and the lane, skip that item, and continue with the rest — a re-dispatch on the next tick is free, a wedged tick is not.
 - **The Index unreachable** — all three tools will fail. Output `the-index unreachable — skipping this tick` and exit cleanly.
