@@ -73,7 +73,7 @@ printf '%s' "$section" | grep -Eiq 'never create a (new )?(branch|worktree)|do n
   && tone+=("the check has been rewritten as a prohibition, which is not the policy")
 report "tone — the check asks the human, and refuses nothing" ${tone[@]+"${tone[@]}"}
 
-# The answer lands in Workdir:, which is why no sixth slot was added. A brief
+# The answer lands in Workdir:, which is why it has no slot of its own. A brief
 # whose Workdir carries a bare path must stay valid — most dispatches decide no
 # workspace at all — so the allowance is pinned beside the rule.
 slot=()

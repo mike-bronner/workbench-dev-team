@@ -37,14 +37,16 @@ failure was creating them without asking, so all three rules in the skill end in
 a question to the human and never in a refusal.
 
 **Why the answer is recorded in `Workdir:`** rather than in a `Constraints:`
-bullet or a sixth slot: the workbench-core gate matches exactly five
-line-anchored slot headers, and every agent in `agents/` refuses a brief missing
-one, so a sixth slot would break enforcement and every receiver at once. The
-gate greps headers and never slot content — `hooks/lib/brief-template.sh`
-patterns each slot as `^[[:space:]]*<Name>:` — and its own suite asserts that
-the README documents each header, never any wording inside one. Widening what
-`Workdir:` *means* therefore costs nothing at the enforcement layer, while a
-`Constraints:` bullet would have buried a workspace fact among hard limits.
+bullet or a slot of its own: a new slot costs a release of both plugins
+together. The workbench-core gate reads its slot list from
+`hooks/lib/brief-template.sh`, and every agent in `agents/` refuses a brief
+missing a slot, so a slot added on one side alone breaks enforcement or every
+receiver. The gate greps line-anchored headers and never slot content, and its
+own suite asserts that the README documents each header, never any wording
+inside one. Widening what `Workdir:` *means* therefore costs nothing at the
+enforcement layer, while a `Constraints:` bullet would have buried a workspace
+fact among hard limits. `Acceptance:` later paid the cost of a new slot, for the
+reason in its own section below: no existing slot could carry it.
 
 ## The fan-out exemption, and why it is a boundary
 
@@ -105,6 +107,46 @@ reproduces the bare instruction the whole template exists to kill.
 
 The pair was written the other way round once, which is why
 `agents/lint-brief-contract.sh` greps for both halves and fails on a flip.
+
+## Why `Acceptance:` is required, and why it is a slot of its own
+
+**Rule it explains:** every brief carries an `Acceptance:` list, and the
+receiver grades its forks and its report against it.
+
+Mike noticed the agent had stopped asking him questions, and an audit found that
+intake had never been a step. Asking was a fallback for vague requests, and
+several rules pushed against it. workbench-core now carries the routine as
+`/workbench-core:intake`: the goal, the context, questions only about gaps the
+prompt, repo, and vault cannot fill, then acceptance criteria, and three options
+graded against every criterion. That skill is the routine's one written copy.
+This repo points at it and does not restate it, because a second copy is how the
+old rules drifted apart.
+
+The slot is how the criteria cross a handoff. Before it, a brief said what to do
+(`Goal:`) and when the task was over (`Done when:`), but not what "good" meant in
+between, so the receiver guessed at every fork. `Done when:` could not carry the
+criteria: it is the state that ends the task in the receiver's lane, such as a
+tree handed back uncommitted, and folding the criteria into it would bury them
+again. So the criteria got a slot, and paid the cost of a release of both plugins
+together, which the `Workdir:` widening above could avoid.
+
+Three consequences follow from where the criteria come from.
+
+- **Sub-agents never interview.** The brief is their intake. A sub-agent that
+  finds a blocking gap sends it back to the orchestrator, as it did before the
+  slot existed. Mike's bar is that an agent asks only when it cannot fill a gap
+  itself, and is never kept from working when it already has what it needs.
+- **The machine tokens stay exempt.** `Item ID: <n>` and
+  `Repo sweep: <owner/repo>` carry no brief. For a Watson or Holmes Index-mode
+  run, the item's acceptance criteria, written by Lestrade at triage, are the
+  Acceptance list. Lestrade's own flow does not change: it writes those criteria
+  and consumes none.
+- **Holmes's Local mode reviews against the list.** It used `Goal:` and
+  `Done when:` before, which gave it one outcome and a finish line to check
+  rather than conditions it could check one by one.
+
+The gate checks the header's presence and nothing inside it, for the reason in
+the gate section below.
 
 ## Why the companion gate never classifies a dispatch
 

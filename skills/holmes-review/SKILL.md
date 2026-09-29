@@ -14,6 +14,9 @@ each matters on one path only, so they live here.
 
 - `references/review-phases.md` — Phases B, C, and D plus the `§4-fallback`
   inline path, verbatim:
+  - **Every helper's type** — each lens, skeptic, and panel dispatch names
+    `subagent_type: "workbench-dev-team:holmes-lens"`, the read-only type in
+    `agents/holmes-lens.md`.
   - **Phase B** — four blind lens reviewers (AC conformance, correctness,
     security, test-honesty), the finding shape, the lens prompt skeleton.
   - **Phase C** — which findings get adversarially verified, the single-skeptic
@@ -25,12 +28,12 @@ each matters on one path only, so they live here.
 - `references/local-review.md` — the whole of **Local mode**: reviewing the
   uncommitted working tree in a prose brief's `Workdir:`, with no The Index call
   and no GitHub write. What replaces each board-coupled step (item fetch, PR
-  find, strike count, AC read, checkout, CI), the brief's `Goal:` and
-  `Done when:` as the rubric, the four prompt substitutions that let Phases B–D
-  run untouched, the **§L4-fallback** replacement for the one path no
-  substitution reaches, the no-write line every sub-agent prompt carries (and
-  the `PreToolUse` guard that enforces it), the three verdicts as prose, and the
-  vault note that never feeds the top-lessons digest.
+  find, strike count, AC read, checkout, CI), the brief's `Acceptance:` list as
+  the rubric, the four prompt substitutions that let Phases B–D run untouched,
+  the **§L4-fallback** replacement for the one path no substitution reaches,
+  the no-write line every sub-agent prompt carries (and the `PreToolUse` guard
+  that enforces it), the three verdicts as prose, and the vault note that never
+  feeds the top-lessons digest.
 
 ## How to use it
 

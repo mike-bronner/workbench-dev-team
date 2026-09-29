@@ -71,7 +71,9 @@ HOME_U="$(new_home u)"
 jq -n --arg abs "Bash(bash $HOME_U/.claude-workbench/bin/approve-commit.sh:*)" \
   '{permissions: {ask: [$abs, "Bash(bash \"$HOME/.claude-workbench/bin/approve-commit.sh\":*)", "Bash(approve:*)", "Bash(rm -rf:*)"]}}' \
   > "$HOME_U/.claude/settings.json"
-mkdir -p "$HOME_U/.claude-workbench/bin" "$HOME_U/.claude-workbench/commit-approvals"
+mkdir -p "$HOME_U/.claude-workbench/bin" "$HOME_U/.claude-workbench/commit-approvals" \
+  "$HOME_U/.claude-workbench/local-reviews"
+echo '{"holds": 2}' > "$HOME_U/.claude-workbench/local-reviews/0123456789abcdef"
 echo old > "$HOME_U/.claude-workbench/bin/approve-commit.sh"
 echo '{"status":"approved"}' > "$HOME_U/.claude-workbench/commit-approvals/0123456789abcdef"
 echo keep > "$HOME_U/.claude-workbench/bin/other-tool.sh"
@@ -88,6 +90,10 @@ printf '%s\n' "$OUT" | grep -qxF "LEGACY_LEFT $HOME_U/.claude-workbench/bin/appr
   && ok "it reports the old approve-commit.sh" || bad "no LEGACY_LEFT line for approve-commit.sh: $OUT"
 printf '%s\n' "$OUT" | grep -qxF "LEGACY_LEFT $HOME_U/.claude-workbench/commit-approvals" \
   && ok "it reports the old approval records" || bad "no LEGACY_LEFT line for the records: $OUT"
+printf '%s\n' "$OUT" | grep -qxF "LEGACY_LEFT $HOME_U/.claude-workbench/local-reviews" \
+  && ok "it reports the review guard's old hold records" || bad "no LEGACY_LEFT line for local-reviews: $OUT"
+[ -e "$HOME_U/.claude-workbench/local-reviews/0123456789abcdef" ] \
+  && ok "the block leaves the old hold records in place" || bad "the block removed the hold records itself"
 case "$(run_block "$HOME_A")" in *LEGACY_LEFT*) bad "a clean install reports leftovers" ;; *) ok "a clean install reports no leftovers" ;; esac
 STRAY=""
 for f in "$HOME_B/.claude/"* "$HOME_B/.claude/".[!.]*; do

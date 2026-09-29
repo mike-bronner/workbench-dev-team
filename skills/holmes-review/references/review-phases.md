@@ -22,11 +22,20 @@ approves, and a mutation, even an undone one, can corrupt it and races any other
 run reading it. A probe that needs a mutated tree runs on a copy in the
 sub-agent's own `mktemp -d` directory.
 
+**Every dispatch below names `subagent_type: "workbench-dev-team:holmes-lens"`**
+— the four lenses, the skeptic, the red team, the blue team, and the auditor.
+That type (`agents/holmes-lens.md`) holds `Bash`, `Read`, `Grep`, and `Glob` and
+no write tool, and `hooks/scripts/local-review-guard.sh` refuses any write it
+makes outside the scratch roots. Never leave the type out: the Agent tool then
+falls back to `general-purpose`, which carries Write and Edit, and a lens on it
+once mutated the checkout it was reviewing. The model stays `LENS_MODEL`, passed
+as the dispatch's `model`.
+
 ---
 
 #### Phase B — fan out four blind lens reviewers (parallel)
 
-Dispatch **four** read-only lens reviewers in a **single message** (multiple `Agent` calls), each on `LENS_MODEL` (your model if unset). Each is **blind to the others** (no shared findings), each is **read-only** (no MCP, no Write/Edit), and each prompt is **fully self-contained** — it carries the clone path §4b printed (`<checkout path>`), the PR number, the **AC text pasted verbatim**, and the standing instruction that **the repo's conventions win over the reviewer's preferences**. Each lens returns structured findings — one per row: `{ claim, location (file:line), severity (blocker | note), scope (in-pr | general), evidence }`. **`severity`** is the finding's intrinsic seriousness — a correctness, security, or test defect is a `blocker`; anything softer (a refactor, a duplication, a minor improvement) is a `note`. **`scope`** is locality — `in-pr` if the finding's location falls on a line this PR added or modified, `general` if it's about code the PR left untouched. The lens reports both facts; **you** (the parent) route them by the §4e matrix. To judge scope, the lens checks each `file:line` against `gh pr diff <PR_NUM>` in the checkout.
+Dispatch **four** read-only lens reviewers in a **single message** (multiple `Agent` calls), each on `subagent_type: "workbench-dev-team:holmes-lens"` and `LENS_MODEL` (your model if unset). Each is **blind to the others** (no shared findings), each is **read-only** (no MCP, no Write/Edit), and each prompt is **fully self-contained** — it carries the clone path §4b printed (`<checkout path>`), the PR number, the **AC text pasted verbatim**, and the standing instruction that **the repo's conventions win over the reviewer's preferences**. Each lens returns structured findings — one per row: `{ claim, location (file:line), severity (blocker | note), scope (in-pr | general), evidence }`. **`severity`** is the finding's intrinsic seriousness — a correctness, security, or test defect is a `blocker`; anything softer (a refactor, a duplication, a minor improvement) is a `note`. **`scope`** is locality — `in-pr` if the finding's location falls on a line this PR added or modified, `general` if it's about code the PR left untouched. The lens reports both facts; **you** (the parent) route them by the §4e matrix. To judge scope, the lens checks each `file:line` against `gh pr diff <PR_NUM>` in the checkout.
 
 **Reading discipline — the fan-out's cost lives here.** Four lenses each walk the same checkout independently, so on a repo with multi-thousand-line files that redundancy — not your own reasoning — is what exhausts a review's budget. Measured: on a 20K-line-file repo the four lenses accounted for ~85% of a killed review's spend, and 96% of its token volume, while the parent's share was ~$1. Carry the four rules below **verbatim** in every lens prompt:
 
@@ -93,7 +102,7 @@ Verification runs on one of two tracks, chosen by lens, by severity, and by `CHA
 
 ##### Standard track — single skeptic
 
-A fresh **skeptic** sub-agent (read-only, `LENS_MODEL`, blind to the lens that raised it) whose job is to **REFUTE** the finding against the actual tree:
+A fresh **skeptic** sub-agent (`workbench-dev-team:holmes-lens`, `LENS_MODEL`, blind to the lens that raised it) whose job is to **REFUTE** the finding against the actual tree:
 
 ```
 You are an adversarial verifier. Read-only, no write tools, no patching.
@@ -115,7 +124,7 @@ forces the conclusion that the claim is true. Return exactly one of:
 
 ##### Security track — red-team / blue-team / auditor
 
-Dispatch the attacker and defender **in parallel** (single message, two `Agent` calls), each read-only, `LENS_MODEL`, blind to each other's output:
+Dispatch the attacker and defender **in parallel** (single message, two `Agent` calls), each on `workbench-dev-team:holmes-lens`, `LENS_MODEL`, blind to each other's output:
 
 ```
 You are a red-team attacker. Read-only, no write tools, no patching.
@@ -148,7 +157,7 @@ exactly one of:
 - NOT MITIGATED: <why nothing in the tree neutralizes it, file:line>
 ```
 
-Once both return, dispatch the **auditor** with both reports attached:
+Once both return, dispatch the **auditor** (`workbench-dev-team:holmes-lens`, `LENS_MODEL`) with both reports attached:
 
 ```
 You are the auditor. Read-only, no write tools, no patching. You did not write

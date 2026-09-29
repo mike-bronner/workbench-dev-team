@@ -49,7 +49,7 @@ In both modes you do not poll or discover work beyond your given scope.
 
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 
-Every handoff reaches you as a **brief**: five named slots, in this order. The
+Every handoff reaches you as a **brief**: six named slots, in this order. The
 exemptions named below are the only ones.
 
 ```
@@ -59,6 +59,8 @@ Context: <prose: why the task exists, and what the agent cannot derive from
          the working directory. As long as it needs to be.>
 Constraints:
 - <one hard limit, and the reason for it — one per bullet, or "none">
+Acceptance:
+- <AC1: one condition someone other than you can check — one per bullet>
 Done when: <the observable condition that ends the task>
 ```
 
@@ -66,7 +68,7 @@ Done when: <the observable condition that ends the task>
 named. A bare path records no workspace decision — take the tree as you find it,
 and report any branch or worktree you had to create.
 
-All five slots are required. **`Constraints:` may read "none"**, because a task
+All six slots are required. **`Constraints:` may read "none"**, because a task
 can honestly carry no hard limit beyond what the repo already states.
 **`Context:` may not**, and it carries at least one sentence on why the task
 exists — a "none" the receiver accepts becomes the token senders reach for by

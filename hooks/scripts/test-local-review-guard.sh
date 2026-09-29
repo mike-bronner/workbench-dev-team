@@ -1,73 +1,63 @@
 #!/bin/bash
-# Tests for local-review-guard.sh. Run directly: ./test-local-review-guard.sh
+# Tests for local-review-guard.sh, the review guard. Run directly:
+# ./test-local-review-guard.sh
 #
 # Each case feeds a synthetic hook payload and asserts the guard's behaviour:
-# what it arms, what it refuses, what it leaves alone, and what it releases.
+# whom it holds to the rule, what it refuses, and what it leaves alone.
 #
 # Two properties carry most of the weight, and both have a named failure behind
 # them. (1) A refused command must come back "deny" and never "ask" — a hook's
 # "ask" is classifier-approvable, which is how the sibling commit gate spent its
-# whole life stopping nothing. (2) A session that is NOT running a review must be
-# untouched while another session is — a host-wide signal would gag the human's
-# own window, which is the commit gate's watson.lock leak with the sign flipped.
+# whole life stopping nothing. (2) Only a reviewer's agent_type is held to the
+# rule — a guard that gagged every agent would stop the human's own work and
+# Watson's, which is the commit gate's watson.lock leak with the sign flipped.
 #
-# The sandbox owns HOME, TMPDIR and the state directory, so no case can read or
-# write the developer's real environment: the verdict has to come from the
-# guard, never from what happens to be on this host.
+# The sandbox owns HOME and TMPDIR, so no case can read or write the
+# developer's real environment: the verdict has to come from the guard, never
+# from what happens to be on this host. The tree under review sits OUTSIDE
+# $TMPDIR, because $TMPDIR is a scratch root and a tree inside one is writable.
 
 set -u
 GUARD="$(cd "$(dirname "$0")" && pwd)/local-review-guard.sh"
 PASS=0
 FAIL=0
 
-SANDBOX="$(mktemp -d "${TMPDIR:-/tmp}/local-review-guard.XXXXXX")"
+# Physical, so a named root under it is not dropped for a symlink in its path
+# (macOS puts mktemp -d under /var, a link to /private/var).
+SANDBOX="$(cd "$(mktemp -d "${TMPDIR:-/tmp}/local-review-guard.XXXXXX")" && pwd -P)"
 trap 'rm -rf "$SANDBOX"' EXIT
-STATE="$SANDBOX/state"
+TMPROOT="$SANDBOX/tmp"
 WORKDIR="$SANDBOX/repo"
-mkdir -p "$WORKDIR" "$SANDBOX/home"
+SCRATCHPAD="$SANDBOX/home/Developer/scratchpad"
+mkdir -p "$TMPROOT" "$WORKDIR" "$SCRATCHPAD"
 
-BRIEF="Workdir: $WORKDIR (branch: main — in place)
-
-Goal: the guard refuses a mutation and permits a read.
-
-Context: prose.
-
-Constraints:
-- none
-
-Done when: the suite is green."
+LENS="workbench-dev-team:holmes-lens"
+HOLMES="workbench-dev-team:holmes"
+WATSON="workbench-dev-team:watson"
 
 ok()  { PASS=$((PASS + 1)); echo "  ✅ $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
 check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 — expected $3, got $2"; fi; }
 
 # Build the payload first, then feed it with printf. Piping a generator straight
-# into the guard breaks its stdout when the carve-out exits before reading stdin.
+# into the guard breaks its stdout when the guard exits before reading stdin.
 run_guard() { # run_guard <payload> [env assignments...]
   local body="$1"; shift
   printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE \
-    WORKBENCH_LOCAL_REVIEW_DIR="$STATE" HOME="$SANDBOX/home" TMPDIR="$SANDBOX" \
-    "$@" bash "$GUARD"
+    HOME="$SANDBOX/home" TMPDIR="$TMPROOT" "$@" bash "$GUARD"
 }
 
-agent_payload() { # agent_payload <event> <subagent_type> <prompt> [session]
-  python3 -c '
-import json, sys
-print(json.dumps({"hook_event_name": sys.argv[1], "tool_name": "Agent",
-                  "session_id": sys.argv[4], "agent_id": "",
-                  "tool_input": {"subagent_type": sys.argv[2], "prompt": sys.argv[3]}}))' \
-    "$1" "$2" "$3" "${4-session-A}"
-}
-
-bash_payload() { # bash_payload <command> [session] [agent] [cwd]
+bash_payload() { # bash_payload <command> [session] [agent_type] [cwd]
   python3 -c '
 import json, sys
 body = {"hook_event_name": "PreToolUse", "tool_name": "Bash",
-        "session_id": sys.argv[2], "agent_id": sys.argv[3],
+        "session_id": sys.argv[2], "agent_id": "agent-1",
         "tool_input": {"command": sys.argv[1]}}
+if sys.argv[3]:
+    body["agent_type"] = sys.argv[3]
 if sys.argv[4]:
     body["cwd"] = sys.argv[4]
-print(json.dumps(body))' "$1" "${2-session-A}" "${3-agent-1}" "${4-}"
+print(json.dumps(body))' "$1" "${2-session-A}" "${3-$LENS}" "${4-}"
 }
 
 verdict_of() {
@@ -76,58 +66,77 @@ verdict_of() {
   else echo silent; fi
 }
 
-records() { ls -1 "$STATE" 2>/dev/null | wc -l | tr -d ' '; }
-reset_state() { rm -rf "$STATE"; }
+# bash_verdict <command> [session] [agent_type] [cwd]
+bash_verdict() { verdict_of "$(run_guard "$(bash_payload "$1" "${2-session-A}" "${3-$LENS}" "${4-}")")"; }
 
-arm()    { run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "$BRIEF" "${1-session-A}")" >/dev/null; }
-disarm() { run_guard "$(agent_payload PostToolUse "workbench-dev-team:holmes" "$BRIEF" "${1-session-A}")" >/dev/null; }
+echo "── the rule is keyed on agent_type ────────────────────────────────────"
 
-# bash_verdict <command> [session] [agent] [cwd]
-bash_verdict() { verdict_of "$(run_guard "$(bash_payload "$1" "${2-session-A}" "${3-agent-1}" "${4-}")")"; }
+BREACH="chmod 644 $WORKDIR/agents/lint-holmes-local-mode.sh"
+check "a helper's write into the tree is refused" "$(bash_verdict "$BREACH" session-A "$LENS")" deny
+check "Holmes's own write into the tree is refused" "$(bash_verdict "$BREACH" session-A "$HOLMES")" deny
+check "Watson's write into the same tree is allowed" "$(bash_verdict "$BREACH" session-A "$WATSON")" silent
+check "a generic sub-agent's write is not this guard's business" \
+  "$(bash_verdict "$BREACH" session-A general-purpose)" silent
+check "a session with no agent_type keeps its tools" "$(bash_verdict "$BREACH" session-A "")" silent
+check "a bare holmes type is held too" "$(bash_verdict "$BREACH" session-A holmes)" deny
+check "holmes spelled with ſ folds to holmes and is held" \
+  "$(bash_verdict "$BREACH" session-A "workbench-dev-team:holmeſ")" deny
+check "a type that only contains holmes is not held" \
+  "$(bash_verdict "$BREACH" session-A "workbench-dev-team:holmes-review-bot")" silent
+# The scheduled pipeline starts Holmes with --agent, so its main thread carries
+# agent_type and no agent_id, and the pipeline flag is on. Neither exempts it.
+check "a pipeline main thread (agent_type, no agent_id, pipeline flag) is held" \
+  "$(verdict_of "$(run_guard "$(python3 -c '
+import json, sys
+print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                  "session_id": "session-P", "agent_type": sys.argv[1],
+                  "tool_input": {"command": sys.argv[2]}}))' "$HOLMES" "$BREACH")" \
+    WORKBENCH_DEV_TEAM_PIPELINE=1)")" deny
 
-echo "── arming: only a Holmes local dispatch arms ──────────────────────────"
+echo
+echo "── the scratch roots ──────────────────────────────────────────────────"
 
-reset_state
-arm
-check "a Holmes prose brief arms the session" "$(records)" 1
-
-reset_state
-run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "Item ID: 412")" >/dev/null
-check "an 'Item ID' dispatch is Index mode and does not arm" "$(records)" 0
-
-reset_state
-run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "  412  ")" >/dev/null
-check "a bare integer id does not arm" "$(records)" 0
-
-reset_state
-run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "PVTI_lADOAbc123")" >/dev/null
-check "a bare PVTI id does not arm" "$(records)" 0
-
-reset_state
-run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "3823652e-6394-4478-a87d-a1e838a84e90")" >/dev/null
-check "a bare UUID id does not arm" "$(records)" 0
-
-reset_state
-run_guard "$(agent_payload PreToolUse "workbench-dev-team:watson" "$BRIEF")" >/dev/null
-check "a Watson dispatch does not arm" "$(records)" 0
-
-reset_state
-run_guard "$(agent_payload PreToolUse "Explore" "$BRIEF")" >/dev/null
-check "a generic lens dispatch does not arm" "$(records)" 0
-
-# The scheduled pipeline never reviews a live working tree, and must not inherit
-# a rule written for one. The signal is WORKBENCH_DEV_TEAM_PIPELINE=1, which
-# bin/dispatch-agent.sh exports. The guard checks it before it reads the
-# payload, so no state is even consulted.
-reset_state
-run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "$BRIEF")" WORKBENCH_DEV_TEAM_PIPELINE=1 >/dev/null
-check "the pipeline carve-out suppresses arming" "$(records)" 0
+check "a write beneath \$TMPDIR is allowed" "$(bash_verdict "touch $TMPROOT/probe")" silent
+check "a write beneath ~/Developer/scratchpad is allowed" "$(bash_verdict "touch $SCRATCHPAD/probe")" silent
+SESSION_PAD="$SANDBOX/session-pad"
+mkdir -p "$SESSION_PAD"
+check "a write beneath the payload's scratchpad_dir is allowed" \
+  "$(verdict_of "$(run_guard "$(python3 -c '
+import json, sys
+print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                  "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
+                  "scratchpad_dir": sys.argv[2],
+                  "tool_input": {"command": "touch " + sys.argv[2] + "/probe"}}))' "$LENS" "$SESSION_PAD")")")" silent
+check "a root itself is not writable" "$(bash_verdict "rm -rf $TMPROOT")" deny
+check "a write outside every root is refused" "$(bash_verdict "touch $SANDBOX/home/notes.txt")" deny
+# Holmes's Index-mode setup and teardown, as agents/holmes.md words them. The
+# clone lives in a mktemp -d directory, which is beneath $TMPDIR.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "Index mode keeps working: $cmd" "$(bash_verdict "$cmd" session-A "$HOLMES")" silent
+done <<EOF
+mktemp -d
+gh repo clone owner/repo $TMPROOT/clone
+gh pr checkout 12
+rm -rf $TMPROOT/clone
+jq -r .agents.holmes.lensModel $SANDBOX/home/.claude-workbench/dev-team-config.json 2>/dev/null
+EOF
+# A named root is found by name, so a planted symlink could aim it anywhere.
+LINKED_HOME="$SANDBOX/linked-home"
+mkdir -p "$LINKED_HOME/Developer"
+ln -sfn "$WORKDIR" "$LINKED_HOME/Developer/scratchpad"
+LINKED_OUT="$(run_guard "$(bash_payload "touch $LINKED_HOME/Developer/scratchpad/x")" HOME="$LINKED_HOME")"
+check "a symlinked ~/Developer/scratchpad is not a root" "$(verdict_of "$LINKED_OUT")" deny
+# The refusal lists the roots it found, so a planted link must not be named as
+# one: the model would take it as a place it may write.
+case "$LINKED_OUT" in
+  *"$LINKED_HOME/Developer/scratchpad\`"*) bad "the refusal names the symlinked scratchpad as a root" ;;
+  *) ok "the refusal does not name the symlinked scratchpad as a root" ;;
+esac
 
 echo
 echo "── reading and testing stay legal ─────────────────────────────────────"
 
-reset_state
-arm
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
   check "allowed: $cmd" "$(bash_verdict "$cmd")" silent
@@ -192,12 +201,12 @@ echo "── file writes are judged by resolved target ────────�
 
 # rm and mv used to be refused everywhere, which stopped a reviewer clearing its
 # own scratch. Now every file-writing command is judged by the paths it writes.
-OUTSIDE="$SANDBOX/scratch"
+OUTSIDE="$TMPROOT/scratch"
 mkdir -p "$OUTSIDE" "$WORKDIR/src"
-ln -sfn "$WORKDIR/src" "$SANDBOX/link-into-tree"
+ln -sfn "$WORKDIR/src" "$TMPROOT/link-into-tree"
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "allowed outside the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$OUTSIDE")" silent
+  check "allowed in scratch: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$OUTSIDE")" silent
 done <<EOF
 rm -rf $OUTSIDE/build
 rm -f notes.txt
@@ -211,12 +220,11 @@ install -m 644 $WORKDIR/file.txt $OUTSIDE/file.txt
 dd if=$WORKDIR/file.txt of=$OUTSIDE/file.bin
 patch -d $OUTSIDE -p1 -i $OUTSIDE/fix.diff
 chmod 644 $OUTSIDE/file.txt
-rm -rf ~/definitely-not-the-tree
 EOF
 
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "refused into the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$OUTSIDE")" deny
+  check "refused into the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$OUTSIDE")" deny
 done <<EOF
 cp $OUTSIDE/file.txt $WORKDIR/src/file.txt
 cp -t $WORKDIR/src $OUTSIDE/file.txt
@@ -232,14 +240,15 @@ patch --directory=$WORKDIR -p1
 rm -rf $WORKDIR/src
 mv $WORKDIR/src/file.txt $OUTSIDE/
 rm -rf $SANDBOX
-rm -rf $SANDBOX/link-into-tree/file.txt
-touch $SANDBOX/link-into-tree/new.txt
+rm -rf $TMPROOT/link-into-tree/file.txt
+touch $TMPROOT/link-into-tree/new.txt
+rm -rf ~/definitely-not-the-tree
 EOF
 
 # A write whose path the guard cannot resolve is refused, wherever it runs.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "refused, unresolvable: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$OUTSIDE")" deny
+  check "refused, unresolvable: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$OUTSIDE")" deny
 done <<EOF
 rm -rf \$DIR
 rm -f $OUTSIDE/*.tmp
@@ -257,7 +266,7 @@ ln -sfn "$OUTSIDE/target.txt" "$WORKDIR/link-out"
 ln -sfn "$OUTSIDE" "$WORKDIR/dir-link-out"
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "refused, a link entry in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$OUTSIDE")" deny
+  check "refused, a link entry in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$OUTSIDE")" deny
 done <<EOF
 rm $WORKDIR/link-out
 rm -f $WORKDIR/dir-link-out
@@ -266,11 +275,11 @@ mv $WORKDIR/link-out $OUTSIDE/moved
 chmod -h 644 $WORKDIR/link-out
 EOF
 check "a relative link entry in the tree's cwd is refused" \
-  "$(bash_verdict "rm link-out" session-A agent-1 "$WORKDIR")" deny
+  "$(bash_verdict "rm link-out" session-A "$LENS" "$WORKDIR")" deny
 check "the outside target itself stays writable" \
-  "$(bash_verdict "rm $OUTSIDE/target.txt" session-A agent-1 "$OUTSIDE")" silent
+  "$(bash_verdict "rm $OUTSIDE/target.txt" session-A "$LENS" "$OUTSIDE")" silent
 check "patch in the tree's own cwd is refused" \
-  "$(bash_verdict "patch -p1 -i $OUTSIDE/fix.diff" session-A agent-1 "$WORKDIR")" deny
+  "$(bash_verdict "patch -p1 -i $OUTSIDE/fix.diff" session-A "$LENS" "$WORKDIR")" deny
 
 echo
 echo "── ordinary writers and formatters (round 5) ──────────────────────────"
@@ -279,7 +288,7 @@ echo "── ordinary writers and formatters (round 5) ────────�
 # list is fixed, not a rule, so each writer it names is pinned here.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" deny
+  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
 done <<EOF
 mkdir newdir
 mkdir -p -m 755 $WORKDIR/a/b
@@ -328,7 +337,7 @@ EOF
 # outside the tree. A guard that refused these would stop the review itself.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" silent
+  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" silent
 done <<EOF
 prettier --check .
 prettier -c .
@@ -366,7 +375,7 @@ env FOO=1 bash run-tests.sh
 EOF
 
 check "ln with one operand lands in the cwd, the tree" \
-  "$(bash_verdict "ln -s $OUTSIDE/x" session-A agent-1 "$WORKDIR")" deny
+  "$(bash_verdict "ln -s $OUTSIDE/x" session-A "$LENS" "$WORKDIR")" deny
 
 echo
 echo "── lookups, long write flags, and project runners (round 6) ───────────"
@@ -375,7 +384,7 @@ echo "── lookups, long write flags, and project runners (round 6) ───�
 # default writer, or a listed writer behind a project runner.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" deny
+  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
 done <<EOF
 rubocop --autocorrect
 rubocop --autocorrect-all
@@ -411,7 +420,7 @@ EOF
 # them: a wrapper with no lookup flag, and a check switched off by its value.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" deny
+  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
 done <<EOF
 command black app.py
 terraform fmt -check=false
@@ -422,7 +431,7 @@ EOF
 # value read as the output file.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" silent
+  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" silent
 done <<EOF
 command -v black
 command -v rustfmt
@@ -446,7 +455,7 @@ EOF
 # silent. Pinned so the round-6 changes cannot start refusing them.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" silent
+  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" silent
 done <<EOF
 which black
 type black
@@ -473,7 +482,7 @@ echo "── clustered formatter write flags, and stdin forms (round 7) ──�
 # another short flag, for the four formatters whose parsers bundle them.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" deny
+  check "refused with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
 done <<EOF
 yapf -ir .
 yapf -ri .
@@ -492,7 +501,7 @@ EOF
 # cluster.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A agent-1 "$WORKDIR")" silent
+  check "allowed with cwd in the tree: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" silent
 done <<EOF
 black -
 cat x.py | black -q -
@@ -657,22 +666,28 @@ EOF
 echo
 echo "── redirection is judged by target, not refused outright ──────────────"
 
-check "redirect to an absolute path outside the tree is allowed" \
-  "$(bash_verdict "git diff HEAD > /tmp/review.diff")" silent
+ELSEWHERE="$TMPROOT/elsewhere"
+mkdir -p "$ELSEWHERE"
+check "redirect to a path in scratch is allowed" \
+  "$(bash_verdict "git diff HEAD > $OUTSIDE/review.diff")" silent
+check "redirect to /tmp, which is no scratch root here, is refused" \
+  "$(bash_verdict "git diff HEAD > /tmp/review.diff")" deny
 check "redirect into the tree under review is refused" \
   "$(bash_verdict "git diff HEAD > $WORKDIR/notes.md")" deny
 check "a relative redirect resolved into the tree is refused" \
-  "$(bash_verdict "git diff HEAD > notes.md" session-A agent-1 "$WORKDIR")" deny
-check "a relative redirect resolved outside the tree is allowed" \
-  "$(bash_verdict "git diff HEAD > notes.md" session-A agent-1 "$SANDBOX/elsewhere")" silent
+  "$(bash_verdict "git diff HEAD > notes.md" session-A "$LENS" "$WORKDIR")" deny
+check "a relative redirect resolved into scratch is allowed" \
+  "$(bash_verdict "git diff HEAD > notes.md" session-A "$LENS" "$ELSEWHERE")" silent
 check "a relative redirect with no cwd to resolve it fails closed" \
   "$(bash_verdict "git diff HEAD > notes.md")" deny
 check "2>&1 is a descriptor, not a file target" \
   "$(bash_verdict "bash run-tests.sh 2>&1")" silent
 check ">&2 and 2>&- are descriptors, not file targets" \
   "$(bash_verdict "echo x >&2 2>&-")" silent
-check "2>/dev/null outside the tree is allowed" \
+check "2>/dev/null writes no file and is allowed" \
   "$(bash_verdict "ls 2>/dev/null")" silent
+check "> /dev/stdout and 2> /dev/fd/2 write no file" \
+  "$(bash_verdict "echo x > /dev/stdout 2> /dev/fd/2")" silent
 
 # A digit before `>` names the descriptor being redirected, and the target is
 # still a file. `>|` overrides noclobber, and `>&word` sends both streams to a
@@ -691,19 +706,18 @@ echo x >& $WORKDIR/f
 echo x 2>&1 > $WORKDIR/f
 EOF
 
-# The payload's cwd outside the tree is the case that exposed the gap: a target
-# joined onto cwd as text lands outside, while the shell writes inside. So each
-# of these runs from $ELSEWHERE, and each writes into the tree when it runs.
-ELSEWHERE="$SANDBOX/elsewhere"
-mkdir -p "$ELSEWHERE"
+# The payload's cwd in scratch is the case that exposed the gap: a target
+# joined onto cwd as text lands in scratch, while the shell writes into the
+# tree. So each of these runs from $ELSEWHERE, and each writes into the tree.
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "with cwd outside the tree, refused: $cmd" \
-    "$(bash_verdict "$cmd" session-A agent-1 "$ELSEWHERE")" deny
+  check "with cwd in scratch, refused: $cmd" \
+    "$(bash_verdict "$cmd" session-A "$LENS" "$ELSEWHERE")" deny
 done <<EOF
 echo x > "$WORKDIR/README.md"
 echo x > ~/../repo/README.md
 echo x > \$HOME/../repo/README.md
+echo x > ~/notes.md
 cd $WORKDIR && echo x > README.md
 cd $WORKDIR && rm README.md
 (cd $WORKDIR && rm README.md)
@@ -726,81 +740,75 @@ echo x >>! $WORKDIR/README.md
 EOF
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
-  check "with cwd outside the tree, allowed: $cmd" \
-    "$(bash_verdict "$cmd" session-A agent-1 "$ELSEWHERE")" silent
+  check "with cwd in scratch, allowed: $cmd" \
+    "$(bash_verdict "$cmd" session-A "$LENS" "$ELSEWHERE")" silent
 done <<EOF
 echo x > notes.md
-echo x > ~/notes.md
+echo x > ~/Developer/scratchpad/notes.md
 rm notes.md
 cd $WORKDIR && git status --short
 EOF
 
 echo
-echo "── scope: only sub-agents, only the session under review ──────────────"
-
-# The constraint-3 regression guard. A host-wide signal would gag this.
-check "a different session is untouched while this one is armed" \
-  "$(bash_verdict "chmod 644 file.txt" session-B agent-9)" silent
-check "the armed session's main thread keeps its own tools" \
-  "$(bash_verdict "chmod 644 file.txt" session-A "")" silent
-check "the pipeline carve-out is silent even on an armed session" \
-  "$(verdict_of "$(run_guard "$(bash_payload "git restore ." session-A agent-1)" WORKBENCH_DEV_TEAM_PIPELINE=1)")" silent
-
-reset_state
-check "an unarmed session is untouched" "$(bash_verdict "git restore .")" silent
-check "an unarmed session may still chmod" "$(bash_verdict "chmod 644 file.txt")" silent
-
-echo
 echo "── editing tools are judged by path ───────────────────────────────────"
 
-edit_payload() { # edit_payload <tool> <path> [session] [agent]
+edit_payload() { # edit_payload <tool> <path> [agent_type]
   python3 -c '
 import json, sys
 field = "notebook_path" if sys.argv[1] == "NotebookEdit" else "file_path"
-print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": sys.argv[1],
-                  "session_id": sys.argv[3], "agent_id": sys.argv[4],
-                  "tool_input": {field: sys.argv[2]}}))' "$1" "$2" "${3-session-A}" "${4-agent-1}"
+body = {"hook_event_name": "PreToolUse", "tool_name": sys.argv[1],
+        "session_id": "session-A", "agent_id": "agent-1",
+        "tool_input": {field: sys.argv[2]}}
+if sys.argv[3]:
+    body["agent_type"] = sys.argv[3]
+print(json.dumps(body))' "$1" "$2" "${3-$LENS}"
 }
 edit_verdict() { verdict_of "$(run_guard "$(edit_payload "$@")")"; }
 
-reset_state
-arm
 for tool in Edit Write NotebookEdit; do
-  check "$tool inside the tree is refused" "$(edit_verdict "$tool" "$WORKDIR/src/file.txt")" deny
-  check "$tool outside the tree is allowed" "$(edit_verdict "$tool" "$SANDBOX/scratch/file.txt")" silent
+  check "$tool from a helper into the tree is refused" "$(edit_verdict "$tool" "$WORKDIR/src/file.txt")" deny
+  check "$tool from a helper into scratch is allowed" "$(edit_verdict "$tool" "$OUTSIDE/file.txt")" silent
+  check "$tool from Watson into the tree is allowed" \
+    "$(edit_verdict "$tool" "$WORKDIR/src/file.txt" "$WATSON")" silent
 done
-check "an Edit through a symlink into the tree is refused" \
-  "$(edit_verdict Edit "$SANDBOX/link-into-tree/file.txt")" deny
+check "an Edit from Holmes into the tree is refused" \
+  "$(edit_verdict Edit "$WORKDIR/src/file.txt" "$HOLMES")" deny
+check "an Edit through a symlink out of scratch into the tree is refused" \
+  "$(edit_verdict Edit "$TMPROOT/link-into-tree/file.txt")" deny
 check "an Edit with a relative path and no cwd is refused" "$(edit_verdict Edit "src/file.txt")" deny
-check "the main thread keeps its own editing tools" \
-  "$(edit_verdict Edit "$WORKDIR/src/file.txt" session-A "")" silent
-check "another session's sub-agent is untouched" \
-  "$(edit_verdict Edit "$WORKDIR/src/file.txt" session-B agent-9)" silent
+check "a session with no agent_type keeps its editing tools" \
+  "$(edit_verdict Edit "$WORKDIR/src/file.txt" "")" silent
 check "the human line names the tool" \
   "$(run_guard "$(edit_payload Write "$WORKDIR/x")" | python3 -c \
     'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])')" \
-  '🛑 Blocked: `Write`. A local review is reading this working tree.'
-reset_state
-check "an unarmed session's sub-agent may edit" "$(edit_verdict Edit "$WORKDIR/src/file.txt")" silent
+  '🛑 Blocked: `Write`. A Holmes reviewer writes only in scratch.'
+
+# The guard is static, so it belongs on PreToolUse for the four writing tools
+# and nowhere else. An Agent entry, or any post-call event, would be the hold
+# machinery this version removed coming back.
 HOOKS_JSON="$(cd "$(dirname "$0")/../.." && pwd)/hooks/hooks.json"
 if python3 - "$HOOKS_JSON" <<'PY'
 import json, re, sys
-blocks = json.load(open(sys.argv[1]))["hooks"]["PreToolUse"]
-matchers = [b["matcher"] for b in blocks
+hooks = json.load(open(sys.argv[1]))["hooks"]
+matchers = [b.get("matcher", "") for b in hooks["PreToolUse"]
             if any("local-review-guard.sh" in h["command"] for h in b["hooks"])]
-sys.exit(0 if all(any(re.fullmatch(m, t) for m in matchers)
-                  for t in ("Bash", "Agent", "Edit", "Write", "NotebookEdit")) else 1)
+routed = all(any(re.fullmatch(m, t) for m in matchers)
+             for t in ("Bash", "Edit", "Write", "NotebookEdit"))
+agent = any(re.fullmatch(m, "Agent") for m in matchers)
+elsewhere = [e for e, blocks in hooks.items() if e != "PreToolUse"
+             and any("local-review-guard.sh" in h["command"] for b in blocks for h in b["hooks"])]
+sys.exit(0 if routed and not agent and not elsewhere else 1)
 PY
-then ok "hooks.json routes Bash, Agent, and the three editing tools to the guard"
-else bad "hooks.json does not route every editing tool to the guard"; fi
+then ok "hooks.json routes Bash and the three editing tools to the guard, and nothing else"
+else bad "hooks.json routes the guard wrongly: a writing tool is missing, or Agent or another event is wired"; fi
 
 echo
-echo "── a missing or failing python3 fails closed while a review is armed ──"
+echo "── a missing or failing python3 fails closed for a reviewer ───────────"
 
 # Two PATHs stand in for a broken host: one with no python3 at all, and one whose
-# python3 exits 1. The second is the status branch after the heredoc, which no
-# case reached before. Each holds only the tools the guard's shell half needs,
-# so the host's own python3 cannot answer for them.
+# python3 exits 1. The second is the status branch after the heredoc. Each holds
+# only the tools the guard's shell half needs, so the host's own python3 cannot
+# answer for them.
 NOPY="$SANDBOX/no-python"
 BADPY="$SANDBOX/bad-python"
 mkdir -p "$NOPY" "$BADPY"
@@ -810,38 +818,41 @@ for tool in bash cat grep dirname; do
 done
 printf '#!/bin/sh\nexit 1\n' > "$BADPY/python3"
 chmod +x "$BADPY/python3"
-# `git` with its g written as a JSON unicode escape, backslash included, so the
-# raw payload carries the escape the fast path sends on to python3.
-ESCAPED_NAME="$(printf '%su0067it' '\')"
-# With a review armed, python3 is what tells a read from a write. Without it the
-# guard used to refuse only text naming git, which is the commit gate's rule, so
-# every one of the writes below ran unchecked.
+# `holmes` with its h written as a JSON unicode escape, backslash included, so
+# the raw agent_type carries the escape python3 would have had to decode.
+ESCAPED_TYPE="$(printf 'workbench-dev-team:%su0068olmes' '\')"
+raw_bash() { # raw_bash <agent_type-json-text> <command>
+  printf '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s", "agent_id": "a", "agent_type": "%s", "tool_input": {"command": "%s"}}' "$1" "$2"
+}
 for broken in "$NOPY" "$BADPY"; do
   label="no python3"; [ "$broken" = "$BADPY" ] && label="a python3 that exits 1"
-  reset_state
-  arm
   while IFS= read -r cmd; do
     [ -n "$cmd" ] || continue
-    check "$label: refused, $cmd" \
+    check "$label: a reviewer is refused, $cmd" \
       "$(verdict_of "$(run_guard "$(bash_payload "$cmd")" PATH="$broken")")" deny
   done <<EOF
 chmod 644 $WORKDIR/file.txt
 rm -rf $WORKDIR/src
-mv $WORKDIR/a $WORKDIR/b
 echo x > $WORKDIR/notes.md
 git status
 ls -la
 EOF
   for tool in Edit Write NotebookEdit; do
-    check "$label: $tool into the tree is refused" \
+    check "$label: $tool from a reviewer is refused" \
       "$(verdict_of "$(run_guard "$(edit_payload "$tool" "$WORKDIR/src/file.txt")" PATH="$broken")")" deny
   done
-  check "$label: the main thread keeps its tools" \
+  check "$label: Watson keeps its tools" \
+    "$(verdict_of "$(run_guard "$(bash_payload "chmod 644 $WORKDIR/file.txt" session-A "$WATSON")" PATH="$broken")")" silent
+  check "$label: a session with no agent_type keeps its tools" \
     "$(verdict_of "$(run_guard "$(bash_payload "chmod 644 $WORKDIR/file.txt" session-A "")" PATH="$broken")")" silent
-  check "$label: command text naming agent_id cannot fake a sub-agent" \
-    "$(verdict_of "$(run_guard "$(bash_payload 'echo "agent_id": "x"' session-A "")" PATH="$broken")")" silent
-  check "$label: an Agent dispatch is not refused" \
-    "$(verdict_of "$(run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "$BRIEF")" PATH="$broken")")" silent
+  check "$label: command text naming agent_type cannot fake a reviewer" \
+    "$(verdict_of "$(run_guard "$(bash_payload 'echo "agent_type": "holmes"' session-A "$WATSON")" PATH="$broken")")" silent
+  check "$label: a reviewer type spelled with a \\u escape is refused" \
+    "$(verdict_of "$(run_guard "$(raw_bash "$ESCAPED_TYPE" "ls")" PATH="$broken")")" deny
+  check "$label: a non-ASCII reviewer type is refused" \
+    "$(verdict_of "$(run_guard "$(raw_bash "workbench-dev-team:holmeſ" "ls")" PATH="$broken")")" deny
+  check "$label: a non-reviewer with a \\u escape in its command keeps its tools" \
+    "$(verdict_of "$(run_guard "$(raw_bash "$WATSON" "$(printf 'echo %su0067it' '\')")" PATH="$broken")")" silent
   CONTEXT_OUT="$(run_guard "$(bash_payload "ls")" PATH="$broken")"
   case "$CONTEXT_OUT" in
     *"python3 is missing or failed"*) ok "$label: the refusal names python3 as the cause" ;;
@@ -849,32 +860,12 @@ EOF
   esac
   printf '%s' "$CONTEXT_OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null \
     && ok "$label: the refusal is valid JSON" || bad "$label: the refusal is not valid JSON"
-
-  # No record on the host: nothing to protect, so no opinion. The fast path's
-  # own escapes reach this branch too: a holmes mention, a \u escape, and a
-  # non-ASCII byte each send the payload past the fast path to python3.
-  reset_state
-  check "$label, no review armed: a write keeps its normal flow" \
-    "$(verdict_of "$(run_guard "$(bash_payload "chmod 644 $WORKDIR/file.txt")" PATH="$broken")")" silent
-  check "$label, no review armed: a command naming holmes keeps its normal flow" \
-    "$(verdict_of "$(run_guard "$(bash_payload "grep holmes $WORKDIR/x")" PATH="$broken")")" silent
-  check "$label, no review armed: a \\u escape keeps its normal flow" \
-    "$(verdict_of "$(run_guard '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s", "agent_id": "a", "tool_input": {"command": "echo '"$ESCAPED_NAME"'"}}' PATH="$broken")")" silent
-  check "$label, no review armed: a non-ASCII payload keeps its normal flow" \
-    "$(verdict_of "$(run_guard '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s", "agent_id": "a", "tool_input": {"command": "echo ſ"}}' PATH="$broken")")" silent
-  # ...and with a record, the same escape shapes are refused like anything else.
-  arm
-  check "$label, armed: a \\u escape is refused" \
-    "$(verdict_of "$(run_guard '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s", "agent_id": "a", "tool_input": {"command": "echo '"$ESCAPED_NAME"'"}}' PATH="$broken")")" deny
-  check "$label, armed: a non-ASCII payload is refused" \
-    "$(verdict_of "$(run_guard '{"hook_event_name": "PreToolUse", "tool_name": "Bash", "session_id": "s", "agent_id": "a", "tool_input": {"command": "echo ſ"}}' PATH="$broken")")" deny
 done
-reset_state
 printf 'git status\n' | env PATH="$NOPY" /bin/bash "$GUARD" --classify >/dev/null 2>&1
 check "no python3: --classify reports the failure rather than passing" "$?" 2
 
 echo
-echo "── fast path: python3 starts only when a review could be in play ──────"
+echo "── fast path: python3 starts only for a reviewer ──────────────────────"
 
 # A python3 that leaves a marker and then runs the real one, so each case can
 # tell whether the guard started it at all, while the verdict still comes from
@@ -889,47 +880,26 @@ python_started() { # python_started <payload> — "yes" or "no"
   run_guard "$1" PATH="$SPY:$PATH" >/dev/null
   if [ -e "$SPY_MARK" ]; then echo yes; else echo no; fi
 }
-reset_state
-check "no record: a Bash call does not start python3" \
-  "$(python_started "$(bash_payload "git restore .")")" no
-check "no record: a lens dispatch does not start python3" \
-  "$(python_started "$(agent_payload PreToolUse "Explore" "read the diff")")" no
-check "no record: a returning lens does not start python3" \
-  "$(python_started "$(agent_payload PostToolUse "Explore" "read the diff")")" no
-check "no record: a Holmes dispatch still starts python3, to arm" \
-  "$(python_started "$(agent_payload PreToolUse "workbench-dev-team:holmes" "$BRIEF")")" yes
-check "...and it armed" "$(records)" 1
-check "a record on the host: a Bash call starts python3" \
-  "$(python_started "$(bash_payload "git status" session-B)")" yes
-check "...and the guarded session is still refused through the fast path" \
+check "Watson's Bash call does not start python3" \
+  "$(python_started "$(bash_payload "git restore ." session-A "$WATSON")")" no
+check "a session with no agent_type does not start python3" \
+  "$(python_started "$(bash_payload "chmod 644 x" session-A "")")" no
+check "a reviewer's Bash call starts python3" \
+  "$(python_started "$(bash_payload "git status")")" yes
+check "...and a reviewer is still refused through the fast path" \
   "$(verdict_of "$(run_guard "$(bash_payload "git restore .")" PATH="$SPY:$PATH")")" deny
-reset_state
-# Raw UTF-8, as the harness sends it. agent_payload's json.dumps would write a
+# Raw UTF-8, as the harness sends it. bash_payload's json.dumps would write a
 # backslash-u escape instead, which is the next case's rule, not this one.
-check "no record: a non-ASCII payload starts python3, which folds ſ into s" \
-  "$(python_started '{"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "session-A", "agent_id": "", "tool_input": {"subagent_type": "workbench-dev-team:holmeſ", "prompt": "Goal: review."}}')" yes
-check "...and python3 did read it as holmes, so skipping it would have missed an arm" "$(records)" 1
-reset_state
-check "no record: holmes spelled with a \\u escape starts python3" \
-  "$(python_started '{"hook_event_name": "PreToolUse", "tool_name": "Agent", "session_id": "session-A", "agent_id": "", "tool_input": {"subagent_type": "\u0068olmes", "prompt": "Goal: review."}}')" yes
-check "...and it armed" "$(records)" 1
-reset_state
-mkdir -p "$STATE"
-touch "$STATE/.hidden-record"
-check "a dot-file record still counts as a record" \
-  "$(python_started "$(bash_payload "git status")")" yes
-rm -f "$STATE/.hidden-record"
-chmod 300 "$STATE"
-check "a state directory that cannot be listed starts python3" \
-  "$(python_started "$(bash_payload "git status")")" yes
-chmod 700 "$STATE"
-reset_state
+check "a non-ASCII agent_type starts python3, which folds ſ into s" \
+  "$(python_started "$(raw_bash "workbench-dev-team:holmeſ" "git restore .")")" yes
+check "a reviewer type spelled with a \\u escape starts python3" \
+  "$(python_started "$(raw_bash "$ESCAPED_TYPE" "git restore .")")" yes
+check "...and python3 reads it as holmes, so skipping it would have missed a reviewer" \
+  "$(verdict_of "$(run_guard "$(raw_bash "$ESCAPED_TYPE" "git restore .")")")" deny
 
 echo
 echo "── the verdict binds: deny, never ask ─────────────────────────────────"
 
-reset_state
-arm
 ASK_SEEN=""
 while IFS= read -r cmd; do
   [ -n "$cmd" ] || continue
@@ -943,82 +913,42 @@ EOF
 check "no refusal path returns the classifier-approvable 'ask'" "${ASK_SEEN:-none}" none
 
 DENIAL="$(run_guard "$(bash_payload "git restore .")")"
-printf '%s' "$DENIAL" | grep -qi 'local-review guard' && ok "the denial names the guard" \
+printf '%s' "$DENIAL" | grep -q 'Review guard (workbench-dev-team)' && ok "the denial names the guard" \
   || bad "the denial does not name the guard"
-printf '%s' "$DENIAL" | grep -q "$WORKDIR" && ok "the denial names the tree it protects" \
-  || bad "the denial does not name the tree it protects"
+printf '%s' "$DENIAL" | grep -q "$TMPROOT" && ok "the denial names the scratch roots" \
+  || bad "the denial does not name the scratch roots"
 # The denial offers no approval path, on purpose. A denial that prints a way out is an invitation to take it.
-printf '%s' "$DENIAL" | grep -qi 'approve\|override\|WORKBENCH_LOCAL_REVIEW_DIR' \
+printf '%s' "$DENIAL" | grep -qi 'approve\|override' \
   && bad "the denial leaks a way around itself" \
   || ok "the denial offers no way around itself"
 
 echo
-echo "── release: the record is held until the review returns ───────────────"
-
-reset_state
-arm
-disarm
-check "a returning Holmes dispatch releases the record" "$(records)" 0
-
-reset_state
-arm
-# A lens sub-agent returning mid-review is an Agent PostToolUse too. It must not
-# unlock the tree the rest of the fan-out is still reading.
-run_guard "$(agent_payload PostToolUse "Explore" "read the diff")" >/dev/null
-check "a lens returning does not release the review's record" "$(records)" 1
-check "and the tree is still guarded" "$(bash_verdict "git restore .")" deny
-
-reset_state
-arm
-arm
-disarm
-check "two reviews in flight need two releases" "$(records)" 1
-check "and the second is still guarded" "$(bash_verdict "chmod 644 file.txt")" deny
-disarm
-check "the second release clears it" "$(records)" 0
-
-# A review that dies without returning must not hold the session forever.
-reset_state
-arm
-python3 - "$STATE" <<'PY'
-import json, os, sys, time
-directory = sys.argv[1]
-for name in os.listdir(directory):
-    path = os.path.join(directory, name)
-    with open(path) as handle:
-        record = json.load(handle)
-    record["armed_at"] = time.time() - 7201
-    with open(path, "w") as handle:
-        json.dump(record, handle)
-PY
-check "a record past its TTL no longer gates" "$(bash_verdict "git restore .")" silent
-
-echo
 echo "── fail-safe inputs ───────────────────────────────────────────────────"
 
-reset_state
-arm
 check "an unparseable payload yields no opinion" "$(verdict_of "$(printf 'not json' | \
-  env -u WORKBENCH_DEV_TEAM_PIPELINE WORKBENCH_LOCAL_REVIEW_DIR="$STATE" \
-  HOME="$SANDBOX/home" TMPDIR="$SANDBOX" bash "$GUARD")")" silent
-check "a payload with no session id yields no opinion" \
-  "$(bash_verdict "git restore ." "" agent-1)" silent
-check "a non-Bash, non-Agent tool is not this guard's business" \
+  env -u WORKBENCH_DEV_TEAM_PIPELINE HOME="$SANDBOX/home" TMPDIR="$TMPROOT" bash "$GUARD")")" silent
+check "a payload with no session id is still judged by its agent_type" \
+  "$(bash_verdict "git restore ." "")" deny
+check "a non-Bash, non-editing tool is not this guard's business" \
   "$(verdict_of "$(run_guard "$(python3 -c '
-import json
+import json, sys
 print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Read",
-                  "session_id": "session-A", "agent_id": "agent-1",
-                  "tool_input": {"file_path": "/etc/hosts"}}))')")")" silent
-
-# A brief with no parseable workdir still arms. Only the redirect rule needs a
-# path; every other rule is independent of one, and the dangerous verbs are what
-# the breach used.
-reset_state
-run_guard "$(agent_payload PreToolUse "workbench-dev-team:holmes" "Goal: review the tree. Done when: done.")" >/dev/null
-check "a brief with no Workdir slot still arms" "$(records)" 1
-check "and still refuses a mutation" "$(bash_verdict "chmod 644 file.txt")" deny
-check "but has no tree to judge a redirect against" \
-  "$(bash_verdict "git diff HEAD > notes.md" session-A agent-1 "$WORKDIR")" silent
+                  "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
+                  "tool_input": {"file_path": "/etc/hosts"}}))' "$LENS")")")" silent
+check "an Agent dispatch is not this guard's business" \
+  "$(verdict_of "$(run_guard "$(python3 -c '
+import json, sys
+print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent",
+                  "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
+                  "tool_input": {"subagent_type": sys.argv[1], "prompt": "rm -rf /"}}))' "$HOLMES")")")" silent
+check "a PostToolUse payload is not this guard's business" \
+  "$(verdict_of "$(run_guard "$(python3 -c '
+import json, sys
+print(json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Bash",
+                  "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
+                  "tool_input": {"command": "git restore ."}}))' "$LENS")")")" silent
+check "with no scratch root anywhere, every reviewer write is refused" \
+  "$(verdict_of "$(run_guard "$(bash_payload "touch $OUTSIDE/x")" TMPDIR="$SANDBOX/missing" HOME="$SANDBOX/nohome")")" deny
 
 echo
 echo "── the denial's wording: one line for the human, the rest for the model ──"
@@ -1033,14 +963,12 @@ field_of() { # field_of <payload-json> <field>
     'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"][sys.argv[1]])' "$2"
 }
 
-reset_state
-arm
 DENY_OUT="$(run_guard "$(bash_payload "chmod 644 file.txt")")"
 DENY_REASON="$(field_of "$DENY_OUT" permissionDecisionReason)"
 DENY_CONTEXT="$(field_of "$DENY_OUT" additionalContext)"
 
 check "the human line names the action and nothing else" "$DENY_REASON" \
-  '🛑 Blocked: `chmod`. A local review is reading this working tree.'
+  '🛑 Blocked: `chmod`. A Holmes reviewer writes only in scratch.'
 if [ "$(printf '%s' "$DENY_REASON" | grep -c .)" = "1" ] && [ "${#DENY_REASON}" -le 120 ]; then
   ok "the human line is one line and stays short (${#DENY_REASON} chars)"
 else
@@ -1059,7 +987,7 @@ case "$DENY_REASON" in
 esac
 
 case "$DENY_CONTEXT" in
-  *"Local-review guard (workbench-dev-team)."*)
+  *"Review guard (workbench-dev-team)."*)
     ok "the context names the guard, so the model can report which one fired" ;;
   *) bad "the context does not name the guard" ;;
 esac
@@ -1069,8 +997,8 @@ case "$DENY_CONTEXT" in
   *) bad "the context lost the classifier's reason" ;;
 esac
 case "$DENY_CONTEXT" in
-  *"$WORKDIR"*) ok "the context names the tree under review" ;;
-  *) bad "the context does not name the tree under review" ;;
+  *"$TMPROOT"*) ok "the context names the scratch roots" ;;
+  *) bad "the context does not name the scratch roots" ;;
 esac
 case "$DENY_CONTEXT" in
   *"git diff HEAD"*) ok "the context still says what to run instead" ;;
@@ -1084,16 +1012,16 @@ esac
 # Each rule gets its own action word. One label for every refusal would tell a
 # person nothing the emoji does not already say.
 action_of() { # action_of <command> [cwd]
-  field_of "$(run_guard "$(bash_payload "$1" session-A agent-1 "${2-}")")" permissionDecisionReason
+  field_of "$(run_guard "$(bash_payload "$1" session-A "$LENS" "${2-}")")" permissionDecisionReason
 }
 check "a git write names the verb" "$(action_of 'git restore .')" \
-  '🛑 Blocked: `git restore`. A local review is reading this working tree.'
+  '🛑 Blocked: `git restore`. A Holmes reviewer writes only in scratch.'
 check "an in-place edit names -i" "$(action_of 'sed -i s/a/b/ f')" \
-  '🛑 Blocked: `sed -i`. A local review is reading this working tree.'
+  '🛑 Blocked: `sed -i`. A Holmes reviewer writes only in scratch.'
 check "a rewrite flag says so" "$(action_of 'prettier --write .')" \
-  '🛑 Blocked: `prettier` with a rewrite flag. A local review is reading this working tree.'
+  '🛑 Blocked: `prettier` with a rewrite flag. A Holmes reviewer writes only in scratch.'
 check "a redirect into the tree says so" "$(action_of 'git diff HEAD > notes.md' "$WORKDIR")" \
-  '🛑 Blocked: redirecting output into the tree under review. A local review is reading this working tree.'
+  '🛑 Blocked: redirecting output outside the scratch roots. A Holmes reviewer writes only in scratch.'
 
 echo
 echo "── --classify: the same rule the lint holds the docs to ───────────────"

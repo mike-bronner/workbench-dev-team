@@ -17,7 +17,7 @@
 #
 # Checks, per agent file:
 #   1. The `## The brief contract` section exists.
-#   2. It names all five slots, in order, read off the fenced template.
+#   2. It names all six slots, in order, read off the fenced template.
 #   3. It states the refusal, and the two fixed-token exemptions.
 #   4. `Constraints:` may read "none" and `Context:` may not. The pair was
 #      stated the other way round once, and a flip back is silent otherwise.
@@ -25,9 +25,11 @@
 #      everything.
 #   6. The `## Working-context budget` section is present, states its figure,
 #      and states that nothing enforces it — with both reasons.
-# Then Watson's mode default, and a sweep over the sending docs: the template
-# governs every handoff, that rule carries its fan-out exemption in the same
-# section, no YAML frontmatter description names a stale slot, every `Workdir:`
+# Then the consumers of `Acceptance:` (Watson's and Holmes's Index-mode mapping
+# of the triage AC, and /develop's grading), Watson's mode default, and a sweep
+# over the sending docs: the template governs every handoff, that rule carries
+# its fan-out exemption in the same section, no YAML frontmatter description
+# names a stale slot, every `Workdir:`
 # template still carries the branch-or-worktree widening while a bare path stays
 # valid, and no length figure survives anywhere near the brief — the
 # working-context budget excepted, which measures the other side of the handoff.
@@ -38,11 +40,11 @@ ROOT="$(cd "$DIR/.." && pwd)"
 PASS=0
 FAIL=0
 
-# The five slots, in canonical order, written once. The template check and the
+# The six slots, in canonical order, written once. The template check and the
 # frontmatter check both read this array, so a rename lands here alone and
 # reddens every doc still carrying the old name. Two hand-kept copies of the
 # list is how a rename half-lands, which is the defect this array closes.
-SLOTS=(Workdir Goal Context Constraints "Done when")
+SLOTS=(Workdir Goal Context Constraints Acceptance "Done when")
 SLOTS_CSV="$(IFS=,; printf '%s' "${SLOTS[*]}")"     # Workdir,Goal,…
 SLOTS_ALT="$(IFS='|'; printf '%s' "${SLOTS[*]}")"   # Workdir|Goal|…
 SLOTS_SLASH="${SLOTS_CSV//,/ / }"                   # Workdir / Goal / …
@@ -54,6 +56,18 @@ for file in "$DIR"/*.md; do
 
   # The contract section: `## The brief contract` up to the next `## ` heading.
   section="$(awk '/^## The brief contract/{f=1} f && /^## /&& !/^## The brief contract/{exit} f{print}' "$file")"
+
+  # A fan-out worker takes no brief. The contract governs the orchestrator
+  # boundary, and a worker another agent spawns inside its own task never
+  # crosses it (agents/holmes-lens.md). Exempt by what the file declares, never
+  # by its name, so the exemption stays a boundary: the file must carry a
+  # `## Fan-out worker` section that names the boundary, and no contract.
+  worker="$(awk '/^## Fan-out worker/{f=1} f && /^## / && !/^## Fan-out worker/{exit} f{print}' "$file" | tr '\n' ' ')"
+  if [ -z "$section" ] && [[ $worker == *"orchestrator boundary"* ]]; then
+    PASS=$((PASS + 1))
+    echo "  ✅ $agent — a fan-out worker inside the orchestrator boundary, no brief contract"
+    continue
+  fi
 
   if [ -z "$section" ]; then
     fail_file "$agent — no '## The brief contract' section" \
@@ -99,11 +113,40 @@ for file in "$DIR"/*.md; do
 
   if [ ${#missing[@]} -eq 0 ]; then
     PASS=$((PASS + 1))
-    echo "  ✅ $agent — five slots, refusal, ask-back with its bar, both token exemptions"
+    echo "  ✅ $agent — six slots, refusal, ask-back with its bar, both token exemptions"
   else
     fail_file "$agent — brief contract incomplete" "${missing[@]}"
   fi
 done
+
+# Who reads `Acceptance:`, and what stands in for it on the board. The template
+# check above proves every agent requires the slot. It cannot prove anyone
+# grades against it, and the slot is worth nothing if no one does. So each
+# consumer is pinned where it reads the list, section-scoped like the contract:
+#   - Watson and Holmes map the item's triage AC onto the list in The Index
+#     mode, where no brief arrives. Lestrade writes those AC and reads no list,
+#     so its file is deliberately not asked for this.
+#   - /develop's Decision Protocol grades options against the criteria, and
+#     points at /workbench-core:intake instead of restating the routine. A
+#     second copy of the routine is how the old rules drifted apart.
+acceptance_problems=()
+for consumer in watson holmes; do
+  consumer_section="$(awk '/^## The brief contract/{f=1} f && /^## /&& !/^## The brief contract/{exit} f{print}' "$DIR/$consumer.md" | tr '\n' ' ')"
+  printf '%s' "$consumer_section" | grep -Fq 'written by Lestrade at triage, are your Acceptance list' \
+    || acceptance_problems+=("$consumer — the brief contract no longer maps the item's triage AC onto the Acceptance list")
+done
+protocol="$(awk '/^## Decision Protocol/{f=1} f && /^## / && !/^## Decision Protocol/{exit} f{print}' "$ROOT/skills/develop/SKILL.md" | tr '\n' ' ')"
+printf '%s' "$protocol" | grep -Fq 'grade each one against every acceptance criterion' \
+  || acceptance_problems+=("develop — the Decision Protocol no longer grades every option against the criteria")
+printf '%s' "$protocol" | grep -Fq '`/workbench-core:intake` is the one written copy' \
+  || acceptance_problems+=("develop — the Decision Protocol no longer points at /workbench-core:intake as the routine's one source")
+
+if [ ${#acceptance_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ acceptance — Watson and Holmes map triage AC onto the list, /develop grades against it"
+else
+  fail_file "the Acceptance list has lost a consumer" "${acceptance_problems[@]}"
+fi
 
 # Watson's mode default. Prose-only, so a grep is the whole guard: the marker
 # line was dropped from every brief on the strength of this default, and a
@@ -269,15 +312,16 @@ fi
 
 # What `Workdir:` means, kept the same in every doc that defines it. The slot
 # carries the absolute path AND the branch or worktree the human agreed to, so a
-# workspace decision is recorded where the sub-agent reads it — no sixth slot,
-# because the workbench-core gate matches exactly five line-anchored headers and
+# workspace decision is recorded where the sub-agent reads it — no slot of its
+# own, because a new slot needs a release of both plugins together: the
+# workbench-core gate reads its slot list from its own brief-template.sh, and
 # every agent refuses a brief missing one.
 #
 # Template lines only (`Workdir: <…>`), which is where the slot is *defined*. The
 # worked examples carry real paths and are instances, not definitions. A doc
 # that reverts one template to a bare path teaches half the contract to whoever
-# reads that file,
-# which is the shape release 0.41.0 already shipped once with the old slot name.
+# reads that file, which is the shape release 0.41.0 already shipped once with
+# the old slot name.
 #
 # Fails closed on finding nothing: a renamed slot or a deleted template would
 # otherwise pass this check by leaving it with no line to inspect.
@@ -337,7 +381,7 @@ fi
 # says "working context", and on no other line. Same per-case shape as the
 # frontmatter skip above: one check, one exclusion, stated where it applies.
 ceiling_problems=()
-brief_lines="$(grep -HnE 'brief|slot|template|Goal:|Context:|Constraints:|Done when:' "${BRIEF_DOCS[@]}")"
+brief_lines="$(grep -HnE 'brief|slot|template|Goal:|Context:|Constraints:|Acceptance:|Done when:' "${BRIEF_DOCS[@]}")"
 
 while IFS= read -r hit; do
   [ -n "$hit" ] && ceiling_problems+=("$hit")

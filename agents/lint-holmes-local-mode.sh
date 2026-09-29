@@ -31,7 +31,7 @@
 #      error is a throwaway report; the expensive one posts an App-signed verdict
 #      onto somebody else's PR. A flip here is silent otherwise.
 #   2. The three limits — no Index call, no GitHub write, no write to the tree.
-#   3. The rubric is the brief's Goal and Done when, and is never amended.
+#   3. The rubric is the brief's Acceptance list, and is never amended.
 #   4. Every board-coupled Index step has a stated local answer. "Documented end
 #      to end" is the requirement; a reference that quietly drops the CI step
 #      leaves an agent to invent one.
@@ -149,8 +149,8 @@ report "limits — no Index call, no GitHub write, no write to the tree" ${limit
 rubric=()
 printf '%s' "$localsec" | grep -Fq '**The rubric is the brief.**' \
   || rubric+=("holmes.md no longer declares the brief to be the local rubric")
-printf '%s' "$localsec" | grep -Fq '`Goal:` and `Done when:`' \
-  || rubric+=("holmes.md no longer names the brief's Goal and Done when as the local rubric")
+printf '%s' "$localsec" | grep -Fq 'Its `Acceptance:` list is the local acceptance' \
+  || rubric+=("holmes.md no longer names the brief's Acceptance list as the local rubric")
 # Each clause is pinned where it is DECLARED. A bare 'never amend' grep is
 # satisfied by the section's own pointer list and by the substitution table, both
 # of which restate the rule — so it survives the rule being struck from the two
@@ -159,11 +159,11 @@ printf '%s' "$localsec" | grep -Fq '**you never amend them**' \
   || rubric+=("holmes.md no longer forbids amending the local rubric")
 grep -Fq '## §L4a — the rubric is the brief, and you never amend it' "$LOCAL" \
   || rubric+=("the reference's §L4a no longer forbids amending the local rubric")
-grep -Fq 'Never paraphrase them, never widen them' "$LOCAL" \
+grep -Fq 'Never paraphrase the criteria, never widen them' "$LOCAL" \
   || rubric+=("the reference no longer blocks the quiet narrowing that makes a failing tree pass")
-grep -Fq 'Paste both slots **verbatim**' "$LOCAL" \
+grep -Fq 'Paste the list **verbatim**' "$LOCAL" \
   || rubric+=("the rubric is no longer pasted verbatim into the lens prompts")
-report "rubric — the brief's Goal and Done when, never amended" ${rubric[@]+"${rubric[@]}"}
+report "rubric — the brief's Acceptance list, never amended" ${rubric[@]+"${rubric[@]}"}
 
 # ── 4. Every board-coupled step has a stated local answer ─────────────────────
 # "Documented end to end" is the requirement. A reference that silently drops one
@@ -277,7 +277,7 @@ grep -Fq '## §L4-fallback' "$LOCAL" \
 fb="$(section '^## §L4-fallback' "$LOCAL")"
 printf '%s' "$fb" | grep -Fq '`Workdir:`' \
   || fallback+=("§L4-fallback does not send the inline reviewer to the workdir — review-phases.md sends it to a checkout")
-printf '%s' "$fb" | grep -Fq '`Goal:` and `Done when:`' \
+printf '%s' "$fb" | grep -Fq '`Acceptance:` list' \
   || fallback+=("§L4-fallback does not name the brief as the inline reviewer's rubric — review-phases.md names the AC")
 printf '%s' "$subagents" | grep -Fq 'replaced, not substituted' \
   || fallback+=("§L4 no longer records that the fallback is replaced rather than substituted")

@@ -36,8 +36,9 @@ states, in full here.
   limit to every sub-agent you dispatch.
 
   **A `PreToolUse` hook enforces this** — `hooks/scripts/local-review-guard.sh`
-  refuses those commands for every sub-agent of a session with a local review in
-  flight, and leaves reads and the test suite alone. It is a backstop for the
+  refuses any write outside the scratch roots from your agent type and from the
+  `workbench-dev-team:holmes-lens` type every helper you dispatch runs on, and
+  leaves reads and the test suite alone. It is a backstop for the
   rule above, never a replacement: it reads the command an agent asked to run,
   so a verb inside a script is still yours to not write. Its denial is final and
   there is nothing to clear — if it refuses a command you believe a review needs,
@@ -91,17 +92,19 @@ Two consequences, both mechanical:
 ## §L4a — the rubric is the brief, and you never amend it
 
 Index mode's rubric is the acceptance criteria, which Holmes is forbidden to
-write or amend. A local review has no acceptance criteria to fetch. **The
-brief's `Goal:` and `Done when:` slots are the rubric**: an outcome and an
-observable finish line, written by whoever dispatched the work.
+write or amend. A local review has no criteria to fetch from an issue. **The
+brief's `Acceptance:` list is the rubric**: numbered criteria, each one a
+condition you can check, written by whoever dispatched the work.
 
-They bind exactly as acceptance criteria bind. Paste both slots **verbatim** into
-the lens prompts. Never paraphrase them, never widen them, never quietly narrow
-one because the tree would then pass. `Constraints:` is not the rubric, but a
-change that breaks a stated constraint is a finding — the constraint carries its
-reason, and the reason is what you check against.
+They bind exactly as acceptance criteria bind. Paste the list **verbatim** into
+the lens prompts. Never paraphrase the criteria, never widen them, never quietly
+narrow one because the tree would then pass. `Constraints:` is not the rubric,
+but a change that breaks a stated constraint is a finding — the constraint
+carries its reason, and the reason is what you check against.
 
-`Context:` is background for your reading. It is not a criterion.
+`Goal:` names the coherent unit the criteria belong to (§L5), and `Done when:`
+says where the sender's task stopped. Neither is a criterion, and neither is
+`Context:`, which is background for your reading.
 
 **Mike's `feedback/` rules bind here as they bind a PR.** Run `agents/holmes.md`
 §4a.5 before Phase B: two searches with `folder: "feedback"`, one for the
@@ -185,7 +188,7 @@ never to the one it was quoted from.
 | `Checkout (already prepared, do not re-clone): <checkout path>` | `Working tree (the human's live directory — read only, never modify): <workdir>` |
 | `PR number: <PR_NUM>   Repo: <repo>` | the workdir, and the changed-file list from §L4b |
 | `gh pr diff <PR_NUM>` (the map, and the scope test) | `git -C <workdir> diff HEAD`, plus the untracked-file list |
-| `Acceptance criteria (verbatim — never amend or reinterpret)` | the brief's `Goal:` and `Done when:`, verbatim, under the same instruction |
+| `Acceptance criteria (verbatim — never amend or reinterpret)` | the brief's `Acceptance:` list, verbatim, under the same instruction |
 
 **The `scope` token stays `in-pr`.** Locally it reads as *on a line the
 uncommitted change added or modified, including any line of a new untracked
@@ -229,7 +232,7 @@ You review the working tree yourself, in place, exactly as a single reviewer:
   `git diff HEAD` plus the untracked-file list, with each new file read directly.
   There is no checkout to read, and the no-clone rule is not suspended because
   the fan-out is off.
-- **The rubric is the brief's `Goal:` and `Done when:`**, verbatim, under §L4a.
+- **The rubric is the brief's `Acceptance:` list**, verbatim, under §L4a.
   You never amend them here either.
 - Read each changed file in context against that rubric and the repo's own
   patterns, look for correctness, security, and test defects, and read the test
@@ -261,7 +264,7 @@ plus everything belonging to the coherent unit carry no actionable finding.
 
 ## Review Summary
 - <what was reviewed: files changed, suite result>
-- Goal and Done when are both met
+- Every `Acceptance:` criterion is met: <AC1 — how>, <AC2 — how>
 - Everything belonging to the coherent unit is clean
 
 ## 📋 Non-blocking follow-ups
@@ -273,10 +276,10 @@ change or its coherent unit carries an actionable finding. Same body as Index
 mode: `## Issues Found`, `## What's Good`, `## 📋 Non-blocking follow-ups`, and
 `## Unverified Observations` only when Phase C's cap overflowed.
 
-**🛑 Rubric dispute** — the local form of an escalation. The brief's `Goal:` or
-`Done when:` is itself wrong, imprecise, impossible, or contradicted by the
-repo; or the change diverges from it in a way you cannot confidently call a
-strict, nothing-dropped improvement. You may not approve around it, and
+**🛑 Rubric dispute** — the local form of an escalation. A criterion in the
+brief's `Acceptance:` list is itself wrong, imprecise, impossible, or
+contradicted by the repo; or the change diverges from it in a way you cannot
+confidently call a strict, nothing-dropped improvement. You may not approve around it, and
 requesting changes would force an undo of a choice that may be correct. Hand the
 dispute back as a decision, never as an open question: **three options, pros and
 cons each, then your recommendation and why**, so the session can answer with a
@@ -326,7 +329,7 @@ mcp__plugin_workbench-core_memory__write(
   },
   content: "## <workdir-basename> · local review · <today>
 - **Target:** uncommitted working tree at `<workdir>` (HEAD `<short-sha>`)
-- **Rubric:** the brief's Goal and Done when
+- **Rubric:** the brief's Acceptance list
 - **Verdict:** approved | changes requested | rubric dispute
 - **Categories:** <category>[, <category>]
 - **Findings:** <one line each, or none>

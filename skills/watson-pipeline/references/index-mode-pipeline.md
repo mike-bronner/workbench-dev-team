@@ -445,6 +445,10 @@ gh issue view <issue_number> -R <repo> --json title,body,labels,comments
 [ -n "$PR_NUM" ] && gh pr view "$PR_NUM" -R <repo> --json comments
 ```
 
+The criteria, written by Lestrade at triage, are this run's Acceptance list:
+`/develop`'s Decision Protocol grades each option against them, and your PR body
+and report are checked against them.
+
 #### Read the top-lessons digest, and search for anything specific, before coding
 
 Before you write any code, check what the pipeline has already learned from Holmes's

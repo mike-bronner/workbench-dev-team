@@ -1,13 +1,14 @@
 #!/bin/bash
-# Local-review guard (PreToolUse: Agent and Bash; PostToolUse: Agent).
+# Review guard (PreToolUse: Bash, Edit, Write, NotebookEdit).
 #
-# Holmes's Local mode reviews the human's live working directory. The
-# uncommitted change in that directory is the ONLY copy of the work, so a
-# reviewer that writes to it destroys the thing it was sent to read. The rule
-# was already stated in Holmes's prompt, in his reference, and verbatim in every
-# sub-agent prompt Local mode dispatches — and on the mode's first real exercise
-# a lens sub-agent ran `chmod` against that directory anyway and changed a
-# script from 755 to 644. Prose in an agent prompt is advisory. This hook is not.
+# Holmes reviews code he must not change. In Local mode the tree he reads is the
+# human's live working directory, and the uncommitted change in it is the ONLY
+# copy of the work, so a reviewer that writes to it destroys the thing it was
+# sent to read. The rule was already stated in Holmes's prompt, in his
+# reference, and verbatim in every sub-agent prompt he dispatches — and on the
+# mode's first real exercise a lens sub-agent ran `chmod` against that directory
+# anyway and changed a script from 755 to 644. Prose in an agent prompt is
+# advisory. This hook is not.
 #
 # It is a sibling of commit-guard.sh, never an extension of it. What is borrowed
 # is the reasoning of the commit approval gate that guard replaced, including the
@@ -15,38 +16,57 @@
 #
 # ── WHAT IT DOES ──────────────────────────────────────────────────────────────
 #
-#   ARM     PreToolUse on the Agent tool. When a session dispatches Holmes with
-#           a prose brief (Local mode), a record is written for that SESSION,
-#           naming the `Workdir:` the brief protects.
-#   ENFORCE PreToolUse on Bash, Edit, Write, and NotebookEdit. A call from a
-#           SUB-AGENT of an armed session is refused when it writes into the
-#           tree under review. Reads and test runs are untouched.
-#   DISARM  PostToolUse on the Agent tool. The Holmes dispatch returned, so the
-#           record is released. A TTL covers the run that never returns.
+# One static rule, with no state: a tool call whose `agent_type` is Holmes
+# (`workbench-dev-team:holmes`) or his helper (`workbench-dev-team:holmes-lens`)
+# may not write outside the scratch roots. It holds at any time, in both of
+# Holmes's modes, on the main thread of a session started with
+# `--agent workbench-dev-team:holmes` (the scheduled pipeline), and in every
+# sub-agent of either type, at any depth.
 #
-# ── THE SIGNAL, AND WHY IT IS NOT A MARKER FILE ───────────────────────────────
+# The scratch roots are the places a reviewer may write:
+#   • $TMPDIR, where `mktemp -d` lands. Holmes's Index-mode clone lives there,
+#     and so does a helper's copy of a tree it needs to mutate for a probe.
+#   • ~/Developer/scratchpad.
+#   • The session scratchpad, /private/tmp/claude-*/*/<session_id>/scratchpad,
+#     or the `scratchpad_dir` the payload names.
+# The last two are found by name, so a planted symlink could aim them anywhere.
+# Each is kept only when its physical path is the path itself, the check
+# hooks/scripts/pipeline-scope.sh and workbench-core's scope guard both make. A
+# write lands in a root only when it is strictly beneath one, resolved both
+# through every symlink and with its final name left unresolved, so no root can
+# be removed and no link can lead out of one.
 #
-# Two harness-supplied fields decide it, and nothing else: `session_id` and
-# `agent_id`. The agent supplies neither, so neither can be forged by the
-# command being inspected.
+# Reads and test runs are untouched. `bash run-tests.sh` is one token here, and
+# the temporary files a suite writes are invisible to this hook.
 #
-# The record is keyed by session id, so it binds the session that dispatched the
-# review and no other. A bare "a local review is in progress" marker would be
-# the commit gate's `/tmp/watson.lock` leak with the sign flipped: that file
-# answered "is a pipeline running on this host?" instead of "is THIS process the
-# pipeline?", and wrongly EXEMPTED every concurrent session. A host-wide review
-# marker would wrongly GAG them — the human's own editing in another window
-# would start failing while a review ran. Do not reintroduce one. The state
-# directory is shared, but every record in it is answerable only to one session
-# id; a record grants nothing, so sharing the directory cannot leak a capability
-# the way a shared approval directory would.
+# ── WHY IT IS STATIC ──────────────────────────────────────────────────────────
 #
-# Enforcement also requires a non-empty `agent_id`, which means a sub-agent. The
-# main thread of the dispatching session keeps editing its own tree while the
-# review reads it, which is the difference between a guard and a lock. `agent_id`
-# is the same field the commit guard keys on, for the same reason: the harness
-# supplies it, and it is empty for a main session and non-empty for every
-# sub-agent.
+# This guard used to arm a per-session hold when a Local-mode Holmes was
+# dispatched and release it when the review ended. Every release event the
+# harness offers turned out to fire at the wrong time or not at all: a failed or
+# classifier-denied dispatch never reached PostToolUse, a background dispatch
+# reached it at launch, and SubagentStop could not tell a final stop from a
+# paused turn. Each fix added machinery, and each round found a new early
+# release. The hold existed only because Holmes's helpers ran on write-capable
+# agent types (dev-team/process-insights/holmes-lens-subagent-write-access-2026-08-01.md
+# in the memory vault). They now run on their own read-only type,
+# agents/holmes-lens.md, which grants no Write, Edit, or NotebookEdit. With every
+# reviewer carrying a type of its own, the harness's `agent_type` field names
+# the reviewer on every call, and no lifecycle has to be tracked.
+#
+# ── THE SIGNAL ────────────────────────────────────────────────────────────────
+#
+# One harness-supplied field decides it: `agent_type`. Claude Code 2.1.284 sets
+# it from the running agent's own definition on every hook input — in a
+# sub-agent from that sub-agent's type (so a helper's helper carries its own
+# type, not its parent's), and on the main thread from the `--agent` the session
+# was started with. An interactive main session carries none, so the human's own
+# window is never gagged. The agent supplies no part of it, so the command being
+# inspected cannot forge it.
+#
+# Nothing else scopes the rule: not the session, not a Workdir. A host-wide
+# marker would be the commit gate's `/tmp/watson.lock` leak with the sign
+# flipped, and a per-session record is the machinery this version removed.
 #
 # ── THE VERDICT IS "deny" ─────────────────────────────────────────────────────
 #
@@ -58,11 +78,15 @@
 #
 # ── WHAT COUNTS AS MUTATION ──────────────────────────────────────────────────
 #
-# A local review reads the tree constantly and runs the repository's own suite.
-# A rule that stops either one makes the mode useless and gets switched off, so
+# A review reads the tree constantly and runs the repository's own suite. A
+# rule that stops either one makes the review useless and gets switched off, so
 # the line is drawn at commands whose PURPOSE is to change a file's content,
 # location, existence, or metadata. Rule 1 is a true rule. Rules 2 and 3 are
-# fixed lists, and "WHAT IT DOES NOT COVER" below states what that costs:
+# fixed lists, and "WHAT IT DOES NOT COVER" below states what that costs. Rules
+# 1 and 3 refuse wherever they point, inside a scratch root too, which is
+# stricter than the static rule asks: no reviewer needs a git write or an
+# in-place rewrite, and a probe on a copy can write through `cp`, `tee`, or a
+# redirect, which rules 2 and 4 judge by path.
 #
 #   1. git, inverted. GIT_READ_ONLY below lists the verbs that only read; every
 #      other git verb is refused. The inversion is the point. A roster of
@@ -83,16 +107,16 @@
 #      rsync's destination, the directory tar and unzip extract into (the
 #      working directory when none is named) and the archive tar creates,
 #      sort's -o value, and uniq's second operand. A listing form writes
-#      nothing, so `tar -tf` and `unzip -l` stay allowed. Each is judged by the paths it writes, resolved
-#      two ways: through every symlink, and with only the final name left
-#      unresolved, because `rm <tree>/link` removes a link that lives in the
-#      tree wherever it points. Refused when either is inside the tree under review or
-#      contains it (`rm -rf ..`), and refused when a path cannot be resolved at
-#      all — a variable, a glob, a quote, a relative path with no cwd, or
-#      arguments fed by xargs. So `rm -rf /tmp/scratch` runs, and `rm -rf
-#      "$DIR"` does not. An option's value is read as a path too, which can
-#      only refuse more. With no tree named, nothing can be judged, so every
-#      write is refused.
+#      nothing, so `tar -tf` and `unzip -l` stay allowed. Each is judged by
+#      the paths it writes, resolved two ways: through every symlink, and with
+#      only the final name left unresolved, because `rm <dir>/link` removes a
+#      link where it lives, wherever it points. Allowed only when both land
+#      strictly beneath a scratch root. Refused otherwise, and refused when a
+#      path cannot be resolved at all — a variable, a glob, a quote, a
+#      relative path with no cwd, or arguments fed by xargs. So `rm -rf
+#      <mktemp path>` runs, and `rm -rf "$DIR"` does not. An option's value is
+#      read as a path too, which can only refuse more. With no scratch root
+#      found, every write is refused.
 #   3. In-place rewriting: a formatter or linter run with --write / --fix /
 #      --in-place; a common formatter run with its short write flag (gofmt,
 #      goimports, gofumpt, shfmt, and prettier -w; clang-format, autopep8,
@@ -126,14 +150,15 @@
 #      interpreters disagree: `-I` is an in-place edit to BSD and macOS sed and
 #      is refused there, while to perl and ruby it names an include directory,
 #      so `perl -Ilib -ne print` stays allowed.
-#   4. Redirection into a protected tree. `> file` is checked by target path,
-#      not refused outright, because `git diff HEAD > /tmp/scratch.diff` is
-#      ordinary review work. The target goes through resolve(), as every write
-#      path does: `~` is expanded, a relative target is resolved against the
-#      payload's `cwd`, and a quoted, `$HOME`, or other shell-built target is
-#      refused. When no cwd is known it is refused too, because the safe answer
-#      to "which tree is this relative to?" is the one under review. A `cd`,
-#      `pushd`, or `popd` makes cwd unknown for every segment after it.
+#   4. Redirection. `> file` is checked by target path, not refused outright,
+#      because `git diff HEAD > <mktemp path>/review.diff` is ordinary review
+#      work. The target goes through resolve(), as every write path does: `~`
+#      is expanded, a relative target is resolved against the payload's `cwd`,
+#      and a quoted, `$HOME`, or other shell-built target is refused. It is
+#      allowed beneath a scratch root, and into /dev/null, /dev/stdout,
+#      /dev/stderr, /dev/tty, and /dev/fd/<n>, which write no file. When no cwd
+#      is known a relative target is refused. A `cd`, `pushd`, or `popd` makes
+#      cwd unknown for every segment after it.
 #
 # ── WHAT IT DOES NOT COVER ────────────────────────────────────────────────────
 #
@@ -142,16 +167,17 @@
 #
 #   • It does not catch every program that writes. Rules 2 and 3 name the
 #     ordinary file writers and the common formatters, and that is where they
-#     stop: a program on neither list that writes into the tree runs silently.
-#     The same holds for runners: a listed writer behind a runner not named in
-#     RUNNERS (`uvx`, `bun x`, `pnpm <bin>`), or inside a package script
-#     (`npm run format`), runs silently.
+#     stop: a program on neither list that writes outside the scratch roots
+#     runs silently. `gh` is one: `gh pr checkout` is how Index mode fills its
+#     clone, so it is left to run. The same holds for runners: a listed writer
+#     behind a runner not named in RUNNERS (`uvx`, `bun x`, `pnpm <bin>`), or
+#     inside a package script (`npm run format`), runs silently.
 #     Code run inside an interpreter (`python -c`, `node -e`) is out of scope
-#     for the reason the next point gives. The backstop for both is the lens
-#     prompts' no-mutation rule and the human review of the diff. The rejected
-#     alternative was a read allowlist, which refuses every command it does not
-#     know. It would refuse reads too, and a guard that blocks reading gets
-#     switched off. A writer found missing is added to the list.
+#     for the reason the next point gives. The backstop for both is the
+#     reviewer prompts' no-mutation rule and the human review of the diff. The
+#     rejected alternative was a read allowlist, which refuses every command it
+#     does not know. It would refuse reads too, and a guard that blocks reading
+#     gets switched off. A writer found missing is added to the list.
 #     Short write flags are read inside a cluster only for the four formatters
 #     in FORMATTER_CLUSTER_FLAGS. A tool added to FORMATTER_WRITE_FLAGS whose
 #     parser bundles short flags needs a row there too, or its clustered write
@@ -161,26 +187,17 @@
 #   • It is not anti-evasion machinery. Like its sibling gate it reads the
 #     command the agent asked to run, so a verb inside `bash -c`, inside a
 #     script, or behind command substitution is not its subject. That is also
-#     what lets the repository's own suite run: `bash run-tests.sh` is one
-#     token here, and the temporary files the suite writes are invisible to it.
-#     A guard tight enough to see them would be tight enough to stop the suite.
-#   • It does not cover a local review a foreground session performs inline,
-#     because such a call carries no agent_id. Local mode is dispatched as a
-#     sub-agent, so this is the shape the mode does not have rather than a hole
-#     in the shape it does.
-#   • It does not cover a review that was never armed — a Holmes dispatch whose
-#     brief carries no recognizable prompt, or an Agent tool that stops
-#     reporting `subagent_type` and `prompt` in `tool_input`. Both fail open,
-#     silently, and the prose prohibition is what stands in those cases. That is
-#     why this hook was added BESIDE the prose and not instead of it.
-#   • While a record is live, EVERY sub-agent of that session is held to the
-#     read-only rule, not only the review's own. Two agents mutating the tree a
-#     third is reviewing is not a workflow worth protecting, and the window is
-#     bounded by the disarm and by GUARD_TTL_SECONDS.
-#   • Editing tools are matched by path. Holmes and his lenses hold no Edit,
-#     Write, or NotebookEdit grant, but any other sub-agent of the armed session
-#     might, so an edit whose file path is inside the tree is refused, and so is
-#     one whose path cannot be resolved or that arrives with no tree named.
+#     what lets the repository's own suite run.
+#   • It covers only calls whose `agent_type` names a reviewer. A review a
+#     foreground session performs inline, with no `--agent`, carries no
+#     `agent_type`. So does a reviewer dispatched on some other type, such as
+#     `general-purpose`: the holmes-review references name the helper type on
+#     every dispatch, and that naming is the prose half this hook stands beside.
+#   • Editing tools are matched by path. Holmes and his helper hold no Edit,
+#     Write, or NotebookEdit grant, so an edit from either is already refused
+#     by the harness. This rule is the backstop for a grant added by mistake:
+#     an edit whose path is outside the scratch roots, or cannot be resolved,
+#     is refused.
 #
 # ── HOW THE REFUSAL IS WORDED ─────────────────────────────────────────────────
 #
@@ -203,13 +220,6 @@
 
 set -u
 
-# Pipeline carve-out, checked first, before the payload is read: the scheduled
-# Index pipeline is the board's only review path, it never reviews
-# a live working tree, and it must not inherit a rule written for one.
-if [ "${WORKBENCH_DEV_TEAM_PIPELINE:-0}" = "1" ]; then
-  exit 0
-fi
-
 GUARD_MODE=hook
 if [ "${1:-}" = "--classify" ]; then
   GUARD_MODE=classify
@@ -220,43 +230,13 @@ export GUARD_MODE
 GUARD_STDIN="$(cat)"
 export GUARD_STDIN
 
-# HOME is the normal home for this state. An unaddressable HOME falls back to
-# the temp directory rather than refusing: a record here is a
-# RESTRICTION keyed to one session, so a shared directory cannot hand anybody a
-# capability. The worst a planted record does is hold one session's sub-agents to
-# reading, which is the direction this guard already fails in.
-if [ -n "${WORKBENCH_LOCAL_REVIEW_DIR:-}" ]; then
-  GUARD_STATE_DIR="$WORKBENCH_LOCAL_REVIEW_DIR"
-elif [ -n "${HOME:-}" ]; then
-  GUARD_STATE_DIR="$HOME/.claude-workbench/local-reviews"
-else
-  GUARD_STATE_DIR="${TMPDIR:-/tmp}/workbench-local-reviews"
-fi
-export GUARD_STATE_DIR
-
-# Fast path. With no review record anywhere on this host, nothing below can
-# refuse a call or release a hold, so the one thing python3 is needed for is
-# ARMING, and that takes an Agent call naming holmes. Everything else exits
-# here, before python3 starts (about 48 ms on every Bash, Agent, and edit call).
-# It errs toward the full check: a state directory it cannot list, a `\u`
-# escape, or any non-ASCII byte (python folds `ſ` into `s`) goes on to python3.
-#
-# guard_has_records is true when the state directory holds any entry, or cannot
-# be listed. It is host-wide on purpose: telling one session's record from
-# another's takes python3.
-guard_has_records() {
-  local LC_ALL=C entry
-  [ -d "$GUARD_STATE_DIR" ] || return 1
-  [ -r "$GUARD_STATE_DIR" ] || return 0
-  for entry in "$GUARD_STATE_DIR"/* "$GUARD_STATE_DIR"/.[!.]* "$GUARD_STATE_DIR"/..?*; do
-    { [ -e "$entry" ] || [ -L "$entry" ]; } && return 0
-  done
-  return 1
-}
-
+# Fast path. Only a reviewer's call can be refused, and a reviewer's payload
+# names holmes in its agent_type. Everything else exits here, before python3
+# starts (about 48 ms on every Bash and edit call). It errs toward the full
+# check: any mention of holmes, a `\u` escape, or any non-ASCII byte (python
+# folds `ſ` into `s`) goes on to python3.
 if [ "$GUARD_MODE" = hook ]; then
   guard_needs_python() {
-    guard_has_records && return 0
     local LC_ALL=C holmes_re='[Hh][Oo][Ll][Mm][Ee][Ss]' escape_re='\\u' wide_re='[^ -~]'
     [[ $GUARD_STDIN =~ $holmes_re || $GUARD_STDIN =~ $escape_re || $GUARD_STDIN =~ $wide_re ]]
   }
@@ -266,26 +246,21 @@ fi
 # Without a working python3 the classifier never runs, and a hook that errors is
 # a non-blocking error to the harness: the call runs as if no guard existed. So
 # this path refuses on its own terms. A fallback that refused text naming git
-# would miss everything this guard is for. This guard stops rm, mv, chmod, redirects, and edits into the tree, and
-# none of those name git.
+# would miss everything this guard is for: rm, mv, chmod, redirects, and edits
+# name no git.
 #
-# Without python3 nothing can be judged: not the command, not the session a
-# record belongs to, not its TTL. So while ANY record is on the host, every Bash
-# and editing call from a sub-agent is refused. The main thread keeps its tools,
-# as it always does. The three fields are read from the raw payload, where a
-# quote inside a string is escaped, so command text cannot supply them.
-#
-# The cost is stated plainly: a stale record, or another session's, holds every
-# sub-agent on the host to no Bash until python3 is fixed. That is a broken
-# install, the refusal names the fix, and it is the direction this guard already
-# fails in.
+# Without python3 nothing can be judged, so every Bash and editing call whose
+# agent_type may name a reviewer is refused: one naming holmes, or one carrying
+# an escape or a non-ASCII byte that python3 would have had to fold. The fields
+# are read from the raw payload, where a quote inside a string is escaped, so
+# command text cannot supply them. Every other agent keeps its tools.
 guard_python_fallback() {
-  local p="$GUARD_STDIN"
+  local LC_ALL=C p="$GUARD_STDIN"
   local event_re='"hook_event_name" *: *"PreToolUse"'
   local tool_re='"tool_name" *: *"(Bash|Edit|Write|NotebookEdit)"'
-  local agent_re='"agent_id" *: *"[^"]'
-  if guard_has_records && [[ $p =~ $event_re ]] && [[ $p =~ $tool_re ]] && [[ $p =~ $agent_re ]]; then
-    printf '%s\n' "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"🛑 Blocked: this call. python3 is missing or failed, so the local-review guard cannot judge it.\", \"additionalContext\": \"Local-review guard (workbench-dev-team). A local review record exists on this host, and this hook judges calls with python3, which is not on PATH or exited with an error. It cannot tell a read from a write, or this session's review from another's, so it refuses every Bash and editing call from a sub-agent until python3 works. Report this to the human: python3 is a prerequisite of workbench-dev-team (see its README). Do not try another spelling of the call.\"}}"
+  local type_re='"agent_type" *: *"[^"]*([Hh][Oo][Ll][Mm][Ee][Ss]|\\u|[^ -~])'
+  if [[ $p =~ $event_re ]] && [[ $p =~ $tool_re ]] && [[ $p =~ $type_re ]]; then
+    printf '%s\n' "{\"hookSpecificOutput\": {\"hookEventName\": \"PreToolUse\", \"permissionDecision\": \"deny\", \"permissionDecisionReason\": \"🛑 Blocked: this call. python3 is missing or failed, so the review guard cannot judge it.\", \"additionalContext\": \"Review guard (workbench-dev-team). This call comes from a Holmes reviewer, and this hook judges a reviewer's calls with python3, which is not on PATH or exited with an error. It cannot tell a read from a write, so it refuses every Bash and editing call from a reviewer until python3 works. Report this to the human: python3 is a prerequisite of workbench-dev-team (see its README). Do not try another spelling of the call.\"}}"
   fi
   exit 0
 }
@@ -297,22 +272,11 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 python3 - <<'PYEOF'
-import hashlib
+import glob
 import json
 import os
 import re
 import sys
-import time
-
-# How long a record stands without being released. It only has to outlast the
-# slowest review — a fan-out review is budget-capped and measures in minutes,
-# not hours — and its only cost is that a review which died without returning
-# holds that one session's sub-agents to reading for the remainder.
-GUARD_TTL_SECONDS = 7200
-
-# Swept on any run. Every record this old is long dead, and the sweep keeps the
-# directory from growing by one file per review forever.
-RECORD_MAX_AGE_SECONDS = 86400
 
 # git verbs that only read. This set is the rule's membership, and it is the only
 # place it is enumerated: every other git verb is refused. Adding a verb here is
@@ -561,20 +525,14 @@ SEGMENT_SPLIT = re.compile(r"\|\||&&|(?<![<>])[|&]|[;\n]")
 # starting with `(` is a process substitution rather than a file.
 REDIRECT = re.compile(r">>?(?:[|!]|&(?!\s*(?:[0-9]+-?|-)(?:[\s;|&<>]|$)))?\s*([^\s;|&<>]+)")
 
-HOLMES_AGENT = re.compile(r"(^|[:/])holmes$", re.IGNORECASE)
+# The agent types this guard holds to the static rule: Holmes and his helper.
+# Plugin agent types are namespaced (`workbench-dev-team:holmes-lens`), and a
+# bare name is matched too. IGNORECASE also folds `ſ` into `s`, which is why the
+# fast path sends a non-ASCII payload here.
+REVIEWER_AGENT = re.compile(r"(^|[:/])holmes(-lens)?$", re.IGNORECASE)
 
-# Holmes's own mode detection, as agents/holmes.md states it: The Index mode on
-# an explicit item-id token, Local mode on everything else. Ambiguity resolving
-# to Local is the safe direction here as well — Local is the mode that needs
-# guarding, so the reading that arms is the reading that protects.
-ITEM_ID_TOKEN = re.compile(r"^\s*Item\s+ID:\s*\d+\b", re.IGNORECASE | re.MULTILINE)
-BARE_ID_TOKEN = re.compile(
-    r"^(?:\d+|PVTI_[A-Za-z0-9_-]+|[0-9a-f]{8}(?:-[0-9a-f]{4}){3}-[0-9a-f]{12})$",
-    re.IGNORECASE,
-)
-WORKDIR_SLOT = re.compile(r"^[ \t]*Workdir:[ \t]*(\S+)", re.MULTILINE)
-
-STATE_DIR = os.environ.get("GUARD_STATE_DIR", "")
+# Redirect targets that write no file.
+DEVICE_TARGET = re.compile(r"/dev/(?:null|stdout|stderr|tty|fd/[0-9]+)")
 
 
 def rewrites_in_place(name: str, args: list) -> bool:
@@ -610,23 +568,52 @@ def rewrites_in_place(name: str, args: list) -> bool:
     return False
 
 
-def under(path: str, root: str, follow: bool = True) -> bool:
-    """True when `path` is `root` or sits inside it, both resolved through
-    symlinks, so `/tmp/link-into-tree/x` is inside the tree it points at.
-
-    With follow=False the final name is left unresolved: only its parent
-    directory is, so a link inside the tree is judged where the link itself
-    lives, not where it points. That is the path `rm`, `mv`, and `chmod -h` act
-    on."""
+def placed(path: str, follow: bool) -> str:
+    """Where `path` lands. With follow=True every symlink is resolved, so a
+    link out of a root is judged where it points. With follow=False the final
+    name is left unresolved and only its parent directory is, so a link is
+    judged where it lives. That is the path `rm`, `mv`, and `chmod -h` act on."""
     if follow:
-        path = os.path.realpath(path)
-    else:
-        head, name = os.path.split(path)
-        # `x/`, `x/.`, and `x/..` go through the link, so they resolve in full.
-        path = (os.path.realpath(path) if name in ("", ".", "..")
-                else os.path.join(os.path.realpath(head or "."), name))
-    root = os.path.realpath(root)
-    return path == root or path.startswith(root.rstrip("/") + "/")
+        return os.path.realpath(path)
+    head, name = os.path.split(path)
+    # `x/`, `x/.`, and `x/..` go through the link, so they resolve in full.
+    return (os.path.realpath(path) if name in ("", ".", "..")
+            else os.path.join(os.path.realpath(head or "."), name))
+
+
+def in_scratch(path: str, roots: list) -> bool:
+    """True when `path` lands strictly beneath one scratch root, both through
+    every symlink and with its final name unresolved. A root itself is not
+    beneath itself, so no command may remove or replace a root."""
+    for root in roots:
+        prefix = root.rstrip("/") + "/"
+        if all(placed(path, follow).startswith(prefix) for follow in (True, False)):
+            return True
+    return False
+
+
+def scratch_roots(payload) -> list:
+    """The scratch roots, each a physical directory. See the header."""
+    roots = []
+    tmp = os.environ.get("TMPDIR") or "/tmp"
+    if os.path.isdir(tmp):
+        roots.append(os.path.realpath(tmp))
+    session = str(payload.get("session_id") or "")
+    named = [str(payload.get("scratchpad_dir") or "")]
+    home = os.environ.get("HOME", "")
+    if home:
+        named.append(os.path.join(home, "Developer", "scratchpad"))
+    # A session id with a separator or a glob character names no scratchpad.
+    if session and not re.search(r"[/*?\[\]]", session) and session not in (".", ".."):
+        for base in ("/private/tmp", "/tmp"):
+            named += glob.glob(os.path.join(base, "claude-*", "*", session, "scratchpad"))
+    for candidate in named:
+        # Found by name, so kept only when its physical path is the path itself:
+        # a planted symlink could aim a named root anywhere.
+        if (candidate and os.path.isabs(candidate) and os.path.isdir(candidate)
+                and os.path.realpath(candidate) == os.path.normpath(candidate)):
+            roots.append(os.path.normpath(candidate))
+    return roots
 
 
 def resolve(target: str, cwd: str):
@@ -872,7 +859,8 @@ def formatter_writes(name: str, args: list):
 
 
 def refuses_write(name: str, args: list, roots: list, cwd: str, via_xargs: bool):
-    """(action, reason) when a file-writing command touches the tree, else None."""
+    """(action, reason) when a file-writing command writes outside the scratch
+    roots, else None."""
     targets = write_targets(name, args, cwd)
     if via_xargs:
         targets.append("$xargs")  # its paths arrive on stdin, where nothing reads them
@@ -880,7 +868,7 @@ def refuses_write(name: str, args: list, roots: list, cwd: str, via_xargs: bool)
         return None
     base = f"`{name}` changes a file's content, location, existence, or metadata"
     if not roots:
-        return (f"`{name}`", base + ", and no tree was named to judge its paths against.")
+        return (f"`{name}`", base + ", and no scratch root was found to judge its paths against.")
     for raw in targets:
         path = resolve(raw, cwd)
         if path is None:
@@ -889,9 +877,8 @@ def refuses_write(name: str, args: list, roots: list, cwd: str, via_xargs: bool)
         # (cp, tee, touch), and where the link itself lives, for the ones that
         # act on the entry (rm, mv, chmod -h). Checking both for every command
         # needs no per-command table, and it can only refuse more.
-        if any(under(path, root) or under(path, root, follow=False) or under(root, path)
-               for root in roots):
-            return (f"`{name}`", base + f", and `{raw}` is the tree under review or holds it.")
+        if not in_scratch(path, roots):
+            return (f"`{name}`", base + f", and `{raw}` is outside the scratch roots.")
     return None
 
 
@@ -913,7 +900,7 @@ def runs_command(tokens: list) -> bool:
     return tokens[0] == "yarn" and tokens[i] not in YARN_OWN_WRITER_NAMES
 
 
-def classify(command: str, roots: list, cwd: str):
+def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True):
     """`(action, reason)` for a refused command, or None when it may run.
 
     `action` is the short label the human line names — what they tried to do,
@@ -921,13 +908,14 @@ def classify(command: str, roots: list, cwd: str):
     the model. Adding a rule here means writing both.
 
     Every segment is examined, never only the first: `git status && chmod 644 x`
-    mutates the tree as surely as `chmod` alone does.
+    writes as surely as `chmod` alone does.
 
     A `cd`, `pushd`, `popd`, zsh `chdir`, `env -C`, or `sudo -D` moves the
     directory the later segments run in to one this guard does not follow, so
     from there on cwd is unknown and every relative path is unresolvable:
-    `cd <tree> && rm README.md` is refused. It is found after wrappers and shell keywords are stepped over,
-    so `builtin cd`, `( cd`, and `then cd` count too.
+    `cd <tree> && rm README.md` is refused. It is found after wrappers and
+    shell keywords are stepped over, so `builtin cd`, `( cd`, and `then cd`
+    count too.
     """
     for segment in SEGMENT_SPLIT.split(command):
         tokens = segment.strip().split()
@@ -982,9 +970,9 @@ def classify(command: str, roots: list, cwd: str):
                     return (
                         f"`git {verb}`",
                         f"`git {verb}` is not one of git's read-only forms, so it is "
-                        "refused. `git restore`, `checkout`, `switch`, `reset`, `clean`, "
-                        "and `stash` all discard exactly the uncommitted change you were "
-                        "sent to read.",
+                        "refused wherever it points. `git restore`, `checkout`, `switch`, "
+                        "`reset`, `clean`, and `stash` all discard exactly the uncommitted "
+                        "change a Local-mode review is sent to read.",
                     )
             elif name in MUTATING_COMMANDS:
                 found = refuses_write(name, args, roots, cwd, via_xargs)
@@ -1012,37 +1000,38 @@ def classify(command: str, roots: list, cwd: str):
                     "formatters and linters in check mode only, such as `--check`.",
                 )
 
-        # Only meaningful once a tree is named. With no root to compare against,
-        # a redirect has nothing it could be inside of. A target goes through
+        # --classify judges commands with no payload, so it has no scratch root
+        # and no cwd, and leaves redirects alone. A target goes through
         # resolve(), as a write_targets path does, so a quoted, `~`, or `$HOME`
         # target is expanded or refused rather than joined onto cwd as text.
-        for target in REDIRECT.findall(segment) if roots else []:
-            if target.startswith(("&", "(")):
+        for target in REDIRECT.findall(segment) if judge_redirects else []:
+            if target.startswith(("&", "(")) or DEVICE_TARGET.fullmatch(target):
                 continue
             path = resolve(target, cwd)
             if path is None:
                 return (
-                    "redirecting output into the tree under review",
+                    "redirecting output outside the scratch roots",
                     f"the output is redirected to `{target}`, which cannot be "
                     "resolved: it holds shell the guard does not expand, or it is "
                     "relative with no known working directory.",
                 )
-            if any(under(path, root) for root in roots):
+            if not in_scratch(path, roots):
                 return (
-                    "redirecting output into the tree under review",
-                    f"the output is redirected into the tree under review (`{path}`).",
+                    "redirecting output outside the scratch roots",
+                    f"the output is redirected to `{path}`, which is outside the scratch roots.",
                 )
     return None
 
 
 # --classify: commands on stdin, one line each, every refusal on stdout. The
-# lint's entry point. No tree is named, so the redirect rule sits this one out
-# and the command-position rules — which is what documentation can get wrong —
-# are what answer.
+# lint's entry point. It has no payload, so no scratch root and no cwd: every
+# file write is refused, the redirect rule sits this one out, and the
+# command-position rules — which is what documentation can get wrong — are what
+# answer.
 if os.environ.get("GUARD_MODE") == "classify":
     refused = []
     for line in os.environ.get("GUARD_STDIN", "").splitlines():
-        found = classify(line, [], "")
+        found = classify(line, [], "", judge_redirects=False)
         if found:
             refused.append(f"{line.strip()} — {found[1]}")
     for line in refused:
@@ -1053,163 +1042,50 @@ try:
     payload = json.loads(os.environ.get("GUARD_STDIN", ""))
 except (json.JSONDecodeError, ValueError):
     sys.exit(0)  # unparseable input -> no opinion
-
-session_id = str(payload.get("session_id") or "")
-if not session_id or not STATE_DIR:
-    # Without a session id there is nothing to key a record to, and no way to
-    # tell a review's sub-agent from any other. Refusing every agent on the host
-    # to cover a shape the harness has never produced is not the safe direction,
-    # it is an outage.
+if not isinstance(payload, dict):
     sys.exit(0)
 
-record_path = os.path.join(
-    STATE_DIR, hashlib.sha256(session_id.encode("utf-8", "surrogatepass")).hexdigest()[:16]
-)
-
-
-def read_record():
-    try:
-        with open(record_path, "r", encoding="utf-8") as handle:
-            record = json.load(handle)
-    except (OSError, ValueError):
-        return {}
-    if not isinstance(record, dict):
-        return {}
-    try:
-        if time.time() - float(record.get("armed_at", 0)) > GUARD_TTL_SECONDS:
-            return {}
-    except (TypeError, ValueError):
-        return {}
-    return record
-
-
-def sweep():
-    cutoff = time.time() - RECORD_MAX_AGE_SECONDS
-    try:
-        entries = os.listdir(STATE_DIR)
-    except OSError:
-        return
-    for name in entries:
-        stale = os.path.join(STATE_DIR, name)
-        try:
-            if os.path.isfile(stale) and os.path.getmtime(stale) < cutoff:
-                os.unlink(stale)
-        except OSError:
-            continue
-
-
-def write_record(record) -> None:
-    try:
-        os.makedirs(STATE_DIR, mode=0o700, exist_ok=True)
-        sweep()
-        with open(record_path, "w", encoding="utf-8") as handle:
-            json.dump(record, handle)
-    except OSError:
-        # Arming is best-effort, and a failure here fails open by design: the
-        # prose prohibition still stands, and refusing the dispatch would turn
-        # an unwritable directory into "no reviews run on this machine".
-        pass
-
-
-def is_local_holmes_dispatch(tool_input) -> bool:
-    if not HOLMES_AGENT.search(str(tool_input.get("subagent_type") or "").strip()):
-        return False
-    prompt = str(tool_input.get("prompt") or "")
-    if ITEM_ID_TOKEN.search(prompt):
-        return False
-    return not BARE_ID_TOKEN.match(prompt.strip())
-
-
-event = str(payload.get("hook_event_name") or "")
 tool_name = str(payload.get("tool_name") or "")
 tool_input = payload.get("tool_input") or {}
 if not isinstance(tool_input, dict):
     tool_input = {}
 
-# ── ARM ───────────────────────────────────────────────────────────────────────
-if event == "PreToolUse" and tool_name == "Agent":
-    if is_local_holmes_dispatch(tool_input):
-        record = read_record()
-        roots = [r for r in record.get("roots", []) if isinstance(r, str)]
-        found = WORKDIR_SLOT.search(str(tool_input.get("prompt") or ""))
-        # A workdir only narrows the redirect check. A brief that states none
-        # still arms; every other rule below is independent of the path.
-        if found and os.path.isabs(found.group(1)) and found.group(1) not in roots:
-            roots.append(found.group(1))
-        try:
-            holds = int(record.get("holds", 0))
-        except (TypeError, ValueError):
-            holds = 0
-        write_record({
-            "session_id": session_id,
-            "roots": roots,
-            # Counted, not flagged: a session can have two reviews in flight, and
-            # the first to return must not release the second one's guard.
-            "holds": max(holds, 0) + 1,
-            "armed_at": time.time(),
-        })
-    sys.exit(0)
-
-# ── DISARM ────────────────────────────────────────────────────────────────────
-if event == "PostToolUse" and tool_name == "Agent":
-    # Only a Holmes dispatch releases a hold. The lens sub-agents Holmes fans out
-    # are Agent calls too, and one of them returning mid-review must not unlock
-    # the tree the rest of them are still reading.
-    if is_local_holmes_dispatch(tool_input):
-        record = read_record()
-        if record:
-            try:
-                holds = int(record.get("holds", 1)) - 1
-            except (TypeError, ValueError):
-                holds = 0
-            if holds > 0:
-                record["holds"] = holds
-                write_record(record)
-            else:
-                try:
-                    os.unlink(record_path)
-                except OSError:
-                    pass
-    sys.exit(0)
-
 # ── ENFORCE ───────────────────────────────────────────────────────────────────
-if event != "PreToolUse" or (tool_name != "Bash" and tool_name not in EDIT_TOOLS):
+if payload.get("hook_event_name") != "PreToolUse" or (
+        tool_name != "Bash" and tool_name not in EDIT_TOOLS):
     sys.exit(0)
 
-# A main session is never gagged. The human keeps working in the window that
-# dispatched the review; only its sub-agents are held to reading.
-if not str(payload.get("agent_id") or ""):
+# Only a reviewer is held to the rule. The harness sets agent_type from the
+# running agent's own definition, so every other agent, and a main session with
+# no --agent, keeps its tools.
+if not REVIEWER_AGENT.search(str(payload.get("agent_type") or "").strip()):
     sys.exit(0)
 
-record = read_record()
-if not record:
-    sys.exit(0)
-
-roots = [r for r in record.get("roots", []) if isinstance(r, str)]
+roots = scratch_roots(payload)
 cwd = str(payload.get("cwd") or "")
 if tool_name in EDIT_TOOLS:
     raw = str(tool_input.get(EDIT_TOOLS[tool_name]) or "")
     path = resolve(raw, cwd)
     found = None
-    if not roots or path is None:
-        found = (f"`{tool_name}`", f"`{tool_name}` writes to `{raw or '(no path)'}`, and "
-                 "no tree or no resolvable path was given to judge it against.")
-    elif any(under(path, root) for root in roots):
-        found = (f"`{tool_name}`", f"`{tool_name}` writes to `{raw}`, inside the tree under review.")
+    if path is None:
+        found = (f"`{tool_name}`", f"`{tool_name}` writes to `{raw or '(no path)'}`, "
+                 "which cannot be resolved.")
+    elif not in_scratch(path, roots):
+        found = (f"`{tool_name}`", f"`{tool_name}` writes to `{raw}`, outside the scratch roots.")
 else:
     found = classify(str(tool_input.get("command") or ""), roots, cwd)
 if not found:
     sys.exit(0)
 
 action, reason = found
-target = roots[0] if roots else "the working directory under review"
+where = ", ".join(f"`{root}`" for root in roots) or "none could be found on this host"
 
 # The refusal is split across the two channels a hook has, measured on Claude
 # Code 2.1.274 (insights/2026-09-17-hook-message-channels-measured.md in the
 # memory vault). `permissionDecisionReason` becomes the tool_result and is the
 # text a PERSON reads, so it is ONE line naming the action that was gated.
 # `additionalContext` survives a deny and reaches only the model, so the reason,
-# the tree's path, and the allowed alternatives live there. No Markdown
+# the scratch roots, and the allowed alternatives live there. No Markdown
 # emphasis: whether a client renders it is unsettled, so the action is
 # emphasised by position and by backticks, which read either way.
 print(json.dumps({
@@ -1217,22 +1093,22 @@ print(json.dumps({
         "hookEventName": "PreToolUse",
         "permissionDecision": "deny",
         "permissionDecisionReason": (
-            f"🛑 Blocked: {action}. A local review is reading this working tree."
+            f"🛑 Blocked: {action}. A Holmes reviewer writes only in scratch."
         ),
         "additionalContext": (
-            f"Local-review guard (workbench-dev-team). This command is refused, because "
+            f"Review guard (workbench-dev-team). This command is refused, because "
             f"{reason}\n\n"
-            f"A local review is in flight in this session, over `{target}`. That tree is the "
-            "human's live working directory, and the uncommitted change in it is the only "
-            "copy of the work — there is no branch, no clone, and no push to recover it "
-            "from. A review reads it and runs the repository's suite. It writes nothing.\n\n"
+            "You are running as a Holmes reviewer, and a reviewer writes nothing outside "
+            f"the scratch roots. The scratch roots here are: {where}. The code under review "
+            "is read, never changed: in Local mode it is the human's live working "
+            "directory, and the uncommitted change in it is the only copy of the work.\n\n"
             "Read it instead. `git status`, `git diff HEAD`, `git ls-files --others "
             "--exclude-standard`, and `git show` are all allowed, and so is the test suite. "
-            "If a failure looks pre-existing, say so in your findings — never isolate it by "
-            "changing the tree.\n\n"
+            "A probe that needs a changed tree runs on a copy in your own `mktemp -d` "
+            "directory. If a failure looks pre-existing, say so in your findings — never "
+            "isolate it by changing the tree.\n\n"
             "There is no flag to clear and no path around this. If you believe you are not "
-            "part of a local review, report that to the session that dispatched you and "
-            "stop."
+            "a reviewer, report that to the session that dispatched you and stop."
         ),
     }
 }))

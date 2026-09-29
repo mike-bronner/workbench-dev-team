@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Run the dev team (Inspector Lestrade, Dr. Watson, Sherlock Holmes) as background sub-agents from the current session, with per-agent model and effort carried by each agent's frontmatter, and route GitHub actions to the right executor (Index MCP vs gh CLI). Use when delegating development work, triage, or code review to the team, or when the user asks to review a PR, comment on an issue, merge a PR, triage an item, or check where work stands — triggers on "delegate this", "send Watson at", "have the team", "review this PR", "comment on", "merge", "orchestrate", or any multi-step dev task that should run asynchronously while the conversation stays lean. Also carries the routing rule that sends development to Watson, triage to Lestrade, and review to Holmes, and the five-slot brief template (Workdir / Goal / Context / Constraints / Done when) that every handoff is written to — read-only research dispatches included. Read it before picking any sub-agent, and whenever a dispatch gate refuses a handoff.
+description: Run the dev team (Inspector Lestrade, Dr. Watson, Sherlock Holmes) as background sub-agents from the current session, with per-agent model and effort carried by each agent's frontmatter, and route GitHub actions to the right executor (Index MCP vs gh CLI). Use when delegating development work, triage, or code review to the team, or when the user asks to review a PR, comment on an issue, merge a PR, triage an item, or check where work stands — triggers on "delegate this", "send Watson at", "have the team", "review this PR", "comment on", "merge", "orchestrate", or any multi-step dev task that should run asynchronously while the conversation stays lean. Also carries the routing rule that sends development to Watson, triage to Lestrade, and review to Holmes, and the six-slot brief template (Workdir / Goal / Context / Constraints / Acceptance / Done when) that every handoff is written to — read-only research dispatches included. Read it before picking any sub-agent, and whenever a dispatch gate refuses a handoff.
 ---
 
 # Orchestrate — The Dev Team as Sub-Agents
@@ -14,16 +14,16 @@ you relay — you do not implement, triage, or review in the main context.
 | Agent | `subagent_type` | Role | Input contract |
 |---|---|---|---|
 | Inspector Lestrade | `workbench-dev-team:lestrade` | Triage — AC + WSJF; blocker sweeps | `Item ID: <n>` (triage one item) **or** `Repo sweep: <owner/repo>` (mark blocked-by dependencies across a repo's open issues) |
-| Dr. Watson | `workbench-dev-team:watson` | Development | `Item ID: <n>` (board item) **or** the five-slot brief (Direct mode, ad-hoc dev) |
-| Sherlock Holmes | `workbench-dev-team:holmes` | Code review | `Item ID: <n>` (board PR review) **or** the five-slot brief (Local mode, uncommitted working tree) |
+| Dr. Watson | `workbench-dev-team:watson` | Development | `Item ID: <n>` (board item) **or** the six-slot brief (Direct mode, ad-hoc dev) |
+| Sherlock Holmes | `workbench-dev-team:holmes` | Code review | `Item ID: <n>` (board PR review) **or** the six-slot brief (Local mode, uncommitted working tree) |
 
 Lestrade is coupled to The Index board — triage needs a `project_items.id`.
-Watson and Holmes each carry an off-board mode that takes a five-slot brief
+Watson and Holmes each carry an off-board mode that takes a six-slot brief
 (contract below) and makes no board calls. **Watson's Direct mode** runs the
 `/workbench-dev-team:develop` workflow on any local repo and hands the work back
 as an uncommitted tree; **Holmes's Local mode** reviews exactly that — the
-uncommitted working tree in the brief's `Workdir:` — against the brief's `Goal:`
-and `Done when:` as its rubric, and returns the verdict as prose. Holmes's Local
+uncommitted working tree in the brief's `Workdir:` — against the brief's
+`Acceptance:` list as its rubric, and returns the verdict as prose. Holmes's Local
 mode makes no The Index call and no GitHub write at all, so it is safe on any
 repo, governed or not. Both agents run the off-board mode by default and switch
 to Index mode only on the `Item ID: <n>` token, so a brief needs no mode marker.
@@ -134,14 +134,16 @@ slot: `references/brief-rationale.md`.
    agent. The agent's frontmatter carries the configured model, and the
    alias-only parameter would override it (see "Model and effort" above).
 3. **Every handoff is a brief.** Sub-agents have no memory of this
-   conversation, so send the five slots defined below and nothing else — for
+   conversation, so send the six slots defined below and nothing else — for
    Watson's Direct mode, Holmes's Local mode, and the read-only `Explore`,
    `Plan`, and `general-purpose` runs alike. Research is not exempt, and that is
    the point. Three shapes are exempt: the two machine-built tokens
    (`Item ID: <n>` and `Repo sweep: <owner/repo>`, between them every Lestrade
    dispatch and every Holmes Index-mode dispatch), and a specialist's own
    fan-out, which stays inside the orchestrator boundary rather than crossing
-   it.
+   it. A Watson or Holmes `Item ID: <n>` run needs no `Acceptance:` slot: the
+   item's acceptance criteria, written by Lestrade at triage, are its
+   Acceptance list.
 4. **A Watson Index-mode run goes through the dispatcher, never the Agent
    tool.** That run ends in commits and pushes, and the commit guard refuses
    both to any sub-agent whose process does not carry
@@ -162,7 +164,7 @@ slot: `references/brief-rationale.md`.
    tool stays right for everything that writes no commit: Watson's Direct mode,
    Lestrade, Holmes, and every read-only dispatch.
 
-Example — ad-hoc dev work. The prompt is the five-slot brief, contract below:
+Example — ad-hoc dev work. The prompt is the six-slot brief, contract below:
 
 ```
 Agent(
@@ -184,19 +186,24 @@ Agent(
              and every dependency is a manual review there.
            - Do not change the shape of the cache interface. Three other
              services call it and none of them are in this repo.
+           Acceptance:
+           - AC1: A cached response is not served once its upstream record
+             has changed.
+           - AC2: The cache interface the other services call is unchanged.
+           - AC3: No dependency is added.
            Done when: Expiry is covered by tests, the suite is green, and the
            change comes back uncommitted with a proposed commit message."
 )
 ```
 
-## The brief — five slots, on every handoff
+## The brief — six slots, on every handoff
 
 A dispatch prompt is a **brief**, not a script. It states an outcome, the
 reasoning behind it, and the limits on reaching it. It does not describe how the
 work is done.
 
 **Every handoff uses it, read-only research included.** An `Explore` run that
-writes nothing gets the same five slots as a Watson build. That is load-bearing
+writes nothing gets the same six slots as a Watson build. That is load-bearing
 rather than tidy: it is exactly what lets the gate below stop guessing whether a
 dispatch is code work. A template that applied only to work ending in a diff
 would need someone — a hook, or you at speed — to classify each prompt first,
@@ -211,7 +218,7 @@ list of agents: a specialist that grows a fan-out later inherits the exemption
 with no edit here. The measurement and the two other reasons behind the line:
 `references/brief-rationale.md`.
 
-Fill these five slots, in this order, under the names given, and send nothing
+Fill these six slots, in this order, under the names given, and send nothing
 else. No mode marker: Watson and Holmes both run their off-board mode by default
 and enter Index mode only on an `Item ID: <n>` token, so a brief that carries no
 such token is already unambiguous.
@@ -224,6 +231,9 @@ Context: <prose: why the task exists, and what the agent cannot derive from
 Constraints:
 - <one hard limit, and the reason for it>
 - <one per bullet, or "none">
+Acceptance:
+- AC1: <one condition someone other than you can check without asking>
+- AC2: <one per bullet>
 Done when: <the observable condition that ends the task>
 ```
 
@@ -257,8 +267,19 @@ the letter of limits like that one before the next lost 17,063 rows:
   test database>. Every other connection holds data we cannot rebuild.
 ```
 
+**`Acceptance:` is the list the work is graded against, and it is required.**
+Number the criteria, one per bullet. Each one names a result, never a method,
+and someone other than you can check it without asking. The receiver grades its
+forks against the list and reports against it, and Holmes reviews against it.
+Without it a brief says what to do and when it is done, but not what "good"
+means in between, and the receiver guesses. When this session ran
+`/workbench-core:intake`, copy its criteria here. The reasoning:
+`references/brief-rationale.md`.
+
 **`Done when:` is an observable finish line** — a state you could check without
-asking the agent what it meant.
+asking the agent what it meant. It is where the task stops, such as the change
+handed back uncommitted, which is a different thing from what the result must
+satisfy.
 
 **`Constraints:` may read "none". `Context:` may not**, and `Context:` carries
 at least one sentence on why the task exists. The asymmetry is deliberate, and
@@ -284,7 +305,8 @@ which `/develop` tells it to refuse rather than guess.
 - **Hard constraints**: decisions the human already made, an interface that must
   not change, files that are out of bounds, a dependency ban, answers to forks
   already settled in chat.
-- **The acceptance criterion**: what must be true of the result for it to count.
+- **The acceptance criteria, in `Acceptance:`**: what must be true of the result
+  for it to count.
 - **The definition of done**: the state that ends the task, and one the agent's
   lane can reach. A sub-agent cannot commit, push, or open a PR, so a Direct-mode
   or research brief ends at tests green and the work reported back; "a PR is
@@ -327,7 +349,7 @@ Workdir: /Users/mike/Developer/foo
 6. Commit as "fix: retry backoff" and open a PR.
 ```
 
-✅ **Briefed** — same task, five slots, and longer on the page for saying far
+✅ **Briefed** — same task, six slots, and longer on the page for saying far
 less about how:
 
 ```
@@ -346,6 +368,11 @@ Constraints:
   all, which is worse than the failure being retried.
 - No new dependencies. The retry helpers on offer all pull a scheduler
   we would then have to keep.
+Acceptance:
+- AC1: A failed request is retried on exponential backoff, never at once.
+- AC2: No request is attempted more than 5 times.
+- AC3: The public client API is unchanged.
+- AC4: No dependency is added.
 Done when: Retry timing and the attempt cap are covered by tests, the
 full suite is green, and the change comes back uncommitted with a
 proposed commit message.
@@ -358,12 +385,14 @@ dependency ban, and the branch you agreed to — and hands the rest back. The
 branch is upstream of the repo like the rest of them: Watson cannot read which
 one you picked. Each of the three constraints carries its reason, so none of
 them reads as arbitrary, and an arbitrary-looking limit is the kind a sub-agent
-negotiates with when the code makes it awkward.
+negotiates with when the code makes it awkward. The `Acceptance:` list restates
+the goal and those limits as results, so Watson grades its forks against them
+and Holmes can check each one without asking.
 
 ### The companion gate
 
 A `PreToolUse` hook in workbench-core checks **one thing**: that the prompt you
-are dispatching uses this template. Five slot headers present, the call goes
+are dispatching uses this template. Six slot headers present, the call goes
 through. One missing, the call is refused and the message names the slots you
 dropped. It fails open rather than bricking a session, and it points back at
 this skill.
@@ -386,7 +415,7 @@ this skill.
   brief to write, and refusing one would kill every scheduled tick at its first
   dispatch.
 - **A refusal is refilable, not a dead end.** Take the prompt you were about to
-  send, drop it into the five slots, cut everything on the must-omit list, and
+  send, drop it into the six slots, cut everything on the must-omit list, and
   re-dispatch. That is the whole fix.
 - **The gate is not the only check.** It reads slot presence; the agent reads
   what is in them. A brief that reaches an agent short a required slot comes
@@ -412,13 +441,13 @@ not the approval. The plain form the ask rules match is canonical in the
 the agent back to commit: only a foreground session reaches the human's prompt.
 
 **Holmes can review it first.** An uncommitted tree is exactly what Local mode
-takes, so a Watson Direct-mode result can go to Holmes on a five-slot brief
+takes, so a Watson Direct-mode result can go to Holmes on a six-slot brief
 before the human sees the diff — the same review the board path gets, with no
 board item and nothing posted to GitHub. Dispatch it the same way you dispatch
-Watson, with `Workdir:` pointing at the tree Watson left and `Goal:` / `Done
-when:` restating what Watson was asked for, since those two slots are Holmes's
-rubric. Offer it rather than assuming it: the review costs a fan-out, and a
-one-line change rarely earns one.
+Watson, with `Workdir:` pointing at the tree Watson left, and `Goal:` and
+`Acceptance:` copied from Watson's brief. `Acceptance:` is Holmes's rubric, and
+`Goal:` names the unit it belongs to. Offer it rather than assuming it: the
+review costs a fan-out, and a one-line change rarely earns one.
 
 ### When a brief comes back
 
@@ -522,10 +551,10 @@ the issue/PR (Holmes's Local mode needs none — it reads no board):
 | Request | Governed repo | Ungoverned repo |
 |---|---|---|
 | "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review | Wants a GitHub review artifact → review inline, post via `gh pr review` as the user, after confirming. Conversational opinion → verdict in chat, nothing posted. **Unclear which → ask.** Holmes has no path here: Local mode reviews an uncommitted tree, never a PR |
-| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the five-slot brief, via the Agent tool) — reviews the uncommitted tracked changes and untracked files, verdict comes back as prose | same — Local mode makes no board call and no GitHub write, so the repo's governance is irrelevant |
+| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the six-slot brief, via the Agent tool) — reviews the uncommitted tracked changes and untracked files, verdict comes back as prose | same — Local mode makes no board call and no GitHub write, so the repo's governance is irrelevant |
 | "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
-| "implement / fix / build X" | Item exists → **Watson** Index mode, dispatched with `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>` (the Agent tool cannot give that run its pipeline flag). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the five-slot brief, via the Agent tool; the diff comes back uncommitted) |
+| "implement / fix / build X" | Item exists → **Watson** Index mode, dispatched with `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>` (the Agent tool cannot give that run its pipeline flag). No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the six-slot brief, via the Agent tool; the diff comes back uncommitted) |
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
 | "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool; the commit guard refuses a sub-agent's or the pipeline's `gh pr merge`). Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |

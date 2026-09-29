@@ -81,10 +81,10 @@ Do not check for `claude` — we're already running inside a Claude Code session
 
 `jq` and `python3` are here because the hooks need them. The commit guard reads
 its hook payload with `jq`, and without it the guard refuses any call whose text
-names a commit or push. The local-review guard classifies commands in
-`python3`, and without it the guard refuses every Bash and editing call from a
-sub-agent while a review record exists. So a missing tool blocks work rather
-than letting it through unchecked.
+names a commit or push. The review guard classifies commands in `python3`, and
+without it the guard refuses every Bash and editing call from Holmes and his
+helpers. So a missing tool blocks work rather than letting it through
+unchecked.
 
 If any prerequisite is missing, stop and tell the user how to install it
 (`brew install gh jq` for the common case; `security` ships with macOS; `git`
@@ -926,8 +926,10 @@ NEW=$(jq --arg legacy_abs "Bash(bash $HOME/.claude-workbench/bin/approve-commit.
   && printf '%s\n' "$NEW" > "$SETTINGS" \
   || { echo "❌ Could not update $SETTINGS — commits, pushes, and merges are not prompted until the rules are there."; exit 1; }
 
-# The old gate's script and records do nothing now. The human removes them.
-for LEGACY in "$HOME/.claude-workbench/bin/approve-commit.sh" "$HOME/.claude-workbench/commit-approvals"; do
+# The old gate's script and records, and the review guard's old hold records,
+# do nothing now. The human removes them.
+for LEGACY in "$HOME/.claude-workbench/bin/approve-commit.sh" "$HOME/.claude-workbench/commit-approvals" \
+    "$HOME/.claude-workbench/local-reviews"; do
   [ -e "$LEGACY" ] && echo "LEGACY_LEFT $LEGACY"
 done
 
@@ -947,9 +949,11 @@ printed, exactly as written here, and repeat them in the Step 8 summary:
 ```
 ! rm -f ~/.claude-workbench/bin/approve-commit.sh
 ! rm -rf ~/.claude-workbench/commit-approvals
+! rm -rf ~/.claude-workbench/local-reviews
 ```
 
-Both files are inert, so leaving them in place is safe.
+All three are inert, so leaving them in place is safe. The last is the review
+guard's old hold records: the guard is static now and reads no state.
 
 **If this block exits non-zero, say so plainly in the Step 8 summary.** Until
 the rules are in place, a foreground commit, push, or merge runs with no prompt.

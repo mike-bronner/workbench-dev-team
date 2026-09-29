@@ -25,12 +25,23 @@ Know which one you are in before you start.
   board dispatch is the approval, and Holmes's review plus the human's merge is
   the gate.
 
-## Decision Protocol — present options, don't decide alone
+## Decision Protocol — grade the options against the AC, don't decide alone
 
 When you hit a fork the human has not already decided — choosing between
-approaches, libraries, structures, scopes, or fixes — **stop and surface three
-options** with reasoning for each, and a recommendation for the best one. The
-human decides; you execute. A fork they already decided is not asked again.
+approaches, libraries, structures, scopes, or fixes — **draft three options
+from different angles, grade each one against every acceptance criterion, and
+recommend the best.** A real fork is the human's to decide, and you execute. A
+fork they already decided is not asked again.
+
+**`/workbench-core:intake` is the one written copy of this routine.** Its steps
+6 to 8 hold the distinctness check, the grading, and the test for when a fork
+goes to the human. Follow them there. This section adds what dev work needs,
+and restates only the minimum a run needs when intake is absent.
+
+**The criteria you grade against depend on your lane.** In a foreground session
+they are the ones in your intake block. As a sub-agent they are the brief's
+`Acceptance:` list. In the scheduled pipeline they are the item's acceptance
+criteria, written by Lestrade at triage.
 
 **What counts as a fork:**
 
@@ -52,38 +63,55 @@ human decides; you execute. A fork they already decided is not asked again.
 - Naming, and other small choices implied by sibling code or cheap to change later
 - Obvious one-line fixes with no real alternative
 
+**Three distinct angles, checked before you grade.** Three settings of one
+approach are one option. Run intake's distinctness check on the three, and
+replace any option that turns out to be a variant of another.
+
+**Grade all three against every criterion** as met, partly met, or not met,
+with a short reason for anything short of met. The recommendation is the best
+grade. On a tie, the architecturally correct option beats the fastest one.
+
 **Format when presenting options.** Each option is its own heading, with its
-pros and cons under it. The recommendation is a separate paragraph after all
-three, never folded into the option it picks, and it names its reason. Pick the
-architecturally correct option over the fastest one.
+angle, its grade, and its pros and cons under it. The recommendation is a
+separate paragraph after all three, never folded into the option it picks, and
+it cites its grade on every criterion.
 
 ```
 ### 🔹 Option A: <short descriptive title>
+- Angle: <where the change lives, what kind of mechanism, what it attacks>
+- Grade: AC1 met, AC2 partly met (<why>), AC3 not met (<why>)
 - Pros: ...
 - Cons: ...
 
 ### 🔹 Option B: <short descriptive title>
+- Angle: ...
+- Grade: ...
 - Pros: ...
 - Cons: ...
 
 ### 🔹 Option C: <short descriptive title>
+- Angle: ...
+- Grade: ...
 - Pros: ...
 - Cons: ...
 
-I recommend Option B, because <reason this is the best fit>.
+I recommend Option B (AC1 met, AC2 met, AC3 met), because <why it beats the others>.
 ```
 
 **What happens next depends on your lane.**
 
-- **Foreground session:** wait for the human's pick before proceeding. Don't
-  half-commit by starting on the recommended option while waiting — that's the
-  same as deciding unilaterally, just with extra steps.
-- **Sub-agent:** nobody can answer you mid-task, so the bar is **blocking
-  uncertainty**. Below it — a fork where any of the options would satisfy the
-  brief and the choice is cheap to reverse — pick the recommended option, go on,
-  and record the choice and its reason as an assumption in your report. Above
-  it — a fork where the wrong pick means work the sender would throw away —
-  stop, change nothing more, and return the three options as your report.
+- **Foreground session:** intake's step 8 decides whether the fork goes to the
+  human. If it does, wait for the pick. Don't half-commit by starting on the
+  recommended option while waiting — that's the same as deciding unilaterally,
+  just with extra steps. If it does not, proceed on the top-graded option and
+  say so in one line that names its grade on each criterion.
+- **Sub-agent:** you never interview, because the brief is your intake, and
+  nobody can answer you mid-task. So the bar is **blocking uncertainty**. Below
+  it — a fork where any of the options would satisfy the brief and the choice
+  is cheap to reverse — pick the top-graded option, go on, and record the choice
+  and its grades as an assumption in your report. Above it — a fork where the
+  wrong pick means work the sender would throw away — stop, change nothing more,
+  and return the three graded options as your report.
 - **Scheduled pipeline:** route the fork as Watson's pipeline describes (step 6,
   "If a fork blocks you").
 
