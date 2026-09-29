@@ -1,35 +1,5 @@
 name: Update marketplace SHA
 
-# On a published release, this workflow does two things, in order:
-#
-#   1. Bump + retarget (release events only). Sets this plugin's
-#      .claude-plugin/plugin.json .version to the release tag, commits that on
-#      main as github-actions[bot], and retargets the release tag onto the bump
-#      commit. This keeps the released/pinned commit from carrying a stale
-#      version. Idempotent: if plugin.json already matches the tag, both the
-#      bump and the tag move are skipped.
-#
-#   2. Pin SHA. Resolves the (possibly retargeted) tag to a commit SHA and pins
-#      it in the claude-workbench marketplace's .claude-plugin/marketplace.json,
-#      so every release becomes reproducibly installable by SHA rather than
-#      floating on the default branch.
-#
-# Both steps live in this single workflow on purpose: a separate workflow on
-# `release: published` would race the pin and could pin the pre-bump commit.
-#
-# Runs automatically on every published release. Also supports manual backfill
-# via workflow_dispatch (pass a tag to pin that release's SHA; omit to use the
-# latest release). The backfill path re-pins historical releases only — it never
-# bumps plugin.json or moves tags.
-#
-# Prerequisites:
-# - Secret `DEVELOPER_SETTINGS_TOKEN` set at the repo or org level.
-#   Classic PAT with `repo` scope (sufficient to push to the marketplace repo).
-#
-# Portability: this workflow reads the plugin's own name from
-# .claude-plugin/plugin.json, so it drops into any workbench plugin repo
-# unchanged.
-
 on:
   release:
     types: [published]
@@ -52,18 +22,13 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout plugin repo
-        uses: actions/checkout@v4
+        uses: actions/checkout@v7
         with:
-          # Writable main checkout: the bump step commits + pushes here, and the
-          # resolve step reads the plugin name off main. fetch-depth: 0 so the
-          # push has full history.
           ref: main
           token: ${{ secrets.GITHUB_TOKEN }}
           fetch-depth: 0
 
       - name: Bump plugin.json + retarget tag
-        # Release events only. The workflow_dispatch backfill path re-pins
-        # historical releases and must never bump plugin.json or move a tag.
         if: ${{ github.event_name == 'release' }}
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
