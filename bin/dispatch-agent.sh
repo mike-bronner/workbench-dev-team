@@ -251,7 +251,27 @@ else
   LOCK="$LOGDIR/${AGENT}-${TARGET}.lock"
 fi
 
-set -- --agent "workbench-dev-team:${AGENT}"
+# Tools no pipeline run may use. Before each run started in its own empty folder
+# (see RUNDIR below), runs started in this repo and inherited these as deny rules
+# from its .claude/settings.local.json. That file is personal and untracked, and
+# the installed copy of this script runs from ~/.claude-workbench/bin, where no
+# repo is in reach. So the list lives here, in the one file that is installed,
+# and bin/test-dispatch-agent.sh pins every name. A bare tool name as a deny rule
+# removes the tool from the run.
+DENIED_TOOLS=(
+  Workflow Artifact Monitor PushNotification RemoteTrigger SendMessage
+  DesignSync ReportFindings
+  CronCreate CronDelete CronList ScheduleWakeup
+  TaskCreate TaskGet TaskList TaskOutput TaskStop TaskUpdate
+  EnterWorktree ExitWorktree
+  ListMcpResourcesTool ReadMcpResourceTool ReadMcpResourceDirTool
+  NotebookEdit
+)
+
+# --disallowedTools takes a variadic list. It goes in as one comma-joined value,
+# and an option always follows it, so it can never swallow the prompt.
+set -- --agent "workbench-dev-team:${AGENT}" \
+  --disallowedTools "$(IFS=,; printf '%s' "${DENIED_TOOLS[*]}")"
 [ -n "$MODEL" ]    && set -- "$@" --model "$MODEL"
 [ -n "$EFFORT" ]   && set -- "$@" --effort "$EFFORT"
 [ -n "$FALLBACK" ] && set -- "$@" --fallback-model "$FALLBACK"
@@ -291,10 +311,11 @@ fi
 # there would take the live plugin repo as its project folder. workbench-core's
 # destructive-scope guard treats the project folder as in scope, so a pipeline
 # `git reset --hard` or `rm -rf` there would run unprompted. The cost, accepted:
-# the run loads no project CLAUDE.md and no project settings.local.json deny
-# rules. User-level settings still apply. CLAUDE_PROJECT_DIR is unset, so the
-# child can only take its project folder from the new cwd. No folder, no run:
-# falling back to the caller's cwd is the case this exists to prevent.
+# the run loads no project CLAUDE.md and no project settings. The deny rules it
+# used to take from there are passed as DENIED_TOOLS above. User-level settings
+# still apply. CLAUDE_PROJECT_DIR is unset, so the child can only take its
+# project folder from the new cwd. No folder, no run: falling back to the
+# caller's cwd is the case this exists to prevent.
 RUNDIR=$(mktemp -d) || { echo "$(basename "$0"): could not create a run folder with mktemp -d; nothing dispatched" >&2; exit 1; }
 unset CLAUDE_PROJECT_DIR
 

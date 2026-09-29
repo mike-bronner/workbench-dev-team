@@ -1275,8 +1275,10 @@ do not inherit it: `bin/dispatch-agent.sh` starts each one in a fresh, empty
 `mktemp -d` folder and unsets `CLAUDE_PROJECT_DIR`. A run started in this repo
 would take the live plugin repo as its project folder, where workbench-core's
 destructive-scope guard lets a delete run unprompted. The cost is that a run
-loads no project `CLAUDE.md` and no project `settings.local.json` deny rules.
-User-level settings still apply.
+loads no project `CLAUDE.md` and no project settings. User-level settings still
+apply, and the tool deny rules runs used to take from this repo's
+`settings.local.json` are passed with `--disallowedTools` (`DENIED_TOOLS` in the
+wrapper).
 
 ```bash
 TARGET_CWD="$HOME/Developer/workbench-dev-team"

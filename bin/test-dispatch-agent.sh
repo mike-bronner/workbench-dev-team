@@ -111,6 +111,44 @@ out=$(DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
   WORKBENCH_DEV_TEAM_PIPELINE=0 bash "$SCRIPT" watson 7 2>&1)
 expect_has "an inherited 0 cannot disarm the carve-out" "pipeline=1" "$out"
 
+echo "— denied tools"
+# The 24 deny rules pipeline runs inherited from this repo's
+# .claude/settings.local.json before they moved to an empty folder. Written out
+# here on purpose, not read from the script: this is the pin that goes red when
+# the script's list loses a name or gains one.
+EXPECTED_DENIED="Workflow Artifact Monitor PushNotification RemoteTrigger SendMessage
+DesignSync ReportFindings CronCreate CronDelete CronList ScheduleWakeup
+TaskCreate TaskGet TaskList TaskOutput TaskStop TaskUpdate EnterWorktree
+ExitWorktree ListMcpResourcesTool ReadMcpResourceTool ReadMcpResourceDirTool
+NotebookEdit"
+expected_denied=$(printf '%s\n' $EXPECTED_DENIED | sort)
+expect_eq "the pin itself names 24 tools" "24" "$(printf '%s\n' "$expected_denied" | wc -l | tr -d ' ')"
+# expect_denied <label> <comma-joined value passed to --disallowedTools>
+expect_denied() {
+  local got missing extra
+  got=$(printf '%s' "$2" | tr ',' '\n' | sed '/^$/d' | sort)
+  missing=$(comm -23 <(printf '%s\n' "$expected_denied") <(printf '%s\n' "$got") | tr '\n' ' ')
+  extra=$(comm -13 <(printf '%s\n' "$expected_denied") <(printf '%s\n' "$got") | tr '\n' ' ')
+  if [ -z "$missing$extra" ]; then echo "  ok   — $1"; pass=$((pass+1))
+  else echo "  FAIL — $1: missing [${missing% }] extra [${extra% }]"; fail=$((fail+1)); fi
+}
+# dry_denied <dry-run output> -> the value after --disallowedTools, when an
+# option follows it. A value followed by the prompt would mean the variadic flag
+# could swallow the prompt, so that shape extracts nothing and fails.
+dry_denied() { printf '%s\n' "$1" | sed -n 's/^claude -p .* --disallowedTools \([^ ]*\) --.*/\1/p'; }
+for agent in lestrade holmes watson; do
+  out=$(run "$FULL" "$agent" 7)
+  expect_denied "$agent run is denied all 24 tools" "$(dry_denied "$out")"
+  expect_eq "$agent run passes the flag once" "1" "$(printf '%s\n' "$out" | grep -o -- '--disallowedTools' | wc -l | tr -d ' ')"
+done
+out=$(run "$FULL" lestrade mike-bronner/phpcs-rules)
+expect_denied "sweep run is denied all 24 tools" "$(dry_denied "$out")"
+# A config silent on every knob leaves no option between the list and
+# --dangerously-skip-permissions, and the prompt must still come last.
+out=$(run "$EMPTY" lestrade 7)
+expect_denied "denied with no config knobs" "$(dry_denied "$out")"
+expect_has "the prompt stays the last argument" "--dangerously-skip-permissions Item ID: 7" "$out"
+
 echo "— config resolution"
 out=$(run "$FULL" lestrade 7)
 expect_has  "model from config"  "--model haiku"       "$out"
@@ -214,6 +252,7 @@ printf '#!/bin/sh\nexit 1\n' > "$STUB/security"
 printf '#!/bin/sh\nexit 1\n' > "$FAILSTUB/mktemp"
 printf '#!/bin/sh\n[ "$*" = -d ] || exit 2\nexec "%s" -d "%s/run.XXXXXX"\n' "$(command -v mktemp)" "$RUNTMP" > "$STUB/mktemp"
 printf '%s\n' '#!/bin/sh' \
+  'printf "%s\n" "$@" > "$STUB_OUT.args"' \
   '{ pwd -P; ls -A | wc -l | tr -d " "; echo "${CLAUDE_PROJECT_DIR-unset}"; echo "${WORKBENCH_DEV_TEAM_PIPELINE-unset}"; echo $$; } > "$STUB_OUT.part"' \
   'mv "$STUB_OUT.part" "$STUB_OUT"; echo "stub ran"' > "$STUB/claude"
 chmod +x "$STUB/security" "$STUB/mktemp" "$STUB/claude" "$FAILSTUB/mktemp"
@@ -239,6 +278,13 @@ expect_has "the lock holds the spawned PID" "pid=$(cat "$CALLER/logs/watson-9.lo
 # The stub records its own $$. Without the exec, the lock would hold the PID of
 # the subshell that forked it, and the two would differ.
 expect_eq "the lock holds the agent's own PID" "$(sed -n 5p "$WORK/stub-9" 2>/dev/null)" "$(cat "$CALLER/logs/watson-9.lock" 2>/dev/null)"
+# What the spawned claude actually received, one argument per line: the list is
+# one argument, an option follows it, and the prompt is still the last argument.
+spawned_denied=$(awk 'p{print; exit} $0=="--disallowedTools"{p=1}' "$WORK/stub-9.args" 2>/dev/null)
+expect_denied "the spawned run is denied all 24 tools" "$spawned_denied"
+expect_has "...and an option follows the list" "--" \
+  "$(awk 'p==2{print; exit} p{p++} $0=="--disallowedTools"{p=1}' "$WORK/stub-9.args" 2>/dev/null | cut -c1-2)"
+expect_eq "...and the prompt is the last argument" "Item ID: 9" "$(tail -1 "$WORK/stub-9.args" 2>/dev/null)"
 spawn 10 >/dev/null; wait_for "$WORK/stub-10"
 second=$(sed -n 1p "$WORK/stub-10" 2>/dev/null)
 if [ -n "$second" ] && [ "$second" != "$started" ]; then echo "  ok   — each run gets its own folder"; pass=$((pass+1))
