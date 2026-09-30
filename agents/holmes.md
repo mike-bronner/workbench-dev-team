@@ -31,6 +31,41 @@ Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
 
+## Scratch folders — make them in a scratch root, delete them yourself
+
+Every temporary folder you make goes in a scratch root. That covers a clone, a
+probe copy, and a place for intermediate output.
+
+- **The session scratchpad**, when your environment block names one on its
+  `Scratchpad directory:` line. A sub-agent's line names the scratchpad of the
+  session that spawned it.
+- **`~/Developer/scratchpad`**, when your environment names none. The harness
+  leaves that line out when its scratchpad feature is off, so a headless run
+  can start without one.
+
+Make each folder with `mktemp -d <scratch root>/holmes.XXXXXX`, with the root
+written as an absolute path. `mktemp` fills in the `XXXXXX`, so parallel runs,
+lens helpers and Watsons alike, each get a folder of their own. Never make
+scratch with a bare `mktemp -d`, in `$TMPDIR`, or in `/tmp`. Touch only the
+folder your own `mktemp` printed. Never touch another run's folder or the
+scratch root itself.
+
+**Delete every folder you made before you report,** on every exit path, with
+`rm -rf <the path mktemp printed>`. Spell the absolute path out in full, and
+run the delete as a command of its own: no variable, no glob, no `~`, and no
+`&&` or `;` joining it to another command. The guards allow that form. They
+refuse the others, because they cannot tell what those would delete.
+
+**If a guard refuses the delete of your own scratch, respell it and retry.**
+Write it again as the literal-path line above and run it. That is the form the
+guard is built to check, so the retry does what the refusal asks and is not
+routing around it. Never ask the human to delete your scratch, and never hand
+them a `!` command to run. If the literal-path delete still fails, name the
+path in your report as a defect.
+
+This rule covers scratch files and folders only. Leave git branches and
+stashes where they are unless the human asks you to remove them.
+
 ## Mode detection
 
 **Local mode is the default.** You enter The Index mode on an explicit item-id
@@ -416,12 +451,12 @@ and go on. Never block on their absence.
 
 ##### 4b. Check out the PR — the shared evidence room
 
-`gh pr diff` alone is a flat blob — you can't verify the AC against it. Clone the repo and check out the PR's branch so the actual tree can be navigated with `Read`/`Grep`/`Glob` and its siblings. **This checkout is the shared evidence room** — every lens reviewer and the skeptic read from this same path; nobody re-clones. It lives in a fresh `mktemp -d` directory, so no two reviews ever share one, whatever repo or issue number they carry.
+`gh pr diff` alone is a flat blob — you can't verify the AC against it. Clone the repo and check out the PR's branch so the actual tree can be navigated with `Read`/`Grep`/`Glob` and its siblings. **This checkout is the shared evidence room** — every lens reviewer and the skeptic read from this same path; nobody re-clones. It lives in a fresh scratch folder under a scratch root, made as "Scratch folders" above says, so no two reviews ever share one, whatever repo or issue number they carry.
 
-`mktemp -d` prints the directory's path. That printed path is the `<checkout path>` every lens prompt names. Write it out in full in every later command, and remove it with `rm -rf <checkout path>` once the review is done. workbench-core's destructive-scope guard permits that `rm`, because a `mktemp -d` directory is one of its approved roots, and it refuses an `rm` whose target is a variable or a glob, because it cannot tell what it would delete.
+`mktemp` prints the folder's path. That printed path is the `<checkout path>` every lens prompt names. Write it out in full in every later command. Remove it with `rm -rf <checkout path>`, as a command of its own, before you report, on every exit path, the stale exit in §5 included. workbench-core's destructive-scope guard permits that `rm`, because the folder is beneath a scratch root, and it refuses an `rm` whose target is a variable or a glob, because it cannot tell what it would delete. A refused delete is respelled and retried, never handed to the human, as "Scratch folders" says.
 
 ```bash
-mktemp -d                                   # prints <checkout path>
+mktemp -d <scratch root>/holmes.XXXXXX      # prints <checkout path>
 gh repo clone <repo> <checkout path>
 cd <checkout path>
 gh pr checkout $PR_NUM          # the PR's head branch, full code

@@ -350,12 +350,14 @@ SLUG="$(echo '<title>' | tr '[:upper:] ' '[:lower:]-' | sed 's/[^a-z0-9-]//g' | 
 BRANCH="$TYPE/<issue_number>-$SLUG"
 echo "$BRANCH"
 
-# A fresh mktemp -d directory per run. With no host-wide lock two Watsons run
-# side by side, and a directory of its own means no `rm -rf` can take the other's
-# uncommitted work, whatever repo or issue number each carries. The run itself
-# starts in another empty mktemp -d folder, which bin/dispatch-agent.sh made,
+# A fresh folder per run, under a scratch root: the session scratchpad your
+# environment names, or ~/Developer/scratchpad when it names none (see
+# "Scratch folders" in agents/watson.md). With no host-wide lock two Watsons
+# run side by side, and the XXXXXX gives each its own folder, so neither can
+# delete the other's uncommitted work, whatever repo or issue number each
+# carries. The run itself starts in an empty folder bin/dispatch-agent.sh made,
 # so no repo is ever the run's working directory until this clone exists.
-CLONE=$(mktemp -d)
+CLONE=$(mktemp -d <scratch root>/watson.XXXXXX)
 echo "$CLONE"
 gh repo clone <repo> "$CLONE"
 cd "$CLONE"
@@ -387,8 +389,8 @@ run, and only when it can read every path:
   `cd`, and no `&&`, `;`, or new line joining two commands. Run each one as a
   call of its own.
 - Every path is absolute, with no `.` or `..` part, and inside a root: the
-  session scratchpad, `~/Developer/scratchpad`, or `$TMPDIR`, where every
-  `mktemp -d` directory lands. `rm` and `rmdir` act strictly beneath one of
+  session scratchpad, `~/Developer/scratchpad`, or `$TMPDIR`. Your clone is
+  in one of the first two. `rm` and `rmdir` act strictly beneath one of
   them, and git's repository must be in one too. The working directory does not
   count, so a bare `git commit` in the clone is denied.
 - `rmdir` takes no option. `rm` takes its options before its first path, never
@@ -426,7 +428,7 @@ PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
 The `Fixes #<issue_number>` keyword in the body handles the issue↔PR link on
 merge — no separate linking step needed.
 
-On a resume: clone fresh into a new `mktemp -d` directory, as above. A prior
+On a resume: clone fresh into a new scratch folder, as above. A prior
 run's clone is never reused: every run pushes its work before it exits and
 removes its clone in step 10, so the branch on the remote is the whole state.
 Check out `<branch>`, bring in the default branch with
@@ -687,13 +689,17 @@ mcp__the-index__release_item(<ITEM_ID>)
 rm -rf <clone path>
 ```
 
-Write the path step 5 printed out in full. workbench-core's destructive-scope
-guard and this plugin's pipeline scope hook both permit an `rm` inside a
-`mktemp -d` directory, and both refuse one whose target is a variable such as
-`"$CLONE"` or a glob, because neither can tell what it would delete.
+Write the path step 5 printed out in full, and run the `rm` as a command of its
+own. workbench-core's destructive-scope guard and this plugin's pipeline scope
+hook both permit an `rm` beneath a scratch root, and both refuse one whose
+target is a variable such as `"$CLONE"` or a glob, because neither can tell what
+it would delete. If a guard refuses it, respell it with the literal path and
+retry. Never leave the delete to the human. If it still fails, name the path in
+your report as a defect.
 
 The claim has no automatic release — if you exit early (blocked, wrong lane,
-hands-off, budget), release it yourself on the way out.
+hands-off, budget), release it yourself on the way out. An early exit after
+step 5 removes the clone the same way, before the report.
 
 ### 11. Report
 

@@ -212,9 +212,12 @@ location, existence, or metadata either: no chmod, no rm, no mv, no truncate,
 and no formatter or linter run with a write flag. That holds even for a moment:
 a file you rename and rename back still changes the tree the human approves, and
 races any other run reading it. A probe that needs a mutated tree runs on a copy
-you make in your own mktemp -d directory, and you change only that copy. A
-PreToolUse hook refuses these too, and its denial is final -- report it, never
-work around it.
+you make in your own scratch folder, and you change only that copy. Make the
+folder with mktemp -d and a holmes-lens.XXXXXX name under your session
+scratchpad, or under ~/Developer/scratchpad when your environment names none.
+Before you report, delete that folder with rm -rf and the literal path, as its
+own command. A PreToolUse hook refuses writes to the working tree, and that
+denial is final -- report it, never work around it.
 ```
 
 ## §L4-fallback — the inline review, when there is no fan-out

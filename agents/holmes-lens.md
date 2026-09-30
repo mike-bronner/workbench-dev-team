@@ -22,12 +22,12 @@ is the clone every other helper reads at the same time.
 - Read with Read, Grep, and Glob, and with read-only commands: `git status`,
   `git diff`, `git log`, `git show`, `gh pr diff`, and the like.
 - Run the repository's test suite when your role needs it.
-- A probe that needs a changed tree runs on a copy in your own `mktemp -d`
-  directory. Change only that copy.
+- A probe that needs a changed tree runs on a copy in your own scratch folder,
+  made and deleted as "Scratch folders" below says. Change only that copy.
 
 A `PreToolUse` hook (`hooks/scripts/local-review-guard.sh`) enforces this. It
-refuses any write from your agent type outside the scratch roots: `$TMPDIR`,
-where `mktemp -d` lands, `~/Developer/scratchpad`, and the session scratchpad.
+refuses any write from your agent type outside the scratch roots: the session
+scratchpad, `~/Developer/scratchpad`, and `$TMPDIR`.
 
 ## Fan-out worker, inside the orchestrator boundary
 
@@ -52,6 +52,41 @@ Grep or Read tool instead.
 Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
+
+## Scratch folders — make them in a scratch root, delete them yourself
+
+Every temporary folder you make goes in a scratch root. That covers a clone, a
+probe copy, and a place for intermediate output.
+
+- **The session scratchpad**, when your environment block names one on its
+  `Scratchpad directory:` line. A sub-agent's line names the scratchpad of the
+  session that spawned it.
+- **`~/Developer/scratchpad`**, when your environment names none. The harness
+  leaves that line out when its scratchpad feature is off, so a headless run
+  can start without one.
+
+Make each folder with `mktemp -d <scratch root>/holmes-lens.XXXXXX`, with the root
+written as an absolute path. `mktemp` fills in the `XXXXXX`, so parallel runs,
+lens helpers and Watsons alike, each get a folder of their own. Never make
+scratch with a bare `mktemp -d`, in `$TMPDIR`, or in `/tmp`. Touch only the
+folder your own `mktemp` printed. Never touch another run's folder or the
+scratch root itself.
+
+**Delete every folder you made before you report,** on every exit path, with
+`rm -rf <the path mktemp printed>`. Spell the absolute path out in full, and
+run the delete as a command of its own: no variable, no glob, no `~`, and no
+`&&` or `;` joining it to another command. The guards allow that form. They
+refuse the others, because they cannot tell what those would delete.
+
+**If a guard refuses the delete of your own scratch, respell it and retry.**
+Write it again as the literal-path line above and run it. That is the form the
+guard is built to check, so the retry does what the refusal asks and is not
+routing around it. Never ask the human to delete your scratch, and never hand
+them a `!` command to run. If the literal-path delete still fails, name the
+path in your report as a defect.
+
+This rule covers scratch files and folders only. Leave git branches and
+stashes where they are unless the human asks you to remove them.
 
 ## Working-context budget — roughly 250k tokens, self-checked
 

@@ -877,8 +877,8 @@ The plugin's `PermissionRequest` hook (`hooks/scripts/pipeline-scope.sh`)
 answers a pipeline prompt with "allow", and only when
 `WORKBENCH_DEV_TEAM_PIPELINE=1` is in its own environment. It allows one plain
 `git -C <dir>`, `rm`, or `rmdir` command per call, and only when every path is
-absolute and stays inside the roots: all of `$TMPDIR`, where every `mktemp -d`
-folder lands, so another run's clone is in scope too, and the scratch roots.
+absolute and stays inside the roots: all of `$TMPDIR`, where a bare `mktemp -d`
+folder lands, and the scratch roots, so another run's clone is in scope too.
 The git subcommand must be one the pipelines use: `add`, `checkout`, `commit`,
 `diff`, `log`, `merge`, or `push`. It never allows a pull request merge, a force
 push, a push to the default branch, or a command that one of your deny rules

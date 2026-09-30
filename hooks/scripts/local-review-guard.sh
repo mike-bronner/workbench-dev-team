@@ -24,11 +24,13 @@
 # sub-agent of either type, at any depth.
 #
 # The scratch roots are the places a reviewer may write:
-#   • $TMPDIR, where `mktemp -d` lands. Holmes's Index-mode clone lives there,
-#     and so does a helper's copy of a tree it needs to mutate for a probe.
-#   • ~/Developer/scratchpad.
+#   • $TMPDIR, where a bare `mktemp -d` lands. The agent prompts no longer put
+#     scratch there. The root stays, so the hook refuses nothing it allowed.
+#   • ~/Developer/scratchpad, where a run with no session scratchpad makes its
+#     scratch folders.
 #   • The session scratchpad, /private/tmp/claude-*/*/<session_id>/scratchpad,
-#     or the `scratchpad_dir` the payload names.
+#     or the `scratchpad_dir` the payload names. Holmes's Index-mode clone and a
+#     helper's probe copy live here when the session has one.
 # The last two are found by name, so a planted symlink could aim them anywhere.
 # Each is kept only when its physical path is the path itself, the check
 # hooks/scripts/pipeline-scope.sh and workbench-core's scope guard both make. A
@@ -1104,8 +1106,10 @@ print(json.dumps({
             "directory, and the uncommitted change in it is the only copy of the work.\n\n"
             "Read it instead. `git status`, `git diff HEAD`, `git ls-files --others "
             "--exclude-standard`, and `git show` are all allowed, and so is the test suite. "
-            "A probe that needs a changed tree runs on a copy in your own `mktemp -d` "
-            "directory. If a failure looks pre-existing, say so in your findings — never "
+            "A probe that needs a changed tree runs on a copy in your own folder, made with "
+            "`mktemp -d` under the session scratchpad or ~/Developer/scratchpad, and deleted "
+            "before you report with `rm -rf` and its literal path as its own command. "
+            "If a failure looks pre-existing, say so in your findings — never "
             "isolate it by changing the tree.\n\n"
             "There is no flag to clear and no path around this. If you believe you are not "
             "a reviewer, report that to the session that dispatched you and stop."
