@@ -1,9 +1,9 @@
 #!/bin/bash
 # Pipeline scope. PermissionRequest on Bash, for the scheduled pipeline only.
 #
-# bin/dispatch-agent.sh starts `claude -p --dangerously-skip-permissions` in a
-# fresh mktemp -d folder with WORKBENCH_DEV_TEAM_PIPELINE=1. Ask rules still
-# prompt there, and -p denies a prompt unless a PermissionRequest hook allows it.
+# bin/dispatch-agent.sh starts `claude -p --permission-mode auto --permission-prompts
+# none` in an empty scratch folder with WORKBENCH_DEV_TEAM_PIPELINE=1. Ask rules
+# still prompt there, and the run denies a prompt unless this hook allows it.
 # Mike's rule (2026-09-29): pipeline git and destructive operations are not
 # prompted, and stay inside the roots below. One root is all of $TMPDIR, so
 # another run's clone is in scope too. The pipeline doc writes each one as a

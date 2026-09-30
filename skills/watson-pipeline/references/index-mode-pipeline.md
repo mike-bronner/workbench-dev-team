@@ -380,10 +380,10 @@ git -C <clone path> push -u origin <branch>
 ```
 
 **Every commit, push, and cleanup in this run is a plain line like these.**
-`--dangerously-skip-permissions` does not skip the commit and push ask rules,
-and a `-p` run denies a prompt nobody answers. The plugin's `PermissionRequest`
-hook (`hooks/scripts/pipeline-scope.sh`) answers the prompt for a pipeline
-run, and only when it can read every path:
+The run is in auto mode with `--permission-prompts none`. The commit and push
+ask rules still prompt, and the run denies a prompt nobody answers. The
+plugin's `PermissionRequest` hook (`hooks/scripts/pipeline-scope.sh`) answers
+the prompt for a pipeline run, and only when it can read every path:
 
 - The call is one command: `git -C <clone path> …`, `rm …`, or `rmdir …`. No
   `cd`, and no `&&`, `;`, or new line joining two commands. Run each one as a

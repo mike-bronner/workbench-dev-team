@@ -156,11 +156,15 @@ slot: `references/brief-rationale.md`.
    ```
 
    It reads the same config — model, effort, fallback, budget — runs the
-   circuit-breaker pre-flight, backgrounds the run, and prints the log path. A
-   first line of `SKIP` (a run on that item is still alive) or `ESCALATE` (the
+   circuit-breaker pre-flight, backgrounds the run in auto mode with nobody to
+   answer a prompt, and prints the log path. The run's folder is made in
+   `~/Developer/scratchpad` and deleted when the run ends. A first line of
+   `SKIP` (a run on that item is still alive) or `ESCALATE` (the
    breaker judges the item wedged) means nothing was spawned: relay it to the
    human rather than retrying. Track a spawned run from its log rather than from
-   a completion notification, and keep the roster line updated from it. The Agent
+   a completion notification, and keep the roster line updated from it. The run
+   exits 0 even when calls were refused, so check the log for
+   `Permission denied:` lines, one per refused call. The Agent
    tool stays right for everything that writes no commit: Watson's Direct mode,
    Lestrade, Holmes, and every read-only dispatch.
 

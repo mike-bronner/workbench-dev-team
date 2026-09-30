@@ -143,11 +143,41 @@ for agent in lestrade holmes watson; do
 done
 out=$(run "$FULL" lestrade mike-bronner/phpcs-rules)
 expect_denied "sweep run is denied all 24 tools" "$(dry_denied "$out")"
-# A config silent on every knob leaves no option between the list and
-# --dangerously-skip-permissions, and the prompt must still come last.
+# A config silent on every knob leaves no config option after the lists, and the
+# prompt must still come last.
 out=$(run "$EMPTY" lestrade 7)
 expect_denied "denied with no config knobs" "$(dry_denied "$out")"
-expect_has "the prompt stays the last argument" "--dangerously-skip-permissions Item ID: 7" "$out"
+expect_has "the prompt stays the last argument" "--verbose Item ID: 7" "$out"
+
+echo "— allowed MCP servers"
+# The pipeline's two MCP servers are allowed by rule, so the auto-mode classifier
+# never judges a board write or a memory call. Written out here, not read from
+# the script. The value must be followed by an option, or it could swallow the
+# prompt.
+dry_allowed() { printf '%s\n' "$1" | sed -n 's/^claude -p .* --allowedTools \([^ ]*\) --.*/\1/p'; }
+for agent in lestrade holmes watson; do
+  out=$(run "$FULL" "$agent" 7)
+  expect_eq "$agent run allows exactly the two MCP servers" \
+    'mcp__the-index__*,mcp__plugin_workbench-core_memory__*' "$(dry_allowed "$out")"
+  expect_eq "$agent run passes the allow flag once" "1" "$(printf '%s\n' "$out" | grep -o -- '--allowedTools' | wc -l | tr -d ' ')"
+done
+out=$(run "$FULL" lestrade mike-bronner/phpcs-rules)
+expect_eq "sweep run allows exactly the two MCP servers" \
+  'mcp__the-index__*,mcp__plugin_workbench-core_memory__*' "$(dry_allowed "$out")"
+
+echo "— permission mode"
+# Auto mode, named on every run, with prompts answered by nobody, and never the
+# bypass flag. stream-json is what the log renderer reads.
+for agent in lestrade holmes watson; do
+  out=$(run "$FULL" "$agent" 7)
+  expect_lacks "$agent run does not bypass permissions" "--dangerously-skip-permissions" "$out"
+  expect_lacks "$agent run names no bypass mode"         "bypassPermissions"              "$out"
+  expect_has   "$agent run starts in auto mode"          " --permission-mode auto "       "$out"
+  expect_has   "$agent run lets nobody answer a prompt"  " --permission-prompts none "    "$out"
+  expect_has   "$agent run streams JSON for the log"     " --output-format stream-json --verbose " "$out"
+done
+out=$(run "$FULL" lestrade mike-bronner/phpcs-rules)
+expect_has "sweep run starts in auto mode" " --permission-mode auto --permission-prompts none " "$out"
 
 echo "— config resolution"
 out=$(run "$FULL" lestrade 7)
@@ -160,7 +190,6 @@ out=$(run "$FULL" watson 7)
 expect_has  "fallback passed"    "--fallback-model sonnet" "$out"
 expect_has  "budget passed"      "--max-budget-usd 10"     "$out"
 expect_has  "agent flag"         "--agent workbench-dev-team:watson" "$out"
-expect_has  "skip-permissions"   "--dangerously-skip-permissions"    "$out"
 
 echo "— defaults survive a bad config"
 for label in empty broken missing; do
@@ -238,57 +267,111 @@ expect_lacks "no budget stays absent under reprieve" "--max-budget-usd" "$out"
 out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
 expect_has  "an env REPRIEVE=1 buys nothing without a marker" "--max-budget-usd 10 " "$out"
 
-echo "— the run starts in a fresh, empty folder"
+echo "— the run starts in a fresh, empty folder in a scratch root"
 # A real spawn, with `claude` and `security` stubbed on PATH, so no agent starts
-# and no Keychain is read. The stub records where it started. `mktemp` is stubbed
-# too, because macOS mktemp -d uses DARWIN_USER_TEMP_DIR before TMPDIR: the stub
-# accepts exactly `-d` and makes the folder under this suite's work directory.
+# and no Keychain is read. RUNROOT stands in for ~/Developer/scratchpad. The
+# stub records where it started, leaves a file in its folder as a real run
+# would, and then prints $STUB_STREAM, a stream-json fixture, when one is set.
+# $STUB_HOLD holds it open until that file exists, and $STUB_RC is its exit code.
 # The caller stands in for Dispatch in the plugin repo: its cwd is the repo,
 # CLAUDE_PROJECT_DIR names it, and LOGDIR is relative, so the log must still
 # land beside the caller.
-STUB="$WORK/stub"; FAILSTUB="$WORK/failstub"; CALLER="$WORK/caller"; RUNTMP="$WORK/tmp"
-mkdir -p "$STUB" "$FAILSTUB" "$CALLER" "$RUNTMP"
+STUB="$WORK/stub"; FAILSTUB="$WORK/failstub"; CALLER="$WORK/caller"; RUNS="$WORK/scratch/runs"
+mkdir -p "$STUB" "$FAILSTUB" "$CALLER"
 printf '#!/bin/sh\nexit 1\n' > "$STUB/security"
 printf '#!/bin/sh\nexit 1\n' > "$FAILSTUB/mktemp"
-printf '#!/bin/sh\n[ "$*" = -d ] || exit 2\nexec "%s" -d "%s/run.XXXXXX"\n' "$(command -v mktemp)" "$RUNTMP" > "$STUB/mktemp"
 printf '%s\n' '#!/bin/sh' \
   'printf "%s\n" "$@" > "$STUB_OUT.args"' \
-  '{ pwd -P; ls -A | wc -l | tr -d " "; echo "${CLAUDE_PROJECT_DIR-unset}"; echo "${WORKBENCH_DEV_TEAM_PIPELINE-unset}"; echo $$; } > "$STUB_OUT.part"' \
-  'mv "$STUB_OUT.part" "$STUB_OUT"; echo "stub ran"' > "$STUB/claude"
-chmod +x "$STUB/security" "$STUB/mktemp" "$STUB/claude" "$FAILSTUB/mktemp"
-# spawn <item> [extra PATH prefix] -> echoes the script's output
+  '{ pwd -P; ls -A | wc -l | tr -d " "; echo "${CLAUDE_PROJECT_DIR-unset}"; echo "${WORKBENCH_DEV_TEAM_PIPELINE-unset}"; } > "$STUB_OUT.part"' \
+  'mv "$STUB_OUT.part" "$STUB_OUT"' \
+  ': > left-by-the-run' \
+  'if [ -n "${STUB_HOLD:-}" ]; then while [ ! -e "$STUB_HOLD" ]; do sleep 0.1; done; fi' \
+  'echo "stub ran"' \
+  '[ -z "${STUB_STREAM:-}" ] || cat "$STUB_STREAM"' \
+  'exit "${STUB_RC:-0}"' > "$STUB/claude"
+chmod +x "$STUB/security" "$STUB/claude" "$FAILSTUB/mktemp"
+# spawn <item> [extra PATH prefix] -> echoes the script's output. SPAWN_AGENT
+# picks the lane, and RUNROOT the scratch root, when a case needs another.
 spawn() {
   (cd "$CALLER" && env -u WORKBENCH_DEV_TEAM_PIPELINE PATH="${2:+$2:}$STUB:$PATH" STUB_OUT="$WORK/stub-$1" \
-    CLAUDE_PROJECT_DIR="$CALLER" DISPATCH_CONFIG="$FULL" LOGDIR=logs bash "$SCRIPT" watson "$1" 2>&1)
+    CLAUDE_PROJECT_DIR="$CALLER" DISPATCH_CONFIG="$FULL" LOGDIR=logs RUNROOT="${RUNROOT_OVERRIDE:-$RUNS}" \
+    bash "$SCRIPT" "${SPAWN_AGENT:-watson}" "$1" 2>&1)
 }
 wait_for() { local i=0; while [ ! -s "$1" ] && [ "$i" -lt 50 ]; do sleep 0.2; i=$((i + 1)); done; }
+wait_gone() { local i=0; while [ -e "$1" ] && [ "$i" -lt 50 ]; do sleep 0.2; i=$((i + 1)); done; }
+logof() { ls "$CALLER/logs/$1-$2-"*.log 2>/dev/null | head -1; }
 out=$(spawn 9); wait_for "$WORK/stub-9"
 expect_has "the dispatch reports a spawn" "dispatched watson pid=" "$out"
 started=$(sed -n 1p "$WORK/stub-9" 2>/dev/null)
-real_tmp=$(cd -P "$RUNTMP" && pwd -P)
-case "$started" in "$real_tmp"/run.?*) echo "  ok   — the run starts in the folder mktemp -d made"; pass=$((pass+1)) ;;
-  *) echo "  FAIL — the run started in '$started', not in a mktemp -d folder under $real_tmp"; fail=$((fail+1)) ;; esac
+real_runs=$(cd -P "$RUNS" 2>/dev/null && pwd -P)
+case "$started" in "$real_runs"/dispatch-watson.??????) echo "  ok   — the run starts in a dispatch-watson.XXXXXX folder in the scratch root"; pass=$((pass+1)) ;;
+  *) echo "  FAIL — the run started in '$started', not in a dispatch-watson.XXXXXX folder under $real_runs"; fail=$((fail+1)) ;; esac
 expect_lacks "the run does not start in the caller's cwd" "$CALLER" "$started"
 expect_eq "the run's folder is empty"       "0"     "$(sed -n 2p "$WORK/stub-9" 2>/dev/null)"
 expect_eq "CLAUDE_PROJECT_DIR is not inherited" "unset" "$(sed -n 3p "$WORK/stub-9" 2>/dev/null)"
 expect_eq "the pipeline flag reaches the run" "1"   "$(sed -n 4p "$WORK/stub-9" 2>/dev/null)"
-log=$(ls "$CALLER/logs/watson-9-"*.log 2>/dev/null | head -1)
+wait_gone "$started"
+expect_eq "the run's folder is deleted when the run ends" "absent" "$([ -e "$started" ] && echo present || echo absent)"
+log=$(logof watson 9)
 expect_has "a relative LOGDIR still gets the run's output" "stub ran" "$(cat "$log" 2>/dev/null)"
 expect_has "the lock holds the spawned PID" "pid=$(cat "$CALLER/logs/watson-9.lock" 2>/dev/null) " "$out"
-# The stub records its own $$. Without the exec, the lock would hold the PID of
-# the subshell that forked it, and the two would differ.
-expect_eq "the lock holds the agent's own PID" "$(sed -n 5p "$WORK/stub-9" 2>/dev/null)" "$(cat "$CALLER/logs/watson-9.lock" 2>/dev/null)"
-# What the spawned claude actually received, one argument per line: the list is
+# What the spawned claude actually received, one argument per line: each list is
 # one argument, an option follows it, and the prompt is still the last argument.
 spawned_denied=$(awk 'p{print; exit} $0=="--disallowedTools"{p=1}' "$WORK/stub-9.args" 2>/dev/null)
 expect_denied "the spawned run is denied all 24 tools" "$spawned_denied"
 expect_has "...and an option follows the list" "--" \
   "$(awk 'p==2{print; exit} p{p++} $0=="--disallowedTools"{p=1}' "$WORK/stub-9.args" 2>/dev/null | cut -c1-2)"
+expect_eq "the spawned run allows the two MCP servers" 'mcp__the-index__*,mcp__plugin_workbench-core_memory__*' \
+  "$(awk 'p{print; exit} $0=="--allowedTools"{p=1}' "$WORK/stub-9.args" 2>/dev/null)"
+expect_eq "the spawned run is in auto mode" "auto" \
+  "$(awk 'p{print; exit} $0=="--permission-mode"{p=1}' "$WORK/stub-9.args" 2>/dev/null)"
+expect_eq "...with nobody to answer a prompt" "none" \
+  "$(awk 'p{print; exit} $0=="--permission-prompts"{p=1}' "$WORK/stub-9.args" 2>/dev/null)"
+expect_eq "...and without the bypass flag" "0" \
+  "$(grep -c -- '--dangerously-skip-permissions' "$WORK/stub-9.args" 2>/dev/null)"
 expect_eq "...and the prompt is the last argument" "Item ID: 9" "$(tail -1 "$WORK/stub-9.args" 2>/dev/null)"
 spawn 10 >/dev/null; wait_for "$WORK/stub-10"
 second=$(sed -n 1p "$WORK/stub-10" 2>/dev/null)
 if [ -n "$second" ] && [ "$second" != "$started" ]; then echo "  ok   — each run gets its own folder"; pass=$((pass+1))
 else echo "  FAIL — two runs shared '$second'"; fail=$((fail+1)); fi
+wait_gone "$second"
+
+echo "— the run folder lives exactly as long as the run"
+# While the agent runs, its folder exists and the lock's PID is alive. When it
+# exits, the folder goes and the PID dies with it, so the breaker frees the item.
+HOLD="$WORK/hold-12"
+out=$(STUB_HOLD="$HOLD" spawn 12); wait_for "$WORK/stub-12"
+run12=$(sed -n 1p "$WORK/stub-12" 2>/dev/null); pid12=$(cat "$CALLER/logs/watson-12.lock" 2>/dev/null)
+expect_eq "the folder exists while the run is alive" "present" "$([ -n "$run12" ] && [ -d "$run12" ] && echo present || echo absent)"
+expect_eq "the lock's PID is alive while the run is" "alive" "$(kill -0 "$pid12" 2>/dev/null && echo alive || echo dead)"
+: > "$HOLD"; wait_gone "$run12"
+expect_eq "...and the folder goes when the run ends" "absent" "$([ -e "$run12" ] && echo present || echo absent)"
+i=0; while kill -0 "$pid12" 2>/dev/null && [ "$i" -lt 25 ]; do sleep 0.2; i=$((i + 1)); done
+expect_eq "...and the lock's PID dies with it" "dead" "$(kill -0 "$pid12" 2>/dev/null && echo alive || echo dead)"
+# A failed run cleans up too.
+STUB_RC=3 spawn 13 >/dev/null; wait_for "$WORK/stub-13"
+run13=$(sed -n 1p "$WORK/stub-13" 2>/dev/null); wait_gone "$run13"
+expect_eq "a run that exits non-zero still loses its folder" "absent" "$([ -n "$run13" ] && [ -e "$run13" ] && echo present || echo absent)"
+# A run whose wrapper is sent TERM cleans up once its agent has exited.
+HOLD="$WORK/hold-14"
+STUB_HOLD="$HOLD" spawn 14 >/dev/null; wait_for "$WORK/stub-14"
+run14=$(sed -n 1p "$WORK/stub-14" 2>/dev/null)
+kill -TERM "$(cat "$CALLER/logs/watson-14.lock" 2>/dev/null)" 2>/dev/null
+sleep 0.3
+expect_eq "a TERM does not pull the folder from under a live agent" "present" "$([ -n "$run14" ] && [ -d "$run14" ] && echo present || echo absent)"
+: > "$HOLD"; wait_gone "$run14"
+expect_eq "a run whose wrapper got TERM still loses its folder" "absent" "$([ -n "$run14" ] && [ -e "$run14" ] && echo present || echo absent)"
+# A HUP, as when Dispatch's own shell goes away, neither ends the run nor
+# strands its folder.
+HOLD="$WORK/hold-19"
+STUB_HOLD="$HOLD" spawn 19 >/dev/null; wait_for "$WORK/stub-19"
+run19=$(sed -n 1p "$WORK/stub-19" 2>/dev/null); pid19=$(cat "$CALLER/logs/watson-19.lock" 2>/dev/null)
+kill -HUP "$pid19" 2>/dev/null; sleep 0.3
+expect_eq "a HUP does not end the run" "alive" "$(kill -0 "$pid19" 2>/dev/null && echo alive || echo dead)"
+: > "$HOLD"; wait_gone "$run19"
+expect_eq "...and the folder still goes when it ends" "absent" "$([ -n "$run19" ] && [ -e "$run19" ] && echo present || echo absent)"
+
+echo "— the run folder is refused when it is not clean"
 # No folder, no run: a fallback to the caller's cwd is the case this prevents.
 out=$(spawn 11 "$FAILSTUB"); code=$?
 expect_eq  "a failed mktemp exits non-zero" "1" "$code"
@@ -297,6 +380,63 @@ sleep 0.5
 expect_eq  "...and spawns nothing" "absent" "$([ -e "$WORK/stub-11" ] && echo present || echo absent)"
 leftover=absent; for f in "$CALLER/logs/"*-11[.-]*; do [ -e "$f" ] && leftover=present; done
 expect_eq  "...and writes no log or lock" "absent" "$leftover"
+# A scratch root that is not there yet is made.
+out=$(RUNROOT_OVERRIDE="$WORK/scratch/new/deeper" spawn 15); wait_for "$WORK/stub-15"
+case "$(sed -n 1p "$WORK/stub-15" 2>/dev/null)" in */new/deeper/dispatch-watson.??????) echo "  ok   — a missing scratch root is made"; pass=$((pass+1)) ;;
+  *) echo "  FAIL — a missing scratch root was not made: $out"; fail=$((fail+1)) ;; esac
+wait_gone "$(sed -n 1p "$WORK/stub-15" 2>/dev/null)"
+# A folder inside a git repository would make that repository the run's project.
+mkdir -p "$WORK/repo/runs"; git -C "$WORK/repo" init -q
+out=$(RUNROOT_OVERRIDE="$WORK/repo/runs" spawn 16); code=$?
+expect_eq  "a run folder inside a git repository exits non-zero" "1" "$code"
+expect_has "...and says why" "inside a git repository" "$out"
+sleep 0.5
+expect_eq  "...and spawns nothing" "absent" "$([ -e "$WORK/stub-16" ] && echo present || echo absent)"
+expect_eq  "...and leaves no folder behind" "" "$(ls -A "$WORK/repo/runs")"
+leftover=absent; for f in "$CALLER/logs/"*-16[.-]*; do [ -e "$f" ] && leftover=present; done
+expect_eq  "...and writes no log or lock" "absent" "$leftover"
+
+echo "— the log names every permission refusal"
+# A stream-json fixture shaped like the real one (Claude Code 2.1.286): a refusal
+# the permission_denied event reports, a hook's refusal in a sub-agent, which
+# only its tool result shows, and the result's own list, which repeats the first
+# and adds one more.
+STREAM="$WORK/stream.jsonl"
+cat > "$STREAM" <<'EOF'
+{"type":"system","subtype":"init","session_id":"s"}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t1","name":"Bash","input":{"command":"git -C /x push origin main"}}]},"parent_tool_use_id":null}
+{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"t1","message":"Permission to use Bash with command git -C /x push origin main has been denied."}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t1","is_error":true,"content":"Permission to use Bash with command git -C /x push origin main has been denied."}]},"parent_tool_use_id":null}
+{"type":"assistant","message":{"content":[{"type":"tool_use","id":"t2","name":"Bash","input":{"command":"gh pr merge 5"}}]},"parent_tool_use_id":"a1"}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t2","is_error":true,"content":"PreToolUse:Bash hook error: Blocked: the pipeline does not merge.\nReport it."}]},"parent_tool_use_id":"a1"}
+{"type":"user","message":{"content":[{"type":"tool_result","tool_use_id":"t9","is_error":true,"content":"Exit code 1\ntests failed"}]},"parent_tool_use_id":null}
+{"type":"result","subtype":"success","is_error":false,"result":"Moved the item to In Review.\nDone.","permission_denials":[{"tool_name":"Bash","tool_use_id":"t1","tool_input":{"command":"git -C /x push origin main"}},{"tool_name":"Write","tool_use_id":"t3","tool_input":{"file_path":"/etc/hosts","content":"FILE-BODY-MUST-NOT-LEAK"}}]}
+EOF
+STUB_STREAM="$STREAM" spawn 17 >/dev/null; wait_for "$WORK/stub-17"; wait_gone "$(sed -n 1p "$WORK/stub-17" 2>/dev/null)"
+log=$(cat "$(logof watson 17)" 2>/dev/null)
+expect_has "a rule's refusal is named, with the call and the reason" \
+  'Permission denied: Bash {"command":"git -C /x push origin main"} -- Permission to use Bash' "$log"
+expect_eq  "...once, though the result lists it again" "1" "$(printf '%s\n' "$log" | grep -c 'git -C /x push origin main"} --')"
+expect_has "a hook's refusal in a sub-agent is named, on one line" \
+  'Permission denied: Bash in a sub-agent {"command":"gh pr merge 5"} -- PreToolUse:Bash hook error: Blocked: the pipeline does not merge. Report it.' "$log"
+expect_has "a refusal only the result lists is named" 'Permission denied: Write {"file_path":"/etc/hosts"} -- refused' "$log"
+expect_lacks "...without the content it would have written" "FILE-BODY-MUST-NOT-LEAK" "$log"
+expect_lacks "a failed command is not a refusal" "tests failed" "$log"
+expect_eq  "every refusal line is findable by one grep" "3" "$(printf '%s\n' "$log" | grep -c '^Permission denied: ')"
+expect_eq  "the log still ends with the run's final result" "Moved the item to In Review.
+Done." "$(printf '%s\n' "$log" | tail -2)"
+expect_lacks "the stream's JSON does not reach the log" '"type":' "$log"
+expect_has "a line that is not JSON passes through" "stub ran" "$log"
+expect_lacks "a run with a result is not called empty" "No messages returned" "$log"
+expect_has "a run with no result says so, as text mode did" "Error: No messages returned from query" "$(cat "$(logof watson 9)" 2>/dev/null)"
+# The breaker still reads a rendered budget kill, after a refusal, as one.
+printf '%s\n' '{"type":"assistant","message":{"content":[{"type":"tool_use","id":"k1","name":"Bash","input":{"command":"grep Exceeded USD budget x"}}]}}' \
+  '{"type":"system","subtype":"permission_denied","tool_name":"Bash","tool_use_id":"k1","message":"denied"}' \
+  '{"type":"result","subtype":"error_max_budget_usd","is_error":true,"permission_denials":[]}' > "$WORK/kill.jsonl"
+STUB_STREAM="$WORK/kill.jsonl" SPAWN_AGENT=holmes spawn 18 >/dev/null; wait_for "$WORK/stub-18"; wait_gone "$(sed -n 1p "$WORK/stub-18" 2>/dev/null)"
+expect_eq "a budget kill renders as the text-mode line" "Error: Exceeded USD budget" "$(tail -1 "$(logof holmes 18)" 2>/dev/null)"
+verdict=$(cd "$CALLER" && LOGDIR=logs bash "$SCRIPT" --check holmes 18)
+expect_has "...which the breaker escalates" "ESCALATE" "$verdict"
 
 echo
 echo "passed: $pass  failed: $fail"

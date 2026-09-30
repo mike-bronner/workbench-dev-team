@@ -231,6 +231,21 @@ d="$WORK/case20"; mkdir -p "$d"
 echo $$ > "$d/watson-431.lock"
 expect "other agent's lock ignored -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
 
+# 21. A permission refusal quotes the refused call, and the wrapper prints it just
+# before the final result. A refused command that names a signature is not that
+# signature, so a run that ended cleanly after one still dispatches.
+d="$WORK/case21"; mkdir -p "$d"
+mklog "$d" holmes 500 202606210800 'Permission denied: Bash {"command":"grep Exceeded USD budget run.log"} -- refused
+Permission denied: Bash {"command":"echo content filtering policy"} -- refused
+Review posted.'
+expect "a refusal quoting a signature -> dispatch" "DISPATCH" "$(run "$d" holmes 500)"
+
+# 22. ...while a real budget kill after refusals still escalates.
+d="$WORK/case22"; mkdir -p "$d"
+mklog "$d" holmes 501 202606210800 'Permission denied: Bash {"command":"git -C /x push origin main"} -- refused
+Error: Exceeded USD budget'
+expect "a budget kill after refusals -> escalate" "ESCALATE" "$(run "$d" holmes 501)"
+
 echo
 echo "Testing the verdicts on the dispatch path (stubbed claude):"
 # A real dispatch, with `claude` and `security` stubbed on PATH, so each case

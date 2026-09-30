@@ -4,7 +4,7 @@
 # Dispatch (the scheduled orchestrator) runs under the auto-mode classifier,
 # which judges every Bash command it cannot match to a permission rule. The
 # multi-line dispatch block this replaces — config reads, a Keychain fetch, and
-# `nohup claude -p --dangerously-skip-permissions &` — has no matchable prefix,
+# a backgrounded `nohup claude -p … &` — has no matchable prefix,
 # so it was re-judged on every tick and refused nondeterministically. A single
 # stable invocation can be covered by one `permissions.allow` prefix rule, which
 # is evaluated *before* the classifier and takes the judgment call off the table.
@@ -37,15 +37,16 @@
 #
 # Environment read:
 #   DISPATCH_DRY_RUN=1  print the command that would run; spawn nothing, consume nothing
-#   LOGDIR, DISPATCH_CONFIG  test overrides
+#   LOGDIR, DISPATCH_CONFIG, RUNROOT  test overrides
 #
 # Environment set on the child:
 #   WORKBENCH_DEV_TEAM_PIPELINE=1   tells the plugin's hooks this run is the
 #                                   autonomous pipeline. See the export below.
 #
-# Exits non-zero on bad arguments, and when mktemp -d cannot create the run's
-# folder. That check comes before any log or lock is written. A malformed or
-# absent config never blocks a dispatch — every knob falls back to its default,
+# Exits non-zero on bad arguments, and when the run's folder cannot be made
+# empty and outside every git repository. That check comes before any log or
+# lock is written. A malformed or absent config never blocks a dispatch — every
+# knob falls back to its default,
 # and a knob with no default (model, effort) is left off, so the agent
 # definition's own pin applies where it has one and Claude Code's default
 # applies where it has none.
@@ -53,6 +54,7 @@ set -u
 
 CONFIG="${DISPATCH_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
 LOGDIR="${LOGDIR:-$HOME/.claude-workbench/dev-team-logs}"
+RUNROOT="${RUNROOT:-$HOME/Developer/scratchpad}"   # a scratch root; each run's folder goes here
 
 MODE=dispatch
 case "${1:-}" in
@@ -127,6 +129,11 @@ MARKER="$LOGDIR/$AGENT-$ID.escalated"   # presence => the breaker escalated this
 #     provably terminal, and "tried too many times" is Holmes's call after review.
 preflight() {
   CB_BUDGET_SIG='Exceeded USD budget'   # the HARD kill the harness writes
+  # The last three lines of a run's log, not counting its permission refusals.
+  # They print during the run and just before its final result, and they quote
+  # the refused call, so a refused command that names a signature would
+  # otherwise read as one.
+  cb_tail() { grep -v '^Permission denied: ' "$1" 2>/dev/null | tail -3; }
   CB_FATAL_STRIKES=3
   local cb_lock="$LOGDIR/$AGENT-$ID.lock" cb_latest cb_pid cb_f cb_sig cb_strikes cb_newer_watson
   cb_latest=$(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null | head -1)
@@ -138,14 +145,14 @@ preflight() {
     printf 'REPRIEVE\thuman re-activated a previously-escalated item — granting one fresh run with a raised budget\n'
   elif [ -z "$cb_latest" ]; then
     echo DISPATCH
-  elif tail -3 "$cb_latest" 2>/dev/null | grep -qi 'content filtering policy'; then
+  elif cb_tail "$cb_latest" | grep -qi 'content filtering policy'; then
     printf 'ESCALATE\toutput blocked by the content filtering policy — a required deliverable trips the output content filter, so the run can never succeed on retry\n'
-  elif tail -3 "$cb_latest" 2>/dev/null | grep -qF "$CB_BUDGET_SIG"; then
+  elif cb_tail "$cb_latest" | grep -qF "$CB_BUDGET_SIG"; then
     if [ "$AGENT" = watson ]; then
       cb_strikes=0
       # Newest first, one path per line: ls -t is what orders by mtime.
       while IFS= read -r cb_f; do
-        tail -3 "$cb_f" 2>/dev/null | grep -qF "$CB_BUDGET_SIG" || break   # streak broken
+        cb_tail "$cb_f" | grep -qF "$CB_BUDGET_SIG" || break   # streak broken
         cb_strikes=$((cb_strikes + 1))
       done < <(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null)
       if [ "$cb_strikes" -ge "$CB_FATAL_STRIKES" ]; then
@@ -164,13 +171,13 @@ preflight() {
   elif [ "$AGENT" = watson ]; then
     echo DISPATCH
   else
-    cb_sig=$(tail -3 "$cb_latest" 2>/dev/null | grep -iE '^(API Error|Execution error|Error:)' | tail -1)
+    cb_sig=$(cb_tail "$cb_latest" | grep -iE '^(API Error|Execution error|Error:)' | tail -1)
     if [ -z "$cb_sig" ]; then
       echo DISPATCH
     else
       cb_strikes=0
       while IFS= read -r cb_f; do
-        tail -3 "$cb_f" 2>/dev/null | grep -qiF "$cb_sig" || break   # streak broken
+        cb_tail "$cb_f" | grep -qiF "$cb_sig" || break   # streak broken
         cb_strikes=$((cb_strikes + 1))
       done < <(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null)
       if [ "$cb_strikes" -ge "$CB_FATAL_STRIKES" ]; then
@@ -268,15 +275,35 @@ DENIED_TOOLS=(
   NotebookEdit
 )
 
-# --disallowedTools takes a variadic list. It goes in as one comma-joined value,
-# and an option always follows it, so it can never swallow the prompt.
+# MCP servers whose calls no pipeline run sends to the auto-mode classifier: the
+# two every agent's frontmatter names. Under the old bypass mode no MCP call was
+# ever judged, and the classifier's default rules name board writes and review
+# approvals, which are these agents' whole job. An allow rule is matched before
+# the classifier, and auto mode keeps an MCP allow rule where it drops a broad
+# Bash or Agent one. A server's tools take a glob only after a literal
+# mcp__<server>__ prefix, so each server is named here.
+ALLOWED_TOOLS=('mcp__the-index__*' 'mcp__plugin_workbench-core_memory__*')
+
+# --disallowedTools and --allowedTools take variadic lists. Each goes in as one
+# comma-joined value, and an option always follows it, so neither can swallow
+# the prompt.
 set -- --agent "workbench-dev-team:${AGENT}" \
-  --disallowedTools "$(IFS=,; printf '%s' "${DENIED_TOOLS[*]}")"
+  --disallowedTools "$(IFS=,; printf '%s' "${DENIED_TOOLS[*]}")" \
+  --allowedTools "$(IFS=,; printf '%s' "${ALLOWED_TOOLS[*]}")"
 [ -n "$MODEL" ]    && set -- "$@" --model "$MODEL"
 [ -n "$EFFORT" ]   && set -- "$@" --effort "$EFFORT"
 [ -n "$FALLBACK" ] && set -- "$@" --fallback-model "$FALLBACK"
 [ -n "$BUDGET" ]   && set -- "$@" --max-budget-usd "$BUDGET"
-set -- "$@" --dangerously-skip-permissions "$PROMPT"
+# The permission mode is named, never left to the default: one -p run was seen
+# starting in auto mode with no flag, where the docs say default. Auto mode lets
+# the classifier judge what no rule decides, and `--permission-prompts none`
+# denies anything that would still prompt, since nobody is at the keyboard.
+# This replaced --dangerously-skip-permissions, which the classifier's own
+# default rules name as an unsafe way to start an agent loop. stream-json, which
+# needs --verbose, is the one output that reports every refusal, sub-agents'
+# included. The renderer below turns it back into a plain-text log.
+set -- "$@" --permission-mode auto --permission-prompts none \
+  --output-format stream-json --verbose "$PROMPT"
 
 # Mark the child as the autonomous pipeline. Two hooks read it.
 # `hooks/scripts/commit-guard.sh` (PreToolUse) skips the sub-agent refusal, which
@@ -284,12 +311,12 @@ set -- "$@" --dangerously-skip-permissions "$PROMPT"
 # It still refuses the pipeline's merges. `hooks/scripts/pipeline-scope.sh`
 # (PermissionRequest) answers a prompt for one plain `git -C <dir>`, rm, or rmdir
 # line with "allow" when every path is absolute and stays inside the roots: all
-# of $TMPDIR, where every mktemp -d folder lands, so another run's clone is in
-# scope too, and the scratch roots.
-# Nobody is at the keyboard, `-p` denies a prompt nobody answers, and
-# --dangerously-skip-permissions does not skip ask rules, so without the flag
-# every scheduled run would die at its first commit. The approval chain here is
-# board dispatch, Holmes review, and the human's own PR merge.
+# of $TMPDIR, so another run's clone is in scope too, and the scratch roots.
+# Nobody is at the keyboard, and `--permission-prompts none` denies every prompt
+# the hook does not allow. An ask rule is matched before the classifier, so the
+# commit and push ask rules prompt, and without the flag every scheduled run
+# would die at its first commit. The approval chain here is board dispatch,
+# Holmes review, and the human's own PR merge.
 #
 # The dispatcher sets it, never the agent. It reaches exactly the process this
 # script spawns and its children, so an interactive session on the same machine
@@ -300,23 +327,40 @@ if [ "${DISPATCH_DRY_RUN:-0}" = 1 ]; then
   printf 'claude -p'; printf ' %s' "$@"; printf '\n'
   printf 'log=%s\n' "$LOG"
   printf 'lock=%s\n' "${LOCK:-none}"
+  printf 'runroot=%s\n' "$RUNROOT"
   # Read back the exported variable rather than restating the literal, so the
   # dry run cannot claim a carve-out the real invocation does not set.
   printf 'pipeline=%s\n' "${WORKBENCH_DEV_TEAM_PIPELINE:-unset}"
   exit 0
 fi
 
-# The run starts in a fresh, empty mktemp -d folder, never in the caller's cwd.
-# Dispatch itself runs in ~/Developer/workbench-dev-team, and a child started
-# there would take the live plugin repo as its project folder. workbench-core's
+# The run starts in a fresh, empty folder, never in the caller's cwd. Dispatch
+# itself runs in ~/Developer/workbench-dev-team, and a child started there would
+# take the live plugin repo as its project folder. workbench-core's
 # destructive-scope guard treats the project folder as in scope, so a pipeline
 # `git reset --hard` or `rm -rf` there would run unprompted. The cost, accepted:
 # the run loads no project CLAUDE.md and no project settings. The deny rules it
 # used to take from there are passed as DENIED_TOOLS above. User-level settings
 # still apply. CLAUDE_PROJECT_DIR is unset, so the child can only take its
-# project folder from the new cwd. No folder, no run: falling back to the
-# caller's cwd is the case this exists to prevent.
-RUNDIR=$(mktemp -d) || { echo "$(basename "$0"): could not create a run folder with mktemp -d; nothing dispatched" >&2; exit 1; }
+# project folder from the new cwd.
+#
+# The folder is made in a scratch root, ~/Developer/scratchpad, because Mike's
+# rule is that scratch lives in one and whoever makes it deletes it. A bare
+# mktemp -d in $TMPDIR, as this used to be, was never deleted. A folder inside a
+# git repository would make that repository the run's project, so one is
+# refused. No clean folder, no run: falling back to the caller's cwd is the case
+# this exists to prevent.
+RUNDIR=
+mkdir -p "$RUNROOT" 2>/dev/null && RUNDIR=$(mktemp -d "$RUNROOT/dispatch-$AGENT.XXXXXX" 2>/dev/null)
+if [ -z "$RUNDIR" ] || [ ! -d "$RUNDIR" ]; then
+  echo "$(basename "$0"): could not create a run folder under $RUNROOT; nothing dispatched" >&2
+  exit 1
+fi
+if git -C "$RUNDIR" rev-parse --git-dir >/dev/null 2>&1; then
+  rmdir "$RUNDIR"
+  echo "$(basename "$0"): run folder $RUNDIR is inside a git repository; nothing dispatched" >&2
+  exit 1
+fi
 unset CLAUDE_PROJECT_DIR
 
 mkdir -p "$LOGDIR"
@@ -327,9 +371,73 @@ mkdir -p "$LOGDIR"
 CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 export CLAUDE_CODE_OAUTH_TOKEN
 
+# Turns the run's stream-json into the plain-text log the breaker and a human
+# read. Each refused tool call becomes one line, as it happens:
+#   Permission denied: <tool>[ in a sub-agent] <input> -- <reason>
+# The input is cut to 300 characters, and a file tool's content, old_string,
+# new_string, and edits are left out, so a refused write never copies its
+# content into the log. Three sources, because none of them sees every refusal: the permission_denied
+# event (rules, unanswered prompts, the classifier, in sub-agents too), a
+# tool result that starts "PreToolUse:" (a hook's deny, which that event
+# skips), and the result's permission_denials list for anything else in the
+# main thread. A call already printed is not printed twice. Then the final
+# result prints as text mode prints it, so the log ends as it always has. A line
+# that is not JSON passes through unchanged.
+RENDER='
+def clip: tostring | gsub("[\r\n]+"; " ") | if length > 300 then .[0:300] + "..." else . end;
+def brief: if type == "object" then del(.content, .old_string, .new_string, .edits) else . end | tojson | clip;
+def denied($tool; $sub; $input; $why):
+  "Permission denied: \($tool // "tool")\(if $sub then " in a sub-agent" else "" end) \($input // "(input not seen)") -- \($why // "no reason given" | clip)";
+def result_text:
+  if .subtype == "success" then .result // ""
+  elif .subtype == "error_during_execution" then "Execution error"
+  elif .subtype == "error_max_turns" then "Error: Reached max turns"
+  elif .subtype == "error_max_budget_usd" then "Error: Exceeded USD budget"
+  else "Error: " + ((.errors // [])[0] // .subtype // "unknown result" | tostring) end;
+foreach (inputs, null) as $line ({calls: {}, seen: {}, ended: false};
+  .out = []
+  | if $line == null then
+      if .ended then . else .out = ["Error: No messages returned from query"] end
+    else
+      ($line | try fromjson catch null) as $m
+      | if ($m | type) != "object" then .out = [$line]
+        elif $m.type == "assistant" then
+          reduce ($m.message.content[]? | objects | select(.type == "tool_use" and (.id | type) == "string")) as $c
+            (.; .calls[$c.id] = {name: $c.name, input: ($c.input | brief)})
+        elif $m.type == "system" and $m.subtype == "permission_denied" then
+          .calls[$m.tool_use_id // ""] as $c
+          | (if $m.tool_use_id then .seen[$m.tool_use_id] = true else . end)
+          | .out = [denied($m.tool_name; $m.agent_id; $c.input; $m.message // $m.decision_reason)]
+        elif $m.type == "user" then
+          .calls as $calls
+          | [ $m.message.content[]? | objects | select(.type == "tool_result" and .is_error == true)
+              | {id: .tool_use_id, text: (.content | if type == "array" then map(.text? // "") | join(" ") else tostring end)}
+              | select(.text | startswith("PreToolUse:")) ] as $blocked
+          | reduce ($blocked[] | .id | strings) as $id (.; .seen[$id] = true)
+          | .out = [$blocked[] | $calls[.id // ""] as $c | denied($c.name; $m.parent_tool_use_id; $c.input; .text)]
+        elif $m.type == "result" then
+          .seen as $seen
+          | .ended = true
+          | .out = [($m.permission_denials // [])[] | select(.tool_use_id == null or ($seen[.tool_use_id] | not))
+                    | denied(.tool_name; null; (.tool_input | brief); "refused")]
+                   + [$m | result_text]
+        else . end
+    end;
+  .out[])'
+
 # The redirect opens in this script's cwd, so a relative LOGDIR still resolves
-# where the pre-flight reads it. exec keeps $! the agent's own PID for the lock.
-(cd "$RUNDIR" && exec nohup claude -p "$@") > "$LOG" 2>&1 &
+# where the pre-flight reads it. The wrapper subshell owns the run folder: its
+# EXIT trap deletes it when the agent exits, on success or failure. A TERM ends
+# the wrapper through that trap too, and a HUP is ignored, as nohup ignores it
+# for the agent. $! is the wrapper's PID, which lives until the agent has exited
+# and its folder is gone, so the lock holds for the whole run.
+(
+  trap '' HUP
+  trap 'rm -rf -- "$RUNDIR"' EXIT
+  trap 'exit 143' TERM
+  cd "$RUNDIR" || exit 1
+  nohup claude -p "$@" | jq -nrR --unbuffered "$RENDER"
+) > "$LOG" 2>&1 &
 DISPATCHED=$!
 [ -n "$LOCK" ] && printf '%s' "$DISPATCHED" > "$LOCK"
 disown 2>/dev/null || true

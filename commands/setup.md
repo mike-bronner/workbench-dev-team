@@ -279,8 +279,8 @@ Three reasons:
   Holmes's old `high` no longer earns its cost.
 
 Speed and permission mode stay unpinned. Agent frontmatter has no speed key,
-and a pinned `permissionMode` could override the
-`--dangerously-skip-permissions` the headless scheduled path depends on.
+and a pinned `permissionMode` could override the `--permission-mode auto` the
+headless scheduled path depends on.
 
 **Two environment variables still override the pins, on purpose.** They are the
 deliberate opt-outs, for a project that needs a different model or effort:
@@ -871,9 +871,11 @@ interpreter such as `python3 -c`, or a shell alias gets past the rules and the
 guard alike. The design stops an honest agent that moves too fast. It does not
 stop an agent that sets out to evade it.
 
-**The scheduled pipeline still commits unattended.** `claude -p` denies a prompt
-nobody answers, and `--dangerously-skip-permissions` does not skip ask rules.
-The plugin's `PermissionRequest` hook (`hooks/scripts/pipeline-scope.sh`)
+**The scheduled pipeline still commits unattended.** Each run starts with
+`--permission-mode auto --permission-prompts none`, so the auto-mode classifier
+judges what no rule decides, and a prompt nobody answers is denied. An ask rule
+is matched before the classifier, so a commit or push still prompts. The
+plugin's `PermissionRequest` hook (`hooks/scripts/pipeline-scope.sh`)
 answers a pipeline prompt with "allow", and only when
 `WORKBENCH_DEV_TEAM_PIPELINE=1` is in its own environment. It allows one plain
 `git -C <dir>`, `rm`, or `rmdir` command per call, and only when every path is
@@ -883,9 +885,11 @@ The git subcommand must be one the pipelines use: `add`, `checkout`, `commit`,
 `diff`, `log`, `merge`, or `push`. It never allows a pull request merge, a force
 push, a push to the default branch, or a command that one of your deny rules
 matches. `bin/dispatch-agent.sh` exports the flag,
-and starts each run in a fresh, empty `mktemp -d` folder rather than in this
-repo. A sub-agent of an interactive session does not carry the flag unless the
-session itself does.
+and starts each run in a fresh, empty folder in `~/Developer/scratchpad` rather
+than in this repo, and deletes that folder when the run ends. It writes every
+permission refusal to the run's log as a `Permission denied:` line. A sub-agent
+of an interactive session does not carry the flag unless the session itself
+does.
 
 **Do not set `WORKBENCH_DEV_TEAM_PIPELINE=1` with a shell `export` or in a
 settings `env` block.** Either one puts the flag on an interactive session. The
@@ -1276,7 +1280,8 @@ just wrote.
 
 The working directory pinned here is the router's own. The agents it dispatches
 do not inherit it: `bin/dispatch-agent.sh` starts each one in a fresh, empty
-`mktemp -d` folder and unsets `CLAUDE_PROJECT_DIR`. A run started in this repo
+folder in `~/Developer/scratchpad`, deletes it when the run ends, and unsets
+`CLAUDE_PROJECT_DIR`. A run started in this repo
 would take the live plugin repo as its project folder, where workbench-core's
 destructive-scope guard lets a delete run unprompted. The cost is that a run
 loads no project `CLAUDE.md` and no project settings. User-level settings still
