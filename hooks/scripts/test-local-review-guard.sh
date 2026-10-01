@@ -41,14 +41,20 @@ check() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1 — expected $3, got $2
 
 # Build the payload first, then feed it with printf. Piping a generator straight
 # into the guard breaks its stdout when the guard exits before reading stdin.
-run_guard() { # run_guard <payload> [env assignments...]
+run_guard() { # run_guard <payload> [env assignments...]; RUN_GUARD picks the script
   local body="$1"; shift
   printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE \
-    HOME="$SANDBOX/home" TMPDIR="$TMPROOT" "$@" bash "$GUARD"
+    HOME="$SANDBOX/home" TMPDIR="$TMPROOT" "$@" bash "${RUN_GUARD:-$GUARD}"
 }
 
+# Every reviewer command a case runs joins the differential check at the end,
+# with its cwd. Cases run in subshells, so they are kept in a file.
+SEEN_FILE="$SANDBOX/seen"
+: > "$SEEN_FILE"
+
 bash_payload() { # bash_payload <command> [session] [agent_type] [cwd]
-  python3 -c '
+  [ "${3-$LENS}" = "$LENS" ] && printf '%s\0%s\0' "$1" "${4-}" >> "$SEEN_FILE"
+  python3 -I -c '
 import json, sys
 body = {"hook_event_name": "PreToolUse", "tool_name": "Bash",
         "session_id": sys.argv[2], "agent_id": "agent-1",
@@ -86,7 +92,7 @@ check "a type that only contains holmes is not held" \
 # The scheduled pipeline starts Holmes with --agent, so its main thread carries
 # agent_type and no agent_id, and the pipeline flag is on. Neither exempts it.
 check "a pipeline main thread (agent_type, no agent_id, pipeline flag) is held" \
-  "$(verdict_of "$(run_guard "$(python3 -c '
+  "$(verdict_of "$(run_guard "$(python3 -I -c '
 import json, sys
 print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
                   "session_id": "session-P", "agent_type": sys.argv[1],
@@ -101,7 +107,7 @@ check "a write beneath ~/Developer/scratchpad is allowed" "$(bash_verdict "touch
 SESSION_PAD="$SANDBOX/session-pad"
 mkdir -p "$SESSION_PAD"
 check "a write beneath the payload's scratchpad_dir is allowed" \
-  "$(verdict_of "$(run_guard "$(python3 -c '
+  "$(verdict_of "$(run_guard "$(python3 -I -c '
 import json, sys
 print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
                   "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
@@ -750,10 +756,47 @@ cd $WORKDIR && git status --short
 EOF
 
 echo
+echo "── quoted text is data: a read that names guarded words or > runs ───"
+
+# Each of these was refused once in a real review: a search pattern that names
+# git verbs or writers was split at a quoted | or ;, and a quoted > or a
+# descriptor duplication was read as a redirect to a file.
+for c in 'grep -rnE "git (commit|push)|chmod|rm -rf" .' "rg -n 'git commit; git restore .' skills" \
+         'grep -rn "a; rm -rf x" .' 'git diff HEAD 2>&1 | head -50' "grep -nE '[<>]' f" \
+         'grep -rn "\->" .' "rg -n 'x > y' ." 'git diff > /dev/null 2>&1' 'ls 2>/dev/null' \
+         'git log -1 2>&1 | tail -3' "grep -c 'a > b' f 2>/dev/null" \
+         "printf '%s\n' 'git stash; chmod 644 x'" 'grep -n "x" f | sed -n "1,5p"'; do
+  check "read: $c" "$(bash_verdict "$c" session-A "$LENS" "$WORKDIR")" silent
+done
+# These reads are not on the allowlist, so they get main's verdict, which
+# refused them: awk runs its program text, a quoted "->" is an option word to
+# grep, and $( ) is a substitution. Mike accepted refused reads as the cost.
+for c in "awk '\$3 > 5' data.txt" "awk -F, '{ if (\$2 >= 10) print }' data.csv" 'grep -n "->" src/x.php' \
+         'echo "$(git status --short 2>&1)"'; do
+  check "read now refused, as main refused it: $c" "$(bash_verdict "$c" session-A "$LENS" "$WORKDIR")" deny
+done
+echo "...and every write that was refused before is refused still"
+for c in "echo x > $WORKDIR/out.txt" 'echo x > out.txt' 'grep -rn "x" . > notes.txt' \
+         'cat f 2>&1 > out.txt' "echo 'x' > \"$WORKDIR/q\"" "echo \"a\" ; rm -rf $WORKDIR/x" \
+         "sh -c 'git status; rm -rf x'" 'bash -c "echo a; chmod 644 f"' "perl -e 'print 1; unlink \"x\"'" \
+         'echo "$(cd x; rm -rf y)"' "echo \$'a\\'b'; rm -rf $WORKDIR/x" 'git restore x' \
+         "grep -n 'a' f; git checkout -- f" "\"rm\" -rf $WORKDIR/x" "\\rm -rf $WORKDIR/x" \
+         "awk '{ print > \"out.txt\" }' f" "$(printf "cat <<'EOF'\nit's\nEOF\nrm -rf %s/x" "$WORKDIR")"; do
+  check "write: $c" "$(bash_verdict "$c" session-A "$LENS" "$WORKDIR")" deny
+done
+
+echo "...and the forms Holmes traced in the second round are refused"
+for c in "\"bash\" -c 'true; rm README.md'" "\\bash -c 'true; rm README.md'" "\$'sh' -c 'true; rm README.md'" \
+         "gawk '{ print > \"out.txt\" }' f" "mawk '{ print > \"out.txt\" }' f" "nawk '{ print > \"out.txt\" }' f" \
+         "$(printf "# it's a note\nrm README.md")" "echo x >&2'README.md'"; do
+  check "second round: $(printf '%s' "$c" | tr '\n' ' ')" "$(bash_verdict "$c" session-A "$LENS" "$WORKDIR")" deny
+done
+
+echo
 echo "── editing tools are judged by path ───────────────────────────────────"
 
 edit_payload() { # edit_payload <tool> <path> [agent_type]
-  python3 -c '
+  python3 -I -c '
 import json, sys
 field = "notebook_path" if sys.argv[1] == "NotebookEdit" else "file_path"
 body = {"hook_event_name": "PreToolUse", "tool_name": sys.argv[1],
@@ -779,7 +822,7 @@ check "an Edit with a relative path and no cwd is refused" "$(edit_verdict Edit 
 check "a session with no agent_type keeps its editing tools" \
   "$(edit_verdict Edit "$WORKDIR/src/file.txt" "")" silent
 check "the human line names the tool" \
-  "$(run_guard "$(edit_payload Write "$WORKDIR/x")" | python3 -c \
+  "$(run_guard "$(edit_payload Write "$WORKDIR/x")" | python3 -I -c \
     'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"]["permissionDecisionReason"])')" \
   '🛑 Blocked: `Write`. A Holmes reviewer writes only in scratch.'
 
@@ -787,7 +830,7 @@ check "the human line names the tool" \
 # and nowhere else. An Agent entry, or any post-call event, would be the hold
 # machinery this version removed coming back.
 HOOKS_JSON="$(cd "$(dirname "$0")/../.." && pwd)/hooks/hooks.json"
-if python3 - "$HOOKS_JSON" <<'PY'
+if python3 -I - "$HOOKS_JSON" <<'PY'
 import json, re, sys
 hooks = json.load(open(sys.argv[1]))["hooks"]
 matchers = [b.get("matcher", "") for b in hooks["PreToolUse"]
@@ -858,7 +901,7 @@ EOF
     *"python3 is missing or failed"*) ok "$label: the refusal names python3 as the cause" ;;
     *) bad "$label: the refusal does not name python3" ;;
   esac
-  printf '%s' "$CONTEXT_OUT" | python3 -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null \
+  printf '%s' "$CONTEXT_OUT" | python3 -I -c 'import json,sys; json.load(sys.stdin)' 2>/dev/null \
     && ok "$label: the refusal is valid JSON" || bad "$label: the refusal is not valid JSON"
 done
 printf 'git status\n' | env PATH="$NOPY" /bin/bash "$GUARD" --classify >/dev/null 2>&1
@@ -930,19 +973,19 @@ check "an unparseable payload yields no opinion" "$(verdict_of "$(printf 'not js
 check "a payload with no session id is still judged by its agent_type" \
   "$(bash_verdict "git restore ." "")" deny
 check "a non-Bash, non-editing tool is not this guard's business" \
-  "$(verdict_of "$(run_guard "$(python3 -c '
+  "$(verdict_of "$(run_guard "$(python3 -I -c '
 import json, sys
 print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Read",
                   "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
                   "tool_input": {"file_path": "/etc/hosts"}}))' "$LENS")")")" silent
 check "an Agent dispatch is not this guard's business" \
-  "$(verdict_of "$(run_guard "$(python3 -c '
+  "$(verdict_of "$(run_guard "$(python3 -I -c '
 import json, sys
 print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Agent",
                   "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
                   "tool_input": {"subagent_type": sys.argv[1], "prompt": "rm -rf /"}}))' "$HOLMES")")")" silent
 check "a PostToolUse payload is not this guard's business" \
-  "$(verdict_of "$(run_guard "$(python3 -c '
+  "$(verdict_of "$(run_guard "$(python3 -I -c '
 import json, sys
 print(json.dumps({"hook_event_name": "PostToolUse", "tool_name": "Bash",
                   "session_id": "session-A", "agent_id": "agent-1", "agent_type": sys.argv[1],
@@ -959,7 +1002,7 @@ echo "── the denial's wording: one line for the human, the rest for the mode
 # is asserted on the channel it belongs to, because asserting on the whole
 # payload would pass whichever field the text ended up in.
 field_of() { # field_of <payload-json> <field>
-  printf '%s' "$1" | python3 -c \
+  printf '%s' "$1" | python3 -I -c \
     'import json,sys; print(json.load(sys.stdin)["hookSpecificOutput"][sys.argv[1]])' "$2"
 }
 
@@ -1041,6 +1084,73 @@ printf 'every other git verb is forbidden. That includes restore, stash, and cle
   | bash "$GUARD" --classify >/dev/null \
   && ok "--classify leaves the prohibition's own prose alone" \
   || bad "--classify reddens on prose that merely names the verbs"
+
+echo
+echo "── isolation: no module in the cwd or on PYTHONPATH loads into the guard ──"
+
+# In Local mode the hook's cwd is the tree under review, so a module planted
+# there must never run inside the guard, and neither may one on PYTHONPATH.
+# Each planted module only leaves a mark. The verdicts must stay normal, and the
+# allowlisted read must still pass, which proves the real read_allowlist.py
+# loaded from the guard's own folder.
+PLANT_CWD="$SANDBOX/plant-cwd"; PLANT_PATH="$SANDBOX/plant-path"; PLANT_MARK="$SANDBOX/planted-module-ran"
+mkdir -p "$PLANT_CWD" "$PLANT_PATH"
+for d in "$PLANT_CWD" "$PLANT_PATH"; do
+  for m in re json glob os read_allowlist sitecustomize usercustomize; do
+    printf 'open(%s, "a").write("%s\\n")\n' "'$PLANT_MARK'" "$m" > "$d/$m.py"
+  done
+done
+planted_verdict() { # planted_verdict <command>: the guard run from the planted cwd
+  local body
+  body=$(bash_payload "$1" session-A "$LENS" "$WORKDIR")
+  verdict_of "$(cd "$PLANT_CWD" && run_guard "$body" PYTHONPATH="$PLANT_PATH" PYTHONSTARTUP="$PLANT_PATH/re.py")"
+}
+check "planted modules: a write into the tree is still refused" "$(planted_verdict "chmod 644 $WORKDIR/x")" deny
+check "planted modules: git status still passes" "$(planted_verdict 'git status')" silent
+check "planted modules: an allowlisted read still passes" \
+  "$(planted_verdict 'grep -rnE "git (commit|push)|chmod|rm -rf" .')" silent
+[ ! -e "$PLANT_MARK" ] && ok "no planted module ran inside the guard" \
+  || bad "a planted module ran inside the guard: $(tr '\n' ' ' < "$PLANT_MARK")"
+
+echo
+echo "── differential: nothing main's guard refused is allowed now ──────────"
+
+# The reads a reviewer may now run that main refused. Each one is an
+# allowlisted read (checked below): a listed reader with listed options whose
+# quoted text names a guarded word or a > or |. Anything else main refused
+# must stay refused.
+READS_OK=('grep -rnE "git (commit|push)|chmod|rm -rf" .' "rg -n 'git commit; git restore .' skills"
+  'grep -rn "a; rm -rf x" .' "grep -nE '[<>]' f" 'grep -rn "\->" .' "rg -n 'x > y' ."
+  "grep -c 'a > b' f 2>/dev/null" "printf '%s\n' 'git stash; chmod 644 x'")
+is_read() { local r; for r in "${READS_OK[@]}"; do [ "$r" = "$1" ] && return 0; done; return 1; }
+for c in "${READS_OK[@]}"; do
+  printf '%s' "$c" | python3 -I "$(dirname "$GUARD")/read_allowlist.py" \
+    && ok "READS_OK entry is allowlisted: $c" || bad "READS_OK entry is not an allowlisted read: $c"
+done
+# shellcheck source=testdata/hostile-commands.sh
+. "$(dirname "$GUARD")/testdata/hostile-commands.sh"
+MAIN="$(dirname "$GUARD")/testdata/local-review-guard-621f3fb.sh"
+CASES=()
+for c in "${HOSTILE[@]}"; do CASES+=("$c" "$WORKDIR"); done
+while IFS= read -r -d '' c && IFS= read -r -d '' d; do CASES+=("$c" "$d"); done < "$SEEN_FILE"
+compared=0; flagged=0; i=0
+while [ "$i" -lt "${#CASES[@]}" ]; do
+  c=${CASES[i]}; d=${CASES[i + 1]}; i=$((i + 2)); compared=$((compared + 1))
+  body=$(bash_payload "$c" session-A "$LENS" "$d")
+  [ "$(verdict_of "$(RUN_GUARD="$MAIN" run_guard "$body")")" = deny ] || continue
+  [ "$(verdict_of "$(run_guard "$body")")" = deny ] && continue
+  is_read "$c" && continue
+  flagged=$((flagged + 1)); bad "main refused, now allowed (cwd ${d:-none}): $(printf '%s' "$c" | tr '\n' ' ')"
+done
+for c in "${ROUND4[@]}"; do
+  body=$(bash_payload "$c" session-A "$LENS" "$WORKDIR")
+  main_verdict="$(verdict_of "$(RUN_GUARD="$MAIN" run_guard "$body")")"
+  check "round 4, main's verdict: $c" "$(verdict_of "$(run_guard "$body")")" "$main_verdict"
+done
+[ "$flagged" = 0 ] && ok "differential: $compared commands (${#HOSTILE[@]} hostile forms and every reviewer case), none newly allowed"
+for c in "${READS_OK[@]}"; do
+  check "named read passes: $c" "$(bash_verdict "$c" session-A "$LENS" "$WORKDIR")" silent
+done
 
 echo
 echo "$PASS passed, $FAIL failed"
