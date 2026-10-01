@@ -31,8 +31,8 @@ guard.** That includes building a word such as `commit` or `push` from pieces
 at run time, putting the command in a variable, a script file, or an
 interpreter, and trying another spelling to see if it passes. Report the
 refusal as it happened, and go on with the work that does not need that
-command. If a read is refused because its text names a guarded word, use the
-Grep or Read tool instead.
+command. If a read is refused because its text names a guarded word, report the
+refusal, and use the Read tool for the file instead.
 Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
@@ -246,8 +246,10 @@ slips past the guard is still a commit the human never saw.
 the tree left uncommitted as your change made it, a summary of the diff (files
 touched, what changed in each), and the **proposed commit message** formatted
 via the `/workbench-dev-team:git-commit` skill. The session that dispatched you
-commits it, once the human has reviewed it and approved in chat. Say plainly that the work is
-uncommitted — a report that reads as finished, on a tree that is not, is how the
+commits it after a "Commit it" pick in `AskUserQuestion`, once the human says
+their review is done. Your report never asks to commit and never invites a
+commit: prompting the human is the orchestrator's job. Say plainly that the
+work is uncommitted — a report that reads as finished, on a tree that is not, is how the
 change gets lost.
 
 ## The Index mode
@@ -351,7 +353,7 @@ What you are loading, so nothing goes unnoticed:
   the brief contract's blocking-uncertainty bar above governs, and `/develop`'s
   Decision Protocol applies in its sub-agent lane. Below the bar, pick the
   recommended option and record the assumption in your report. Above it, stop
-  and return the three options as your report. Index mode routes a blocking
+  and return the three options as your report, in `/develop`'s graded table. Index mode routes a blocking
   fork through the pipeline's fork table instead.
 - **YAGNI and minimal solutions.** Build the least that satisfies the AC — no
   speculative abstraction or future-proofing — and prefer the most concise

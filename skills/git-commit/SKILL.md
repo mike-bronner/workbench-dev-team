@@ -52,17 +52,33 @@ Fixes: #790
 This section is the canonical statement of the foreground mechanics. Other
 files state the lane rule and point here.
 
-**A sub-agent does not commit or push.** It leaves the tree uncommitted and
-hands the diff summary and this message back in its report. The commit guard
-refuses its commit or push, by design. The scheduled Index pipeline
-(`WORKBENCH_DEV_TEAM_PIPELINE=1`, set by `bin/dispatch-agent.sh`) commits and
-pushes unattended. Everything below is for the foreground session.
+**A sub-agent does not commit or push, and never asks to.** It leaves the tree
+uncommitted and hands the diff summary and this message back in its report. The
+report does not invite a commit: prompting the human is the orchestrator's job.
+The commit guard refuses its commit or push, by design. The scheduled Index
+pipeline (`WORKBENCH_DEV_TEAM_PIPELINE=1`, set by `bin/dispatch-agent.sh`)
+commits and pushes unattended, and never asks about committing or pushing.
+Everything below is for the foreground session.
 
-**Commit only after the human says to, in chat.** The approval is an explicit
-"commit it" from the human, given after they have reviewed the tree. Until they
-say it, report that the tree is ready for review and carry the proposed message
-without asking about it. General approval of the task, "looks good" about the
-code, or approval of a previous commit do not carry over.
+**Commit only after the human says to.** The approval is a "Commit it" pick in
+`AskUserQuestion`, once the human says their review is done. Nothing else
+counts: not a typed "commit it" in chat, not general approval of the task, not
+"looks good" about the code, not an answer about how to split the commits, and
+not approval of a previous commit.
+
+**Offer the commit through `AskUserQuestion`, and ask it alone.** Ask it after
+the human says their review is done. Do not offer the commit before then. If an
+offer does reach the human early, "Not yet" leads. Never bundle the commit
+question with another question or with follow-up work, and never put "commit"
+into an option about other work. The question carries the branch and the
+proposed message. Its options are "Not yet", "Review with Holmes first" when a
+review is available, and "Commit it". Until the human has said their review is
+done, the recommended first option is "Not yet" or "Review with Holmes first",
+and "Commit it" goes last. Only after they say their review is done may
+"Commit it" go first. The "Commit it" description always reads:
+"Picking this confirms you have reviewed the whole tree." The reason is that
+the human's review comments keep changing the tree. One click on an offer made
+as the review starts would approve a tree they have not finished reading.
 
 **Then attempt the commit yourself, and let Claude Code ask.** Do not hand it to
 the human to run. `/workbench-dev-team:setup` installs ten `permissions.ask`

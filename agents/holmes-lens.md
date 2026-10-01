@@ -47,8 +47,8 @@ guard.** That includes building a word such as `commit` or `push` from pieces
 at run time, putting the command in a variable, a script file, or an
 interpreter, and trying another spelling to see if it passes. Report the
 refusal as it happened, and go on with the work that does not need that
-command. If a read is refused because its text names a guarded word, use the
-Grep or Read tool instead.
+command. If a read is refused because its text names a guarded word, report the
+refusal, and use the Read tool for the file instead.
 Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.

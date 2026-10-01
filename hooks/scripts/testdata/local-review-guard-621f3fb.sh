@@ -231,9 +231,6 @@ export GUARD_MODE
 # Capture stdin before the heredoc below claims it for the python program.
 GUARD_STDIN="$(cat)"
 export GUARD_STDIN
-# read_allowlist.py, the read allowlist shared with commit-guard.sh, sits here.
-GUARD_DIR="$(cd "$(dirname "$0")" && pwd)"
-export GUARD_DIR
 
 # Fast path. Only a reviewer's call can be refused, and a reviewer's payload
 # names holmes in its agent_type. Everything else exits here, before python3
@@ -276,9 +273,7 @@ if ! command -v python3 >/dev/null 2>&1; then
   guard_python_fallback
 fi
 
-# -I: isolated mode, so no module in the cwd (the tree under review) and no
-# PYTHON* variable can load into the guard.
-python3 -I - <<'PYEOF'
+python3 - <<'PYEOF'
 import glob
 import json
 import os
@@ -531,43 +526,6 @@ SEGMENT_SPLIT = re.compile(r"\|\||&&|(?<![<>])[|&]|[;\n]")
 # never matches. A target
 # starting with `(` is a process substitution rather than a file.
 REDIRECT = re.compile(r">>?(?:[|!]|&(?!\s*(?:[0-9]+-?|-)(?:[\s;|&<>]|$)))?\s*([^\s;|&<>]+)")
-
-# READS. Every line is judged as main judged it, blind to quotes, with one
-# exemption: a line read_allowlist.py accepts (every segment a listed reader,
-# using only listed options, with no file redirect) is judged on its masked
-# copy, where quoted text is data. So a grep whose quoted pattern names git
-# verbs, `|`, `;`, or `>` is a read. The module sits beside this script, and if
-# it is missing or fails, nothing is exempt. The tests run main's own guard
-# beside this one, to hold that nothing main refused is allowed outside the
-# listed reads.
-# Python runs isolated (-I), so neither the cwd, which in Local mode is the tree
-# under review, nor PYTHONPATH can put a module on the path. The allowlist is
-# loaded from GUARD_DIR by its file path, and sys.path is never touched.
-sys.dont_write_bytecode = True  # leave no __pycache__ in the plugin folder
-try:
-    import importlib.util
-    _guard_dir = os.environ.get("GUARD_DIR", "")
-    if not os.path.isabs(_guard_dir):
-        raise ImportError("GUARD_DIR is not an absolute path")
-    _spec = importlib.util.spec_from_file_location(
-        "read_allowlist", os.path.join(_guard_dir, "read_allowlist.py"))
-    _module = importlib.util.module_from_spec(_spec)
-    _spec.loader.exec_module(_module)
-    masked_read = _module.masked_read
-except Exception:  # no module: every line is judged as main judged it
-    def masked_read(command):
-        return None
-
-
-def segments(command: str, masked):
-    """Each segment as `(text, masked)`, split on the separators of the masked
-    copy. With no masked copy, the text is its own mask: blind to quotes."""
-    masked = masked or command
-    start = 0
-    for match in SEGMENT_SPLIT.finditer(masked):
-        yield command[start:match.start()], masked[start:match.start()]
-        start = match.end()
-    yield command[start:], masked[start:]
 
 # The agent types this guard holds to the static rule: Holmes and his helper.
 # Plugin agent types are namespaced (`workbench-dev-team:holmes-lens`), and a
@@ -944,14 +902,7 @@ def runs_command(tokens: list) -> bool:
     return tokens[0] == "yarn" and tokens[i] not in YARN_OWN_WRITER_NAMES
 
 
-def judge(command: str, roots: list, cwd: str, judge_redirects: bool = True):
-    """classify() with quotes read as data on an allowlisted read line, and
-    blind to quotes, as main judged it, on every other line (see READS)."""
-    return classify(command, roots, cwd, judge_redirects, masked_read(command))
-
-
-def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True,
-             plain=None):
+def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True):
     """`(action, reason)` for a refused command, or None when it may run.
 
     `action` is the short label the human line names — what they tried to do,
@@ -968,7 +919,7 @@ def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True,
     shell keywords are stepped over, so `builtin cd`, `( cd`, and `then cd`
     count too.
     """
-    for segment, masked in segments(command, plain):
+    for segment in SEGMENT_SPLIT.split(command):
         tokens = segment.strip().split()
         # Step over environment assignments, wrappers, and shell keywords to
         # reach the real command. A `(` or `{` glued to the command is dropped.
@@ -979,8 +930,7 @@ def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True,
         # line itself as its value.
         wrapper, via_xargs = "", False
         while tokens:
-            # A quoted or escaped name (`"rm"`, `\rm`) runs the same program.
-            tokens[0] = tokens[0].lstrip("({\\").strip("'\"") or tokens[0]
+            tokens[0] = tokens[0].lstrip("({") or tokens[0]
             if wrapper == "command" and re.fullmatch(r"-[pvV]*[vV][pvV]*", tokens[0]):
                 tokens = []  # `command -v` looks a name up and runs nothing
                 break
@@ -1056,8 +1006,7 @@ def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True,
         # and no cwd, and leaves redirects alone. A target goes through
         # resolve(), as a write_targets path does, so a quoted, `~`, or `$HOME`
         # target is expanded or refused rather than joined onto cwd as text.
-        for match in REDIRECT.finditer(masked) if judge_redirects else []:
-            target = segment[match.start(1):match.end(1)]
+        for target in REDIRECT.findall(segment) if judge_redirects else []:
             if target.startswith(("&", "(")) or DEVICE_TARGET.fullmatch(target):
                 continue
             path = resolve(target, cwd)
@@ -1084,7 +1033,7 @@ def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True,
 if os.environ.get("GUARD_MODE") == "classify":
     refused = []
     for line in os.environ.get("GUARD_STDIN", "").splitlines():
-        found = judge(line, [], "", judge_redirects=False)
+        found = classify(line, [], "", judge_redirects=False)
         if found:
             refused.append(f"{line.strip()} — {found[1]}")
     for line in refused:
@@ -1126,7 +1075,7 @@ if tool_name in EDIT_TOOLS:
     elif not in_scratch(path, roots):
         found = (f"`{tool_name}`", f"`{tool_name}` writes to `{raw}`, outside the scratch roots.")
 else:
-    found = judge(str(tool_input.get("command") or ""), roots, cwd)
+    found = classify(str(tool_input.get("command") or ""), roots, cwd)
 if not found:
     sys.exit(0)
 

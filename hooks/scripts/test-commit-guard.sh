@@ -26,14 +26,22 @@ payload() {
      + (if $a == "" then {} else {agent_id: $a} end)'
 }
 
-# run pre <command> <agent-id> <pipeline flag value, or "" for unset>
+# Every command a case runs joins the differential check at the end. Cases run
+# in subshells, so the commands are kept in a file, NUL-separated.
+WORK="$(mktemp -d "${TMPDIR:-/tmp}/commit-guard-test.XXXXXX")"
+trap 'rm -rf "$WORK"' EXIT
+SEEN_FILE="$WORK/seen"
+: > "$SEEN_FILE"
+
+# run pre <command> <agent-id> <pipeline flag value, or "" for unset> [guard]
 run() {
-  local body
+  local body guard="${5:-$GUARD}"
+  [ -z "${5:-}" ] && printf '%s\0' "$2" >> "$SEEN_FILE"
   body=$(payload PreToolUse "$2" "$3")
   if [ -n "$4" ]; then
-    printf '%s' "$body" | env WORKBENCH_DEV_TEAM_PIPELINE="$4" bash "$GUARD"
+    printf '%s' "$body" | env WORKBENCH_DEV_TEAM_PIPELINE="$4" bash "$guard"
   else
-    printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE bash "$GUARD"
+    printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE bash "$guard"
   fi
 }
 
@@ -116,18 +124,61 @@ out=$(run pre 'HUSKY=0 git commit -m x' "" "")
 [[ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')" == *"NAME=value"* ]] \
   && ok "the refusal names the NAME=value form" || bad "the refusal does not name NAME=value: $out"
 
-echo "A sub-agent may not commit or push"
+echo "A sub-agent may not commit or push, wherever the command runs it"
 for c in 'git commit -m x' 'git push' 'git -C . push origin feat' 'cd x && git commit -am y' '(git push)' \
-         'echo $(git commit -m x)' "$(printf 'git status\ngit push')"; do
+         'echo $(git commit -m x)' "$(printf 'git status\ngit push')" 'git -C dir commit -m x' \
+         'git -c k=v push' 'git --git-dir=x commit -m y' 'git --git-dir x --work-tree y push' 'git --no-pager push' \
+         'git -C "a b" -c user.name="M B" commit -m x' 'git status | git push' 'git status; git commit -m x' \
+         'git status || git push' 'sudo git push' 'if git push; then echo y; fi' 'xargs git commit -m x' \
+         'time git push' '! git push' '{ git push; }' 'echo `git push`' 'git log --grep=x && git push' \
+         'grep -rn "git push" README.md; git push'; do
   expect deny "sub-agent does not commit or push" pre "$c" agent-1 ""
 done
-echo "A sub-agent read that names the words is refused too, and pointed at Grep or Read"
-for c in 'grep -rn "git push" README.md' "grep -n 'git commit' skills/x.md" 'git log --grep commit'; do
-  expect deny "sub-agent does not commit or push" pre "$c" agent-1 ""
+echo "A sub-agent's escaped, quoted, redirected, continued, or runner-led commit is refused"
+for c in '\git commit -m x' '"git" commit -m x' "'git' push" 'git "commit" -m x' \
+         '2>/dev/null git push' '>log git push' '2>&1 git commit -m x' "$(printf 'git \\\ncommit -m x')" \
+         'A=1 B=2 git push origin x' 'doas git push' 'find . -exec git commit -m x \;' \
+         'find . -execdir git push \;' 'caffeinate git push' 'stdbuf -oL git push' 'flock /tmp/l git push' \
+         'parallel git push ::: a' 'watch git push' 'ionice -c3 git push' 'noglob git push' \
+         'nocorrect git push' 'git log; doas git push' '\gh pr merge 5' 'doas gh pr merge 5'; do
   out=$(run pre "$c" agent-1 "")
-  [[ "$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')" == *"use the Grep or Read tool"* ]] \
-    && ok "...and the refusal points $c at the Grep or Read tool" || bad "no Grep or Read hint for $c: $out"
+  [ "$(verdict_of "$out")" = deny ] && ok "sub-agent bypass: $(printf '%s' "$c" | tr '\n' ' ') → deny" \
+    || bad "sub-agent bypass: $(printf '%s' "$c" | tr '\n' ' ') was not refused: $out"
 done
+echo "Every force or delete spelling is refused in every lane"
+for c in '2>/dev/null git push --force' '"git" push -f' '\git push -f' 'git "push" --force' \
+         'doas git push --force' "$(printf 'git \\\npush -f')" 'find . -exec git push -f \;' \
+         "'git' push origin :old" 'stdbuf -oL git push --delete origin x' 'A=1 B=2 git push +main' \
+         "awk 'BEGIN { system(\"git push --force\") }'"; do
+  expect deny "$FORCE" pre "$c" "" ""
+  expect deny "$FORCE" pre "$c" agent-1 ""
+  expect deny "$FORCE" pre "$c" watson-run 1
+done
+echo "A read led by a known reader passes, even unquoted"
+for c in 'echo git push' 'grep -rn git push .' 'printf "%s" git commit' 'cat notes | grep git push' \
+         '2>/dev/null grep -rn git push .' 'git log --grep "fix git push" --oneline'; do
+  expect silent "" pre "$c" agent-1 ""
+done
+echo "A sub-agent's wrapped or assigned commit is still refused"
+for c in 'bash -c "git push"' 'env git commit -m x' 'eval "git push"' 'HUSKY=0 git commit -m x' '/usr/bin/git push'; do
+  out=$(run pre "$c" agent-1 "")
+  [ "$(verdict_of "$out")" = deny ] && ok "sub-agent wrapped: $c → deny" || bad "sub-agent wrapped: $c was not refused: $out"
+done
+echo "A sub-agent's read that only names the words passes"
+for c in 'git log --grep=commit' 'git log --grep commit' 'git grep push' 'grep -rn "git commit" .' \
+         'grep -rn "git push" README.md' "grep -n 'git commit' skills/x.md" 'rg "gh pr merge"' \
+         'git show HEAD -- commit-guard.sh' 'git diff' 'git diff -- hooks/scripts/commit-guard.sh' \
+         'cd x && git log --grep push | head' 'git status | grep "git push"' 'git log --oneline && git grep -n commit' \
+         'git log -S "git commit" --oneline' "grep -E 'git (commit|push)' x.md" 'rg -n "gh api repos/o/r/pulls/5/merge" .' \
+         'echo "run git push later"' 'git log --format=%s | grep -c push' 'gh search prs "pr merge"'; do
+  expect silent "" pre "$c" agent-1 ""
+  expect silent "" pre "$c" watson-run 1
+done
+echo "The sub-agent refusal no longer points at a Grep tool"
+out=$(run pre 'git push' agent-1 "")
+ctx="$(printf '%s' "$out" | jq -r '.hookSpecificOutput.additionalContext')"
+[[ $ctx != *Grep* && $ctx == *"Read tool"* ]] && ok "the refusal names the Read tool and no Grep tool" \
+  || bad "the refusal still names Grep, or lacks the Read tool: $ctx"
 echo "A sub-agent keeps its reads"
 for c in 'git status' 'git log --oneline' 'git diff HEAD' 'grep -rn push README.md' \
          'git commit-tree HEAD^{tree} -m x' 'git log | grep push' 'git status; echo commit' 'ls .git/refs/push'; do
@@ -176,8 +227,8 @@ out=$(printf 'not json: gh pr merge 5' | env -u WORKBENCH_DEV_TEAM_PIPELINE bash
 out=$(printf 'not json: ls' | env -u WORKBENCH_DEV_TEAM_PIPELINE bash "$GUARD")
 [ -z "$out" ] && ok "unreadable text that names no commit, push, or merge stays silent" || bad "unreadable ls was refused: $out"
 
-NOJQ="$(mktemp -d "${TMPDIR:-/tmp}/commit-guard-nojq.XXXXXX")"
-trap 'rm -rf "$NOJQ"' EXIT
+NOJQ="$WORK/nojq"
+mkdir "$NOJQ"
 ln -s "$(command -v cat)" "$NOJQ/cat"
 out=$(payload PreToolUse 'git push' "" | env -u WORKBENCH_DEV_TEAM_PIPELINE PATH="$NOJQ" "$BASH" "$GUARD")
 [ "$(verdict_of "$out")" = deny ] && ok "with no jq on PATH, a push is refused" || bad "with no jq, a push was not refused: $out"
@@ -197,6 +248,91 @@ pre=$(jq -r '.hooks.PreToolUse[] | select(.matcher == "Bash") | .hooks[].command
 all=$(jq -r '.. | .command? // empty' "$HOOKS_JSON" | grep -c 'commit-guard.sh')
 [ "$pre" = 1 ] && ok "PreToolUse Bash runs commit-guard.sh" || bad "PreToolUse Bash wiring is missing or duplicated ($pre)"
 [ "$all" = 1 ] && ok "no other event runs commit-guard.sh" || bad "commit-guard.sh is wired $all times"
+
+echo "No module in the cwd or on PYTHONPATH loads into the read allowlist"
+# The allowlist runs in Python for a line the text match caught. A module planted
+# in the hook's cwd or on PYTHONPATH must never run there. Each one only leaves a
+# mark, and the verdicts must stay normal.
+PLANT_CWD="$WORK/plant-cwd"; PLANT_PATH="$WORK/plant-path"; PLANT_MARK="$WORK/planted-module-ran"
+mkdir -p "$PLANT_CWD" "$PLANT_PATH"
+for d in "$PLANT_CWD" "$PLANT_PATH"; do
+  for m in re json glob os read_allowlist sitecustomize usercustomize; do
+    printf 'open(%s, "a").write("%s\\n")\n' "'$PLANT_MARK'" "$m" > "$d/$m.py"
+  done
+done
+planted() { # planted <command>: the guard run as a sub-agent from the planted cwd
+  local body
+  body=$(payload PreToolUse "$1" agent-1)
+  verdict_of "$(cd "$PLANT_CWD" && printf '%s' "$body" | env -u WORKBENCH_DEV_TEAM_PIPELINE \
+    PYTHONPATH="$PLANT_PATH" PYTHONSTARTUP="$PLANT_PATH/re.py" bash "$GUARD")"
+}
+[ "$(planted 'grep -rn "git push" README.md')" = silent ] && ok "planted modules: an allowlisted read still passes" \
+  || bad "planted modules: an allowlisted read was refused"
+[ "$(planted 'git push')" = deny ] && ok "planted modules: a sub-agent push is still refused" \
+  || bad "planted modules: a sub-agent push was not refused"
+[ ! -e "$PLANT_MARK" ] && ok "no planted module ran inside the allowlist" \
+  || bad "a planted module ran inside the allowlist: $(tr '\n' ' ' < "$PLANT_MARK")"
+
+echo "Holmes's second-round bypasses are refused for a sub-agent"
+# shellcheck source=testdata/hostile-commands.sh
+. "$HERE/testdata/hostile-commands.sh"
+for c in 'echo "$(git push)"' 'x="$(git commit -m y)"' 'echo \"; git push; echo \"' "\$'git' push origin x" \
+         'git -c alias.ci=commit ci -m x' '{git,} push' '=git push' "awk 'BEGIN{system(\"git push\")}'" \
+         'echo "$(gh pr merge 5)"' "$(printf "# it's here\ngit push")" '$"git" push' 'git${IFS}push' \
+         "sed '1e git push' f" 'gh api -X PUT "repos/o/r/pulls/5/merge?merge_method=squash"' \
+         'echo git push | sh' 'echo git push > x.sh; ./x.sh' 'cat <(git push)' 'rg --pre "git push" x'; do
+  out=$(run pre "$c" agent-1 "")
+  [ "$(verdict_of "$out")" = deny ] && ok "second round: $(printf '%s' "$c" | tr '\n' ' ') → deny" \
+    || bad "second round: $(printf '%s' "$c" | tr '\n' ' ') was not refused: $out"
+done
+echo "A force push assembled from parts is refused in every lane"
+for c in "$(printf 'git push origin --fo\\\nrce')" "git push \$'--force'" "git push origin \$'+main'"; do
+  expect deny "$FORCE" pre "$c" "" ""
+  expect deny "$FORCE" pre "$c" agent-1 ""
+  expect deny "$FORCE" pre "$c" watson-run 1
+done
+
+echo "Differential: nothing main's guard refused is allowed now, outside the named reads"
+# The reads a sub-agent may now run that main refused. Only a read that names a
+# guarded word belongs here. Anything else main refused must stay refused.
+READS_OK=('git log --grep=commit' 'git log --grep commit' 'git grep push' 'grep -rn "git commit" .'
+  'grep -rn "git push" README.md' "grep -n 'git commit' skills/x.md" 'rg "gh pr merge"'
+  'git show HEAD -- commit-guard.sh' 'git diff -- hooks/scripts/commit-guard.sh'
+  'cd x && git log --grep push | head' 'git status | grep "git push"' 'git log --oneline && git grep -n commit'
+  'git log -S "git commit" --oneline' "grep -E 'git (commit|push)' x.md" 'rg -n "gh api repos/o/r/pulls/5/merge" .'
+  'echo "run git push later"' 'git log --format=%s | grep -c push' 'gh search prs "pr merge"' 'echo git push'
+  'grep -rn git push .' 'printf "%s" git commit' 'cat notes | grep git push' '2>/dev/null grep -rn git push .'
+  'git log --grep "fix git push" --oneline' 'git log | grep commit' 'git log | grep push'
+  'git log --grep=push -- *')
+for c in "${READS_OK[@]}"; do
+  printf '%s' "$c" | python3 -I "$HERE/read_allowlist.py" \
+    && ok "READS_OK entry is allowlisted: $c" || bad "READS_OK entry is not an allowlisted read: $c"
+done
+MAIN="$HERE/testdata/commit-guard-621f3fb.sh"
+is_read() { local r; for r in "${READS_OK[@]}"; do [ "$r" = "$1" ] && return 0; done; return 1; }
+SEEN=()
+while IFS= read -r -d '' c; do SEEN+=("$c"); done < <(sort -zu "$SEEN_FILE")
+compared=0; flagged=0
+for c in "${HOSTILE[@]}" "${SEEN[@]}"; do
+  for lane in ":" "agent-1:" "watson-run:1" ":1"; do
+    a=${lane%%:*}; f=${lane#*:}; compared=$((compared + 1))
+    [ "$(verdict_of "$(run pre "$c" "$a" "$f" "$MAIN")")" = deny ] || continue
+    [ "$(verdict_of "$(run pre "$c" "$a" "$f" "$GUARD")")" = deny ] && continue
+    is_read "$c" && continue
+    flagged=$((flagged + 1)); bad "main refused, now allowed [agent=${a:-none} flag=${f:-unset}]: $(printf '%s' "$c" | tr '\n' ' ')"
+  done
+done
+for c in "${ROUND4[@]}"; do
+  for lane in ":" "agent-1:" "watson-run:1" ":1"; do
+    a=${lane%%:*}; f=${lane#*:}
+    check_main="$(verdict_of "$(run pre "$c" "$a" "$f" "$MAIN")")"
+    [ "$(verdict_of "$(run pre "$c" "$a" "$f" "$GUARD")")" = "$check_main" ] \
+      && ok "round 4, main's verdict ($check_main) [agent=${a:-none} flag=${f:-unset}]: $c" \
+      || bad "round 4 differs from main ($check_main) [agent=${a:-none} flag=${f:-unset}]: $c"
+  done
+done
+[ "$flagged" = 0 ] && ok "differential: $compared runs (${#HOSTILE[@]} hostile forms and ${#SEEN[@]} suite commands, 4 lanes), none newly allowed"
+for c in "${READS_OK[@]}"; do expect silent "" pre "$c" agent-1 ""; done
 
 echo "Size is part of the design"
 lines=$(wc -l < "$GUARD")

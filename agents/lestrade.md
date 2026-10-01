@@ -32,8 +32,8 @@ guard.** That includes building a word such as `commit` or `push` from pieces
 at run time, putting the command in a variable, a script file, or an
 interpreter, and trying another spelling to see if it passes. Report the
 refusal as it happened, and go on with the work that does not need that
-command. If a read is refused because its text names a guarded word, use the
-Grep or Read tool instead.
+command. If a read is refused because its text names a guarded word, report the
+refusal, and use the Read tool for the file instead.
 Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
@@ -389,18 +389,19 @@ This write also drives the **server-derived issue attributes**: writing the `Pri
 mcp__the-index__move(<ITEM_ID>, agent: "lestrade", column: "Backlog")
 ```
 
-**If step 4.5 flagged the coherent unit as bigger than one PR → Escalated.** The item now carries its AC and a WSJF score (nothing stranded); hand the right-sizing to Mike as a decision he can act on — three options, each with pros and cons, and your recommendation, so he can reply with a number:
+**If step 4.5 flagged the coherent unit as bigger than one PR → Escalated.** The item now carries its AC and a WSJF score (nothing stranded); hand the right-sizing to Mike as a decision he can act on — three numbered options in one table with the columns Option, Pros, Cons, and Grade, then one or two sentences naming your recommendation, its grade, and why, so he can reply with a number. The Grade column grades each option against the item's AC: "All met", or each AC short of met by its number and a few words. Keep each cell to a short phrase:
 
 ```
 mcp__the-index__add_comment(<ITEM_ID>, agent: "lestrade", body: "<!-- lestrade-oversized-unit -->
 @mikebronner the coherent unit of work here — <what it really is> — can't ship as one coherent PR: <why>.
 
-**Options**
-1. <e.g. re-author as independent issues A + B + C> — *pros:* <…>; *cons:* <…>
-2. <option> — *pros:* <…>; *cons:* <…>
-3. <option> — *pros:* <…>; *cons:* <…>
+| Option | Pros | Cons | Grade |
+|---|---|---|---|
+| 1: <e.g. re-author as issues A + B + C> | <short phrase> | <short phrase> | All met |
+| 2: <short title> | <short phrase> | <short phrase> | AC<n> partly met: <why> |
+| 3: <short title> | <short phrase> | <short phrase> | AC<n> not met: <why> |
 
-**Recommendation:** option <N> — <why>.")
+**Recommendation:** option <N> (<grade>), because <why>.")
 mcp__the-index__move(<ITEM_ID>, agent: "lestrade", column: "Escalated")
 ```
 

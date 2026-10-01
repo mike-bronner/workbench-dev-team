@@ -140,6 +140,14 @@ printf '%s' "$protocol" | grep -Fq 'grade each one against every acceptance crit
   || acceptance_problems+=("develop — the Decision Protocol no longer grades every option against the criteria")
 printf '%s' "$protocol" | grep -Fq '`/workbench-core:intake` is the one written copy' \
   || acceptance_problems+=("develop — the Decision Protocol no longer points at /workbench-core:intake as the routine's one source")
+# The option format follows the Clear output style's rule 6 and rule 4: one
+# table, not a heading per option, and the human's pick through AskUserQuestion.
+printf '%s' "$protocol" | grep -Fq '### 🔹 Option' \
+  && acceptance_problems+=("develop — the Decision Protocol presents options as per-option headings again, not one table")
+printf '%s' "$protocol" | grep -Eq '\| Option +\| Pros +\| Cons +\| Grade +\|' \
+  || acceptance_problems+=("develop — the Decision Protocol lost the Option | Pros | Cons | Grade table")
+printf '%s' "$protocol" | grep -Fq 'A decision for the human goes through `AskUserQuestion`' \
+  || acceptance_problems+=("develop — the Decision Protocol no longer routes the human's pick through AskUserQuestion")
 
 if [ ${#acceptance_problems[@]} -eq 0 ]; then
   PASS=$((PASS + 1))

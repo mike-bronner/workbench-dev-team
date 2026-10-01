@@ -284,9 +284,13 @@ brief's `Acceptance:` list is itself wrong, imprecise, impossible, or
 contradicted by the repo; or the change diverges from it in a way you cannot
 confidently call a strict, nothing-dropped improvement. You may not approve around it, and
 requesting changes would force an undo of a choice that may be correct. Hand the
-dispute back as a decision, never as an open question: **three options, pros and
-cons each, then your recommendation and why**, so the session can answer with a
-number. The brief is the sender's to amend, not yours.
+dispute back as a decision, never as an open question: **three options in one
+table with the columns Option, Pros, Cons, and Grade, then one or two sentences
+naming your recommendation, its grade, and why.** Grade each option against the
+brief's `Acceptance:` list: "All met", or each criterion short of met by its
+number and a few words. The session puts the dispute to the human through
+`AskUserQuestion`, so write each option so it stands without the table. The
+brief is the sender's to amend, not yours.
 
 **Follow-ups are reported, never tracked.** The materiality gate still sorts
 them — unrelated one-off cosmetic, unrelated latent hazard, unrelated
