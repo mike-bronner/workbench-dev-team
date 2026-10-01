@@ -15,15 +15,17 @@ Three lanes run this skill, and several steps below end differently in each.
 Know which one you are in before you start.
 
 - **Foreground session** — a human is in the conversation. You can ask and wait,
-  and you commit only after the human says "commit it" in chat (§5).
+  and you commit only after a "Commit it" pick in `AskUserQuestion`, once the
+  human says their review is done (§5).
 - **Sub-agent** — dispatched through the Agent tool, Watson's Direct mode
   included. No human is reachable, the commit guard refuses every commit and
   push, and you do not merge. You finish with an **uncommitted working tree and a report**:
-  the diff summary and a proposed commit message. There is no PR to open.
+  the diff summary and a proposed commit message. The report never asks to
+  commit. There is no PR to open.
 - **Scheduled Index pipeline** — `bin/dispatch-agent.sh` spawned you with
-  `WORKBENCH_DEV_TEAM_PIPELINE=1`. You commit, push, and open the PR unattended;
-  board dispatch is the approval, and Holmes's review plus the human's merge is
-  the gate.
+  `WORKBENCH_DEV_TEAM_PIPELINE=1`. You commit, push, and open the PR unattended,
+  and never ask about committing or pushing. Board dispatch is the approval,
+  and Holmes's review plus the human's merge is the gate.
 
 ## Decision Protocol — grade the options against the AC, don't decide alone
 
@@ -71,40 +73,39 @@ replace any option that turns out to be a variant of another.
 with a short reason for anything short of met. The recommendation is the best
 grade. On a tie, the architecturally correct option beats the fastest one.
 
-**Format when presenting options.** Each option is its own heading, with its
-angle, its grade, and its pros and cons under it. The recommendation is a
-separate paragraph after all three, never folded into the option it picks, and
-it cites its grade on every criterion.
+**Format when presenting options.** Put the three options in one table with
+the columns Option, Pros, Cons, and Grade. The Option cell names the option's
+angle in a short title. Keep each cell to a short phrase, so the table fits 80
+columns. A grade of "All met" covers every criterion. Any other grade names
+each criterion short of met by its number and a few words, so it reads without
+the criteria list in view. After the table, one or two sentences name the
+recommendation, its grade, and its reason. Never fold the recommendation into
+the table.
 
 ```
-### 🔹 Option A: <short descriptive title>
-- Angle: <where the change lives, what kind of mechanism, what it attacks>
-- Grade: AC1 met, AC2 partly met (<why>), AC3 not met (<why>)
-- Pros: ...
-- Cons: ...
+| Option            | Pros           | Cons           | Grade                 |
+|-------------------|----------------|----------------|-----------------------|
+| A: <angle, short> | <short phrase> | <short phrase> | All met               |
+| B: <angle, short> | <short phrase> | <short phrase> | AC2 partly met: <why> |
+| C: <angle, short> | <short phrase> | <short phrase> | AC1 not met: <why>    |
 
-### 🔹 Option B: <short descriptive title>
-- Angle: ...
-- Grade: ...
-- Pros: ...
-- Cons: ...
-
-### 🔹 Option C: <short descriptive title>
-- Angle: ...
-- Grade: ...
-- Pros: ...
-- Cons: ...
-
-I recommend Option B (AC1 met, AC2 met, AC3 met), because <why it beats the others>.
+I recommend A (all met), because <the one reason it beats the others>.
 ```
+
+**A decision for the human goes through `AskUserQuestion`.** Put the
+recommended option first. Each option's description carries its grade and any
+warning the human needs, so the question stands on its own after the table has
+scrolled away. Fall back to a final `## ❓ Open questions` block only when the
+tool does not fit, such as a question with no fixed choices.
 
 **What happens next depends on your lane.**
 
 - **Foreground session:** intake's step 8 decides whether the fork goes to the
-  human. If it does, wait for the pick. Don't half-commit by starting on the
-  recommended option while waiting — that's the same as deciding unilaterally,
-  just with extra steps. If it does not, proceed on the top-graded option and
-  say so in one line that names its grade on each criterion.
+  human. If it does, ask through `AskUserQuestion` and wait for the pick.
+  Don't half-commit by starting on the recommended option while waiting —
+  that's the same as deciding unilaterally, just with extra steps. If it does
+  not, proceed on the top-graded option and say so in one line that names its
+  grade on each criterion.
 - **Sub-agent:** you never interview, because the brief is your intake, and
   nobody can answer you mid-task. So the bar is **blocking uncertainty**. Below
   it — a fork where any of the options would satisfy the brief and the choice
@@ -273,20 +274,26 @@ your final report:
 4. Say plainly that the work is uncommitted. A report that reads as finished,
    on a tree that is not, is how a change gets lost.
 
-The session that dispatched you commits it, once the human has reviewed it and
-approved in chat. An
-Index-mode run that finds its commits refused was dispatched without the
-pipeline flag: report that to the session that dispatched you, and stop.
+The report never asks to commit and never invites a commit: prompting the
+human is the orchestrator's job. The session that dispatched you commits it
+after a "Commit it" pick in `AskUserQuestion`, once the human says their review
+is done. An Index-mode run that finds its commits refused was dispatched
+without the pipeline flag: report that to the session that dispatched you, and
+stop.
 
-**Foreground session → commit after the human's explicit "commit it" in
-chat.** That chat approval, given after they review the tree, is the approval.
+**Foreground session → commit after a "Commit it" pick in `AskUserQuestion`,
+once the human says their review is done.** That is the approval, and a typed
+"commit it" in chat does not count. Ask the commit question alone, and never
+lead with "Commit it" before their review is done.
 Then attempt the commit yourself, and after it attempt the push, and let Claude
 Code ask. The harness's prompt is the mechanical backstop, not the approval,
 because a prompt that appears mid-flow gets answered without a review. The
 plain form the rules match is canonical in the `/workbench-dev-team:git-commit`
 skill ("Committing and pushing"). Read it before your first commit.
 
-**Scheduled pipeline → commit and push unattended.** The hooks recognize the
+**Scheduled pipeline → commit and push unattended.** The pipeline never asks
+about committing or pushing, and never waits for approval: board dispatch is
+the approval. The hooks recognize the
 pipeline by `WORKBENCH_DEV_TEAM_PIPELINE=1`, which `bin/dispatch-agent.sh`
 exports onto the process it spawns. `hooks/scripts/pipeline-scope.sh` answers
 the prompt for one plain `git -C <clone>`, rm, or rmdir line whose every path is

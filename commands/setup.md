@@ -828,7 +828,8 @@ summary.
 
 ## Step 6.6 — Install the commit, push, and merge ask rules
 
-The human approves a commit in chat, after reviewing the tree. Claude Code's
+The approval is a "Commit it" pick in `AskUserQuestion`, once the human says
+their review is done. Claude Code's
 own permission prompt is the mechanical backstop on every commit, push, and
 pull request merge. This step adds ten `permissions.ask` rules to
 `~/.claude/settings.json`:

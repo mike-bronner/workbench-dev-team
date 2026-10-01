@@ -42,9 +42,9 @@ Plugin configuration lives in a slash command (`/workbench-dev-team:setup`), not
 
 Universal dev workflow + standards: orient before writing (the repo's `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `.ai/` rules, and review wiki), plan before coding (including a required `feedback/` vault search), atomic commits, every change gets a test, no committed secrets, lint before pushing. Triggers whenever code is being implemented, fixed, refactored, or tested — manual or agent-driven.
 
-It names three lanes (foreground, sub-agent, scheduled pipeline) and ends each step the way that lane can: a sub-agent finishes with an uncommitted tree and a report, never a commit or a PR. Includes a **decision protocol** that presents three options, each as its own heading with pros and cons, then a separate recommendation, for a meaningful fork the human has not already decided — implementation approach, library choice, scope decisions, a public interface. A fork they already decided is not asked again. In the foreground the human decides; a sub-agent picks and records the assumption below the blocking-uncertainty bar and stops with the options above it. Trivial choices (mechanical translation, following existing repo conventions, naming, one-line obvious fixes) are exempt.
+It names three lanes (foreground, sub-agent, scheduled pipeline) and ends each step the way that lane can: a sub-agent finishes with an uncommitted tree and a report, never a commit or a PR. Includes a **decision protocol** that presents three options in one table (Option, Pros, Cons, and a Grade against every acceptance criterion), then a one- or two-sentence recommendation, for a meaningful fork the human has not already decided — implementation approach, library choice, scope decisions, a public interface. A fork they already decided is not asked again. In the foreground the human decides through `AskUserQuestion`, with each option's grade and any warning in its description; a sub-agent picks and records the assumption below the blocking-uncertainty bar and stops with the options above it. Trivial choices (mechanical translation, following existing repo conventions, naming, one-line obvious fixes) are exempt.
 
-Also defines the **commit approval** lanes (see [Commit approval](#commit-approval) below): a sub-agent commits, merges, and pushes nothing, a foreground commit waits for your "commit it" in chat, with Claude Code's permission prompt on every `git commit` and `git push` as the backstop, and a push that forces or deletes remote refs is refused outright.
+Also defines the **commit approval** lanes (see [Commit approval](#commit-approval) below): a sub-agent commits, merges, and pushes nothing, a foreground commit waits for a "Commit it" pick in `AskUserQuestion`, once the human says their review is done, Index-mode development never asks about committing or pushing, with Claude Code's permission prompt on every `git commit` and `git push` as the backstop, and a push that forces or deletes remote refs is refused outright.
 
 Used by Watson internally in both operating modes. Also invocable directly in any plugin-aware Claude session.
 
@@ -78,7 +78,7 @@ The skill also **routes GitHub actions to the right executor**. Two rules: (1) *
 
 ## Commit approval
 
-**A sub-agent does not commit, merge, or push. In the foreground session, the agent commits only after you review the tree and say "commit it" in chat. That is the approval.** Claude Code's permission prompt on each `git commit`, `git push`, and `gh pr merge` is the mechanical backstop, because a prompt that appears mid-flow gets answered without a review. After a commit you approved, the agent attempts the push itself and lets the prompt ask you. The scheduled pipeline commits and pushes unattended, inside its own clone and the scratch roots, and never merges.
+**A sub-agent does not commit, merge, or push, and never asks to. In the foreground session, the agent commits only after a "Commit it" pick in `AskUserQuestion`, once the human says their review is done. That is the approval.** A typed "commit it" in chat does not count. The orchestrator asks the commit question alone, and recommends "Not yet" until your review is done. Claude Code's permission prompt on each `git commit`, `git push`, and `gh pr merge` is the mechanical backstop, because a prompt that appears mid-flow gets answered without a review. After a commit you approved, the agent attempts the push itself and lets the prompt ask you. The scheduled pipeline commits and pushes unattended, inside its own clone and the scratch roots, and never merges.
 
 **No agent disguises a command to get past a gate.** Watson, Holmes, and Lestrade each carry a `## When a gate or guard refuses you` section: never reword, split, encode, or rebuild a command to get past a gate or guard, and report the refusal instead. It exists because Holmes once got past the installed commit gate by building the words "commit" and "push" from pieces at run time. `agents/lint-gate-refusal.sh` pins the section in every agent file.
 
@@ -314,15 +314,22 @@ anything fails. Pass `tests` or `lints` to run one group.
 
 The two groups are named apart on purpose:
 
-- **`test-*.sh`** — eleven scripts that execute shipped shell logic and assert
-  on its behaviour. Five run a shipped `.sh` as a subprocess. Five extract the
+- **`test-*.sh`** — twelve scripts that execute shipped shell logic and assert
+  on its behaviour. Six run a shipped script as a subprocess, among them
+  `hooks/scripts/test-read-allowlist.sh`, which runs the read allowlist both
+  guards share. Five extract the
   real bash from between sentinel markers in a Markdown prompt and run it against
   fixtures, so the test cannot drift from the logic it guards. One,
   `commands/test-setup-scope-guard.sh`, checks every shell block in
   `commands/setup.md` against workbench-core's destructive-scope guard.
-- **`lint-*.sh`** — six scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — eight scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
-  call themselves tests.
+  call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
+  `agents/lint-brief-contract.sh`, `agents/lint-gate-refusal.sh`,
+  `agents/lint-holmes-local-mode.sh`, `agents/lint-scratch-cleanup.sh`,
+  `skills/orchestrate/lint-decision-format.sh`,
+  `skills/orchestrate/lint-rationale-split.sh`, and
+  `skills/orchestrate/lint-workspace-check.sh`.
 
 Every script sandboxes itself: `mktemp -d` with an `EXIT` trap, and an overridden
 `HOME` wherever the logic under test resolves config or log paths from it. A

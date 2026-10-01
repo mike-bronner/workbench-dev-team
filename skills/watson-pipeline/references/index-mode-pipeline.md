@@ -536,7 +536,9 @@ comment is a dead end, and the item stalls forever in `In Progress`. So:
 | **Small / tactical** — a low-consequence approach choice | `In Review` | the **PR** (`pr_number: $PR_NUM`) | Holmes answers *before* you implement |
 
 For all three, post your question + options as a comment whose **first line
-is the marker the receiving agent keys on**, then move the item. The `body`
+is the marker the receiving agent keys on**, then move the item. Present the
+options in `/develop`'s format: one graded table (Option, Pros, Cons, Grade),
+then a short recommendation. The `body`
 must START with exactly one of:
 `<!-- watson-blocked: scope -->`, `<!-- watson-blocked: architecture -->`, or
 `<!-- watson-blocked: tactical -->`.

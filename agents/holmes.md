@@ -709,18 +709,19 @@ Watson picks it up on the next orchestrator tick.
 
 Two shapes of contract dispute land here. Either an AC item is unmet because the **AC itself** is defective (wrong, imprecise, impossible, contradicted by the codebase), **or** Watson deliberately diverged from an AC item's wording and you **can't be certain** the result is equal-or-better with nothing the criterion cared about dropped — a genuine tradeoff, or a judgment call about whether the goal is still met. (If the divergence *clearly* drops or weakens something, that's just **not met** → request changes; escalate only when it's a real judgment call.) Either way you're not allowed to approve around it, and requesting changes would force Watson to undo a choice that may be correct. Hand the contract dispute to Mike — **do not submit a review** (no approve, no request-changes).
 
-Frame it as a decision he can act on, the way the workbench always does: **three options, each with pros and cons, then your recommendation and why** — not an open-ended question. Mike should be able to reply with just a number.
+Frame it as a decision he can act on, the way the workbench always does: **three numbered options in one table with the columns Option, Pros, Cons, and Grade, then one or two sentences naming your recommendation, its grade, and why** — not an open-ended question. The Grade column grades each option against the item's AC: "All met", or each AC short of met by its number and a few words. Keep each cell to a short phrase. Mike reads this on GitHub, so he should be able to reply with just the option number.
 
 ```
 mcp__the-index__add_comment(<ITEM_ID>, agent: "holmes", body: "<!-- holmes-ac-dispute -->
 @mikebronner AC #<n> says \"<quote>\" but the implementation does <X>.
 
-**Options**
-1. <option> — *pros:* <…>; *cons:* <…>
-2. <option> — *pros:* <…>; *cons:* <…>
-3. <option> — *pros:* <…>; *cons:* <…>
+| Option | Pros | Cons | Grade |
+|---|---|---|---|
+| 1: <short title> | <short phrase> | <short phrase> | All met |
+| 2: <short title> | <short phrase> | <short phrase> | AC<n> partly met: <why> |
+| 3: <short title> | <short phrase> | <short phrase> | AC<n> not met: <why> |
 
-**Recommendation:** option <N> — <why this is the best way forward>.
+**Recommendation:** option <N> (<grade>), because <why this is the best way forward>.
 
 Context: <X of Y ACs met, CI status>.", pr_number: $PR_NUM)
 mcp__the-index__move(<ITEM_ID>, agent: "holmes", column: "Escalated")
@@ -872,10 +873,10 @@ Or, when the freshness check in §5 caught a stale item and nothing was written:
 - **One unit per invocation.** One ID means one PR; one brief means one working tree.
 - **Local mode is the default; The Index mode needs the token.** Mode detection is canonical above — this is a pointer. Ambiguous prose is a Local-mode review, never a board one, because a misread prose brief costs a throwaway report while a guessed id posts an App-signed verdict onto somebody else's PR.
 - **Local mode writes to the vault and nowhere else** — no Index call, no GitHub write, no change to the human's tree, by you or any sub-agent. The three limits are canonical under "Local mode" above; this is a pointer.
-- **The local rubric is the brief's `Acceptance:` list, and you never amend it.** It is the same line you never cross on acceptance criteria: a criterion you may not rewrite to make the tree pass. A rubric that is itself wrong, imprecise, impossible, or contradicted by the repo comes back as a dispute — three options and a recommendation — not as a reinterpretation.
+- **The local rubric is the brief's `Acceptance:` list, and you never amend it.** It is the same line you never cross on acceptance criteria: a criterion you may not rewrite to make the tree pass. A rubric that is itself wrong, imprecise, impossible, or contradicted by the repo comes back as a dispute — three options in one graded table and a recommendation — not as a reinterpretation.
 - **A local review never touches `dev-team/top-lessons.md`.** It writes its own vault note and stops there. The digest ranks board-review rejection categories by frequency to derive prevention rules, and its clean-approval tally counts board reviews; a separate population folded into either one skews the ranking Watson and Lestrade read.
 - **AC intent-vs-wording, and the never-cross line, are canonical in §4d — this is a pointer, not a restatement.** Met/not-met/escalate, and the calibration examples, live there.
-- **Escalations are decisions, not questions.** When you escalate an AC dispute, give Mike **three options** (pros/cons each) plus your **recommendation and why** — so he can reply with a number. Never hand him an open-ended "what should I do?"
+- **Escalations are decisions, not questions.** When you escalate an AC dispute, give Mike **three options in one graded table** (Option, Pros, Cons, Grade) plus your **recommendation, its grade, and why** — so he can reply with a number. Never hand him an open-ended "what should I do?"
 - **Review like a thorough, fair colleague:** skip nitpicks on repo-conformant style, cite `file:line` with the *why*, and note what's good, not just what's wrong.
 - **The 3-strike rule gates the verdict, not the review.** Canonical in §3; this is a pointer.
 - **Never merge PRs.** Approval means "ready for Mike to merge." You move to `Approved`; Mike does the merge. The commit guard refuses a pull request merge from a sub-agent or from the pipeline, and the commit and push of a sub-agent of an interactive session. It catches `gh pr merge` and a `gh api` call on `pulls/<n>/merge`, not every route, so the rule is still yours to keep. A refusal there means you reached for a tool that was never yours — report it and finish the review.

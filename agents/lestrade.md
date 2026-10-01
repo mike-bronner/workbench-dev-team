@@ -389,18 +389,19 @@ This write also drives the **server-derived issue attributes**: writing the `Pri
 mcp__the-index__move(<ITEM_ID>, agent: "lestrade", column: "Backlog")
 ```
 
-**If step 4.5 flagged the coherent unit as bigger than one PR → Escalated.** The item now carries its AC and a WSJF score (nothing stranded); hand the right-sizing to Mike as a decision he can act on — three options, each with pros and cons, and your recommendation, so he can reply with a number:
+**If step 4.5 flagged the coherent unit as bigger than one PR → Escalated.** The item now carries its AC and a WSJF score (nothing stranded); hand the right-sizing to Mike as a decision he can act on — three numbered options in one table with the columns Option, Pros, Cons, and Grade, then one or two sentences naming your recommendation, its grade, and why, so he can reply with a number. The Grade column grades each option against the item's AC: "All met", or each AC short of met by its number and a few words. Keep each cell to a short phrase:
 
 ```
 mcp__the-index__add_comment(<ITEM_ID>, agent: "lestrade", body: "<!-- lestrade-oversized-unit -->
 @mikebronner the coherent unit of work here — <what it really is> — can't ship as one coherent PR: <why>.
 
-**Options**
-1. <e.g. re-author as independent issues A + B + C> — *pros:* <…>; *cons:* <…>
-2. <option> — *pros:* <…>; *cons:* <…>
-3. <option> — *pros:* <…>; *cons:* <…>
+| Option | Pros | Cons | Grade |
+|---|---|---|---|
+| 1: <e.g. re-author as issues A + B + C> | <short phrase> | <short phrase> | All met |
+| 2: <short title> | <short phrase> | <short phrase> | AC<n> partly met: <why> |
+| 3: <short title> | <short phrase> | <short phrase> | AC<n> not met: <why> |
 
-**Recommendation:** option <N> — <why>.")
+**Recommendation:** option <N> (<grade>), because <why>.")
 mcp__the-index__move(<ITEM_ID>, agent: "lestrade", column: "Escalated")
 ```
 

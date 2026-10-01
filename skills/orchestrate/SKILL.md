@@ -436,12 +436,21 @@ refuses a sub-agent every commit and push, and a sub-agent does not merge. So
 its report carries a diff summary and a proposed commit message instead, and the
 tree is left as the change made it.
 
-**Committing it is yours, and so is the push.** Tell the human the tree is
-ready for their review, and carry the proposed message. Commit only after they
-say "commit it" in chat, once their review is done. Then attempt the commit and
-the push yourself. Claude Code's permission prompt is the mechanical backstop,
-not the approval. The plain form the ask rules match is canonical in the
-`/workbench-dev-team:git-commit` skill ("Committing and pushing"). Never send
+**Committing it is yours, and so is the push.** Prompting the human is yours
+too: the sub-agent never asks. Tell the human the tree is ready for their
+review. Commit only after a "Commit it" pick in `AskUserQuestion`, once the
+human says their review is done. A typed "commit it" in chat does not count.
+Offer the commit through `AskUserQuestion` after they say their review is done,
+asked alone and never bundled with other questions or work. Do not offer the
+commit before then. If an offer does reach the human early, "Not yet" leads.
+The question carries the branch and the proposed message. Until the human has
+said their review is done, the recommended first option is "Not yet" or
+"Review with Holmes first" (below), and "Commit it" goes last. Its description
+reads: "Picking this confirms you have reviewed the whole tree." Then attempt
+the commit and the push yourself. Claude Code's permission prompt is the
+mechanical backstop, not the approval. The full rule, and the plain form the
+ask rules match, are canonical in the `/workbench-dev-team:git-commit` skill
+("Committing and pushing"). Never send
 the agent back to commit: only a foreground session reaches the human's prompt.
 
 **Holmes can review it first.** An uncommitted tree is exactly what Local mode
@@ -493,9 +502,20 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   point of delegating.
 - **Failures surface verbatim.** An agent that errored or hit its budget cap is
   reported as such, with its last reported state. No silent retries.
-- **Decision forks come home.** Watson's `/develop` skill escalates meaningful
-  forks as three options + recommendation. Relay them to the user untouched and
-  SendMessage the answer back. The human decides; the team executes.
+- **Decisions come home through `AskUserQuestion`.** Watson's `/develop` skill
+  returns a meaningful fork as a graded table and a recommendation. Holmes's
+  Local mode returns a rubric dispute the same way. A brief can come back with
+  questions only the human can settle, and a finished Direct-mode tree comes
+  back as a commit offer. Put each one to the human through `AskUserQuestion`,
+  never as prose. Put the recommended option first, and keep the agent's
+  options and grades unchanged. Each option's description carries its grade
+  and any warning, so the question stands on its own. A commit offer is asked
+  alone, and follows the timing rule under "Direct-mode work comes back
+  uncommitted": "Commit it" never leads before the human says their review is
+  done. Fall back to a final
+  `## ❓ Open questions` block only when the tool does not fit, such as a
+  question with no fixed choices. SendMessage the answer back, or re-dispatch
+  on an updated brief. The human decides; the team executes.
 - **You never do the work.** If you catch yourself reading a repo to "just fix
   it quickly," stop — that's a Watson dispatch, and so is that same fix handed
   to a generic agent. A `PreToolUse` hook holds this line for you: `Edit`,
@@ -538,8 +558,8 @@ order:
    through.)
 2. Fallback: `mcp__the-index__list_items(limit: 100)` and scan for the repo
    among item `repo` fields. A hit proves governed; a miss is **inconclusive**
-   — say so, and ask the user rather than silently treating the repo as
-   ungoverned.
+   — say so, and ask the user through `AskUserQuestion` rather than silently
+   treating the repo as ungoverned.
 
 Cache the answer per repo for the rest of the session.
 
@@ -562,6 +582,9 @@ the issue/PR (Holmes's Local mode needs none — it reads no board):
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
 | "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool; the commit guard refuses a sub-agent's or the pipeline's `gh pr merge`). Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
+
+**Every "ask" and "confirm" in this table goes through `AskUserQuestion`,**
+with the recommended choice first and any warning in its description.
 
 **Pass a gh body in a quoted heredoc or a file.** Before any `gh` call that
 carries prose (a comment, an issue, a PR body, or release notes), read "Passing
