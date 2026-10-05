@@ -413,8 +413,8 @@ UNRESOLVABLE = re.compile(r"[$`*?\[\]{}()'\"\\<>]")
 EDIT_TOOLS = {"Edit": "file_path", "Write": "file_path", "NotebookEdit": "notebook_path"}
 
 # Commands that run another command, and are stepped through to find it.
-PASS_THROUGH = {"command", "builtin", "exec", "sudo", "nohup", "time", "env", "xargs",
-                "npx", "bunx", "pnpx"}
+PASS_THROUGH = {"command", "builtin", "exec", "sudo", "doas", "nohup", "nice", "ionice",
+                "stdbuf", "timeout", "noglob", "time", "env", "xargs", "npx", "bunx", "pnpx"}
 
 # Project runners, each with the subcommands that run another command. The pair
 # is stepped through like a wrapper, so `bundle exec rubocop -a` is seen as
@@ -438,7 +438,15 @@ WRAPPER_VALUE_OPTIONS = {
     "sudo": {"-u", "--user", "-g", "--group", "-C", "--close-from", "-D", "--chdir",
              "-h", "--host", "-p", "--prompt", "-r", "--role", "-t", "--type", "-U",
              "--other-user", "-T", "--command-timeout"},
-    "xargs": {"-I", "-J", "-L", "-n", "-P", "-R", "-S", "-s", "-E", "-a", "-d"},
+    "doas": {"-u", "-C", "-a"},
+    "nice": {"-n", "--adjustment"},
+    "ionice": {"-c", "--class", "-n", "--classdata", "-p", "--pid", "-P", "--pgid",
+               "-u", "--uid"},
+    "stdbuf": {"-i", "--input", "-o", "--output", "-e", "--error"},
+    "timeout": {"-s", "--signal", "-k", "--kill-after"},
+    "xargs": {"-I", "-J", "-L", "-n", "-P", "-R", "-S", "-s", "-E", "-a", "-d",
+              "--arg-file", "--delimiter", "--max-args", "--max-procs", "--max-chars",
+              "--process-slot-var"},
     "time": {"-o", "--output", "-f", "--format"},
     "npx": {"-p", "--package"},
     "uv": {"-w", "--with", "--with-editable", "--with-requirements", "-p", "--python",
@@ -926,22 +934,48 @@ def refuses_write(name: str, args: list, roots: list, cwd: str, via_xargs: bool)
     return None
 
 
+def wrapper_option(wrapper: str, word: str):
+    """The options a wrapper's option word may name, of those that take a value,
+    and the value attached to the word (None when the value is the next word).
+
+    A short cluster is read as getopt reads it: the first letter that takes a
+    value takes the rest of the word, so `-nu root` names `-u` and `-tc3` names
+    `-c` with `3`. A long option may be cut to any prefix, as getopt_long
+    allows, so `--adj` names `--adjustment`. A cut that fits two options names
+    both. getopt_long refuses it, but naming both keeps every reading covered.
+    """
+    known = (WRAPPER_VALUE_OPTIONS.get(wrapper, set()) | WRAPPER_CHDIR_OPTIONS.get(wrapper, set())
+             | WRAPPER_SPLIT_OPTIONS.get(wrapper, set()))
+    if word.startswith("--"):
+        name, eq, value = word.partition("=")
+        if name == "--":
+            return set(), None  # the end of options, not an option
+        if name in known:
+            return {name}, value if eq else None
+        return {o for o in known if o.startswith(name)}, value if eq else None
+    for i, letter in enumerate(word[1:], 2):
+        if "-" + letter in known:
+            return {"-" + letter}, word[i:] or None
+    return set(), None
+
+
 def runs_command(tokens: list) -> bool:
     """True when `tokens` open a RUNNERS run form. The run subcommand is removed
     in place, so the runner is then stepped over like any wrapper, its own
     options included."""
-    subcommands = RUNNERS.get(tokens[0])
+    runner = os.path.basename(tokens[0])  # `/usr/local/bin/bundle` is `bundle`
+    subcommands = RUNNERS.get(runner)
     if subcommands is None:
         return False
     i = 1
     while i < len(tokens) and tokens[i].startswith("-"):
-        i += 2 if tokens[i] in WRAPPER_VALUE_OPTIONS.get(tokens[0], ()) else 1
+        i += 2 if tokens[i] in WRAPPER_VALUE_OPTIONS.get(runner, ()) else 1
     if i >= len(tokens):
         return False
     if tokens[i] in subcommands:
         del tokens[i]
         return True
-    return tokens[0] == "yarn" and tokens[i] not in YARN_OWN_WRITER_NAMES
+    return runner == "yarn" and tokens[i] not in YARN_OWN_WRITER_NAMES
 
 
 def judge(command: str, roots: list, cwd: str, judge_redirects: bool = True):
@@ -974,9 +1008,11 @@ def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True,
         # reach the real command. A `(` or `{` glued to the command is dropped.
         # A wrapper's own flags are stepped over too, so `xargs -0 rm` is seen as
         # `rm`, and so is the value of a flag WRAPPER_VALUE_OPTIONS names, so
-        # `env -u FOO chmod` is seen as `chmod`. `env -C` and `sudo -D` change
+        # `env -u FOO chmod` is seen as `chmod`. wrapper_option() finds that
+        # flag in a short cluster or a cut long option too. `env -C` and `sudo -D` change
         # the directory the way `cd` does, and `env -S` hands over the command
-        # line itself as its value.
+        # line itself as its value. timeout's first word after its options is
+        # the duration, whatever its shape, so `timeout 5 chmod` is `chmod`.
         wrapper, via_xargs = "", False
         while tokens:
             # A quoted or escaped name (`"rm"`, `\rm`) runs the same program.
@@ -985,28 +1021,27 @@ def classify(command: str, roots: list, cwd: str, judge_redirects: bool = True,
                 tokens = []  # `command -v` looks a name up and runs nothing
                 break
             if wrapper and tokens[0].startswith("-"):
-                option, joined = tokens[0].split("=", 1)[0], "=" in tokens[0]
-                short = option[:2] if not option.startswith("--") else option
-                if short in WRAPPER_CHDIR_OPTIONS.get(wrapper, ()):
+                options, value = wrapper_option(wrapper, tokens[0])
+                if options & WRAPPER_CHDIR_OPTIONS.get(wrapper, set()):
                     cwd = ""  # the command runs in another directory, as after `cd`
-                if short in WRAPPER_SPLIT_OPTIONS.get(wrapper, ()):
+                if options & WRAPPER_SPLIT_OPTIONS.get(wrapper, set()):
                     # The value is the command line: read it as the command.
-                    word = tokens.pop(0)
-                    value = (word.split("=", 1)[1] if joined
-                             else word[2:] if not word.startswith("--") else "")
+                    tokens.pop(0)
                     if value:
                         tokens.insert(0, value)
                     if tokens:
                         tokens[0] = tokens[0].lstrip("'\"")
                     continue
-                if (option in WRAPPER_VALUE_OPTIONS.get(wrapper, ()) and not joined
-                        and len(tokens) > 1):
+                if options and value is None and len(tokens) > 1:
                     tokens.pop(0)  # the option's value, not the command
-            elif (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]) or tokens[0] in PASS_THROUGH
-                  or runs_command(tokens)):
+            elif wrapper == "timeout":
+                wrapper = ""  # the duration, not the command
+            elif (re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0])
+                  or os.path.basename(tokens[0]) in PASS_THROUGH or runs_command(tokens)):
+                # A wrapper named by its path (`/usr/bin/nice`) is the same wrapper.
                 if not re.match(r"^[A-Za-z_][A-Za-z0-9_]*=", tokens[0]):
-                    wrapper = tokens[0]
-                via_xargs = via_xargs or tokens[0] == "xargs"
+                    wrapper = os.path.basename(tokens[0])
+                via_xargs = via_xargs or wrapper == "xargs"
             elif tokens[0] not in SHELL_KEYWORDS:
                 break
             tokens.pop(0)

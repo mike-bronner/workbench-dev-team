@@ -339,6 +339,165 @@ sudo -u root chmod 644 README.md
 xargs -n 1 rm
 EOF
 
+# doas, nice, ionice, stdbuf, timeout, and noglob run the command after them, as
+# sudo does. Each one's option values must be stepped over too, or
+# `nice -n 10 chmod` is read as a command named `10`, and so must timeout's
+# duration. Before these were wrappers, every form here was allowed.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused behind a prefix: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
+done <<EOF
+doas chmod 644 $WORKDIR/README.md
+doas -u root chmod 644 README.md
+doas -n -C /etc/doas.conf chmod 644 README.md
+doas -a passwd rm README.md
+nice chmod 644 $WORKDIR/README.md
+nice -n 10 chmod 644 README.md
+nice -n -5 rm README.md
+nice --adjustment 10 chmod 644 README.md
+nice --adjustment=10 chmod 644 README.md
+nice -n10 chmod 644 README.md
+nice -10 chmod 644 README.md
+ionice chmod 644 $WORKDIR/README.md
+ionice -c 3 chmod 644 README.md
+ionice -c 2 -n 7 rm README.md
+ionice --class 3 --classdata 7 chmod 644 README.md
+ionice -c3 -t chmod 644 README.md
+stdbuf chmod 644 $WORKDIR/README.md
+stdbuf -oL chmod 644 README.md
+stdbuf -o L -e 0 chmod 644 README.md
+stdbuf -i 0 --output L rm README.md
+stdbuf --output=L chmod 644 README.md
+timeout 5 chmod 644 $WORKDIR/README.md
+timeout 1.5m rm README.md
+timeout -s KILL 5 chmod 644 README.md
+timeout --signal=TERM -k 2 5 chmod 644 README.md
+timeout --signal TERM --kill-after 2s 5 rm README.md
+timeout -sKILL -k2 --foreground --preserve-status -v 5 chmod 644 README.md
+noglob chmod 644 $WORKDIR/README.md
+noglob rm README.md
+nice -n 10 ionice -c 3 stdbuf -oL doas -u root chmod 644 README.md
+noglob timeout -s KILL 5 nice chmod 644 README.md
+EOF
+
+# Three more spellings of every wrapper, each one allowed before it was handled:
+# the wrapper named by its path, a value option at the end of a short-flag
+# cluster, and a long option cut to a prefix, as getopt_long accepts.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused behind a wrapper path: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
+done <<EOF
+/usr/bin/command chmod 644 README.md
+/usr/bin/builtin chmod 644 README.md
+/bin/exec chmod 644 README.md
+/usr/bin/sudo chmod 644 README.md
+/usr/bin/doas chmod 644 README.md
+/usr/bin/nohup chmod 644 README.md
+/usr/bin/nice chmod 644 $WORKDIR/README.md
+/usr/bin/ionice -c 3 chmod 644 README.md
+/usr/bin/stdbuf -oL chmod 644 README.md
+/usr/bin/timeout 5 chmod 644 README.md
+/bin/noglob chmod 644 README.md
+/usr/bin/time chmod 644 README.md
+/usr/bin/env -u FOO chmod 644 README.md
+/usr/bin/xargs -0 rm
+/usr/local/bin/npx chmod 644 README.md
+/opt/bun/bin/bunx chmod 644 README.md
+/usr/local/bin/pnpx chmod 644 README.md
+EOF
+
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused behind a flag cluster: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
+done <<EOF
+sudo -nu root chmod 644 README.md
+sudo -bD /x rm README.md
+doas -nu root chmod 644 README.md
+ionice -tc 3 chmod 644 README.md
+timeout -vs KILL 5 chmod 644 README.md
+timeout -fk 2 5 rm README.md
+env -iu FOO chmod 644 README.md
+env -iC /x rm README.md
+env -iS'chmod 644 README.md'
+xargs -0n 1 rm
+time -po /dev/null chmod 644 README.md
+npx -yp pkg chmod 644 README.md
+EOF
+
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused behind a cut long option: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
+done <<EOF
+nice --adj 10 chmod 644 README.md
+stdbuf --out L chmod 644 README.md
+ionice --cl 3 rm README.md
+timeout --sig KILL 5 rm README.md
+timeout --kill 2 5 chmod 644 README.md
+sudo --us root chmod 644 README.md
+sudo --chd /x rm README.md
+env --un FOO chmod 644 README.md
+env --ch /x rm README.md
+env --spl='chmod 644 README.md'
+time --out /dev/null chmod 644 README.md
+npx --pack pkg chmod 644 README.md
+EOF
+
+# GNU xargs's long options that take a value, in full and cut to a prefix.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused behind an xargs long option: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
+done <<EOF
+xargs --max-args 1 rm
+xargs --max-a 1 rm
+xargs --max-procs 2 rm
+xargs --max-p 2 rm
+xargs --max-chars 100 rm
+xargs --max-c 100 rm
+xargs --arg-file /x rm
+xargs --arg /x rm
+xargs --delimiter , rm
+xargs --delim , rm
+xargs --process-slot-var V rm
+xargs --proc V rm
+EOF
+
+# A runner named by its path is the same runner.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "refused behind a runner path: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" deny
+done <<EOF
+/usr/local/bin/bundle exec chmod 644 $WORKDIR/README.md
+/usr/local/bin/uv run chmod 644 README.md
+/usr/local/bin/poetry run chmod 644 README.md
+/usr/local/bin/pipx run chmod 644 README.md
+/usr/local/bin/pnpm exec chmod 644 README.md
+/usr/local/bin/npm exec chmod 644 README.md
+/usr/local/bin/yarn chmod 644 README.md
+/usr/local/bin/composer exec chmod 644 README.md
+EOF
+
+# The same prefixes in front of a read still pass.
+while IFS= read -r cmd; do
+  [ -n "$cmd" ] || continue
+  check "allowed behind a prefix: $cmd" "$(bash_verdict "$cmd" session-A "$LENS" "$WORKDIR")" silent
+done <<EOF
+nice -n 10 git status
+ionice -c 3 git log --oneline
+stdbuf -oL git diff
+doas -u root git status
+timeout -s KILL 5 git status
+noglob git log --oneline
+/usr/bin/nice -n 10 git status
+sudo -nu root git status
+timeout --sig KILL 5 git diff
+env -- git status
+/usr/local/bin/npm test
+/usr/local/bin/yarn test
+/usr/local/bin/yarn install
+/usr/local/bin/uv run pytest
+/usr/local/bin/bundle exec rspec
+EOF
+
 # The same programs reading: check mode, listing mode, and writes that land
 # outside the tree. A guard that refused these would stop the review itself.
 while IFS= read -r cmd; do
