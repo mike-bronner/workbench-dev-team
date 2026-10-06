@@ -31,7 +31,7 @@
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
-PHASES="$ROOT/skills/holmes-review/references/review-phases.md"
+PHASES="$ROOT/references/holmes/review-phases.md"
 GUARD="$ROOT/hooks/scripts/local-review-guard.sh"
 PASS=0
 FAIL=0

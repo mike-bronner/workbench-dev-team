@@ -337,7 +337,7 @@ This is the one judgment call you make here, and it stays inside a hard ceiling:
 
 ### 4.6. Adversarially verify the acceptance criteria
 
-**Read `${CLAUDE_PLUGIN_ROOT}/skills/lestrade-triage/references/ac-verification-lenses.md` and follow it** — this step lives there in full, and it is the canonical wording: why it runs before scoring, the four blind lenses (malicious-compliance, testability, completeness, edge-case), the lens prompt skeleton, the inline fallback when the fan-out is unavailable, the single bounded tightening pass, and the paper-trail comment. Then continue to step 5.
+**Read `${CLAUDE_PLUGIN_ROOT}/references/lestrade/ac-verification-lenses.md` and follow it** — this step lives there in full, and it is the canonical wording: why it runs before scoring, the four blind lenses (malicious-compliance, testability, completeness, edge-case), the lens prompt skeleton, the inline fallback when the fan-out is unavailable, the single bounded tightening pass, and the paper-trail comment. Then continue to step 5.
 
 ### 5. Score WSJF fields (select an option by rank)
 
@@ -437,4 +437,4 @@ One-line summary:
 
 ## Sweep mode — blocker links + consolidation
 
-Triggered by `Repo sweep: <owner/repo>`. **Read `${CLAUDE_PLUGIN_ROOT}/skills/lestrade-triage/references/sweep-mode.md` and follow it** — the whole mode lives there in full, and it is the canonical wording: collecting the open issues, the evidence bar for a blocked-by link, writing the links, the two consolidations (folding `expand-from` comments into acceptance criteria, merging near-duplicate follow-ups into the earliest anchor), the report format, and the sweep rules. Skip the Item-mode workflow above entirely.
+Triggered by `Repo sweep: <owner/repo>`. **Read `${CLAUDE_PLUGIN_ROOT}/references/lestrade/sweep-mode.md` and follow it** — the whole mode lives there in full, and it is the canonical wording: collecting the open issues, the evidence bar for a blocked-by link, writing the links, the two consolidations (folding `expand-from` comments into acceptance criteria, merging near-duplicate follow-ups into the earliest anchor), the report format, and the sweep rules. Skip the Item-mode workflow above entirely.

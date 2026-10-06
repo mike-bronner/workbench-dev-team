@@ -168,7 +168,7 @@ The block below answers both and prints one verdict.
 REPO=<repo>            # ← the item's `repo`, as owner/name
 ISSUE=<issue_number>   # ← the item's `issue_number`
 BASE=$(gh repo view "$REPO" --json defaultBranchRef --jq .defaultBranchRef.name)
-# >>> watson-resume-detection >>>  (markers used by skills/watson-pipeline/test-resume-detection.sh — keep them)
+# >>> watson-resume-detection >>>  (markers used by references/watson/test-resume-detection.sh — keep them)
 # Inputs: REPO (owner/name), ISSUE (issue number), BASE (default branch name).
 # Prints exactly one tab-separated verdict, "<VERDICT>\t<branch|->\t<pr|->":
 #   "FRESH"     — no branch for this issue. Start fresh (step 4).
@@ -262,7 +262,7 @@ post only when it is absent:
 REPO=<repo>            # ← the item's `repo`, as owner/name
 ISSUE=<issue_number>   # ← the item's `issue_number`
 BRANCH=<branch>        # ← field 2 of the verdict line above
-# >>> watson-handsoff-comment >>>  (markers used by skills/watson-pipeline/test-resume-detection.sh — keep them)
+# >>> watson-handsoff-comment >>>  (markers used by references/watson/test-resume-detection.sh — keep them)
 # Inputs: REPO (owner/name), ISSUE (issue number), BRANCH (the hands-off branch, field 2 above).
 # Prints "POST" when this branch's hands-off notice still has to go on the issue, "SKIP" when a
 # comment carrying its marker is already there.

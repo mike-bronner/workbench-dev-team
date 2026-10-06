@@ -36,6 +36,13 @@ Branches and worktrees are the expected, wanted outcome of most dev work. The
 failure was creating them without asking, so all three rules in the skill end in
 a question to the human and never in a refusal.
 
+**Since 2026-10-05 the human creates every worktree.** Mike's rule is "i create
+worktrees, never the agents", because agent-made worktrees leave orphan trees.
+workbench-core's provisioning guard denies the Agent tool's
+`isolation: "worktree"`, so the skill no longer advises it. For two Watsons on
+one repo, the orchestrator proposes the worktrees, the human creates them, and
+one Watson runs in each.
+
 **Why the answer is recorded in `Workdir:`** rather than in a `Constraints:`
 bullet or a slot of its own: a new slot costs a release of both plugins
 together. The workbench-core gate reads its slot list from
@@ -48,9 +55,76 @@ enforcement layer, while a `Constraints:` bullet would have buried a workspace
 fact among hard limits. `Acceptance:` later paid the cost of a new slot, for the
 reason in its own section below: no existing slot could carry it.
 
+## Why independent units dispatch together
+
+**Rule it explains:** *Dispatch in parallel* in `SKILL.md`.
+
+Mike, 2026-10-05: "i only ever see 1 or 2 subagents running, when i'm pretty
+sure there could be more." Units of work were being run one after the other out
+of habit, when nothing made one wait on another. He then set the limits in both
+directions: "local work should allow any number of sub-agents, while work from
+The Index is limited."
+
+- **Local work has no count cap.** That covers interactive sessions, Watson's
+  Direct mode, Holmes's Local mode, and research dispatches, and an agent's own
+  fan-out inside Local or Direct mode as well.
+- **The Index pipeline stays bounded on purpose.** Scheduled Dispatch keeps one
+  new Watson per tick, and the Index-mode caps stay. Mike keeps scheduled
+  throughput bounded deliberately.
+- **Worktrees stay the human's** in both lanes, for the reason in the workspace
+  section above. Same-repo parallel work waits for the worktrees he creates.
+
+## Why development goes to a specialist
+
+**Rule it explains:** *Agent choice* in `SKILL.md` — development goes to Watson,
+never to a generic agent.
+
+The reason is skill loading, not seniority. A specialist loads
+`/workbench-dev-team:develop` and then works *from the repo it was pointed at*:
+it reads the repo's conventions, discovers the test framework, follows the
+existing file layout, and sequences the work itself. A generic agent never loads
+that skill, so it guesses at conventions the repo already states. That is also
+why the brief omits implementation detail: the detail belongs to the sub-agent,
+and only a specialist carries the standard for choosing it.
+
+## Why research is not exempt from the brief
+
+**Rule it explains:** every handoff uses the brief, read-only research included.
+
+That is load-bearing rather than tidy: it is exactly what lets the companion
+gate stop guessing whether a dispatch is code work. A template that applied only
+to work ending in a diff would need someone — a hook, or you at speed — to
+classify each prompt first, and that classification is the part that never
+worked. The measurements are in the gate section below.
+
+## Why `Goal:` is the one bounded slot
+
+**Rule it explains:** `Goal:` is one or two sentences.
+
+Everything downstream checks a result against it — the agent's own report,
+Holmes's AC lens, your roster line — and a paragraph is not something a result
+can be checked against.
+
+## The incidents behind two brief rules
+
+**Rules they explain:** a database limit names the category, and the must-omit
+list bans framing about where the work runs.
+
+- **The database limit.** "Don't run migrations against dev" left a seeder, a
+  truncate, and a raw query free to hit the same connection. Six near-misses met
+  the letter of limits like that one before the next lost 17,063 rows.
+- **Where the work runs.** Framing such as "outside the app" or "a quick Python
+  check" once sent Watson to edit PHP with a Python script and to diff a Laravel
+  app's data in Python instead of the app's own console and test suite.
+
 ## The fan-out exemption, and why it is a boundary
 
 **Rule it explains:** a specialist's own fan-out is not a handoff.
+
+The template governs the **orchestrator boundary** — a dispatch that leaves an
+orchestrator for a specialist. Workers a specialist spawns inside a task it
+already owns are that specialist's implementation, and they keep whatever prompt
+shape that agent's own reference files define.
 
 Three things put the line at the orchestrator boundary rather than at any list
 of agent names:

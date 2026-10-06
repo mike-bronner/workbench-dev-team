@@ -157,13 +157,13 @@ while IFS='|' read -r agent rel heading label; do
 done <<'EOF'
 watson|agents/watson.md|## Direct mode|Direct mode
 watson|skills/develop/SKILL.md|## 2. Plan before coding|/develop §2, which Direct mode follows
-watson|skills/watson-pipeline/references/index-mode-pipeline.md|### 6. Implement|Index mode (step 6)
+watson|references/watson/index-mode-pipeline.md|### 6. Implement|Index mode (step 6)
 holmes|agents/holmes.md|### 2.5. Decision request?|answer mode (§2.5)
 holmes|agents/holmes.md|##### 4a.5. Search `feedback/`|Index review (§4a.5)
-holmes|skills/holmes-review/references/local-review.md|## §L4a|Local mode (§L4a)
+holmes|references/holmes/local-review.md|## §L4a|Local mode (§L4a)
 lestrade|agents/lestrade.md|### 2.5. Scope kickback|scope-kickback sharpen (step 2.5)
 lestrade|agents/lestrade.md|### 4. Generate acceptance criteria|Item mode (step 4)
-lestrade|skills/lestrade-triage/references/sweep-mode.md|### 4. Consolidate|Sweep mode (step 4)
+lestrade|references/lestrade/sweep-mode.md|### 4. Consolidate|Sweep mode (step 4)
 EOF
 
 echo

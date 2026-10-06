@@ -86,8 +86,10 @@ Two consequences, both mechanical:
   finding, and the single skeptic for soft observations. That is the existing
   reasoning applied unchanged: the first review of a window sets the whole punch
   list, and a false REFUTED on a real defect hands the human a picture that is
-  wrong from the start. The 10-verification cap and its priority order are
-  unchanged.
+  wrong from the start.
+- **The 10-verification cap does not apply.** Local work carries no count cap,
+  so verify every finding Phase C sends to a track, however many there are. The
+  cap and its priority order stay in force in The Index mode.
 
 ## §L4a — the rubric is the brief, and you never amend it
 
@@ -276,8 +278,9 @@ plus everything belonging to the coherent unit carry no actionable finding.
 
 **🔄 Changes requested** — a rubric item is unmet, a hard defect surfaced, or the
 change or its coherent unit carries an actionable finding. Same body as Index
-mode: `## Issues Found`, `## What's Good`, `## 📋 Non-blocking follow-ups`, and
-`## Unverified Observations` only when Phase C's cap overflowed.
+mode: `## Issues Found`, `## What's Good`, and `## 📋 Non-blocking follow-ups`.
+There is no `## Unverified Observations` section, because Local mode has no
+verification cap to overflow (§L3).
 
 **🛑 Rubric dispute** — the local form of an escalation. A criterion in the
 brief's `Acceptance:` list is itself wrong, imprecise, impossible, or

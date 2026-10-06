@@ -2,16 +2,16 @@
 # Test for Dr. Watson's step-3 resume detection and branch provenance, and for
 # the once-per-branch guard on the `HANDS-OFF` comment that follows it.
 #
-# It extracts the *real* snippets from references/index-mode-pipeline.md (the
+# It extracts the *real* snippets from index-mode-pipeline.md (the
 # blocks between the `watson-resume-detection` and `watson-handsoff-comment`
 # sentinel markers) and runs them against fixture repos served by a stub `gh`,
 # so the test can never drift from the shipped logic.
 #
-# Run: bash skills/watson-pipeline/test-resume-detection.sh
+# Run: bash references/watson/test-resume-detection.sh
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SRC="$HERE/references/index-mode-pipeline.md"
+SRC="$HERE/index-mode-pipeline.md"
 SNIPPET=$(mktemp)
 SNIPPET2=$(mktemp)
 WORK=$(mktemp -d)

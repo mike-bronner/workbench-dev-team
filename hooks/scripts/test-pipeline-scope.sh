@@ -12,7 +12,7 @@ set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 HOOK="$HERE/pipeline-scope.sh"
 HOOKS_JSON="$HERE/../hooks.json"
-PIPELINE_MD="$HERE/../../skills/watson-pipeline/references/index-mode-pipeline.md"
+PIPELINE_MD="$HERE/../../references/watson/index-mode-pipeline.md"
 PASS=0
 FAIL=0
 

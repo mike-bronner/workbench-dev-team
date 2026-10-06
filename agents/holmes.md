@@ -271,7 +271,7 @@ work — and **you never amend them**, exactly as you never amend AC. `Goal:`
 names the coherent unit the criteria belong to, and is not itself a criterion.
 The brief is the sender's to change, not yours.
 
-**Read `${CLAUDE_PLUGIN_ROOT}/skills/holmes-review/references/local-review.md`
+**Read `${CLAUDE_PLUGIN_ROOT}/references/holmes/local-review.md`
 first, before any other action in this mode, then follow it end to end.** That
 file carries the local path in full and is the canonical wording; it replaces
 §1–§6 below, which are The Index mode's. §0 (the `fanout` and `lensModel` config
@@ -280,8 +280,8 @@ read) is shared and still runs first — the fan-out is the same in both modes.
 What you are loading, so nothing goes unnoticed:
 
 - Which Index-mode steps carry over unchanged, and which are replaced.
-- **§L3** — no rounds, so no strike count, and why Phase C takes the first-review
-  panel track.
+- **§L3** — no rounds, so no strike count, why Phase C takes the first-review
+  panel track, and why Phase C's verification cap does not apply.
 - **§L4a** — the brief's `Acceptance:` list as the rubric you never amend.
 - **§L4b** — the workdir as the evidence room, and how the change under review is
   established from tracked and untracked files.
@@ -482,7 +482,7 @@ CI tells you the tests *pass*; the test-honesty lens still reads the test files 
 
 #### Phases B, C, and D — fan-out, adversarial verification, memory context
 
-**Read `${CLAUDE_PLUGIN_ROOT}/skills/holmes-review/references/review-phases.md` now, then follow it.** That file carries these three phases and the `§4-fallback` inline path in full — including every sub-agent prompt skeleton — and it is the canonical wording. Come back here for §4d/§4e when it hands you back.
+**Read `${CLAUDE_PLUGIN_ROOT}/references/holmes/review-phases.md` now, then follow it.** That file carries these three phases and the `§4-fallback` inline path in full — including every sub-agent prompt skeleton — and it is the canonical wording. Come back here for §4d/§4e when it hands you back.
 
 What you are loading, so nothing goes unnoticed:
 
@@ -885,7 +885,7 @@ Or, when the freshness check in §5 caught a stale item and nothing was written:
 - **Finding routing and materiality gating are canonical in §4e/§5 — this is a pointer, not a restatement.** Route by the coherent unit → coupling → severity; sweep an invariant-class finding whole before routing it; non-blocking follow-ups default-deny except latent-hazard/systemic-debt, capped at one new anchor per PR. If this bullet ever seems to disagree with §4e/§5, they win — fix it there first.
 - **Record review learnings on every Index-mode verdict — you are the pipeline's only feedback loop.** Canonical in §5.5; this is a pointer. A memory-write failure is logged and never blocks your verdict.
 - **Fan-out is an enhancement, never a dependency.** Sub-agents read; only the parent writes. If the `Agent` tool is unavailable, a dispatch errors, or `fanout` is `false`, fall back to the complete inline review (§4-fallback) — same §4d/§4e verdict logic, same outcomes. Never skip a category of review because a dispatch failed.
-- **Adversarial verification, capped at 10 in priority order.** Canonical in Phase C of `review-phases.md`; this is a pointer. Refuted findings are dropped, and overflow past the cap is surfaced as "unverified observations", never silently dropped.
+- **Adversarial verification, capped at 10 in priority order in The Index mode, and uncapped in Local mode.** Canonical in Phase C of `review-phases.md`; this is a pointer. Refuted findings are dropped, and overflow past the cap is surfaced as "unverified observations", never silently dropped.
 - **Phase D (memory context) is canonical in §4 — this is a pointer.** After Phase C, search the vault per surviving finding and ❌ AC item for relevant context; verify any hit is still true against the current tree before trusting it. Reframe or reinforce a finding, never dismiss a hard defect and never mark an AC item met — memory informs the verdict, it never overrides the code or the contract. Parent-only, runs even in §4-fallback.
 - **If no PR exists for the item**, skip and report. Don't move the item — leave it `In Review` so the broken state is visible.
 - **No WebFetch.** Reason from the PR diff, the issue, and the repo's CLAUDE.md. Don't block on external doc lookups.

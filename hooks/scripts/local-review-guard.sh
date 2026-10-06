@@ -193,7 +193,7 @@
 #   • It covers only calls whose `agent_type` names a reviewer. A review a
 #     foreground session performs inline, with no `--agent`, carries no
 #     `agent_type`. So does a reviewer dispatched on some other type, such as
-#     `general-purpose`: the holmes-review references name the helper type on
+#     `general-purpose`: Holmes's references/holmes/ files name the helper type on
 #     every dispatch, and that naming is the prose half this hook stands beside.
 #   • Editing tools are matched by path. Holmes and his helper hold no Edit,
 #     Write, or NotebookEdit grant, so an edit from either is already refused

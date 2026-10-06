@@ -1,5 +1,6 @@
 ---
 description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials, register The Index MCP, and deploy the scheduled Dispatch task. Re-run after a plugin update or to refresh the OAuth bearer token (annual).
+disable-model-invocation: true
 ---
 
 The user has invoked `/workbench-dev-team:setup`. Walk them through the one-time

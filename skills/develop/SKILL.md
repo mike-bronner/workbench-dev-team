@@ -45,23 +45,18 @@ they are the ones in your intake block. As a sub-agent they are the brief's
 `Acceptance:` list. In the scheduled pipeline they are the item's acceptance
 criteria, written by Lestrade at triage.
 
-**What counts as a fork:**
+**What counts as a fork** (both lists in full:
+`references/decision-protocol.md`):
 
-- Choosing between distinct implementation approaches (algorithm, data structure,
-  architecture pattern)
-- Picking a library or dependency when multiple reasonable options exist
-- Deciding scope (fix the symptom vs. fix the root cause; refactor first vs.
-  patch then clean up later)
-- A public interface other code or people will depend on (an API shape, a data
-  contract, a config key) that repo conventions do not already imply
+- Choosing between distinct approaches, libraries, or scopes
+- A public interface others will depend on, which repo conventions do not
+  already imply
 - Trade-offs with meaningful long-term consequences
 
 **What doesn't count — just do it:**
 
-- A choice the human already made, in the brief, the issue, the acceptance
-  criteria, or an earlier answer. Follow it, and do not present it as options
-- Mechanical translation of clear requirements into code
-- Following an existing repo convention (the repo already made that decision)
+- A choice the human already made. Follow it, and do not present it as options
+- Mechanical translation of clear requirements, or an existing repo convention
 - Naming, and other small choices implied by sibling code or cheap to change later
 - Obvious one-line fixes with no real alternative
 
@@ -116,9 +111,8 @@ tool does not fit, such as a question with no fixed choices.
 - **Scheduled pipeline:** route the fork as Watson's pipeline describes (step 6,
   "If a fork blocks you").
 
-If you genuinely can't think of three viable options, surface that — "I can only
-see two reasonable approaches here, A and B. Want me to pick a stretch
-third option, or is this a two-way choice?" Honest is better than padded.
+If you genuinely can't think of three viable options, say so rather than pad a
+third: `references/decision-protocol.md`.
 
 ## 1. Orient before writing
 
@@ -143,13 +137,10 @@ files, flag it — don't guess.
   Inventing requirements creates the wrong thing well.
 - **Stay scoped.** Only change what the task requires. Unrelated cleanup goes in
   a separate change — note it, don't fold it in.
-- **Read the review-learnings digest first, if one exists.** Holmes records what
-  he rejects and what fixed it, and a lightweight note on a clean first-pass
-  approve, directly to the memory vault at review time. If
-  `dev-team/top-lessons.md` exists (a frequency-ranked digest of recurring
-  rejection categories, each with the concrete prevention rule, plus a running
-  clean-approval tally above the list), read it via the memory MCP and apply
-  every rule to what you're about to write.
+- **Read the review-learnings digest first, if one exists.** If
+  `dev-team/top-lessons.md` exists, read it via the memory MCP and apply every
+  rule to what you're about to write. Who writes it and what it holds:
+  `references/vault-reads.md`.
 - **Search the vault's `feedback/` folder before you implement — required.**
   The human's own corrections live there, and no review rejection records
   them, so the digest above cannot carry them. Run at least two searches with
@@ -162,50 +153,34 @@ files, flag it — don't guess.
 
 ## 3. Implement
 
-- **YAGNI — build the least that satisfies the AC.** Implement only what the
-  current requirement needs. No speculative abstraction, config knobs,
-  extension points, or "future-proofing" nothing asks for yet — that code is
-  unproven, untested-against-reality, and a cost the next reader inherits. When
-  a need actually arrives, add it then. The simplest thing that passes the AC
-  and the tests is the target, not a floor to build past.
-- **YAGNI stops at the trust boundary.** Minimalism never means dropping a
-  safeguard the AC didn't spell out. A *trust boundary* is any point where data
-  crosses from a less-trusted source into your code — user input, request
-  payloads, query params, uploaded file contents, external API responses,
-  webhook bodies, anything off the wire or out of a DB you don't control.
-  Input validation at those boundaries, error handling that prevents data loss,
-  authn/authz and other security measures, and accessibility basics are not
-  optional scope — build them whether or not the ticket enumerates them. "The
-  least that satisfies the AC" means the least *correct and safe* version, not
-  the least code that demos.
+Each rule in full, with its reasons and examples: `references/implementation.md`.
+
+- **YAGNI — build the least that satisfies the AC.** No speculative
+  abstraction, config knobs, extension points, or "future-proofing" nothing
+  asks for yet. When a need actually arrives, add it then.
+- **YAGNI stops at the trust boundary.** Where data crosses into your code from
+  a less-trusted source (user input, payloads, uploads, external API responses,
+  webhooks, a DB you don't control), build input validation, error handling
+  that prevents data loss, authn/authz and other security measures, and
+  accessibility basics, whether or not the ticket enumerates them. "The least
+  that satisfies the AC" means the least *correct and safe* version.
 - **Prefer the most concise solution that stays readable.** Reach for the
-  one-liner or the single idiomatic expression over a verbose multi-step
-  construct *when it's just as clear*. Concision is a means to readability, never
-  an end in itself — never trade clarity for brevity, and never cram unrelated
-  logic onto one line to save a line. Plain-and-obvious beats clever-but-opaque
-  every time. When two options are the same size, pick the one that's correct
-  on the edge cases — concise means less code, never the flimsier algorithm.
-- **Prefer the framework's idioms over raw language primitives.** When the
-  project runs on a framework, reach for what it already provides instead of
-  hand-rolling against the bare language — in Laravel, collections over raw
-  arrays, Eloquent over hand-built queries, the framework helper over a
-  reimplementation. The provided abstraction is tested, conventional, and
-  shorter; the raw-primitive version is more code doing the same job worse.
+  one-liner *when it's just as clear*, but never trade clarity for brevity, and
+  never cram unrelated logic onto one line. Of two options the same size, pick
+  the one that's correct on the edge cases.
+- **Prefer the framework's idioms over raw language primitives** — in Laravel,
+  collections over raw arrays, Eloquent over hand-built queries.
 - **Match the existing style.** Imports, naming, formatting, error handling —
   copy what's already there.
 - **One logical change at a time.** If a refactor enables the actual fix, commit
   the refactor separately, before the fix.
-- **Don't add dependencies casually.** Each one is a maintenance and supply-chain
-  surface that outlives the immediate convenience. Check the project's existing
-  deps first — chances are something close already exists. Prefer well-maintained,
-  widely-used packages over niche ones. And for tiny utility functions (a few
-  lines), a little copying is better than a little dependency.
-- **Keep docs and comments in sync with the code.** If your change makes an
-  existing comment, README section, JSDoc/docstring parameter, or type signature
-  wrong, update it in the same commit. Stale docs and comments actively mislead
-  — they're worse than missing ones, because the next reader trusts them. For
-  external docs (Notion, Confluence, design specs), flag what needs updating
-  even if you can't change them yourself.
+- **Don't add dependencies casually.** Check the project's existing deps first,
+  prefer well-maintained, widely-used packages, and copy a few lines rather
+  than add a tiny dependency.
+- **Keep docs and comments in sync with the code.** Update any comment, README
+  section, docstring parameter, or type signature your change makes wrong, in
+  the same commit. Flag external docs that need updating even if you can't
+  change them yourself.
 - **No WebFetch.** Reason from the repo. If you can't, planning missed
   something — go back to step 2.
 
@@ -322,32 +297,9 @@ Conventional Commits + Gitmoji. Beyond format:
 A sub-agent opens no PR: it has nothing committed to open one from. Its report
 is the handoff, and the session that commits the tree decides about the PR.
 
-When the work is for a tracked issue:
-
-- **Create the PR as a draft early** — before implementation is complete.
-  Visible work-in-progress is better than a black-box dump at the end.
-- **Use the repo's PR template when one exists.** `gh pr create --body`
-  silently bypasses templates, so discover and apply it yourself. Check, in
-  order: `.github/PULL_REQUEST_TEMPLATE.md`, `PULL_REQUEST_TEMPLATE.md`
-  (root), `docs/PULL_REQUEST_TEMPLATE.md` — any letter case — and
-  `.github/PULL_REQUEST_TEMPLATE/` (multiple templates; pick the one that
-  fits the change, or the default). Fill its sections honestly — never leave
-  boilerplate placeholders or HTML comments behind. If the template has no
-  slot for something required below (issue link, acceptance criteria, test
-  plan), append it after the template content. No template → use the
-  structure in the next bullets.
-- **Use `Fixes #<n>`** in the body for auto-linking.
-- **Pass the body as `--body-file - <<'EOF'`, or as a file**, never as a
-  multi-line double-quoted string: the shell runs the backticks in one. The
-  `/workbench-dev-team:git-commit` skill's "Passing a gh body" section is the
-  canonical rule.
-- **Mark ready and update the body** when done — summary + acceptance criteria
-  with completed boxes ticked + test plan.
-- **CI green is the real "done" line.** Local-green isn't enough — CI runs checks
-  your machine may skip (strict lint gates, integration suites, environment
-  differences). The work isn't done until CI is green. For automated or
-  unattended work especially, wait for CI to finish and fix any failures before
-  handing the PR off for review — never pass a red PR downstream.
+When the work is for a tracked issue, read `references/pull-requests.md` as soon
+as you start work on it, and follow it. It holds the draft-early rule, the PR
+template discovery, the body rules, and why CI green is the real "done" line.
 
 ## 7. When stuck
 

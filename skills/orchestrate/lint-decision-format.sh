@@ -97,7 +97,7 @@ if [ -n "$s" ]; then
 fi
 
 # 3. Local-mode rubric dispute.
-section skills/holmes-review/references/local-review.md '**🛑 Rubric dispute**' '**Follow-ups are reported' local-review
+section references/holmes/local-review.md '**🛑 Rubric dispute**' '**Follow-ups are reported' local-review
 if [ -n "$s" ]; then
   check "$s" 'Option, Pros, Cons, and Grade' "local rubric dispute uses the graded table" "local-review — the rubric dispute no longer uses the Option, Pros, Cons, and Grade table"
   check "$s" 'then one or two sentences naming your recommendation' "local rubric dispute puts the recommendation after the table" "local-review — the rubric dispute lost the recommendation after the table"
@@ -105,10 +105,10 @@ if [ -n "$s" ]; then
 fi
 
 # 4. Watson's blocked-fork comment in the pipeline.
-section skills/watson-pipeline/references/index-mode-pipeline.md '#### If a fork blocks you' 'Then move the item' watson-pipeline
+section references/watson/index-mode-pipeline.md '#### If a fork blocks you' 'Then move the item' index-mode-pipeline
 if [ -n "$s" ]; then
-  check "$s" 'one graded table (Option, Pros, Cons, Grade)' "watson blocked fork uses the graded table" "watson-pipeline — the blocked-fork comment lost the graded table"
-  check "$s" 'then a short recommendation' "watson blocked fork carries a recommendation" "watson-pipeline — the blocked-fork comment lost its recommendation"
+  check "$s" 'one graded table (Option, Pros, Cons, Grade)' "watson blocked fork uses the graded table" "index-mode-pipeline — the blocked-fork comment lost the graded table"
+  check "$s" 'then a short recommendation' "watson blocked fork carries a recommendation" "index-mode-pipeline — the blocked-fork comment lost its recommendation"
 fi
 
 # 5. The develop skill's format section.
@@ -134,7 +134,7 @@ fi
 # 7. The commit offer's timing and ordering.
 section skills/git-commit/SKILL.md '## Committing and pushing' '**Run it as a plain git line' git-commit
 gc="$s"
-section skills/orchestrate/SKILL.md '### Direct-mode work comes back uncommitted' '**Holmes can review it first.**' orchestrate
+section skills/orchestrate/SKILL.md '### Direct-mode work comes back uncommitted' '## Action routing' orchestrate
 oc="$s"
 for pair in "git-commit:$gc" "orchestrate:$oc"; do
   name="${pair%%:*}"; t="${pair#*:}"
@@ -197,7 +197,7 @@ for f in skills/git-commit/SKILL.md session-warmup.md README.md; do
   check "$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')" 'never asks about committing or pushing' "$f: Index mode never asks about committing or pushing" "$f — no longer says Index mode never asks about committing or pushing"
 done
 check "$(tr '\n' ' ' < "$ROOT/skills/develop/SKILL.md" | tr -s ' ')" 'The pipeline never asks about committing or pushing, and never waits for approval' "develop: the pipeline never asks or waits" "develop — the pipeline lane no longer says it never asks or waits"
-index_text="$(cat "$ROOT/skills/watson-pipeline/references/index-mode-pipeline.md"; awk '/^## The Index mode/{f=1} /^## Rules/{f=0} f' "$ROOT/agents/watson.md")"
+index_text="$(cat "$ROOT/references/watson/index-mode-pipeline.md"; awk '/^## The Index mode/{f=1} /^## Rules/{f=0} f' "$ROOT/agents/watson.md")"
 if printf '%s' "$index_text" | grep -Eqi 'AskUserQuestion|Commit it|approval to (commit|push)|wait for .*approv'; then
   bad "an Index-mode path asks, offers, or waits for commit or push approval"
 else

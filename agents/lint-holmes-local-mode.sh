@@ -58,13 +58,15 @@
 #   7. The Index-mode workflow still exists, unscathed. Local mode was added
 #      beside it, never on top of it — the scheduled pipeline is the only review
 #      path the board has.
+#   7b. Phase C's verification cap of 10 binds The Index mode and is lifted in
+#      Local mode, because local work carries no count cap.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 HOLMES="$DIR/holmes.md"
-LOCAL="$ROOT/skills/holmes-review/references/local-review.md"
-PHASES="$ROOT/skills/holmes-review/references/review-phases.md"
+LOCAL="$ROOT/references/holmes/local-review.md"
+PHASES="$ROOT/references/holmes/review-phases.md"
 ORCH="$ROOT/skills/orchestrate/SKILL.md"
 GUARD="$ROOT/hooks/scripts/local-review-guard.sh"
 PASS=0
@@ -132,7 +134,7 @@ printf '%s' "$localsec" | grep -Fq "content, location, existence, or metadata" \
   || limits+=("the no-write limit no longer covers file metadata, which is what the first breach changed")
 printf '%s' "$localsec" | grep -Fq 'restore' \
   || limits+=("the most destructive command available locally, git restore, is not named")
-printf '%s' "$localsec" | grep -Fq 'references/local-review.md' \
+printf '%s' "$localsec" | grep -Fq 'references/holmes/local-review.md' \
   || limits+=("the Local-mode section no longer routes to its reference")
 # The harness-level backstop, named where a local run reads its limits. Prose
 # alone was measured failing on this mode's first exercise.
@@ -319,6 +321,18 @@ for step in '### 1. Fetch the item' '### 3. Compute the strike count' \
   grep -Fq "$step" "$HOLMES" || index+=("the Index workflow lost '$step'")
 done
 report "index — the board review path is unchanged and complete" ${index[@]+"${index[@]}"}
+
+# ── 7b. The verification cap binds The Index mode only ────────────────────────
+# Mike, 2026-10-05: local work has no count cap, and Index work stays limited.
+# Phase C's cap of 10 is the one count cap Local mode inherited, so both halves
+# are pinned: lifted in §L3, still in force for the board review.
+cap=()
+l3="$(awk '/^## §L3/{f=1;next} f && /^## /{exit} f' "$LOCAL" | tr '\n' ' ')"
+printf '%s' "$l3" | grep -Fq 'The 10-verification cap does not apply' \
+  || cap+=("§L3 no longer lifts the 10-verification cap in Local mode")
+grep -Fq 'Cap: 10 verifications per review, in priority order, in The Index mode only.' "$PHASES" \
+  || cap+=("Phase C no longer caps The Index mode at 10 verifications, or no longer scopes the cap to it")
+report "cap — Phase C's verification cap binds The Index mode, never Local mode" ${cap[@]+"${cap[@]}"}
 
 # ── 8. The orchestrate skill dispatches the mode it now describes ─────────────
 # This is the file an orchestrating session reads before choosing an agent. A

@@ -314,7 +314,7 @@ write means an operator must fix server config or App permissions first.
 
 ### The pipeline — read it before you touch anything
 
-**Read `${CLAUDE_PLUGIN_ROOT}/skills/watson-pipeline/references/index-mode-pipeline.md` first, before any other action in this mode — including the board claim.** That file carries the pipeline in full: every rule, every decision table, and every shell/MCP template. It is the canonical wording; execute its steps in order. The `## Rules` section below applies on top of it.
+**Read `${CLAUDE_PLUGIN_ROOT}/references/watson/index-mode-pipeline.md` first, before any other action in this mode — including the board claim.** That file carries the pipeline in full: every rule, every decision table, and every shell/MCP template. It is the canonical wording; execute its steps in order. The `## Rules` section below applies on top of it.
 
 What you are loading, so nothing goes unnoticed:
 
