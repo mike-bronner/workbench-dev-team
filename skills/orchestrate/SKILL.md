@@ -378,9 +378,10 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   and any warning, so the question stands on its own. A commit offer is asked
   alone, and follows the timing rule under "Direct-mode work comes back
   uncommitted": "Commit it" never leads before the human says their review is
-  done. Fall back to a final
-  `## ❓ Open questions` block only when the tool does not fit, such as a
-  question with no fixed choices. SendMessage the answer back, or re-dispatch
+  done. A question with no fixed choices still goes through the tool, because
+  the dialog always offers Other. Ask each one right after the context it
+  depends on first appears, with that context in prose just above the call, not
+  at the end of the reply. SendMessage the answer back, or re-dispatch
   on an updated brief. The human decides; the team executes.
 - **You never do the work.** If you catch yourself reading a repo to "just fix
   it quickly," stop — that's a Watson dispatch, and so is that same fix handed

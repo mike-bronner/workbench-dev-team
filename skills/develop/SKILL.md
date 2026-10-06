@@ -90,8 +90,10 @@ I recommend A (all met), because <the one reason it beats the others>.
 **A decision for the human goes through `AskUserQuestion`.** Put the
 recommended option first. Each option's description carries its grade and any
 warning the human needs, so the question stands on its own after the table has
-scrolled away. Fall back to a final `## ❓ Open questions` block only when the
-tool does not fit, such as a question with no fixed choices.
+scrolled away. Ask every other question the same way, never in prose. A
+question with no fixed choices still fits, because the dialog always offers
+Other. Ask each one right after the context it depends on first appears, with
+that context in prose just above the call, not at the end of the reply.
 
 **What happens next depends on your lane.**
 
