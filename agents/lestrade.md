@@ -100,8 +100,10 @@ Done when: <the observable condition that ends the task>
 ```
 
 **`Workdir:` can carry a branch or worktree beside the path.** Work in the one
-named. A bare path records no workspace decision — take the tree as you find it,
-and report any branch or worktree you had to create.
+named. A bare path records no workspace decision — take the tree as you find it.
+If the work seems to need a branch or worktree that the brief did not name,
+create neither and switch to neither. Name the need in your report, because the
+human picks branches and creates worktrees.
 
 All six slots are required. **`Constraints:` may read "none"**, because a task
 can honestly carry no hard limit beyond what the repo already states.

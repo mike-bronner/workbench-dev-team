@@ -411,12 +411,15 @@ output and track the run: Dispatch protocol, step 4.
 
 When *you* ask for an issue in conversation, it's opened with `gh issue create`
 so **you** (the human) are the author — the user's voice, same as comments.
-Agent-authored follow-ups are the other case:
-Holmes (on approve) and Watson (on a change request) open theirs via
-`mcp__the-index__create_issue(agent: …)`, so the issue carries the **agent's**
-GitHub App identity, lands on The Casebook, and gets the native `PBI` type. That
-path is internal to those agents — not an orchestration call you make; it only
-works on governed repos (App-signed), and degrades to no Type on user-owned ones.
+Agent-authored follow-ups are the other case, and only Holmes opens them. On
+either verdict, an unrelated latent hazard or systemic debt that clears his
+materiality gate gets one, when no related open issue exists to expand. Watson
+never opens one. He folds unit-belonging findings into the same PR. Holmes
+opens his via `mcp__the-index__create_issue(agent: …)`, so the issue carries the
+**agent's** GitHub App identity, lands on The Casebook, and gets the native `PBI`
+type. That path is internal to Holmes — not an orchestration call you make; it
+only works on governed repos (App-signed), and degrades to no Type on user-owned
+ones.
 
 ## Model and effort come from the agent, never from you
 

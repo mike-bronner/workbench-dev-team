@@ -44,9 +44,9 @@ The server is additive and idempotent — it skips links that already exist and 
 
 ### 4. Consolidate follow-ups — expand the original, never multiply
 
-Follow-up issues from Holmes's reviews accrete fast and restate each other (only the **approve** path spins them out — on a change request Watson now builds the follow-ups straight into the bounce PR, so nothing to consolidate there). Two additive consolidations keep the backlog flat — both are **expansion, never hierarchy**: you fold content into an existing issue and close exact duplicates; you never create issues, sub-issues, or epics.
+Follow-up issues from Holmes's reviews accrete fast and restate each other (only Holmes opens them, on **either** verdict, for an unrelated latent hazard or systemic debt with no related open issue to expand — Watson never opens one, and folds unit-belonging findings into the same PR). Two additive consolidations keep the backlog flat — both are **expansion, never hierarchy**: you fold content into an existing issue and close exact duplicates; you never create issues, sub-issues, or epics.
 
-**4a. Fold `expand-from` comments into acceptance criteria.** Holmes expands an existing issue (on the approve path) by commenting the new case on it with an `<!-- expand-from: PR#<n> -->` marker, leaving the AC for you to update. For each open issue carrying such a comment whose case is not yet reflected in its AC:
+**4a. Fold `expand-from` comments into acceptance criteria.** Holmes expands an existing issue (on either verdict) by commenting the new case on it with an `<!-- expand-from: PR#<n> -->` marker, leaving the AC for you to update. For each open issue carrying such a comment whose case is not yet reflected in its AC:
 
 ```bash
 gh issue view <number> -R <owner/repo> --json comments \

@@ -125,8 +125,10 @@ Done when: <the observable condition that ends the task>
 ```
 
 **`Workdir:` can carry a branch or worktree beside the path.** Work in the one
-named. A bare path records no workspace decision — take the tree as you find it,
-and report any branch or worktree you had to create.
+named. A bare path records no workspace decision — take the tree as you find it.
+If the work seems to need a branch or worktree that the brief did not name,
+create neither and switch to neither. Name the need in your report, because the
+human picks branches and creates worktrees.
 
 **You never create one and never switch to one.** A review writes nothing, and
 switching branches writes to the human's tree. So your half of the rule above is
@@ -217,7 +219,7 @@ attention to save tokens, and their attention is the scarcer of the two.
 ## Tools
 
 - `mcp__the-index__get_item(id)` — fresh state including repo, issue_number, content_node_id.
-- `mcp__the-index__find_item(repo, issue_number)` — resolve an issue number to its board item (`id`, `status`, `title`) with no GitHub round-trip. Use it on the approve path to **expand an existing related issue**: find the earliest open issue a follow-up relates to, then `add_comment` the finding onto that item instead of opening a near-duplicate.
+- `mcp__the-index__find_item(repo, issue_number)` — resolve an issue number to its board item (`id`, `status`, `title`) with no GitHub round-trip. Use it on either verdict to **expand an existing related issue**: find the earliest open issue a follow-up relates to, then `add_comment` the finding onto that item instead of opening a near-duplicate.
 - `mcp__the-index__submit_review(id, agent, pr_number, decision, body)` — **your verdict.** `decision` is `approve` or `request_changes`; posts the review as the GitHub App. The only way you approve or request changes — never `gh pr review`.
 - `mcp__the-index__add_comment(id, agent, body, pr_number)` — post a comment. Pass `pr_number` to comment on the PR conversation (decision answers, escalation notes); omit it to comment on the issue.
 - `mcp__the-index__create_issue(agent, repo, title, body, type?)` — **open a follow-up issue as a new anchor**, only when a follow-up relates to *no* existing open issue. Authors it under your identity, adds it to The Casebook, and stamps the native `PBI` type (override with `type`). When a related open issue already exists, expand that one (`find_item` → `add_comment`) instead — never open a near-duplicate. Never a raw `gh issue create`, which the server never sees.
