@@ -69,6 +69,22 @@ for file in "$DIR"/*.md; do
     continue
   fi
 
+  # A token-only mode file takes no brief either. bin/compose-agents.sh builds
+  # watson-index, holmes-index, lestrade-item and lestrade-sweep from a public
+  # agent, and the mode each one runs takes only a machine-built token. Exempt by
+  # what the file declares, as above: an `## Input — a dispatch token, never a
+  # brief` section naming its token, and the public agent it was composed from,
+  # which still carries the whole contract and is checked on its own.
+  tokens_only="$(awk '/^## Input — a dispatch token, never a brief/{f=1} f && /^## / && !/^## Input — a dispatch token/{exit} f{print}' "$file" | tr '\n' ' ')"
+  composed_from="$(sed -n 's|^# Composed by bin/compose-agents.sh from agents/\([a-z-]*\)\.md .*|\1|p' "$file" | head -1)"
+  if [ -z "$section" ] && [ -n "$composed_from" ] && [ -f "$DIR/$composed_from.md" ] \
+    && [[ $tokens_only == *"never a six-slot brief"* ]] \
+    && [[ $tokens_only == *'`Item ID: <n>`'* || $tokens_only == *'`Repo sweep: <owner/repo>`'* ]]; then
+    PASS=$((PASS + 1))
+    echo "  ✅ $agent — a token-only mode of $composed_from, no brief contract"
+    continue
+  fi
+
   if [ -z "$section" ]; then
     fail_file "$agent — no '## The brief contract' section" \
       "every dev-team agent refuses an incomplete brief, including one with no prose mode yet"
@@ -217,7 +233,13 @@ fi
 # session-warmup.md is not one of them. It reaches every session and every
 # sub-agent through ~/.claude/CLAUDE.md, so Mike ruled it carries the routing and
 # a pointer to /workbench-dev-team:orchestrate and no brief rules of its own.
-BRIEF_DOCS=("$ROOT/skills/orchestrate/SKILL.md" "$ROOT/README.md" "$DIR"/*.md)
+#
+# A token-only mode file (exempted above) describes no brief, so it is not one
+# of them either.
+BRIEF_DOCS=("$ROOT/skills/orchestrate/SKILL.md" "$ROOT/README.md")
+for doc in "$DIR"/*.md; do
+  grep -q '^## Input — a dispatch token, never a brief' "$doc" || BRIEF_DOCS+=("$doc")
+done
 
 # Scope of the template. Requiring it on read-only research too is what lets the
 # companion hook stop guessing whether a dispatch is code work, so a doc that

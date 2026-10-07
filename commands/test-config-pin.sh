@@ -1,14 +1,15 @@
 #!/usr/bin/env bash
-# Test for setup's pin check and pin replacement (Step 6, commands/setup.md).
+# Test for setup's config write, pin check and pin replacement (Step 6,
+# commands/setup.md).
 #
-# It extracts the *real* blocks from setup.md (between the `config-pin-check`
-# and `config-pin-replace` sentinel markers) and runs them against fixture
-# configs, so the test can never drift from the shipped logic.
+# It extracts the *real* blocks from setup.md (between the `config-write`,
+# `config-pin-check` and `config-pin-replace` sentinel markers) and runs them
+# against fixture configs, so the test can never drift from the shipped logic.
 #
 # Why the blocks exist: setup never overwrites an existing config, so an install
 # from before the pins shipped keeps its old model and effort. Dispatch passes
-# those as flags and Step 6a stamps them over the frontmatter, so the old values
-# win on both paths. Setup asks the user, per agent, whether to replace them.
+# those as flags and the dev-team mod applies them at every interactive spawn,
+# so the old values win on both paths. Setup asks the user, per agent, whether to replace them.
 # The check finds what to ask about. The replacement writes only what the user
 # said yes to. The question itself is Claude's AskUserQuestion call, which no
 # shell test can run, so these cases hold the two halves either side of it.
@@ -41,7 +42,7 @@ done
 
 # The shipped default config, read out of Step 6's heredoc rather than restated.
 DEFAULT_CFG="$WORK/default-config.json"
-awk '/cat > "\$CONFIG" <<.EOF.$/{f=1;next} f && /^EOF$/{exit} f' "$SRC" > "$DEFAULT_CFG"
+awk '/^SHIPPED_CONFIG=\$\(cat <<.EOF.$/{f=1;next} f && /^EOF$/{exit} f' "$SRC" > "$DEFAULT_CFG"
 if [ ! -s "$DEFAULT_CFG" ] || ! jq empty "$DEFAULT_CFG" 2>/dev/null; then
   echo "FAIL: could not extract the default agent config heredoc from $SRC"; exit 1
 fi
@@ -144,7 +145,7 @@ else
   bad "absent agent: got '$(differs "$out")'"
 fi
 
-# 4c. Effort is compared the way Step 6a writes it, lower-cased.
+# 4c. Effort is compared the way the dev-team mod reads it, lower-cased.
 cfg="$WORK/case.json"
 jq '.agents.holmes.effort = "Medium"' "$DEFAULT_CFG" > "$cfg"
 out=$(check "$cfg")
@@ -319,6 +320,69 @@ if [ "$(id -u)" -ne 0 ]; then
   fi
 else
   echo "  skip — read-only file case (root ignores file permissions)"
+fi
+
+# --- 7. the config write, and the router model's one home ---------------------
+# Step 6 writes the shipped config when there is none, and gives an older config
+# the one key it lacks, router.model, which Step 7d pins the router to. Nothing
+# else in an existing config may change.
+echo "Testing setup's config write:"
+WRITE="$WORK/write.sh"
+awk '/# >>> config-write >>>/{f=1;next} /# <<< config-write <<</{f=0} f' "$SRC" > "$WRITE"
+if [ ! -s "$WRITE" ]; then
+  bad "could not extract the config-write block from $SRC"
+else
+  # write <name> [config text] -> runs the block under a throwaway HOME, prints
+  # its output, and leaves the config at $WORK/home-<name>/.claude-workbench/
+  write() {
+    mkdir -p "$WORK/home-$1/.claude-workbench"
+    [ $# -lt 2 ] || printf '%s' "$2" > "$WORK/home-$1/.claude-workbench/dev-team-config.json"
+    ( HOME="$WORK/home-$1" bash "$WRITE" 2>&1 )
+  }
+  written() { printf '%s' "$WORK/home-$1/.claude-workbench/dev-team-config.json"; }
+  SHIPPED_ROUTER=$(jq -r '.router.model | strings' "$DEFAULT_CFG")
+
+  [ -n "$SHIPPED_ROUTER" ] && ok "the shipped config names the router model ($SHIPPED_ROUTER)" \
+    || bad "the shipped config has no router.model"
+
+  write new >/dev/null
+  if jq -S . "$(written new)" 2>/dev/null | cmp -s - <(jq -S . "$DEFAULT_CFG"); then
+    ok "no config -> the shipped config is written"
+  else
+    bad "no config -> the written file is not the shipped config"
+  fi
+
+  out=$(write old "$OLD")
+  if [ "$(jq -S 'del(.router)' "$(written old)")" = "$(printf '%s' "$OLD" | jq -S .)" ] \
+     && [ "$(jq -r '.router.model' "$(written old)")" = "$SHIPPED_ROUTER" ]; then
+    ok "a config without router.model gains it, and every other value stays"
+  else
+    bad "a config without router.model: $(cat "$(written old)") / $out"
+  fi
+
+  OWN=$(jq -c '.router.model = "claude-haiku-5"' <<< "$OLD")
+  write own "$OWN" >/dev/null
+  if [ "$(cat "$(written own)")" = "$OWN" ]; then
+    ok "a config with its own router.model is left byte for byte"
+  else
+    bad "a config with its own router.model was changed: $(cat "$(written own)")"
+  fi
+
+  out=$(write array '["not","an","object"]')
+  if [ "$(cat "$(written array)")" = '["not","an","object"]' ] && [[ $out == *"not a JSON object"* ]]; then
+    ok "a config that is not an object is left untouched, with a warning"
+  else
+    bad "a non-object config: $(cat "$(written array)") / $out"
+  fi
+fi
+
+# Step 7d pins the router to the config's value and names no model of its own,
+# so the router's model has one home.
+pin7d=$(awk '/^### 7d\./{f=1;next} f && /^### /{exit} f' "$SRC" | awk '/^```bash/{f=1;next} /^```/{f=0} f')
+if [[ $pin7d == *'.router.model'* ]] && ! grep -Eq '"claude-[a-z0-9.-]+' <<< "$pin7d"; then
+  ok "Step 7d pins router.model from the config and names no model itself"
+else
+  bad "Step 7d no longer reads router.model, or names a model literal of its own"
 fi
 
 echo

@@ -42,6 +42,11 @@ bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
 n=0
 for file in "$DIR"/*.md; do
   agent="$(basename "$file" .md)"; n=$((n + 1))
+  # A mode file (watson-index and the others) is composed from its public agent
+  # by bin/compose-agents.sh, and keeps that agent's folder name, so the name
+  # checked is the source the file declares.
+  source="$(sed -n 's|^# Composed by bin/compose-agents.sh from agents/\([a-z-]*\)\.md .*|\1|p' "$file" | head -1)"
+  folder="${source:-$agent}"
   section="$(awk '/^## Scratch folders/{f=1; next} f && /^## /{exit} f{print}' "$file" | tr '\n' ' ' | tr -s ' ')"
   if [ -z "$section" ]; then
     bad "$agent — no '## Scratch folders' section"
@@ -51,7 +56,7 @@ for file in "$DIR"/*.md; do
   for phrase in \
     '**The session scratchpad**' \
     '**`~/Developer/scratchpad`**, when your environment names none' \
-    "\`mktemp -d <scratch root>/$agent.XXXXXX\`" \
+    "\`mktemp -d <scratch root>/$folder.XXXXXX\`" \
     'Never make scratch with a bare `mktemp -d`, in `$TMPDIR`, or in `/tmp`.' \
     'Never touch another run'"'"'s folder' \
     '**Delete every folder you made before you report,** on every exit path' \

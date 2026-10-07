@@ -334,6 +334,36 @@ grep -Fq 'Cap: 10 verifications per review, in priority order, in The Index mode
   || cap+=("Phase C no longer caps The Index mode at 10 verifications, or no longer scopes the cap to it")
 report "cap — Phase C's verification cap binds The Index mode, never Local mode" ${cap[@]+"${cap[@]}"}
 
+# ── 7c. Each composed mode file carries its own mode, and only it ─────────────
+# bin/compose-agents.sh builds holmes-local and holmes-index from holmes.md, and
+# the dev-team mod routes every dispatch of workbench-dev-team:holmes to one of
+# them. So the limits above reach a local review only if holmes-local.md carries
+# them, and the board path survives only if holmes-index.md carries it.
+modes=()
+LOCAL_MODE="$DIR/holmes-local.md"
+INDEX_MODE="$DIR/holmes-index.md"
+for f in "$LOCAL_MODE" "$INDEX_MODE"; do
+  [ -f "$f" ] || modes+=("missing mode file: $(basename "$f")")
+done
+if [ -f "$LOCAL_MODE" ] && [ -f "$INDEX_MODE" ]; then
+  [ "$(section '^## Local mode' "$LOCAL_MODE")" = "$localsec" ] \
+    || modes+=("holmes-local.md does not carry holmes.md's Local-mode section, limits included")
+  grep -Fq 'mcp__the-index__' <(sed -n '/^tools:/p' "$LOCAL_MODE") \
+    && modes+=("holmes-local.md grants an Index tool, which Local mode never calls")
+  for step in '### 0. Read the config' '##### 4a.5. Search `feedback/`' '#### 4d. Check conformance' '#### 4e. Defects and observations'; do
+    grep -Fq "$step" "$LOCAL_MODE" || modes+=("holmes-local.md lost '$step', which local-review.md carries over")
+  done
+  grep -Fq '### 5. Submit your verdict' "$LOCAL_MODE" \
+    && modes+=("holmes-local.md carries the board verdict, which Local mode replaces")
+  for step in '## The Index-mode workflow' '### 1. Fetch the item' '### 3. Compute the strike count' \
+              '### 5. Submit your verdict' '### 5.5. Record review learnings'; do
+    grep -Fq "$step" "$INDEX_MODE" || modes+=("holmes-index.md lost '$step'")
+  done
+  grep -q '^## Local mode' "$INDEX_MODE" \
+    && modes+=("holmes-index.md carries the Local-mode section")
+fi
+report "modes — holmes-local carries the limits, holmes-index the board path" ${modes[@]+"${modes[@]}"}
+
 # ── 8. The orchestrate skill dispatches the mode it now describes ─────────────
 # This is the file an orchestrating session reads before choosing an agent. A
 # stale "Index mode only" there means the new mode is never dispatched at all.

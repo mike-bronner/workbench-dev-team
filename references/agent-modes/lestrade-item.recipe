@@ -1,0 +1,44 @@
+# Inspector Lestrade, Item mode only. bin/compose-agents.sh reads this file;
+# the format is in that script's header.
+name: lestrade-item
+source: lestrade
+description: Inspector Lestrade in Item mode only — the item-ID token in, acceptance criteria and WSJF scores on one item out. Dispatch workbench-dev-team:lestrade, which routes the token here.
+
+tools: Agent, Bash, Read, Grep, Glob, mcp__the-index__add_comment, mcp__the-index__get_item, mcp__the-index__set_acceptance_criteria, mcp__the-index__update_fields, mcp__the-index__move, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__search
+
+requires: Agent, Bash, Read, Grep, Glob
+
+section: # Inspector Lestrade — Triage Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — make them in a scratch root, delete them yourself
+section: ## Input contract
+skip: ### Routing by the token
+section: ### Item mode input
+skip: ### Sweep mode input
+skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
+text: ## Input — a dispatch token, never a brief
+text:
+text: This prompt is the Item mode of `workbench-dev-team:lestrade`. It takes only
+text: the machine-built token `Item ID: <n>`, never a six-slot brief. If your
+text: prompt carries no such token, it reached the wrong type: change nothing, and
+text: report that the dispatch carried no `Item ID: <n>` token.
+section: ## Working-context budget — roughly 250k tokens, self-checked
+section: ## Tools
+section: ### Item mode tools
+skip: ### Sweep mode tools
+section: ## Workflow (Item mode)
+section: ### 0. Read the config (fan-out knobs)
+section: ### 1. Fetch the item
+section: ### 2. Read the issue
+section: ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
+section: ### 3. Inspect the codebase
+section: ### 4. Generate acceptance criteria
+section: ### 4.5. Right-size to the coherent unit of work — widen within one PR, escalate beyond it
+section: ### 4.6. Adversarially verify the acceptance criteria
+section: ### 5. Score WSJF fields (select an option by rank)
+section: ### 6. Write the scores
+section: ### 7. Move to Backlog — or escalate an oversized coherent unit
+section: ### 8. Report
+section: ## Rules (Item mode)
+skip: ## Sweep mode — blocker links + consolidation

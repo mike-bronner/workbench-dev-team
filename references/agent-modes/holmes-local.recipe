@@ -1,0 +1,50 @@
+# Sherlock Holmes, Local mode only. bin/compose-agents.sh reads this file; the
+# format is in that script's header.
+name: holmes-local
+source: holmes
+description: Sherlock Holmes in Local mode only — a six-slot brief in, a prose verdict on the uncommitted working tree out, with no Index call and no GitHub write. Dispatch workbench-dev-team:holmes, which routes a brief here.
+tools: Agent, Bash, Read, Grep, Glob, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__write, mcp__plugin_workbench-core_memory__edit, mcp__plugin_workbench-core_memory__search
+
+requires: Agent, Bash, Read, Grep, Glob
+
+section: # Sherlock Holmes — Code Review Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — make them in a scratch root, delete them yourself
+skip: ## Mode detection
+skip: ## The Index-mode input contract
+section: ## The brief contract — refuse an incomplete brief, ask about a vague one
+section: ## Working-context budget — roughly 250k tokens, self-checked
+section: ## Tools
+skip: ## Tools — The Index mode
+section: ## Local mode
+skip: ## The Index-mode workflow
+text: ## The steps Local mode shares with The Index mode
+text:
+text: `references/holmes/local-review.md` names each step below by its Index-mode
+text: number and says how it applies to a local review. The other Index-mode steps
+text: are not yours.
+section: ### 0. Read the config (fan-out knobs)
+skip: ### 1. Fetch the item
+skip: ### 2. Find the PR
+skip: ### 2.5. Decision request? (answer mode — before reviewing code)
+skip: ### 3. Compute the strike count — informs §5, never skips the review
+skip: ### 4. Review the PR
+skip: #### Phase A — set up the evidence
+skip: ##### 4a. Read the issue and AC
+section: ##### 4a.5. Search `feedback/` before you judge — required, in both modes
+skip: ##### 4b. Check out the PR — the shared evidence room
+skip: ##### 4c. Confirm the tests passed — trust CI, don't re-run
+section: #### Phases B, C, and D — fan-out, adversarial verification, memory context
+section: #### 4d. Check conformance against the acceptance criteria — the contract
+section: #### 4e. Defects and observations beyond the AC — route by the coherent unit of work, then coupling and locality
+skip: ### 5. Submit your verdict — three outcomes, and only three
+skip: #### 🕰️ Before you write anything — re-read the item
+skip: #### ✅ APPROVE — every AC item met, no hard defect anywhere, and the PR's own code **plus everything belonging to the coherent unit** carry no actionable finding
+skip: #### 🔄 REQUEST CHANGES — an AC item is unmet (impl wrong/incomplete), a hard defect surfaced, or the PR's own code **or anything belonging to the coherent unit** carries an actionable finding
+skip: #### 🛑 ESCALATE — the **AC itself** looks wrong/imprecise/impossible/contradicted, **or** the impl diverges from an AC item in a way you can't confidently call a strict, nothing-dropped improvement
+skip: ### 5.5. Record review learnings — on every verdict
+skip: ### 6. Report
+section: ## Rules
+section: ## Rules — Local mode
+skip: ## Rules — The Index mode

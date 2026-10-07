@@ -238,32 +238,51 @@ will see it. The current session may need a restart to pick it up.
 mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 echo "✅ Log directory ready: $HOME/.claude-workbench/dev-team-logs"
 
+# >>> config-write >>>  (markers used by commands/test-config-pin.sh — keep them)
 CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-if [ -f "$CONFIG" ]; then
-  echo "✅ Agent config already present: $CONFIG (left untouched)"
-else
-  cat > "$CONFIG" <<'EOF'
+SHIPPED_CONFIG=$(cat <<'EOF'
 {
   "agents": {
     "lestrade": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
     "holmes": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
     "watson": { "model": "claude-opus-5-5[1m]", "effort": "medium", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
-  }
+  },
+  "router": { "model": "claude-sonnet-5" }
 }
 EOF
+)
+if [ ! -f "$CONFIG" ]; then
+  printf '%s\n' "$SHIPPED_CONFIG" > "$CONFIG"
   echo "✅ Wrote default agent config: $CONFIG"
+elif jq -e '.router.model | strings' "$CONFIG" >/dev/null 2>&1; then
+  echo "✅ Agent config already present: $CONFIG (left untouched)"
+elif jq -e 'type == "object"' "$CONFIG" >/dev/null 2>&1; then
+  # A config from before the router key shipped gets that one key, from the
+  # shipped config above. Every value the user set stays as it is. Held in a
+  # variable and checked before it is written, so no temporary file is left.
+  NEW=$(jq --argjson shipped "$SHIPPED_CONFIG" '.router.model = $shipped.router.model' "$CONFIG")
+  if [ -n "$NEW" ] && printf '%s\n' "$NEW" | jq empty 2>/dev/null && printf '%s\n' "$NEW" > "$CONFIG"; then
+    echo "✅ Agent config already present: $CONFIG (added the missing router.model, nothing else changed)"
+  else
+    echo "⚠  Could not add router.model to $CONFIG — Step 7d will say the router is unpinned."
+  fi
+else
+  echo "⚠  $CONFIG is not a JSON object — left untouched. Fix it, then re-run setup."
 fi
+# <<< config-write <<<
 ```
 
 The config is the single source of truth for per-agent model, effort, fallback,
-and budget caps, and both dispatch paths take their values from it: the scheduled
+and budget caps, and for the scheduled router's model (`router.model`, which
+Step 7d pins). Both dispatch paths take their values from it: the scheduled
 Dispatch task passes `--model` / `--effort` / `--fallback-model` /
-`--max-budget-usd` from it on every tick, each only when set, and the
-`/workbench-dev-team:orchestrate` skill reads it for interactive sub-agent
-dispatch. The two paths reach `model` and `effort` differently, which is what
-Step 6a below is for. Setup never overwrites an existing config without asking —
-the user's edits stick across plugin updates and re-runs. The one question it
-asks about an existing config is the pin check below.
+`--max-budget-usd` from it on every tick, each only when set, and the dev-team
+mod applies `model` and `effort` from it to every interactive dispatch of a
+dev-team agent (below the pin check). Setup never overwrites an existing config without asking —
+the user's edits stick across plugin updates and re-runs. The one write it makes
+to an existing config without asking adds a missing `router.model` from the
+shipped config, and changes no value the user set. The one question it asks
+about an existing config is the pin check below.
 
 **All three agents ship `claude-opus-5-5[1m]` at `medium` effort**, in the
 config and in their frontmatter, so they run on exactly that on both paths.
@@ -298,7 +317,7 @@ deliberate opt-outs, for a project that needs a different model or effort:
 A config written by an earlier setup still carries that release's defaults: for
 example Watson `opus` with no effort, Holmes `opus` at `high`, Lestrade `sonnet`
 at `high`. Dispatch passes those as `--model` / `--effort`, which beat the
-frontmatter, and Step 6a stamps them over the frontmatter pins. So an old
+frontmatter, and the dev-team mod applies them at every interactive spawn. So an old
 config is never silent. It keeps the old values on both paths until it changes.
 
 Setup changes it only with the user's say-so, one agent at a time. Run the
@@ -350,7 +369,7 @@ else
     # A non-string value is shown as JSON, so `false` or `5` is never "(none)".
     PIN_CUR_MODEL=$(jq -r --arg a "$PIN_AGENT" '.agents[$a].model | if . == null then empty elif type == "string" then . else tojson end' "$PIN_CFG")
     PIN_CUR_EFFORT=$(jq -r --arg a "$PIN_AGENT" '.agents[$a].effort | if . == null then empty elif type == "string" then . else tojson end' "$PIN_CFG")
-    # Effort is compared lower-cased, because Step 6a and the harness both
+    # Effort is compared lower-cased, because the dev-team mod and the harness both
     # lower-case it. `Medium` already is the pin, and asking about it is noise.
     if [ "$PIN_CUR_MODEL" != "$PIN_MODEL" ] \
        || [ "$(printf '%s' "$PIN_CUR_EFFORT" | tr '[:upper:]' '[:lower:]')" != "$PIN_EFFORT" ]; then
@@ -384,7 +403,7 @@ what it must hold:
 
 The user fixes the file and re-runs setup, which then checks the fixed entry.
 
-**No `PIN_DIFFERS` line → skip to Step 6a.** Otherwise, ask with one
+**No `PIN_DIFFERS` line → skip to Step 6.5.** Otherwise, ask with one
 `AskUserQuestion` call holding one question per `PIN_DIFFERS` line (three at
 most). Each question names the agent, its current values exactly as printed,
 and exactly what replaces them. List the Recommended option first:
@@ -490,8 +509,8 @@ holds their pin to the shipped default config above, so the check can never
 ask about a value the default config does not ship.
 
 Both keys are still settable here by hand, per agent. `model` takes any alias
-or full model ID. `effort` takes `low`, `medium`, `high`, `xhigh`, `max`, or an
-integer. Note `xhigh` is not supported on Sonnet, so a Sonnet agent's ceiling
+or full model ID. `effort` takes `low`, `medium`, `high`, `xhigh`, or `max`. An
+integer reaches the scheduled path alone: the dev-team mod sets no numeric effort. Note `xhigh` is not supported on Sonnet, so a Sonnet agent's ceiling
 short of `max` is `high`. Holmes's optional `fanout`
 (bool, default `true`) toggles its multi-lens review fan-out, and `lensModel`
 (default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run
@@ -504,189 +523,19 @@ unavailable — e.g. a retired model — instead of failing. `maxBudgetUsd` caps
 run's spend: Watson defaults to `10.00`, Holmes's is optional and applied only
 when set, and both default cleanly when absent.
 
-### 6a. Stamp the configured model and effort into the agent frontmatter
+### How each path gets the model and the effort
 
-The scheduled path reads `model` and `effort` off this config on every tick.
-**The interactive path cannot.** The Agent tool has no effort parameter, and its
-`model` parameter accepts only an alias (`sonnet`, `opus`, `haiku`, `fable`),
-never a full model ID. So a sub-agent dispatched from a live conversation takes
-both values from its own definition, which is to say from frontmatter. The
-frontmatter `model` field takes a full ID, which is how the agents stay on
-`claude-opus-5-5[1m]` on this path. A frontmatter line the config disagrees with is
-the whole defect: name a value in the config, leave the frontmatter silent, and
-that agent runs on whatever the calling session happens to use while the knob
-appears to be set.
+The scheduled path passes `model` and `effort` as `--model` and `--effort` on
+every tick. An interactive dispatch takes them at spawn: when a session
+dispatches Watson, Holmes, or Lestrade, the dev-team mod (`hooks/register.ts`)
+reads this config, sets the model unless the caller named one, and applies the
+effort to every model request of that sub-agent. So an edit to the config moves
+both paths on the next dispatch, and nothing has to be re-run.
 
-So the config stays canonical for the *value* and this step copies it into the
-*place the interactive dispatch reads*. One edit still moves both paths, and
-re-running setup is what re-synchronises them: **edit the config and the
-scheduled path changes on the next tick, while interactive dispatch keeps the
-last stamped value until setup runs again.**
-
-Silence is a *result* here, never a gap. The step deletes a frontmatter line
-whenever the config names no value for it, which is exactly when Dispatch omits
-the matching flag, so both paths agree that the agent inherits its caller's
-value. No agent ships that way today, and `agents/test-effort-stamp.sh` still
-pins the deletion path as well as the write path.
-The orchestrate skill therefore never passes the Agent tool's `model`
-parameter: it would override the stamped value, and it cannot carry a full ID.
-
-**A live config that differs from the pin wins here.** Whatever the config
-names, or leaves out, is what this step stamps. The pin check above is the only
-route by which setup moves an existing config onto the pin, and only for an
-agent the user said yes to. An agent the user kept keeps its own values on both
-paths.
-
-The block writes the installed plugin's `agents/*.md`, resolved the same way
-Step 7a resolves the orchestrator and for the same reason. Agents are
-discovered from that directory rather than listed here, so a fourth agent is
-stamped the day it ships:
-
-```bash
-# >>> agent-effort-stamp >>>  (markers used by agents/test-effort-stamp.sh — keep them)
-# Inputs:  STAMP_ROOT      (optional) plugin root holding agents/*.md. Resolved
-#                          from the install registry when unset.
-#          DEVTEAM_CONFIG  (optional) the shared agent config. Defaults to
-#                          ~/.claude-workbench/dev-team-config.json.
-# Prints:  one line per agent file, and "⚠ …" for anything it refuses to write.
-# Exits:   1 only when no plugin root resolves — nothing was stamped, and saying
-#          so is the whole point. A refused value or an unreadable config warns
-#          and returns 0: neither is worth aborting setup over, and both leave
-#          the shipped defaults in place.
-STAMP_ROOT="${STAMP_ROOT:-}"
-STAMP_CFG="${DEVTEAM_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
-STAMP_REGISTRY="$HOME/.claude/plugins/installed_plugins.json"
-STAMP_WARNED=0
-
-# Resolve the INSTALLED root, never $CLAUDE_PLUGIN_ROOT first. In a resumed
-# session that variable names a frozen snapshot (Step 7a explains why), and
-# stamping it writes effort into a copy no later session ever loads. Same
-# registry query as Step 7a, probing agents/ instead of the orchestrator.
-if [ -z "$STAMP_ROOT" ] && [ -f "$STAMP_REGISTRY" ] && jq empty "$STAMP_REGISTRY" 2>/dev/null; then
-  STAMP_CAND=$(jq -r --arg key "workbench-dev-team@claude-workbench" '
-    (.plugins[$key] // [])
-    | map(select((.enabled != false) and ((.installPath // "") != "")))
-    | sort_by((.version // "0") | split(".") | map(tonumber? // 0))
-    | last // empty
-    | .installPath // empty
-  ' "$STAMP_REGISTRY" 2>/dev/null || true)
-  if [ -n "$STAMP_CAND" ] && [ -d "$STAMP_CAND/agents" ]; then
-    STAMP_ROOT="$STAMP_CAND"
-  fi
-fi
-
-if [ -z "$STAMP_ROOT" ] && [ -n "${CLAUDE_PLUGIN_ROOT:-}" ] && [ -d "${CLAUDE_PLUGIN_ROOT}/agents" ]; then
-  STAMP_ROOT="$CLAUDE_PLUGIN_ROOT"
-  echo "⚠  Could not resolve an install path from $STAMP_REGISTRY — stamping the running"
-  echo "   plugin root ($STAMP_ROOT). If this session's copy is frozen, later sessions load"
-  echo "   agent files this step never touched. Re-run setup from a fresh session."
-fi
-
-if [ -z "$STAMP_ROOT" ]; then
-  echo "❌ Could not locate the plugin's agents/ directory — neither $STAMP_REGISTRY nor"
-  echo "   \$CLAUDE_PLUGIN_ROOT resolved a readable copy. Re-install or update the plugin,"
-  echo "   then re-run /workbench-dev-team:setup."
-  exit 1
-fi
-
-if [ ! -f "$STAMP_CFG" ] || ! jq empty "$STAMP_CFG" 2>/dev/null; then
-  echo "⚠  $STAMP_CFG is missing or not valid JSON — leaving the shipped model and effort defaults"
-  echo "   in $STAMP_ROOT/agents/ untouched. Fix the file, then re-run setup."
-  exit 0
-fi
-
-# The harness's own effort enum, plus the integer form its frontmatter schema
-# documents. Anything else is normalized to "no override" when the agent loads,
-# so writing it would configure nothing while looking configured. `xhigh` is
-# valid here even though the schema's field description omits it: the runtime
-# check is the enum, and the field is typed as a plain string.
-stamp_effort_valid() {
-  case "$1" in
-    low|medium|high|xhigh|max) return 0 ;;
-    ''|*[!0-9]*)               return 1 ;;
-    *)                         return 0 ;;
-  esac
-}
-
-# An alias or a full model ID, with an optional bracketed suffix such as
-# `[1m]`. The value lands unquoted in YAML, so anything outside this shape is
-# refused rather than written: a space or a `#` would silently change what the
-# harness parses. A value holding a newline is refused before the pattern is
-# tried: grep matches line by line, so one valid line would pass the whole value
-# and write the rest into the frontmatter as extra YAML.
-stamp_model_valid() {
-  case "$1" in *$'\n'*) return 1 ;; esac
-  printf '%s' "$1" | grep -Eq '^[A-Za-z0-9][A-Za-z0-9._:/@-]*(\[[A-Za-z0-9]+\])?$'
-}
-
-for STAMP_FILE in "$STAMP_ROOT"/agents/*.md; do
-  [ -f "$STAMP_FILE" ] || continue
-  STAMP_AGENT=$(basename "$STAMP_FILE" .md)
-
-  if ! head -1 "$STAMP_FILE" | grep -qx -- '---' \
-     || ! awk 'NR>1 && $0=="---" {ok=1; exit} END {exit !ok}' "$STAMP_FILE"; then
-    echo "⚠  $STAMP_AGENT — frontmatter fences missing or unterminated, skipped"
-    STAMP_WARNED=$((STAMP_WARNED + 1))
-    continue
-  fi
-
-  # Lower-cased first, because the harness lower-cases before it checks the enum.
-  # Validating the raw string would reject a `High` the runtime accepts happily,
-  # and this step's rejection is silent downgrade rather than a visible error.
-  STAMP_VALUE=$(jq -r --arg a "$STAMP_AGENT" '.agents[$a].effort // empty' "$STAMP_CFG" 2>/dev/null || true)
-  STAMP_VALUE=$(printf '%s' "$STAMP_VALUE" | tr '[:upper:]' '[:lower:]')
-  STAMP_MODEL=$(jq -r --arg a "$STAMP_AGENT" '.agents[$a].model // empty' "$STAMP_CFG" 2>/dev/null || true)
-
-  if [ -n "$STAMP_MODEL" ] && ! stamp_model_valid "$STAMP_MODEL"; then
-    echo "⚠  $STAMP_AGENT — config model '$STAMP_MODEL' is not an alias or model ID."
-    echo "   Refusing to write it; removing any stale model line instead."
-    STAMP_MODEL=""
-    STAMP_WARNED=$((STAMP_WARNED + 1))
-  fi
-
-  if [ -n "$STAMP_VALUE" ] && ! stamp_effort_valid "$STAMP_VALUE"; then
-    echo "⚠  $STAMP_AGENT — config effort '$STAMP_VALUE' is not low|medium|high|xhigh|max or an"
-    echo "   integer. Refusing to write it; removing any stale effort line instead."
-    STAMP_VALUE=""
-    STAMP_WARNED=$((STAMP_WARNED + 1))
-  fi
-
-  # Rewrite the frontmatter only. Drop every existing `model:` and `effort:`
-  # line first, then put the configured ones back directly before the closing
-  # fence. Dropping first is what makes a re-run idempotent AND makes a config
-  # key that was taken out also take out the line — without it the two paths
-  # drift apart silently, which is the whole defect this step exists to close.
-  # The new file is held in a variable, so no temporary file is left to tidy up,
-  # and this block names no file-removal verb for workbench-core's
-  # destructive-scope guard to refuse.
-  if STAMP_NEW=$(awk -v model="$STAMP_MODEL" -v val="$STAMP_VALUE" '
-        NR==1 && $0=="---"      { print; fm=1; next }
-        fm && $0=="---"         { if (model != "") print "model: " model
-                                  if (val != "")   print "effort: " val
-                                  print; fm=0; next }
-        fm && /^(model|effort):/ { next }
-                                { print }
-      ' "$STAMP_FILE") && [ -n "$STAMP_NEW" ] && printf '%s\n' "$STAMP_NEW" 2>/dev/null > "$STAMP_FILE"; then
-    echo "✅ $STAMP_AGENT — model: ${STAMP_MODEL:-(none — inherits the session)}, effort: ${STAMP_VALUE:-(none — inherits the session)}"
-  else
-    # The awk output is checked before the write, so an empty result never
-    # replaces the agent definition.
-    echo "⚠  $STAMP_AGENT — frontmatter rewrite failed, left untouched"
-    STAMP_WARNED=$((STAMP_WARNED + 1))
-  fi
-done
-
-if [ "$STAMP_WARNED" -gt 0 ]; then
-  echo "⚠  $STAMP_WARNED agent file(s) did not take a configured model or effort — see above."
-fi
-echo "Agent model and effort stamped from $STAMP_CFG into $STAMP_ROOT/agents/"
-# <<< agent-effort-stamp <<<
-```
-
-A plugin update replaces `agents/*.md` with the shipped copies, so it resets
-every stamp to the shipped defaults. That is why the skill's own description
-says to re-run setup after an update — a user whose config matches the defaults
-loses nothing, and one who edited it gets their values back on the re-run.
+The mod ignores a value outside the shape it accepts: a model that is not an
+alias or a full ID, and an effort that is not `low`, `medium`, `high`, `xhigh`,
+or `max`. The agent file's own frontmatter value then applies, and it applies
+too wherever the mod does not run, such as Cowork.
 
 ## Step 6.5 — Choose commit attribution behavior
 
@@ -1291,10 +1140,17 @@ apply, and the tool deny rules runs used to take from this repo's
 `settings.local.json` are passed with `--disallowedTools` (`DENIED_TOOLS` in the
 wrapper).
 
+The model is the config's `router.model`, which Step 6 writes. Nothing here
+names a model of its own, so the value cannot drift from the config.
+
 ```bash
 TARGET_CWD="$HOME/Developer/workbench-dev-team"
 PATCHED=0
-while IFS= read -r -d '' REG; do
+ROUTER_MODEL=$(jq -r '.router.model | strings' "$HOME/.claude-workbench/dev-team-config.json" 2>/dev/null)
+if [ -z "$ROUTER_MODEL" ]; then
+  echo "⚠  No router.model in ~/.claude-workbench/dev-team-config.json — the router's model is not pinned. Re-run Step 6, then this step."
+fi
+while [ -n "$ROUTER_MODEL" ] && IFS= read -r -d '' REG; do
   jq -e '.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")' "$REG" >/dev/null 2>&1 || continue
   if ! jq empty "$REG" 2>/dev/null; then
     echo "⚠  $REG is not valid JSON — skipping"
@@ -1303,15 +1159,15 @@ while IFS= read -r -d '' REG; do
   # Held in a variable and checked before it is written: no temporary file, and
   # no file-removal verb for workbench-core's destructive-scope guard to refuse.
   if [ -d "$TARGET_CWD" ]; then
-    NEW=$(jq --arg cwd "$TARGET_CWD" \
-      '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = "claude-sonnet-5" | .cwd = $cwd)' \
+    NEW=$(jq --arg cwd "$TARGET_CWD" --arg model "$ROUTER_MODEL" \
+      '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = $model | .cwd = $cwd)' \
       "$REG")
   else
-    NEW=$(jq '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = "claude-sonnet-5")' \
+    NEW=$(jq --arg model "$ROUTER_MODEL" '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = $model)' \
       "$REG")
   fi
   if [ -n "$NEW" ] && printf '%s\n' "$NEW" | jq empty 2>/dev/null && printf '%s\n' "$NEW" > "$REG"; then
-    echo "✅ pinned model=claude-sonnet-5 in $REG"
+    echo "✅ pinned model=$ROUTER_MODEL in $REG"
     PATCHED=$((PATCHED + 1))
   else
     echo "⚠  produced invalid JSON patching $REG, or could not write it"
@@ -1350,21 +1206,16 @@ Print a clean summary block:
                     (or: ⚠ not registered — re-run setup to register)
   Prompt source:    {SRC_ROOT}/scheduled-tasks/orchestrator.md (v{SRC_VERSION})
                     body verified — {BODY_LINES} lines, {BODY_LANES} lanes
-  Router model:     pinned to Sonnet ({PATCHED} registry(ies) patched)
+  Router model:     pinned to {ROUTER_MODEL} ({PATCHED} registry(ies) patched)
                     (or: ⚠ could not confirm — verify in the Scheduled panel)
 
   {STALE_ROOT_WARNING}
 
-  Agents:           Lestrade — {LESTRADE_STAMP}
-                    Holmes ($10 cap) — {HOLMES_STAMP}
-                    Watson ($10 cap) — {WATSON_STAMP}
-                    — models/effort/fallback/budget editable in the agent config
-                    — model and effort also stamped into
-                      {STAMP_ROOT}/agents/*.md (Step 6a),
-                      which is what interactive dispatch reads: re-run setup
-                      after editing the config to move that path too
+  Agents:           Lestrade, Holmes ($10 cap), Watson ($10 cap)
+                    — models/effort/fallback/budget editable in the agent config,
+                      read on every dispatch, scheduled and interactive
 
-  Verify in Claude Code's scheduled-tasks panel that Dispatch shows Sonnet —
+  Verify in Claude Code's scheduled-tasks panel that Dispatch shows {ROUTER_MODEL} —
   Step 7d's patch isn't a supported API and can silently stop working.
 ═══════════════════════════════════════════
 ```
@@ -1373,13 +1224,7 @@ Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
 choice (`suppressed` or `default (visible)`), fill `{PATCHED}` from Step 7d's
 count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a,
 `{BODY_LINES}`/`{BODY_LANES}` from Step 7a-bis's success line, and
-`{STAMP_ROOT}` from Step 6a's closing line — Step 6a runs whether or not the
-schedule was registered, so that one is always available — and each
-`{<AGENT>_STAMP}` from that agent's Step 6a line (`model: …, effort: …`). Those
-are the values the live config actually stamped, which differ from the shipped
-pin when the user kept their own at the pin check. Never print the pin in their
-place,
-and adjust the scheduled-task, prompt-source and router-model lines if
+`{ROUTER_MODEL}` from Step 7d's `ROUTER_MODEL`, and adjust the scheduled-task, prompt-source and router-model lines if
 registration was skipped or the patch found nothing.
 
 `{LEGACY_COMMANDS}` is the `! rm` command for each `LEGACY_LEFT` line Step 6.6

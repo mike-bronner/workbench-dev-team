@@ -1,0 +1,29 @@
+# Dr. Watson, The Index mode only. bin/compose-agents.sh reads this file; the
+# format is in that script's header.
+name: watson-index
+source: watson
+description: Dr. Watson in The Index mode only — the item-ID token from bin/dispatch-agent.sh in, a ready PR and an In Review item out. Dispatch workbench-dev-team:watson, which routes the token here.
+
+requires: Skill, Bash, Read, Write, Edit, Grep, Glob
+
+section: # Dr. Watson — Development Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — make them in a scratch root, delete them yourself
+skip: ## Mode detection
+skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
+text: ## Input — a dispatch token, never a brief
+text:
+text: This prompt is The Index mode of `workbench-dev-team:watson`. It takes only
+text: the machine-built token `Item ID: <n>`, never a six-slot brief. If your
+text: prompt carries no such token, it reached the wrong type: change nothing, and
+text: report that `workbench-dev-team:watson` takes the brief.
+section: ## Working-context budget — roughly 250k tokens, self-checked
+skip: ## Direct mode
+section: ## The Index mode
+section: ### Input contract
+section: ### Tools
+section: ### The pipeline — read it before you touch anything
+section: ## Rules
+skip: ## Rules — Direct mode
+section: ## Rules — The Index mode

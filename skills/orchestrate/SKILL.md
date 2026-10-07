@@ -390,9 +390,9 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   reads and Bash stay open. A file written through Bash — `sed -i`, a heredoc,
   a redirect, a script — is still a write. The gate cannot see it, so the rule
   binds you there on your own. A deny means the rule worked. Report it, then
-  dispatch. Never run `/workbench-core:orchestrator off` to clear your own deny
-  — only the human asks for that toggle, and only then does inline writing open
-  up.
+  dispatch. Never ask for `/orchestrator off` to clear your own deny — it is the
+  human's own command (`/orchestrator on | off | status`), and only when they
+  run it does inline writing open up.
 
 ## What the dispatcher does
 
@@ -421,21 +421,20 @@ type. That path is internal to Holmes — not an orchestration call you make; it
 only works on governed repos (App-signed), and degrades to no Type on user-owned
 ones.
 
-## Model and effort come from the agent, never from you
+## Model and effort come from the config, never from you
 
-Nothing in this skill reads `~/.claude-workbench/dev-team-config.json`: the
-interactive path has no use for it. `/workbench-dev-team:setup` stamps each
-agent's configured `model` and `effort` into its frontmatter (Step 6a), and the
-harness reads the frontmatter when it spawns the sub-agent. All three ship
-`claude-opus-5-5[1m]` at `medium`.
+Nothing in this skill reads `~/.claude-workbench/dev-team-config.json`. When you
+dispatch Watson, Holmes, or Lestrade by the public type, the dev-team mod reads
+it at spawn: it runs the mode agent the token picks, with the configured `model`
+and `effort`. All three ship `claude-opus-5-5[1m]` at `medium`.
 
 **Never pass the Agent tool's `model` parameter to a dev-team agent.** It
 accepts only an alias (`sonnet`, `opus`, `haiku`, `fable`), so it cannot carry
-the exact ID, and it overrides the frontmatter, so `opus` would silently replace
-the pin with whatever the alias points at today. The Agent tool has no effort,
-budget, or fallback parameter, so `maxBudgetUsd` and `fallback` reach only the
-scheduled path. When the human edits the config, the scheduled path picks it up
-on its next tick. This path picks it up at the next setup run, so say so.
+the exact ID, and the mod lets a model the caller named stand, so `opus` would
+silently replace the pin with whatever the alias points at today. The Agent
+tool has no effort, budget, or fallback parameter, so `maxBudgetUsd` and
+`fallback` reach only the scheduled path. When the human edits the config, both
+paths pick it up on the next dispatch.
 
 ## When NOT to orchestrate
 

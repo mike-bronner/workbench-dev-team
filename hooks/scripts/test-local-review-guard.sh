@@ -89,6 +89,16 @@ check "holmes spelled with ſ folds to holmes and is held" \
   "$(bash_verdict "$BREACH" session-A "workbench-dev-team:holmeſ")" deny
 check "a type that only contains holmes is not held" \
   "$(bash_verdict "$BREACH" session-A "workbench-dev-team:holmes-review-bot")" silent
+# Every dispatch of Holmes runs one of his mode agents, which bin/compose-agents.sh
+# builds from agents/holmes.md. Each is Holmes, so each is held.
+check "the Local-mode agent's write into the tree is refused" \
+  "$(bash_verdict "$BREACH" session-A "workbench-dev-team:holmes-local")" deny
+check "the Index-mode agent's write into the tree is refused" \
+  "$(bash_verdict "$BREACH" session-A "workbench-dev-team:holmes-index")" deny
+check "a type that only extends a mode name is not held" \
+  "$(bash_verdict "$BREACH" session-A "workbench-dev-team:holmes-localbot")" silent
+check "Watson's mode agents are not held" \
+  "$(bash_verdict "$BREACH" session-A "workbench-dev-team:watson-direct")" silent
 # The scheduled pipeline starts Holmes with --agent, so its main thread carries
 # agent_type and no agent_id, and the pipeline flag is on. Neither exempts it.
 check "a pipeline main thread (agent_type, no agent_id, pipeline flag) is held" \
@@ -97,6 +107,13 @@ import json, sys
 print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
                   "session_id": "session-P", "agent_type": sys.argv[1],
                   "tool_input": {"command": sys.argv[2]}}))' "$HOLMES" "$BREACH")" \
+    WORKBENCH_DEV_TEAM_PIPELINE=1)")" deny
+check "the pipeline's Index-mode main thread is held" \
+  "$(verdict_of "$(run_guard "$(python3 -I -c '
+import json, sys
+print(json.dumps({"hook_event_name": "PreToolUse", "tool_name": "Bash",
+                  "session_id": "session-P", "agent_type": sys.argv[1],
+                  "tool_input": {"command": sys.argv[2]}}))' "workbench-dev-team:holmes-index" "$BREACH")" \
     WORKBENCH_DEV_TEAM_PIPELINE=1)")" deny
 
 echo

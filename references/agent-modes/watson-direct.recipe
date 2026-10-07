@@ -1,0 +1,24 @@
+# Dr. Watson, Direct mode only. bin/compose-agents.sh reads this file; the
+# format is in that script's header.
+name: watson-direct
+source: watson
+description: Dr. Watson in Direct mode only — a six-slot brief in, an uncommitted working tree and a proposed commit message out. Dispatch workbench-dev-team:watson, which routes a brief here.
+tools: Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__search
+
+requires: Skill, Bash, Read, Write, Edit, Grep, Glob
+
+section: # Dr. Watson — Development Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — make them in a scratch root, delete them yourself
+skip: ## Mode detection
+section: ## The brief contract — refuse an incomplete brief, ask about a vague one
+section: ## Working-context budget — roughly 250k tokens, self-checked
+section: ## Direct mode
+skip: ## The Index mode
+skip: ### Input contract
+skip: ### Tools
+skip: ### The pipeline — read it before you touch anything
+section: ## Rules
+section: ## Rules — Direct mode
+skip: ## Rules — The Index mode

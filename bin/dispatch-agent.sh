@@ -216,9 +216,9 @@ fi
 # on the key. It matches the shipped config, so a lost config cannot lift a cap.
 # Model and effort have no default here on purpose. The config is where they are
 # set, and the shipped one pins every agent to claude-opus-5-5[1m] at medium. An
-# absent key omits the flag, so the run falls back to the agent definition, which
-# setup's Step 6a keeps in step with the config. A baked-in value here would be
-# one more copy to drift.
+# absent key omits the flag, so the run falls back to the mode agent's own
+# frontmatter, which bin/compose-agents.sh copies from the public agent file. A
+# baked-in value here would be one more copy to drift.
 case "$AGENT" in
   lestrade) DEFAULT_BUDGET= ;;
   holmes)   DEFAULT_BUDGET=10.00 ;;
@@ -245,6 +245,16 @@ if [ "$REPRIEVE" = 1 ] && [ -n "$BUDGET" ]; then
 fi
 
 STAMP=$(date +%Y%m%d-%H%M%S)
+
+# The mode agent the run starts as. Each prompt below is a token that picks one
+# mode, so the run loads only that mode's prompt: agents/<mode>.md, composed by
+# bin/compose-agents.sh. `--agent` resolves a type before any hooks module
+# loads, so these are agent files and never a type the dev-team mod registers.
+case "$AGENT" in
+  watson) MODE_TYPE=watson-index ;;
+  holmes) MODE_TYPE=holmes-index ;;
+  lestrade) if [ "$SWEEP" = 1 ]; then MODE_TYPE=lestrade-sweep; else MODE_TYPE=lestrade-item; fi ;;
+esac
 
 if [ "$SWEEP" = 1 ]; then
   PROMPT="Repo sweep: $TARGET"
@@ -287,7 +297,7 @@ ALLOWED_TOOLS=('mcp__the-index__*' 'mcp__plugin_workbench-core_memory__*')
 # --disallowedTools and --allowedTools take variadic lists. Each goes in as one
 # comma-joined value, and an option always follows it, so neither can swallow
 # the prompt.
-set -- --agent "workbench-dev-team:${AGENT}" \
+set -- --agent "workbench-dev-team:${MODE_TYPE}" \
   --disallowedTools "$(IFS=,; printf '%s' "${DENIED_TOOLS[*]}")" \
   --allowedTools "$(IFS=,; printf '%s' "${ALLOWED_TOOLS[*]}")"
 [ -n "$MODEL" ]    && set -- "$@" --model "$MODEL"

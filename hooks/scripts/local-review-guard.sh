@@ -17,11 +17,12 @@
 # ── WHAT IT DOES ──────────────────────────────────────────────────────────────
 #
 # One static rule, with no state: a tool call whose `agent_type` is Holmes
-# (`workbench-dev-team:holmes`) or his helper (`workbench-dev-team:holmes-lens`)
+# (`workbench-dev-team:holmes`, or a mode of him: `holmes-local`,
+# `holmes-index`) or his helper (`workbench-dev-team:holmes-lens`)
 # may not write outside the scratch roots. It holds at any time, in both of
 # Holmes's modes, on the main thread of a session started with
-# `--agent workbench-dev-team:holmes` (the scheduled pipeline), and in every
-# sub-agent of either type, at any depth.
+# `--agent workbench-dev-team:holmes-index` (the scheduled pipeline), and in
+# every sub-agent of any of these types, at any depth.
 #
 # The scratch roots are the places a reviewer may write:
 #   • $TMPDIR, where a bare `mktemp -d` lands. The agent prompts no longer put
@@ -577,11 +578,13 @@ def segments(command: str, masked):
         start = match.end()
     yield command[start:], masked[start:]
 
-# The agent types this guard holds to the static rule: Holmes and his helper.
-# Plugin agent types are namespaced (`workbench-dev-team:holmes-lens`), and a
-# bare name is matched too. IGNORECASE also folds `ſ` into `s`, which is why the
-# fast path sends a non-ASCII payload here.
-REVIEWER_AGENT = re.compile(r"(^|[:/])holmes(-lens)?$", re.IGNORECASE)
+# The agent types this guard holds to the static rule: Holmes, each of his two
+# mode agents (bin/compose-agents.sh builds holmes-local and holmes-index from
+# agents/holmes.md, and every dispatch of Holmes runs one of them), and his
+# helper. Plugin agent types are namespaced (`workbench-dev-team:holmes-lens`),
+# and a bare name is matched too. IGNORECASE also folds `ſ` into `s`, which is
+# why the fast path sends a non-ASCII payload here.
+REVIEWER_AGENT = re.compile(r"(^|[:/])holmes(-lens|-local|-index)?$", re.IGNORECASE)
 
 # Redirect targets that write no file.
 DEVICE_TARGET = re.compile(r"/dev/(?:null|stdout|stderr|tty|fd/[0-9]+)")

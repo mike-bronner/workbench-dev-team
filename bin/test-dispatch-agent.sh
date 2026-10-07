@@ -189,7 +189,23 @@ expect_lacks "no fallback when unset" "--fallback-model" "$out"
 out=$(run "$FULL" watson 7)
 expect_has  "fallback passed"    "--fallback-model sonnet" "$out"
 expect_has  "budget passed"      "--max-budget-usd 10"     "$out"
-expect_has  "agent flag"         "--agent workbench-dev-team:watson" "$out"
+expect_has  "agent flag"         "--agent workbench-dev-team:watson-index " "$out"
+
+echo "— each lane starts the mode agent its token picks"
+# The run loads one mode's prompt, never the public agent's two. --agent resolves
+# a type before any hooks module loads, so each must be an agents/*.md file.
+for pair in watson:watson-index:7 holmes:holmes-index:7 lestrade:lestrade-item:7 \
+            lestrade:lestrade-sweep:mike-bronner/phpcs-rules; do
+  IFS=: read -r lane mode target <<< "$pair"
+  out=$(run "$FULL" "$lane" "$target")
+  expect_has   "$lane $target starts $mode" "--agent workbench-dev-team:$mode " "$out"
+  expect_lacks "$lane $target never starts the public type" "--agent workbench-dev-team:$lane " "$out"
+  if [ -f "$HERE/../agents/$mode.md" ]; then
+    echo "  ok   — agents/$mode.md ships"; pass=$((pass+1))
+  else
+    echo "  FAIL — agents/$mode.md is missing, so --agent would not find $mode"; fail=$((fail+1))
+  fi
+done
 
 echo "— defaults survive a bad config"
 for label in empty broken missing; do
@@ -222,7 +238,7 @@ echo "— the shipped default config"
 # `[1m]` variant included, at medium effort. The trailing space pins where the
 # value ends, so a longer value cannot pass as a prefix match.
 SHIPPED="$WORK/shipped.json"
-awk '/cat > "\$CONFIG" <<.EOF.$/{f=1;next} f && /^EOF$/{exit} f' \
+awk '/^SHIPPED_CONFIG=\$\(cat <<.EOF.$/{f=1;next} f && /^EOF$/{exit} f' \
   "$HERE/../commands/setup.md" > "$SHIPPED"
 if [ -s "$SHIPPED" ] && jq empty "$SHIPPED" 2>/dev/null; then
   for agent in lestrade holmes watson; do

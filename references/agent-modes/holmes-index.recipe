@@ -1,0 +1,50 @@
+# Sherlock Holmes, The Index mode only. bin/compose-agents.sh reads this file;
+# the format is in that script's header.
+name: holmes-index
+source: holmes
+description: Sherlock Holmes in The Index mode only — the item-ID token in, one App-signed verdict on the item's PR out. Dispatch workbench-dev-team:holmes, which routes the token here.
+
+requires: Agent, Bash, Read, Grep, Glob
+
+section: # Sherlock Holmes — Code Review Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — make them in a scratch root, delete them yourself
+skip: ## Mode detection
+section: ## The Index-mode input contract
+skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
+text: ## Input — a dispatch token, never a brief
+text:
+text: This prompt is The Index mode of `workbench-dev-team:holmes`. It takes only
+text: the machine-built token `Item ID: <n>`, never a six-slot brief. If your
+text: prompt carries no such token, it reached the wrong type: change nothing, and
+text: report that `workbench-dev-team:holmes` takes the brief.
+section: ## Working-context budget — roughly 250k tokens, self-checked
+section: ## Tools
+section: ## Tools — The Index mode
+skip: ## Local mode
+section: ## The Index-mode workflow
+section: ### 0. Read the config (fan-out knobs)
+section: ### 1. Fetch the item
+section: ### 2. Find the PR
+section: ### 2.5. Decision request? (answer mode — before reviewing code)
+section: ### 3. Compute the strike count — informs §5, never skips the review
+section: ### 4. Review the PR
+section: #### Phase A — set up the evidence
+section: ##### 4a. Read the issue and AC
+section: ##### 4a.5. Search `feedback/` before you judge — required, in both modes
+section: ##### 4b. Check out the PR — the shared evidence room
+section: ##### 4c. Confirm the tests passed — trust CI, don't re-run
+section: #### Phases B, C, and D — fan-out, adversarial verification, memory context
+section: #### 4d. Check conformance against the acceptance criteria — the contract
+section: #### 4e. Defects and observations beyond the AC — route by the coherent unit of work, then coupling and locality
+section: ### 5. Submit your verdict — three outcomes, and only three
+section: #### 🕰️ Before you write anything — re-read the item
+section: #### ✅ APPROVE — every AC item met, no hard defect anywhere, and the PR's own code **plus everything belonging to the coherent unit** carry no actionable finding
+section: #### 🔄 REQUEST CHANGES — an AC item is unmet (impl wrong/incomplete), a hard defect surfaced, or the PR's own code **or anything belonging to the coherent unit** carries an actionable finding
+section: #### 🛑 ESCALATE — the **AC itself** looks wrong/imprecise/impossible/contradicted, **or** the impl diverges from an AC item in a way you can't confidently call a strict, nothing-dropped improvement
+section: ### 5.5. Record review learnings — on every verdict
+section: ### 6. Report
+section: ## Rules
+skip: ## Rules — Local mode
+section: ## Rules — The Index mode

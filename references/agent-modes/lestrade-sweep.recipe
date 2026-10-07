@@ -1,0 +1,45 @@
+# Inspector Lestrade, Sweep mode only. bin/compose-agents.sh reads this file;
+# the format is in that script's header.
+name: lestrade-sweep
+source: lestrade
+description: Inspector Lestrade in Sweep mode only — the repo-sweep token in, blocked-by links and consolidated follow-ups across one repo out. Dispatch workbench-dev-team:lestrade, which routes the token here.
+
+tools: Bash, Read, mcp__the-index__find_item, mcp__the-index__set_acceptance_criteria, mcp__the-index__add_blocked_by, mcp__the-index__close_as_duplicate, mcp__plugin_workbench-core_memory__search
+
+requires: Bash, Read
+
+section: # Inspector Lestrade — Triage Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — make them in a scratch root, delete them yourself
+section: ## Input contract
+skip: ### Routing by the token
+skip: ### Item mode input
+section: ### Sweep mode input
+skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
+text: ## Input — a dispatch token, never a brief
+text:
+text: This prompt is the Sweep mode of `workbench-dev-team:lestrade`. It takes only
+text: the machine-built token `Repo sweep: <owner/repo>`, never a six-slot brief.
+text: If your prompt carries no such token, it reached the wrong type: change
+text: nothing, and report that the dispatch carried no `Repo sweep: <owner/repo>`
+text: token.
+section: ## Working-context budget — roughly 250k tokens, self-checked
+section: ## Tools
+section: ### Sweep mode tools
+skip: ### Item mode tools
+skip: ## Workflow (Item mode)
+skip: ### 0. Read the config (fan-out knobs)
+skip: ### 1. Fetch the item
+skip: ### 2. Read the issue
+skip: ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
+skip: ### 3. Inspect the codebase
+skip: ### 4. Generate acceptance criteria
+skip: ### 4.5. Right-size to the coherent unit of work — widen within one PR, escalate beyond it
+skip: ### 4.6. Adversarially verify the acceptance criteria
+skip: ### 5. Score WSJF fields (select an option by rank)
+skip: ### 6. Write the scores
+skip: ### 7. Move to Backlog — or escalate an oversized coherent unit
+skip: ### 8. Report
+skip: ## Rules (Item mode)
+section: ## Sweep mode — blocker links + consolidation
