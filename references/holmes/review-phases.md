@@ -216,10 +216,10 @@ Nothing relevant turns up → proceed. This is the common case and needs no ment
 
 Something relevant turns up → `read` it in full and **verify it's still true against the current tree before trusting it.** A memory entry is a claim about what was true when it was written, not a fact about the code in front of you now — a decision can be superseded, a pattern can have since changed. Once you've confirmed it's still current, it can do one of two things:
 
-- **Reframe, never dismiss.** A finding that matches a documented, still-valid decision explaining why the pattern is intentional gets cited in the verdict with that context. A hard defect (correctness/security/test) still blocks regardless — memory context explains a finding, it never waives a real one. A soft observation with genuine documented rationale can be noted as intentional instead of flagged as a gap.
-- **Reinforce.** A finding that matches a past incident or a recurring pattern gets that precedent cited alongside it. The verdict doesn't change, but the human reading it sees this isn't the first time.
+- **Reframe, never dismiss.** A finding that matches a documented, still-valid decision explaining why the pattern is intentional gets that context in the verdict: state what the decision was, then give its vault path after it. A hard defect (correctness/security/test) still blocks regardless — memory context explains a finding, it never waives a real one. A soft observation with genuine documented rationale can be noted as intentional instead of flagged as a gap.
+- **Reinforce.** A finding that matches a past incident or a recurring pattern gets that precedent beside it: state what the past incident was, then give its vault path after it. The verdict doesn't change, but the human reading it sees this isn't the first time.
 
-**Memory never overrides the AC contract or resolves a dispute.** An AC item stays ❌ **not met** regardless of what the vault says — cite relevant context in the request-changes body or the escalation comment, never use it to mark an item met. Same discipline as §4d: the contract is Mike's to amend, not yours, even with supporting context in hand.
+**Memory never overrides the AC contract or resolves a dispute.** An AC item stays ❌ **not met** regardless of what the vault says — state relevant context in the request-changes body or the escalation comment, with any vault path after it, never use it to mark an item met. Same discipline as §4d: the contract is Mike's to amend, not yours, even with supporting context in hand.
 
 Skip this phase entirely on a clean review — no surviving findings and no ❌ AC items means there's nothing to contextualize.
 

@@ -300,8 +300,9 @@ A sub-agent opens no PR: it has nothing committed to open one from. Its report
 is the handoff, and the session that commits the tree decides about the PR.
 
 When the work is for a tracked issue, read `references/pull-requests.md` as soon
-as you start work on it, and follow it. It holds the draft-early rule, the PR
-template discovery, the body rules, and why CI green is the real "done" line.
+as you start on it, and follow it. It holds the draft-early rule, template
+discovery, the body rules (a body stands on its own), and why CI green is the
+real "done" line.
 
 ## 7. When stuck
 

@@ -280,11 +280,12 @@ mcp__plugin_workbench-core_memory__search(query: "<the change's subject>", folde
 `read` every hit that bears on the change, and confirm it still applies to the
 tree in front of you. Keep the rules you confirm. After Phase C and before §4d,
 check the change against each one yourself. A line the change wrote that breaks
-one is an actionable `in-pr` finding, and §4e routes it like any other. Cite the
-rule's vault path beside it. The lenses stay blind to these rules: a rule is a
-standard you hold the change to, not context that could prime what a lens finds,
-so it enters at the parent, as Phase D does. The check runs on the inline
-§4-fallback path too, because it never depended on the fan-out.
+one is an actionable `in-pr` finding, and §4e routes it like any other. State
+the rule in the finding, and cite its vault path after it. The lenses stay
+blind to these rules: a rule is a standard you hold the change to, not context
+that could prime what a lens finds, so it enters at the parent, as Phase D
+does. The check runs on the inline §4-fallback path too, because it never
+depended on the fan-out.
 
 These rules never amend the AC. When the AC and a rule conflict, that is an AC
 dispute, and §5 escalates it (§L5 in Local mode). No memory MCP, or no hits? Say so in the verdict

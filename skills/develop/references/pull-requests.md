@@ -23,6 +23,11 @@ When the work is for a tracked issue:
   multi-line double-quoted string: the shell runs the backticks in one. The
   `/workbench-dev-team:git-commit` skill's "Passing a gh body" section is the
   canonical rule.
+- **Write a body that stands on its own.** Restate what the reviewer needs,
+  and never point at a local file, a scratchpad file, a plan file, or a vault
+  note for it.
+  The "Self-contained" principle in `/workbench-dev-team:comms-style` is the
+  canonical rule.
 - **Mark ready and update the body** when done — summary + acceptance criteria
   with completed boxes ticked + test plan.
 - **CI green is the real "done" line.** Local-green isn't enough — CI runs checks

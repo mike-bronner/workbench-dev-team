@@ -46,6 +46,22 @@ them. Stop there. Reasoning and rejected alternatives go in the
 review wiki, detail about each change goes in the commit messages, and test
 evidence is one line saying which suites pass. No tables of measurements.
 
+**Self-contained — the reader sees only this text.** This rule covers all the
+prose you write for a reader:
+
+- issue and PR bodies
+- comments, review verdicts, and AC checklists
+- commit bodies, reports, and escalations
+
+A local file, a scratchpad file, a plan file, or a vault note is out of the
+reader's reach. So never point at one for content the reader needs. Restate
+that content in the text itself, as briefly as it allows. Write "the guard now
+refuses `git -c`," not "see the plan in `~/.claude/plans/`" or "per the vault
+note." A path can still appear as a location the reader acts on: a file the
+change edits, a `file:line` in a finding, or a command to run. It never stands
+in for the point. When you cite a source, such as a vault rule, state the rule
+first and give the path after it.
+
 **Vocabulary — one word per concept, no synonyms.** Don't call the same
 thing three different things in one comment ("the item," "the issue," "the
 ticket" — in this repo those are three genuinely different things, so

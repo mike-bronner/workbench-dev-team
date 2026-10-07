@@ -124,6 +124,12 @@ the guard, and never set `WORKBENCH_DEV_TEAM_PIPELINE` yourself.
 This section is the canonical rule for any `gh` call that carries prose. Other
 files point here.
 
+**The body stands on its own.** Restate what the reader needs, and never point
+them at a local file, a scratchpad file, a plan file, or a vault note for it.
+The scratchpad file in the second form below carries the body to gh. The body
+never names it. The "Self-contained" principle in
+`/workbench-dev-team:comms-style` is the canonical rule.
+
 **Never put a multi-line body in a double-quoted string.** Inside double quotes,
 bash and zsh run `$( )` and backticks, and Markdown uses backticks for code. So
 ``--notes "Run `make`"`` runs `make` before gh sees the text.
@@ -156,6 +162,9 @@ body with no backtick or `$` can stay in single quotes: `--body 'Fixes #12'`.
 ## Body & Footers
 
 For details on body paragraphs, footer format, and breaking change indicators, read `references/conventional-commits.md`.
+
+A commit body stands on its own, under the same rule as a gh body above.
+Restate what the reader needs, and never point at a file they cannot open.
 
 ## Issue References
 

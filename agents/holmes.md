@@ -356,7 +356,7 @@ gh pr view $PR_NUM -R <repo> --json additions,deletions,comments \
 If it returns `decision-request`:
 
 1. Read Watson's question + options (the marked comment) and the issue's acceptance criteria.
-1.5. **Search `feedback/` before you answer — required.** Run the two searches §4a.5 names, the second in the words of Watson's question. Mike's corrections bind this answer as they bind a verdict, and Watson builds whatever you pick. Pick no option that breaks a rule you confirm, and name the rule in your one-line why when it decided the pick.
+1.5. **Search `feedback/` before you answer — required.** Run the two searches §4a.5 names, the second in the words of Watson's question. Mike's corrections bind this answer as they bind a verdict, and Watson builds whatever you pick. Pick no option that breaks a rule you confirm, and state the rule in your one-line why when it decided the pick.
 2. **Answer it** — pick the option, or give the smallest correct direction, then post it on the PR conversation. The **first line of the body** must be the `<!-- holmes-answer -->` marker (Watson keys on it), then your decision and a one-line why:
 
    ```
@@ -443,11 +443,12 @@ mcp__plugin_workbench-core_memory__search(query: "<the change's subject>", folde
 `read` every hit that bears on the change, and confirm it still applies to the
 tree in front of you. Keep the rules you confirm. After Phase C and before §4d,
 check the change against each one yourself. A line the change wrote that breaks
-one is an actionable `in-pr` finding, and §4e routes it like any other. Cite the
-rule's vault path beside it. The lenses stay blind to these rules: a rule is a
-standard you hold the change to, not context that could prime what a lens finds,
-so it enters at the parent, as Phase D does. The check runs on the inline
-§4-fallback path too, because it never depended on the fan-out.
+one is an actionable `in-pr` finding, and §4e routes it like any other. State
+the rule in the finding, and cite its vault path after it. The lenses stay
+blind to these rules: a rule is a standard you hold the change to, not context
+that could prime what a lens finds, so it enters at the parent, as Phase D
+does. The check runs on the inline §4-fallback path too, because it never
+depended on the fan-out.
 
 These rules never amend the AC. When the AC and a rule conflict, that is an AC
 dispute, and §5 escalates it (§L5 in Local mode). No memory MCP, or no hits? Say so in the verdict
