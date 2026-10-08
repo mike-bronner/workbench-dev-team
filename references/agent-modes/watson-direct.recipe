@@ -10,7 +10,7 @@ requires: Skill, Bash, Read, Write, Edit, Grep, Glob
 section: # Dr. Watson — Development Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
-section: ## Scratch folders — make them in a scratch root, delete them yourself
+section: ## Scratch folders — a bare `mktemp`, deleted when your run ends
 skip: ## Mode detection
 section: ## The brief contract — refuse an incomplete brief, ask about a vague one
 section: ## Working-context budget — roughly 250k tokens, self-checked

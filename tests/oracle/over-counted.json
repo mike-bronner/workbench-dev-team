@@ -2557,14 +2557,14 @@
       ]
     },
     {
-      "line": "git commit -m \"load env vars\" && git push",
+      "line": "git commit -m \"feat: ✨ Load env vars.\" && git push",
       "lanes": [
         "main",
         "pipeline"
       ]
     },
     {
-      "line": "git commit -m \"use bash -c and eval less\" && git push",
+      "line": "git commit -m \"refactor: ♻️ Use bash -c and eval less.\" && git push",
       "lanes": [
         "main",
         "pipeline"

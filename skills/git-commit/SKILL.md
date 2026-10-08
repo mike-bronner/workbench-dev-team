@@ -26,6 +26,10 @@ The colon, emoji, and description each separated by exactly one space: `type: em
 5. Always consult `references/gitmoji.md` to select the correct emoji for the change
 6. Always consult `references/conventional-commits.md` to determine the correct type and overall format for the commit message, based on SemVer mapping and breaking change syntax
 
+The dev-team mod's commit guard holds the subject of a main-session or pipeline
+`git commit -m` to this format, and refuses one that breaks it with the expected
+shape. A message given with `-F`, or written in an editor, is not checked.
+
 ## Examples
 
 ```

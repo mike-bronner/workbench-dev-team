@@ -9,7 +9,8 @@
 // ```shell block in agents/*.md and references/**/*.md that names git or gh,
 // and holds it to two lanes:
 //   - the pipeline (a top-level `claude -p --agent` run, unattended), where
-//     Watson and Holmes run their Index-mode lines: it must pass;
+//     Watson and Holmes run their Index-mode lines: it must pass, and so must
+//     the subject of every commit it makes (hooks/mods/commit-subject.ts);
 //   - a sub-agent, where Holmes's helpers and the Direct-mode agents run: it
 //     must pass, or be refused only as the commit or push it is.
 // No agent merges, so a block refused as a merge fails in both lanes.
@@ -22,6 +23,7 @@ import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
 import { SUBAGENT_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard.ts'
+import { subjectVerdict } from '../hooks/mods/commit-subject.ts'
 import { parseShell } from './core/hooks/mods/shell.ts'
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
@@ -60,7 +62,11 @@ for (const file of files) {
     checked++
     const parse = parseShell(block)
     const where = `${path.relative(ROOT, file)}: ${JSON.stringify(block.length > 120 ? `${block.slice(0, 120)}…` : block)}`
-    const pipeline = commitVerdict(parse, block, { lane: 'top-level-agent', isUnattended: true })
+    // A `<placeholder>` such as `<clone path>` reads as a redirect, which hides
+    // the commit from the statements, so the subject is read from a copy with
+    // every placeholder filled in.
+    const filled = parseShell(block.replace(/<[a-z][a-z _-]*>/g, 'placeholder'))
+    const pipeline = commitVerdict(parse, block, { lane: 'top-level-agent', isUnattended: true }) ?? subjectVerdict(filled)
     if (pipeline !== undefined) {
       failed++
       console.log(`  ❌ refused in the pipeline: ${where}\n     ${pipeline.deny.split('\n')[0]}`)

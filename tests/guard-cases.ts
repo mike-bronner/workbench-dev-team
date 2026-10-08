@@ -54,17 +54,19 @@ export const COMMIT_PASSES: readonly string[] = [
 ]
 
 // Lines the commit guard lets through in the main lane: a plain commit, push
-// or merge is left to the ask rules and core's commit approval gate.
+// or merge is left to the ask rules and core's commit approval gate. Each -m
+// message keeps the git-commit format, which the subject check holds a main
+// or pipeline commit to (tests/commit-subject.test.ts).
 export const COMMIT_MAIN_PASSES: readonly string[] = [
-  'git commit -m "fix: x"',
+  'git commit -m "fix: 🐛 Fix x."',
   'git push',
   'git push -u origin feat/add-d',
   'git -C /repo push origin main',
   'git -c user.name=x commit -F msg.txt',
-  'git commit -m x && git push',
+  'git commit -m "fix: 🐛 Fix x." && git push',
   // A word such as env in the message, which the bash guard read as a wrapper.
-  'git commit -m "load env vars" && git push',
-  'git commit -m "use bash -c and eval less" && git push',
+  'git commit -m "feat: ✨ Load env vars." && git push',
+  'git commit -m "refactor: ♻️ Use bash -c and eval less." && git push',
   'bash run-tests.sh && git push',
   'cd /repo && git push',
   'gh pr merge 5 --squash',
@@ -105,15 +107,17 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   ['gh api -X PUT repos/o/r/pulls/5/merge', ['sub-agent', 'pipeline']],
   ['gh api -X PUT "repos/o/r/pulls/5/merge?merge_method=squash"', ['sub-agent', 'pipeline']],
   ['echo gh pr merge 5 > x.sh; bash x.sh', ['sub-agent', 'pipeline']],
-  // A sub-agent's commit or push, in the spellings review rounds found.
-  ['git commit -m x', ['sub-agent']],
+  // A sub-agent's commit or push, in the spellings review rounds found. A
+  // commit the main lane and the pipeline pass carries a subject in the
+  // git-commit format, which the subject check holds them to.
+  ['git commit -m "fix: 🐛 Fix x."', ['sub-agent']],
   ['git push', ['sub-agent']],
   ['g\\it push', ['sub-agent']],
   ['"git" push', ['sub-agent']],
-  ["'git' commit -m x", ['sub-agent']],
+  ["'git' commit -m 'fix: 🐛 Fix x.'", ['sub-agent']],
   ['git \\\npush', ['sub-agent']],
   ['>out git push', ['sub-agent']],
-  ['2>/dev/null git commit -m x', ['sub-agent']],
+  ['2>/dev/null git commit -m "fix: 🐛 Fix x."', ['sub-agent']],
   ['echo git push > x.sh; ./x.sh', ['sub-agent']],
   ['echo git push > x.sh; make -f x.sh', ['sub-agent']],
   // Hidden from the ask rules, so refused in every lane.
@@ -125,7 +129,7 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   ['doas git push', ['main', 'sub-agent', 'pipeline']],
   // The harness strips these wrappers before it matches an ask rule, so only
   // a sub-agent is refused.
-  ['nice -n 5 git commit -m x', ['sub-agent']],
+  ['nice -n 5 git commit -m "fix: 🐛 Fix x."', ['sub-agent']],
   ['timeout 30 git push', ['sub-agent']],
   ['command git push', ['sub-agent']],
   ['caffeinate git push', ['main', 'sub-agent', 'pipeline']],

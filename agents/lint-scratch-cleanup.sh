@@ -1,32 +1,36 @@
 #!/bin/bash
-# Every dev-team agent makes scratch in the same places and deletes it itself.
+# Every dev-team agent makes scratch the same way, and the dev-team mod deletes it.
 # Run directly: bash agents/lint-scratch-cleanup.sh
 #
 # A LINTER, not a test: it greps English prose in the shipped Markdown and runs
-# none of the plugin's shell logic.
+# none of the plugin's shell logic. tests/scratch.test.ts holds the mod that
+# carries the rule out.
 #
 # Why: on 2026-09-30 a Holmes lens made a probe copy with a bare `mktemp -d`,
 # which lands in macOS $TMPDIR, and never deleted it. Its delete had been
 # refused, most likely because it named the folder through a variable, and the
 # report told Mike to run `! rm -r` himself. Mike's rule is that scratch lives in
-# the session scratchpad or ~/Developer/scratchpad, one folder per run, and that
-# an agent deletes its own scratch, with the path spelled out, before it reports.
+# the session scratchpad or ~/Developer/scratchpad, one folder per run, and is
+# deleted without the human. Since 2026-10-08 the dev-team mod carries that out
+# (hooks/mods/scratch.ts): it points a dev-team agent's bare mktemp at a folder
+# of its own under a scratch root, and deletes the folder when the run ends.
 # Each agent reads only its own file, so the rule lives in all of them.
 #
 # Checks:
-#   1. Every agents/*.md has a `## Scratch folders` section that names both
-#      roots, a per-run mktemp template carrying the agent's own name, the
-#      literal-path delete as its own command, the respell-and-retry rule, the
-#      ban on handing the human a `!` command, the defect report, and the
-#      branches-and-stashes carve-out.
+#   1. Every agents/*.md has a `## Scratch folders` section that names the bare
+#      mktemp, both roots, the mod's delete at the run's end, the touch-only-
+#      your-own rule, the fallback when the mod is not running, the ban on
+#      handing the human a `!` command, and the branches-and-stashes carve-out.
 #   2. No Markdown instruction under agents/ or skills/ makes scratch with a
-#      bare `mktemp -d`. A line that says `mktemp -d` must carry an XXXXXX
-#      template, or be the line that forbids the bare form.
+#      `<scratch root>` template, except the three shared clones, each of which
+#      its own step deletes: the Watson Index pipeline's, Holmes's Index-mode PR
+#      checkout, which his helpers read while his turn may have ended, and
+#      Lestrade's Item-mode clone.
 #   3. Every helper skeleton in review-phases.md carries the same probe-copy
-#      block, which makes the folder under a scratch root and deletes it. One
-#      skeleton worded its own way is a helper that leaks its copy again.
+#      block, which makes the folder with a bare mktemp. One skeleton worded its
+#      own way is a helper that leaks its copy again.
 #   4. The review guard's deny text sends a probe to a scratch root, not to a
-#      bare `mktemp -d`.
+#      bare `mktemp -d` in $TMPDIR.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -42,11 +46,6 @@ bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
 n=0
 for file in "$DIR"/*.md; do
   agent="$(basename "$file" .md)"; n=$((n + 1))
-  # A mode file (watson-index and the others) is composed from its public agent
-  # by bin/compose-agents.sh, and keeps that agent's folder name, so the name
-  # checked is the source the file declares.
-  source="$(sed -n 's|^# Composed by bin/compose-agents.sh from agents/\([a-z-]*\)\.md .*|\1|p' "$file" | head -1)"
-  folder="${source:-$agent}"
   section="$(awk '/^## Scratch folders/{f=1; next} f && /^## /{exit} f{print}' "$file" | tr '\n' ' ' | tr -s ' ')"
   if [ -z "$section" ]; then
     bad "$agent — no '## Scratch folders' section"
@@ -54,16 +53,15 @@ for file in "$DIR"/*.md; do
   fi
   missing=()
   for phrase in \
-    '**The session scratchpad**' \
-    '**`~/Developer/scratchpad`**, when your environment names none' \
-    "\`mktemp -d <scratch root>/$folder.XXXXXX\`" \
-    'Never make scratch with a bare `mktemp -d`, in `$TMPDIR`, or in `/tmp`.' \
+    'Make every temporary folder with a bare `mktemp -d`' \
+    'The dev-team mod points a bare `mktemp` at a folder of your own under a scratch root' \
+    'the session scratchpad, or `~/Developer/scratchpad` when the session has none' \
+    'It deletes that folder when your run ends' \
+    'Touch only what your own `mktemp` made.' \
     'Never touch another run'"'"'s folder' \
-    '**Delete every folder you made before you report,** on every exit path' \
-    'run the delete as a command of its own' \
-    '**If a guard refuses the delete of your own scratch, respell it and retry.**' \
+    'If `mktemp` prints a path outside both scratch roots, the mod is not running' \
+    'with `rm -rf` and its literal path, as a command of its own' \
     'Never ask the human to delete your scratch, and never hand them a `!` command' \
-    'name the path in your report as a defect' \
     'Leave git branches and stashes where they are'; do
     [[ $section == *"$phrase"* ]] || missing+=("$phrase")
   done
@@ -75,19 +73,20 @@ for file in "$DIR"/*.md; do
 done
 [ "$n" -ge 4 ] && ok "$n agent files checked" || bad "only $n agent files found in $DIR"
 
-# ── 2. No bare mktemp -d in any agent or skill instruction ────────────────────
-bare="$(cd "$ROOT" && grep -rn --include='*.md' 'mktemp -d' agents skills | grep -v 'XXXXXX' | grep -v 'bare `mktemp -d`')"
-if [ -z "$bare" ]; then
-  ok "no Markdown instruction makes scratch with a bare mktemp -d"
+# ── 2. No <scratch root> template outside the Watson pipeline's clone ──────────
+templated="$(cd "$ROOT" && grep -rn --include='*.md' 'mktemp -d <scratch root>' agents skills references \
+  | grep -v '^references/watson/index-mode-pipeline.md:' \
+  | grep -Ev '^agents/(holmes|holmes-index|lestrade|lestrade-item)\.md:[0-9]+:mktemp -d <scratch root>/(holmes|lestrade)\.XXXXXX ')"
+if [ -z "$templated" ]; then
+  ok "no Markdown instruction makes scratch from a <scratch root> template outside the three shared clones"
 else
-  while IFS= read -r line; do bad "bare mktemp -d: $line"; done <<< "$bare"
+  while IFS= read -r line; do bad "templated mktemp: $line"; done <<< "$templated"
 fi
 
 # ── 3. One probe-copy block, in every helper skeleton ─────────────────────────
 PROBE='in your own scratch folder, and you change only that copy. Make the folder with
-`mktemp -d` and a `holmes-lens.XXXXXX` name under your session scratchpad, or
-under ~/Developer/scratchpad when your environment names none. Before you
-report, delete it with `rm -rf` and the literal path, as its own command.'
+a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
+it when your run ends.'
 skeletons="$(grep -c '^Checkout (' "$PHASES")"
 blocks="$(python3 -c 'import sys; print(open(sys.argv[1]).read().count(sys.argv[2]))' "$PHASES" "$PROBE")"
 if [ "$skeletons" -gt 0 ] && [ "$skeletons" = "$blocks" ]; then

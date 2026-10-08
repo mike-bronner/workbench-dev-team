@@ -14,8 +14,9 @@ Direct mode never uses this file.
 
 An Index run ends in commits and pushes, and the plugin's hooks let them through
 only for a process that `bin/dispatch-agent.sh` spawned with
-`WORKBENCH_DEV_TEAM_PIPELINE=1`. The Agent tool cannot set that variable. A run
-without it would claim the item, move it to `In Progress`, and then die at its
+`WORKBENCH_DEV_TEAM_PIPELINE=1`. The Agent tool cannot set that variable, so
+the dev-team mod runs the script in place of a main-session Agent call. A run
+without the flag would claim the item, move it to `In Progress`, and then die at its
 first commit, leaving the claim behind to hide the item from the lane.
 
 ```bash
@@ -375,7 +376,7 @@ it, the next run treats this branch as a human's and hands off instead of
 resuming.
 
 ```bash
-git -C <clone path> commit --allow-empty -m 'chore: start work on #<issue_number>' -m 'Watson-Branch: #<issue_number>'
+git -C <clone path> commit --allow-empty -m 'chore: 🚧 Start work on #<issue_number>.' -m 'Watson-Branch: #<issue_number>'
 git -C <clone path> push -u origin <branch>
 ```
 

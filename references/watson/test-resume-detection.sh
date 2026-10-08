@@ -105,7 +105,7 @@ watson_commits() {
   local b="$1" issue="${2:-}"
   { echo "chore: some earlier work."
     if [ -n "$issue" ]; then printf '%s\n' "$issue"
-    else echo "chore: start work on #$ISSUE"; echo; echo "Watson-Branch: #$ISSUE"; fi
+    else echo "chore: 🚧 Start work on #$ISSUE."; echo; echo "Watson-Branch: #$ISSUE"; fi
   } > "$CASE/compare/$(printf '%s' "$b" | tr '/' '_')"
 }
 # human_commits <branch> -> branch carries ordinary human commits, no Watson mark

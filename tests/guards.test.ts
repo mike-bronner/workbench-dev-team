@@ -115,7 +115,7 @@ describe('commit guard — an answer the nouns cannot give fails closed', () => 
   })
   test('an unattended main loop still commits plainly', async ($, on) => {
     world(on, { lane: () => 'main', unattended: true })
-    expect(await refusalOf($, bash('git commit -m x'))).toBeUndefined()
+    expect(await refusalOf($, bash('git commit -m "fix: 🐛 Fix x."'))).toBeUndefined()
   })
   test('a line parseShell cannot read is refused, and never reaches the engine', async ($, on) => {
     const w = world(on, { lane: () => 'main', parseFails: true })
@@ -124,8 +124,8 @@ describe('commit guard — an answer the nouns cannot give fails closed', () => 
   })
   test('a sub-agent of the pipeline does not commit, though the pipeline does', async ($, on) => {
     world(on, { lane: id => (id === undefined ? 'top-level-agent' : 'sub-agent'), unattended: true })
-    expect(await refusalOf($, bash('git commit -m x'))).toBeUndefined()
-    expect(await refusalOf($, bash('git commit -m x'), 'helper-1')).toContain('a sub-agent does not commit or push')
+    expect(await refusalOf($, bash('git commit -m "fix: 🐛 Fix x."'))).toBeUndefined()
+    expect(await refusalOf($, bash('git commit -m "fix: 🐛 Fix x."'), 'helper-1')).toContain('a sub-agent does not commit or push')
   })
 })
 

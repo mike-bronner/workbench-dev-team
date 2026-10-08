@@ -24,7 +24,8 @@
 #   5. It states the ask-back rule, and the bar that stops it firing on
 #      everything.
 #   6. The `## Working-context budget` section is present, states its figure,
-#      and states that nothing enforces it — with both reasons.
+#      and states that the dev-team mod measures it and stops nothing — with
+#      both reasons nothing can stop the run.
 # Then the consumers of `Acceptance:` (Watson's and Holmes's Index-mode mapping
 # of the triage AC, and /develop's grading), Watson's mode default, and a sweep
 # over the sending docs: the template governs every handoff, that rule carries
@@ -196,13 +197,14 @@ fi
 # inherits the rule by being an agents/*.md, and the suite reddens on the one
 # file that shipped without it.
 #
-# The non-enforcement is checked as hard as the figure, and that is the whole
-# point. `maxBudgetUsd` reaches the scheduled dispatch path alone and the Agent
-# tool exposes no budget parameter, so the budget can only ever be advisory and
-# has to read that way. A limit an agent believes is enforced is one it trusts
-# and then exceeds silently, which is worse than stating no limit — so a copy
-# that keeps the figure and drops the disclaimer is the regression this catches,
-# and it is exactly the copy an editor trimming for length would produce.
+# What stands behind the figure is checked as hard as the figure, and that is
+# the whole point. The dev-team mod measures each request and notifies the human
+# once a run passes the budget, and nothing stops the run: `maxBudgetUsd` reaches
+# the scheduled dispatch path alone and the Agent tool exposes no budget
+# parameter. A limit an agent believes is enforced is one it trusts and then
+# exceeds silently, so a copy that keeps the figure and drops "stops nothing" is
+# the regression this catches, and it is exactly the copy an editor trimming for
+# length would produce.
 budget_problems=()
 for budget_file in "$DIR"/*.md; do
   budget_agent="$(basename "$budget_file" .md)"
@@ -214,8 +216,8 @@ for budget_file in "$DIR"/*.md; do
   fi
   printf '%s\n' "$budget_section" | grep -Eq '250k|250,000' \
     || budget_problems+=("$budget_agent — the budget names no figure to aim at")
-  printf '%s\n' "$budget_section" | grep -Fq 'Nothing enforces' \
-    || budget_problems+=("$budget_agent — the budget no longer says nothing enforces it")
+  printf '%s\n' "$budget_section" | grep -Fq 'The dev-team mod measures it and stops nothing.' \
+    || budget_problems+=("$budget_agent — the budget no longer says the mod measures it and stops nothing")
   printf '%s\n' "$budget_section" | grep -Fq 'maxBudgetUsd' \
     || budget_problems+=("$budget_agent — the budget drops why: maxBudgetUsd reaches only the scheduled path")
   printf '%s\n' "$budget_section" | grep -Fq 'no budget parameter' \
@@ -224,7 +226,7 @@ done
 
 if [ ${#budget_problems[@]} -eq 0 ]; then
   PASS=$((PASS + 1))
-  echo "  ✅ budget — every agent carries the working-context target, stated as unenforced"
+  echo "  ✅ budget — every agent carries the working-context target, measured and not enforced"
 else
   fail_file "the working-context budget is missing or reads as enforced" "${budget_problems[@]}"
 fi

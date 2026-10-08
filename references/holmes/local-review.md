@@ -55,7 +55,7 @@ output.
 
 | Index-mode step | Local mode |
 |---|---|
-| §0 config (`fanout`, `lensModel`) | **unchanged** — read it the same way |
+| §0 config line (`fanout`, `lensModel`) | **unchanged** — the mod adds it the same way |
 | §1 fetch the item | **replaced** — the brief is the input; there is no item |
 | §2 find the PR | **replaced** — the target is the working tree in `Workdir:` |
 | §2.5 decision request | **does not apply** — no PR, no Watson blocked-marker |
@@ -216,10 +216,8 @@ and no formatter or linter run with a write flag. That holds even for a moment:
 a file you rename and rename back still changes the tree the human approves, and
 races any other run reading it. A probe that needs a mutated tree runs on a copy
 you make in your own scratch folder, and you change only that copy. Make the
-folder with mktemp -d and a holmes-lens.XXXXXX name under your session
-scratchpad, or under ~/Developer/scratchpad when your environment names none.
-Before you report, delete that folder with rm -rf and the literal path, as its
-own command. A PreToolUse hook refuses writes to the working tree, and that
+folder with a bare mktemp -d: the dev-team mod puts it under a scratch root,
+and deletes it when your run ends. A PreToolUse hook refuses writes to the working tree, and that
 denial is final -- report it, never work around it.
 ```
 

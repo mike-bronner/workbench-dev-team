@@ -10,7 +10,7 @@ requires: Agent, Bash, Read, Grep, Glob
 section: # Sherlock Holmes — Code Review Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
-section: ## Scratch folders — make them in a scratch root, delete them yourself
+section: ## Scratch folders — a bare `mktemp`, deleted when your run ends
 skip: ## Mode detection
 skip: ## The Index-mode input contract
 section: ## The brief contract — refuse an incomplete brief, ask about a vague one
@@ -24,7 +24,7 @@ text:
 text: `references/holmes/local-review.md` names each step below by its Index-mode
 text: number and says how it applies to a local review. The other Index-mode steps
 text: are not yours.
-section: ### 0. Read the config (fan-out knobs)
+section: ### 0. The config line (fan-out knobs)
 skip: ### 1. Fetch the item
 skip: ### 2. Find the PR
 skip: ### 2.5. Decision request? (answer mode — before reviewing code)

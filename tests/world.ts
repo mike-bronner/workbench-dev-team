@@ -59,7 +59,20 @@ export type World = {
   nextAgentId: number
   // Each tool call that reached the engine: its tool and command or path.
   ran: string[]
+  // Each tool call that reached the engine, as its whole input.
+  calls: Record<string, unknown>[]
+  // Each $.process.run the module made, as its argv.
+  runs: string[][]
+  // Folders the stand-in mktemp made and rm has not removed.
+  made: Set<string>
+  // Each toast and transcript line the module showed.
+  shown: string[]
+  // Each model request's usage, in order, as the stand-in engine reports it.
+  usage: ({ input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number; model: string } | null)[]
 }
+
+// What a stand-in process.run answers.
+export type RunAnswer = { exitCode: number; stdout: string; stderr: string } | Error
 
 // A disk entry: a directory, a file, or a symbolic link to a path.
 export type Entry = 'dir' | 'file' | { link: string }
@@ -73,13 +86,18 @@ export type GuardOptions = {
   // What scratchRoots answers.
   roots?: string[]
   // What $.agent.list() answers: each loop's id, type and parent. An Error rejects.
-  agents?: { id: string; type: string; parentId?: string }[] | Error
+  // A loop's status is running unless the entry names one.
+  agents?: { id: string; type: string; parentId?: string; status?: string }[] | Error
   // What $.session.cwd() answers.
   cwd?: string
   // The disk, by absolute path.
   disk?: Record<string, Entry>
   // Makes parseShell reject.
   parseFails?: boolean
+  // Answers $.process.run. Return undefined to take the default: git exits
+  // 128 (not a repository), mktemp makes `<template with XXXXXX as abc123>`,
+  // and anything else exits 0 with no output.
+  run?: (argv: readonly string[]) => RunAnswer | undefined
 }
 
 // Where `path` lands on `disk`, every link followed, or undefined when it
@@ -136,6 +154,11 @@ export function world(
     agentCall: 'ok',
     nextAgentId: 1,
     ran: [],
+    calls: [],
+    runs: [],
+    made: new Set(),
+    shown: [],
+    usage: [],
   }
   const disk: Record<string, Entry> = { ...(options.disk ?? {}) }
   if (options.envFails) {
@@ -189,7 +212,26 @@ export function world(
 
   on('agent.list', async () => {
     if (options.agents instanceof Error) throw options.agents
-    return { value: (options.agents ?? []).map(a => ({ ...a, description: 'a task', status: 'running' })) } as never
+    return { value: (options.agents ?? []).map(a => ({ description: 'a task', status: 'running', ...a })) } as never
+  })
+
+  on('process.run', async ($, e) => {
+    w.runs.push([...e.argv])
+    const answer = options.run?.(e.argv) ?? defaultRun(w, e.argv)
+    if (answer instanceof Error) throw answer
+    return { value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false } }
+  })
+
+  on('fs.exists', async ($, e) => ({ value: w.made.has(e.path) || disk[e.path] !== undefined }))
+
+  on('ui.toast', async ($, e) => {
+    w.shown.push(`toast: ${e.text}`)
+    return { value: undefined }
+  })
+
+  on('ui.log', async ($, e) => {
+    w.shown.push(`${e.to}: ${e.text}`)
+    return { value: undefined }
   })
 
   on('session.cwd', async () => {
@@ -204,18 +246,35 @@ export function world(
 
   on('turn.step', async function* ($, e) {
     w.steps.push({ agentId: e.agentId, effort: e.effort })
-    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage: null }
-    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage: null }
+    const usage = w.usage.shift() ?? null
+    yield { kind: 'stop' as const, stopReason: 'end_turn' as const, usage }
+    return { turnId: e.turnId, index: e.index, answer: '', toolUses: [], stopReason: 'end_turn' as const, usage }
   })
+
+  on('turn.complete', async ($, e) => ({ text: e.answer }))
 
   on('tool.call', async ($, e) => {
     const input = e as { tool: string; command?: unknown; file_path?: unknown; notebook_path?: unknown }
     w.ran.push(`${input.tool}: ${String(input.command ?? input.file_path ?? input.notebook_path ?? '')}`)
+    w.calls.push({ ...(e as Record<string, unknown>) })
     if (w.agentCall === 'error') return { isError: true, result: 'boom', text: 'boom' } as never
     return { result: { status: 'completed' } } as never
   })
 
   return w
+}
+
+// The stand-in host: git finds no repository, mktemp makes its folder with
+// abc123 for the X run, rm removes what mktemp made, and anything else exits 0.
+function defaultRun(w: World, argv: readonly string[]): RunAnswer {
+  if (argv[0] === 'git') return { exitCode: 128, stdout: '', stderr: 'fatal: not a git repository' }
+  if (argv[0] === 'mktemp') {
+    const folder = (argv[argv.length - 1] ?? '').replace(/X+$/, 'abc123')
+    w.made.add(folder)
+    return { exitCode: 0, stdout: `${folder}\n`, stderr: '' }
+  }
+  if (argv[0] === 'rm') w.made.delete(argv[argv.length - 1] ?? '')
+  return { exitCode: 0, stdout: '', stderr: '' }
 }
 
 // The input of agent.spawn as the Agent tool's call site passes it.
@@ -240,3 +299,17 @@ export async function step($: { turn: { step: (e: never) => AsyncGenerator<unkno
   let read = await stream.next()
   while (!read.done) read = await stream.next()
 }
+
+// The end of a run in the loop `agentId` names (main when undefined).
+export async function complete($: { turn: { complete: (e: never) => Promise<unknown> } }, agentId?: string): Promise<void> {
+  await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't', reason: 'answer', ...(agentId === undefined ? {} : { agentId }) } as never)
+}
+
+// A request's usage whose working context is `tokens`, most of it cached.
+export const usageOf = (tokens: number) => ({
+  input_tokens: 10,
+  output_tokens: 100,
+  cache_read_input_tokens: tokens - 1010,
+  cache_creation_input_tokens: 1000,
+  model: 'claude-opus-5-5',
+})

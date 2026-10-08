@@ -9,7 +9,7 @@ requires: Agent, Bash, Read, Grep, Glob
 section: # Sherlock Holmes — Code Review Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
-section: ## Scratch folders — make them in a scratch root, delete them yourself
+section: ## Scratch folders — a bare `mktemp`, deleted when your run ends
 skip: ## Mode detection
 section: ## The Index-mode input contract
 skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
@@ -19,12 +19,15 @@ text: This prompt is The Index mode of `workbench-dev-team:holmes`. It takes onl
 text: the machine-built token `Item ID: <n>`, never a six-slot brief. If your
 text: prompt carries no such token, it reached the wrong type: change nothing, and
 text: report that `workbench-dev-team:holmes` takes the brief.
+text:
+text: The `Dev-team config:` line after the token comes from the dev-team mod.
+text: It is not part of the token, and step 0 reads it.
 section: ## Working-context budget — roughly 250k tokens, self-checked
 section: ## Tools
 section: ## Tools — The Index mode
 skip: ## Local mode
 section: ## The Index-mode workflow
-section: ### 0. Read the config (fan-out knobs)
+section: ### 0. The config line (fan-out knobs)
 section: ### 1. Fetch the item
 section: ### 2. Find the PR
 section: ### 2.5. Decision request? (answer mode — before reviewing code)

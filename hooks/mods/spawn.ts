@@ -61,6 +61,12 @@ function isWhole(prompt: string, ...tokens: RegExp[]): boolean {
   return lines.length === 1 && tokens.some(token => token.test(lines[0] ?? ''))
 }
 
+// The item id of a prompt that is the whole token `Item ID: <n>`, or undefined.
+export function itemIdOf(prompt: string): string | undefined {
+  if (!isWhole(prompt, ITEM_ID)) return undefined
+  return /[0-9]+/.exec(prompt.split('\n').find(line => NONBLANK.test(line)) ?? '')?.[0]
+}
+
 // The mode agent a dispatch runs, as a full type. Anything but a whole-prompt
 // token is Direct mode for Watson and Local mode for Holmes, as their files
 // say. Lestrade has no prose mode, so a prompt that is no token stays on the
@@ -107,6 +113,107 @@ export function knobsOf(configText: string | undefined, family: Family): Knobs {
   if (typeof model === 'string' && MODEL.test(model)) knobs.model = model
   if (typeof effort === 'string' && LEVELS.includes(effort.toLowerCase())) knobs.effort = effort.toLowerCase() as DevTeamEffort
   return knobs
+}
+
+// The knobs the review agents read at run time: whether Holmes and Lestrade
+// fan out to helpers, and the model the helpers run on. The mod adds them to
+// the prompt of the three modes that read them, so no agent reads the file:
+// at spawn for an interactive dispatch, and on prompt.submit for the top-level
+// run bin/dispatch-agent.sh starts, which raises no agent.spawn.
+export const CONFIG_MODES: Readonly<Record<string, Family>> = {
+  [`${PLUGIN}:holmes-local`]: 'holmes',
+  [`${PLUGIN}:holmes-index`]: 'holmes',
+  [`${PLUGIN}:lestrade-item`]: 'lestrade',
+}
+
+// The line's label, which the agents' prose names.
+export const CONFIG_LABEL = 'Dev-team config:'
+
+// The line the mod adds for one family, from the config's text. Only a
+// `false` turns the fan-out off, so a missing or malformed value leaves it on,
+// as the agents' default is. A lensModel outside the model shape is unset, and
+// the helpers then run on the agent's own model.
+export function configLineOf(configText: string | undefined, family: Family): string {
+  let entry: unknown
+  try {
+    entry = (JSON.parse(configText ?? '') as { agents?: Record<string, unknown> } | null)?.agents?.[family]
+  } catch {
+    entry = undefined
+  }
+  const { fanout, lensModel } = entry !== null && typeof entry === 'object' ? (entry as { fanout?: unknown; lensModel?: unknown }) : {}
+  const model = typeof lensModel === 'string' && MODEL.test(lensModel) ? lensModel : undefined
+  return `${CONFIG_LABEL} fanout ${fanout === false ? 'off' : 'on'}; lensModel ${model ?? 'unset'}.`
+}
+
+// The prompt with the config line added once, after a blank line.
+export const withConfigLine = (prompt: string, line: string): string =>
+  prompt.includes(CONFIG_LABEL) ? prompt : `${prompt.replace(/\s+$/, '')}\n\n${line}`
+
+// ── Holmes's helpers run on holmes-lens ──────────────────────────────────────
+
+export const LENS_TYPE = `${PLUGIN}:holmes-lens`
+
+// Holmes in any mode: the public type and its two mode types, by full or bare
+// name. Not holmes-lens, which holds no Agent tool.
+const HOLMES_MODE = /(^|[:/])holmes(-local|-index)?$/iu
+export const isHolmesMode = (type: string | undefined): boolean => type !== undefined && HOLMES_MODE.test(type.trim())
+
+// The type a Holmes spawn runs as: holmes-lens, whatever the call named, or a
+// refusal for a fork or a teammate, which cannot be retyped.
+export function lensSpawnOf(e: { subagentType: string; fork: boolean; isTeammate?: true }): { subagentType: string } | { deny: string } {
+  if (e.subagentType === LENS_TYPE) return { subagentType: LENS_TYPE }
+  if (e.fork || e.isTeammate) return { deny: lensDeny(e.fork ? 'a fork' : 'a teammate') }
+  return { subagentType: LENS_TYPE }
+}
+
+export function lensDeny(what: string): string {
+  return [
+    `🛑 Blocked: Holmes spawned ${what}.`,
+    '',
+    `Helper rule (${PLUGIN}). Every helper Holmes spawns runs on ${LENS_TYPE}, the read-only helper, and ${what} cannot be retyped to it. ` +
+      `Dispatch the helper with subagent_type "${LENS_TYPE}".`,
+  ].join('\n')
+}
+
+// Whether a type is one of the dev-team's agents, the helper included: the
+// types the mod gives a scratch folder and a context budget.
+export const isDevTeamType = (type: string | undefined): boolean => type !== undefined && (familyOf(type) !== undefined || type === LENS_TYPE)
+
+// ── The default-branch check ─────────────────────────────────────────────────
+
+export const DEFAULT_BRANCHES: readonly string[] = ['main', 'master', 'trunk']
+
+// A brief's Workdir: the path, and whether the slot records a workspace
+// decision. The path runs to the first " (", and the slot records a decision
+// when the text after the path names a branch or a worktree, as
+// `/repo (branch: main, Mike chose main)` does. Undefined when the brief has
+// no Workdir line.
+export function workdirOf(prompt: string): { path: string; isRecorded: boolean } | undefined {
+  const line = prompt.split('\n').find(l => /^[ \t]*Workdir:/.test(l))
+  if (line === undefined) return undefined
+  const value = line.replace(/^[ \t]*Workdir:/, '').trim()
+  const cut = value.indexOf(' (')
+  const path = (cut === -1 ? value : value.slice(0, cut)).trim()
+  return { path, isRecorded: /\b(branch|worktree)\b/i.test(value.slice(path.length)) }
+}
+
+export function branchDeny(path: string, branch: string): string {
+  return [
+    `🛑 Blocked: a Watson Direct-mode dispatch onto ${branch}, with no branch recorded in Workdir:.`,
+    '',
+    `Workspace check (${PLUGIN}). The repo at ${path} is on its default branch, ${branch}, and the brief's Workdir: names only the path. ` +
+      'Ask the human which branch the work goes on, through AskUserQuestion, and propose a branch name. ' +
+      `Then record the answer beside the path, for example "Workdir: ${path} (branch: fix/short-name)", or "(branch: ${branch}, <who> chose to work on ${branch})" when the human picks ${branch}, and dispatch again.`,
+  ].join('\n')
+}
+
+export function branchUnreadDeny(path: string): string {
+  return [
+    '🛑 Blocked: a Watson Direct-mode dispatch whose branch could not be read.',
+    '',
+    `Workspace check (${PLUGIN}). git did not answer for ${path}, so the check cannot tell whether the repo is on its default branch. ` +
+      'Ask the human which branch the work goes on, record it beside the path in Workdir:, for example "(branch: fix/short-name)", and dispatch again.',
+  ].join('\n')
 }
 
 // Whether the dispatch gate judges a dispatch: a main-session dispatch while

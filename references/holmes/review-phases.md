@@ -20,17 +20,16 @@ and verifiers never change a file in the tree under review, not even to probe a
 fail-open path and put it back. In Local mode that tree is exactly what the human
 approves, and a mutation, even an undone one, can corrupt it and races any other
 run reading it. A probe that needs a mutated tree runs on a copy in the
-sub-agent's own scratch folder, which it makes under a scratch root and deletes
-before it reports. The line says both, so no probe copy outlives its helper.
+sub-agent's own scratch folder, made with a bare `mktemp -d`. The dev-team mod
+deletes that folder when the helper's run ends, so no probe copy outlives it.
 
 **Every dispatch below names `subagent_type: "workbench-dev-team:holmes-lens"`**
 — the four lenses, the skeptic, the red team, the blue team, and the auditor.
 That type (`agents/holmes-lens.md`) holds `Bash`, `Read`, `Grep`, and `Glob` and
 no write tool, and the review guard (`hooks/mods/review-guard.ts`) refuses any
-write it makes outside the scratch roots. Never leave the type out: the Agent tool then
-falls back to `general-purpose`, which carries Write and Edit, and a lens on it
-once mutated the checkout it was reviewing. The model stays `LENS_MODEL`, passed
-as the dispatch's `model`.
+write it makes outside the scratch roots. The dev-team mod runs any other type
+you name as holmes-lens. The model stays `LENS_MODEL`, passed as the dispatch's
+`model`.
 
 ---
 
@@ -60,9 +59,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. A probe that needs a mutated tree runs on a copy you make
 in your own scratch folder, and you change only that copy. Make the folder with
-`mktemp -d` and a `holmes-lens.XXXXXX` name under your session scratchpad, or
-under ~/Developer/scratchpad when your environment names none. Before you
-report, delete it with `rm -rf` and the literal path, as its own command.
+a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
+it when your run ends.
 PR number: <PR_NUM>   Repo: <repo>
 
 Acceptance criteria (verbatim — never amend or reinterpret):
@@ -114,9 +112,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. A probe that needs a mutated tree runs on a copy you make
 in your own scratch folder, and you change only that copy. Make the folder with
-`mktemp -d` and a `holmes-lens.XXXXXX` name under your session scratchpad, or
-under ~/Developer/scratchpad when your environment names none. Before you
-report, delete it with `rm -rf` and the literal path, as its own command.
+a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
+it when your run ends.
 A reviewer claims the following BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -139,9 +136,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. A probe that needs a mutated tree runs on a copy you make
 in your own scratch folder, and you change only that copy. Make the folder with
-`mktemp -d` and a `holmes-lens.XXXXXX` name under your session scratchpad, or
-under ~/Developer/scratchpad when your environment names none. Before you
-report, delete it with `rm -rf` and the literal path, as its own command.
+a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
+it when your run ends.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -157,9 +153,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. A probe that needs a mutated tree runs on a copy you make
 in your own scratch folder, and you change only that copy. Make the folder with
-`mktemp -d` and a `holmes-lens.XXXXXX` name under your session scratchpad, or
-under ~/Developer/scratchpad when your environment names none. Before you
-report, delete it with `rm -rf` and the literal path, as its own command.
+a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
+it when your run ends.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -179,9 +174,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. A probe that needs a mutated tree runs on a copy you make
 in your own scratch folder, and you change only that copy. Make the folder with
-`mktemp -d` and a `holmes-lens.XXXXXX` name under your session scratchpad, or
-under ~/Developer/scratchpad when your environment names none. Before you
-report, delete it with `rm -rf` and the literal path, as its own command.
+a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
+it when your run ends.
 Claim: <claim>   location: <file:line>   evidence: <evidence>
 
 Attacker report: <attacker output>

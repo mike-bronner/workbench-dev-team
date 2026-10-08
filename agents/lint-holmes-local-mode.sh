@@ -352,7 +352,7 @@ if [ -f "$LOCAL_MODE" ] && [ -f "$INDEX_MODE" ]; then
     || modes+=("holmes-local.md does not carry holmes.md's Local-mode section, limits included")
   grep -Fq 'mcp__the-index__' <(sed -n '/^tools:/p' "$LOCAL_MODE") \
     && modes+=("holmes-local.md grants an Index tool, which Local mode never calls")
-  for step in '### 0. Read the config' '##### 4a.5. Search `feedback/`' '#### 4d. Check conformance' '#### 4e. Defects and observations'; do
+  for step in '### 0. The config line' '##### 4a.5. Search `feedback/`' '#### 4d. Check conformance' '#### 4e. Defects and observations'; do
     grep -Fq "$step" "$LOCAL_MODE" || modes+=("holmes-local.md lost '$step', which local-review.md carries over")
   done
   grep -Fq '### 5. Submit your verdict' "$LOCAL_MODE" \

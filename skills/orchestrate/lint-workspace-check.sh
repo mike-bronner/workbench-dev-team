@@ -13,9 +13,12 @@
 # branch — so a check covering only one of the three cases restores the behaviour
 # through the other two. Each case is pinned here.
 #
-# The policy is to ASK, never to refuse. Branches and worktrees are the wanted
+# The policy is to ASK, never to forbid. Branches and worktrees are the wanted
 # outcome of most dev work, so a rewrite into a prohibition would be wrong about
-# the policy and would simply get ignored. That direction is checked too.
+# the policy and would simply get ignored. That direction is checked too. The
+# dev-team mod refuses a Watson brief whose bare Workdir: sits on a default
+# branch (hooks/mods/spawn.ts), and that refusal is the ask: it tells the
+# orchestrator to ask the human for a branch, so the section names it.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -67,11 +70,13 @@ report "cases — all three workspace cases, plus the two-Watsons worktree rule"
 tone=()
 printf '%s' "$section" | grep -Fq 'each ending in a question' \
   || tone+=("the section no longer says every case ends in a question")
-printf '%s' "$section" | grep -Fq 'None of the three refuses a dispatch' \
-  || tone+=("the section no longer says a case refuses nothing")
+printf '%s' "$section" | grep -Fq 'None of the three forbids the work' \
+  || tone+=("the section no longer says a case forbids nothing")
+printf '%s' "$section" | grep -Fq 'its refusal says to ask' \
+  || tone+=("the section no longer says the mod's default-branch refusal is an ask")
 printf '%s' "$section" | grep -Eiq 'never create a (new )?(branch|worktree)|do not create a (branch|worktree)' \
   && tone+=("the check has been rewritten as a prohibition, which is not the policy")
-report "tone — the check asks the human, and refuses nothing" ${tone[@]+"${tone[@]}"}
+report "tone — the check asks the human, and forbids nothing" ${tone[@]+"${tone[@]}"}
 
 # The answer lands in Workdir:, which is why it has no slot of its own. A brief
 # whose Workdir carries a bare path must stay valid — most dispatches decide no

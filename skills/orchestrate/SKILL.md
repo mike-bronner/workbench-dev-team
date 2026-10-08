@@ -78,7 +78,9 @@ Three cases, each ending in a question:
 - **Inside a worktree** — confirm it is the one meant for this task, and ask
   when it is not.
 
-None of the three refuses a dispatch. Ask, take the answer, then dispatch.
+None of the three forbids the work. Ask, take the answer, then dispatch. The
+dev-team mod refuses a Watson brief whose bare `Workdir:` sits on one of those
+branches, and its refusal says to ask.
 **Record the answer in `Workdir:`** — the branch or worktree beside the absolute
 path, `Workdir: /Users/mike/Developer/foo (branch: fix/retry-backoff)` — so no
 workspace choice is made inside a sub-agent the human never saw. A bare path
@@ -99,9 +101,9 @@ slot: `references/brief-rationale.md`.
 
 ## Dispatch protocol
 
-1. **Background by default.** Every dispatch sets `run_in_background: true`.
-   The conversation continues; completion notifications arrive on their own.
-   Foreground only when the user explicitly wants to wait on a quick result.
+1. **Background by default.** Every dispatch runs with `run_in_background:
+   true`; the dev-team mod sets it on a dev-team dispatch that leaves it out.
+   Set `false` only when the user explicitly wants to wait on a quick result.
 2. **No `model` parameter.** Never pass the Agent tool's `model` to a dev-team
    agent. The agent's frontmatter carries the configured model, and the
    alias-only parameter would override it (see "Model and effort" below).
@@ -117,22 +119,16 @@ slot: `references/brief-rationale.md`.
    a list of agents (why: `references/brief-rationale.md`). A Watson or Holmes
    `Item ID: <n>` run needs no `Acceptance:` slot: the item's acceptance
    criteria, written by Lestrade at triage, are its Acceptance list.
-4. **A Watson Index-mode run goes through the dispatcher, never the Agent
-   tool**, because only the dispatcher gives the run its pipeline flag (see
-   "What the dispatcher does" below). It takes the same item id:
-
-   ```bash
-   bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" watson <item-id>
-   ```
-
-   A first line of `SKIP` (a run on that item is still alive) or `ESCALATE`
+4. **A Watson Index-mode run goes through the dispatcher.** Dispatch
+   `Item ID: <n>` to Watson as usual. The dev-team mod runs
+   `~/.claude-workbench/bin/dispatch-agent.sh` in place of the Agent call,
+   because only the dispatcher gives the run its pipeline flag, and returns the
+   dispatcher's first line. A first line of `SKIP` (a run on that item is still alive) or `ESCALATE`
    (the breaker judges the item wedged) means nothing was spawned: relay it to
    the human rather than retrying. Track a spawned run from its log rather than
    from a completion notification, and keep the roster line updated from it.
    The run exits 0 even when calls were refused, so check the log for
-   `Permission denied:` lines, one per refused call. The Agent tool stays right
-   for everything that writes no commit: Watson's Direct mode, Lestrade,
-   Holmes, and every read-only dispatch.
+   `Permission denied:` lines, one per refused call.
 
 ### Direct-mode work comes back uncommitted
 
@@ -399,8 +395,9 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 A Watson Index-mode run ends in commits and pushes. The commit guard refuses
 both to any sub-agent, and only the top-level loop of a `claude -p --agent` run
 commits, with `WORKBENCH_DEV_TEAM_PIPELINE=1` to answer its prompts. The Agent
-tool can start neither. `bin/dispatch-agent.sh` starts the run and exports the
-flag.
+tool can start neither, so the dev-team mod runs `bin/dispatch-agent.sh` in
+place of a main-session Watson `Item ID: <n>` call. The script starts the run
+and exports the flag.
 
 `bin/dispatch-agent.sh` reads the same config — model, effort, fallback,
 budget — runs the circuit-breaker pre-flight, backgrounds the run in auto mode

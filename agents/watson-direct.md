@@ -38,40 +38,28 @@ Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
 
-## Scratch folders — make them in a scratch root, delete them yourself
+## Scratch folders — a bare `mktemp`, deleted when your run ends
 
-Every temporary folder you make goes in a scratch root. That covers a clone, a
-probe copy, and a place for intermediate output.
+Make every temporary folder with a bare `mktemp -d`, and a temporary file with
+a bare `mktemp`. That covers a clone, a probe copy, and a place for
+intermediate output. The dev-team mod points a bare `mktemp` at a folder of
+your own under a scratch root: the session scratchpad, or
+`~/Developer/scratchpad` when the session has none. It deletes that folder when
+your run ends, so you delete nothing.
 
-- **The session scratchpad**, when your environment block names one on its
-  `Scratchpad directory:` line. A sub-agent's line names the scratchpad of the
-  session that spawned it.
-- **`~/Developer/scratchpad`**, when your environment names none. The harness
-  leaves that line out when its scratchpad feature is off, so a headless run
-  can start without one.
+The Index pipeline's clone is the one exception: its step spells out a
+scratch-root template, and its clean-up step deletes the clone. Follow those
+steps as written.
 
-Make each folder with `mktemp -d <scratch root>/watson.XXXXXX`, with the root
-written as an absolute path. `mktemp` fills in the `XXXXXX`, so parallel runs,
-lens helpers and Watsons alike, each get a folder of their own. Never make
-scratch with a bare `mktemp -d`, in `$TMPDIR`, or in `/tmp`. Touch only the
-folder your own `mktemp` printed. Never touch another run's folder or the
-scratch root itself.
+Write the path `mktemp` printed out in full in every later command. Touch only
+what your own `mktemp` made. Never touch another run's folder or the scratch
+root itself. If `mktemp` prints a path outside both scratch roots, the mod is
+not running: report that as a defect, and before you report, delete the folder
+with `rm -rf` and its literal path, as a command of its own.
 
-**Delete every folder you made before you report,** on every exit path, with
-`rm -rf <the path mktemp printed>`. Spell the absolute path out in full, and
-run the delete as a command of its own: no variable, no glob, no `~`, and no
-`&&` or `;` joining it to another command. The guards allow that form. They
-refuse the others, because they cannot tell what those would delete.
-
-**If a guard refuses the delete of your own scratch, respell it and retry.**
-Write it again as the literal-path line above and run it. That is the form the
-guard is built to check, so the retry does what the refusal asks and is not
-routing around it. Never ask the human to delete your scratch, and never hand
-them a `!` command to run. If the literal-path delete still fails, name the
-path in your report as a defect.
-
-This rule covers scratch files and folders only. Leave git branches and
-stashes where they are unless the human asks you to remove them.
+Never ask the human to delete your scratch, and never hand them a `!` command
+to run. Leave git branches and stashes where they are unless the human asks you
+to remove them.
 
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 
@@ -150,13 +138,11 @@ Aim to finish a single task inside **about 250k tokens of working context** —
 the prompt you were handed, the files you read, and the tool output you
 accumulate on the way.
 
-**Nothing enforces that figure, and nothing in the harness can.** The
-`maxBudgetUsd` knob in `dev-team-config.json` is passed as `--max-budget-usd`
-on the scheduled dispatch path and reaches no other, and the Agent tool that
-spawns you from a live conversation exposes no budget parameter at all. So the
-budget is prose you check against yourself, and it says so outright on purpose:
-a limit that reads as enforced gets trusted and then silently exceeded, which
-is worse than stating no limit at all.
+**The dev-team mod measures it and stops nothing.** It reads the working
+context of every model request your run makes, and notifies the human once
+when a request passes 250k. No limit ends the run: the `maxBudgetUsd` knob in
+`dev-team-config.json` reaches only the scheduled path, and the Agent tool has
+no budget parameter. So the budget stays yours to keep.
 
 The lever is what you read. Grep before you open a file, read the part you need
 rather than the whole file, and prefer one aimed search to a broad sweep you

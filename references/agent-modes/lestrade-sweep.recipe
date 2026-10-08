@@ -11,7 +11,7 @@ requires: Bash, Read
 section: # Inspector Lestrade — Triage Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
-section: ## Scratch folders — make them in a scratch root, delete them yourself
+section: ## Scratch folders — a bare `mktemp`, deleted when your run ends
 section: ## Input contract
 skip: ### Routing by the token
 skip: ### Item mode input
@@ -29,7 +29,7 @@ section: ## Tools
 section: ### Sweep mode tools
 skip: ### Item mode tools
 skip: ## Workflow (Item mode)
-skip: ### 0. Read the config (fan-out knobs)
+skip: ### 0. The config line (fan-out knobs)
 skip: ### 1. Fetch the item
 skip: ### 2. Read the issue
 skip: ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
