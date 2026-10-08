@@ -111,7 +111,7 @@ The mid-rule `*` forms catch `git -C <dir> push`, `git -c <key>=<value> commit`,
 | A commit or push from a sub-agent | A sub-agent's prompt reaches no human. It hands its work back uncommitted instead |
 | A `git commit -m` subject in the main loop or the pipeline that breaks the git-commit format: a type, no scope, one gitmoji, and a description that ends with a period ([hooks/mods/commit-subject.ts](hooks/mods/commit-subject.ts)). A message given with `-F`, built at run time, or written in an editor is not judged | The format is the git-commit skill's, and a refusal that shows the expected shape costs less than a commit fixed after review. `tests/test-commit-subject-lists.sh` holds its gitmoji and type lists to the skill's references |
 | A commit, push, or merge the ask rules cannot see, in every lane: behind a wrapper the harness does not strip (`env`, `sudo`, `xargs`, `caffeinate`, and the rest), a leading `NAME=value` such as `HUSKY=0`, `bash -c`, `eval`, a substitution, or a heredoc fed to a shell; a git named by its path or in another case; an escaped word; a subcommand a `-c alias.<name>` supplies; or a subcommand, or an option word before it, built at run time (`git "$(echo commit)"`, `git $x`, `gh pr $(echo merge)`), which counts as any subcommand. An option's value (`-C "$D"`, `--git-dir=$D`, `-R"$R"`) decides nothing. A `gh api` endpoint built at run time counts as a merge when the method is `PUT` or built (`-X PUT`, `-XPUT`, `-iX PUT`, `--method=PUT`), or a built word stands where a flag could, since the REST merge takes a `PUT`. A `gh api` line whose fields name the GraphQL `mergePullRequest` or `enablePullRequestAutoMerge` mutation counts as a merge over any endpoint and method | No prompt would appear. The refusal asks for a plain line |
-| From a sub-agent or in a run nobody attends, any line whose command name is built at run time (`"$PY" script.py`, `g$(echo it) push`) or sits behind a wrapper option the reader cannot place | The guard cannot tell what runs. Mike accepted the cost on 2026-10-07: a rare `$CMD …` line refused there. An attended main loop is left to the ask rules and core's commit gate |
+| From a sub-agent or in a run nobody attends, any line whose command name is built at run time (`"$PY" script.py`, `g$(echo it) push`) or sits behind a wrapper option the reader cannot place. A plain `"$NAME/…"` in double quotes before a literal path names its program, so it is not refused | The guard cannot tell what runs. Mike accepted the cost on 2026-10-07: a rare `$CMD …` line refused there. Since workbench-core 4e83554, core's guards refuse each of these lines first, in every lane, so this rule is dev-team's own check in the lanes nobody watches |
 
 It reads each line through workbench-core's `$.workbench.parseShell`, never as text, so a commit message, a `grep` pattern, or a heredoc of notes that names `git push` is data. `git commit -m "feat: ✨ Load env vars." && git push` passes in the foreground, and so does a file-edit script whose comment says "git commit or push". Text is read in three places only, where a command can hide from the statements:
 
@@ -369,7 +369,11 @@ The two groups are named apart on purpose:
   22.18 or later. `tests/test-shipped-lines.sh` holds every git or gh shell
   block in `agents/` and `references/` to the commit guard, in the lanes that
   run it, so a guard that refuses the agents' own lines fails there, and holds
-  each pipeline commit subject to the git-commit format.
+  each pipeline commit subject to the git-commit format. It also holds every
+  shell block in `agents/`, `references/`, `skills/` and `commands/` to the
+  rule workbench-core enforces in every lane: each command name written out
+  plainly, with no expansion in it, no wrapper option the reader cannot place,
+  and no script piped into a shell.
   `tests/test-commit-subject-lists.sh` holds the subject check's gitmoji and
   type lists to the git-commit skill's references, both ways.
   `tests/test-core-copies.sh` holds the workbench-core files copied into

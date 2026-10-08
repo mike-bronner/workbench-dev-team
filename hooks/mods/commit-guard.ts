@@ -53,8 +53,13 @@
 //      reader cannot place (a wrapper option it cannot read) or that is built
 //      at run time from a substitution or a variable (`"$CMD" x`,
 //      `g$(echo it) push`), whatever the line names. Mike accepted the cost on
-//      2026-10-07: a rare `$CMD …` line refused there. An attended main loop is
-//      left to the ask rules and core's commit gate, as before.
+//      2026-10-07: a rare `$CMD …` line refused there. A plain `"$NAME/…"`
+//      before a literal path names its program, so it is not refused. Since
+//      workbench-core 4e83554, core's guards refuse each of these lines first,
+//      in every lane. This rule stays as dev-team's own check in the lanes no
+//      human watches. It also refuses a substitution in front of a literal
+//      path (`$(…)x/y`), which core's reader at 4e83554 misses. That check
+//      stays until core's reader marks an unquoted substitution.
 //
 // THE FOURTH RULE IS KEPT. workbench-core's commit approval gate reads past
 // every hidden form above, but only for a commit or push in the main loop of an
@@ -455,11 +460,22 @@ export const FAILED_REFUSAL = refusal(
   'The guard failed while reading this command, so it refuses it rather than let a commit, push, or merge through unread. Report this to the human as a guard defect. Do not try another spelling.',
 )
 
-// Whether any statement's command name is unplaced or built at run time.
+// Whether any statement's command name is unplaced or built at run time, as
+// parseShell reads it. Since workbench-core 4e83554 its `expansion` unknown
+// covers a `$` or a backtick anywhere in a command word, except a plain
+// `"$NAME/…"` or `"${NAME}/…"` in double quotes before a literal path, whose
+// last path part names the program.
+//
+// The reader writes a substitution into the word as `$_` with no mark for an
+// unquoted one, so `$(echo a b)x/y` reads as the plain prefix `$_x/` and gets
+// no unknown, though the shell splits the output and runs its first word. A
+// name word holding `$_` is refused here too. A quoted "$(…)x/…" looks the
+// same once the words are stripped, so it is refused as well. This check
+// stays until core's reader marks an unquoted substitution.
 const hasBuiltName = (parse: ShellParse): boolean =>
   parse.unknowns.includes('expansion') ||
   parse.unknowns.includes('wrapper') ||
-  parse.statements.some(s => !s.isPlaced || (s.nameAt >= 0 && isBuilt(s.words[s.nameAt] ?? '')))
+  parse.statements.some(s => !s.isPlaced || (s.nameAt >= 0 && (s.words[s.nameAt] ?? '').includes('$_')))
 
 // The verdict on one Bash line, in the order of the header's rules.
 export function commitVerdict(parse: ShellParse, line: string, caller: Caller): Refusal | undefined {

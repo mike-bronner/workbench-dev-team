@@ -1,6 +1,8 @@
 #!/bin/bash
 # Every shell block the agents and their references ship passes the commit
-# guard in the lanes that run it. Run directly: bash tests/test-shipped-lines.sh
+# guard in the lanes that run it, and every shell block dev-team ships names
+# each command plainly, as workbench-core requires in every lane. Run directly:
+# bash tests/test-shipped-lines.sh
 #
 # A wrapper, so the suite's test-*.sh discovery runs tests/shipped-lines.mjs.
 # Read its header for what it checks. It needs node 22.18 or later, for type

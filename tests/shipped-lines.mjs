@@ -16,6 +16,13 @@
 // No agent merges, so a block refused as a merge fails in both lanes.
 // A block is judged whole, as an agent pastes it.
 //
+// workbench-core refuses, in every lane and ahead of any plugin guard, a line
+// whose command its reader cannot name (hiddenCommandRefusal in core's
+// hooks/mods/guards.ts, since 4e83554): a command word with an expansion in
+// it, a wrapper it cannot place, or a script piped or fed into a shell. So
+// every shell block in agents/, references/, skills/ and commands/, git or
+// not, is also held to that rule, read through the same copy of core's reader.
+//
 // Needs node 22.18 or later (type stripping).
 
 import fs from 'node:fs'
@@ -36,7 +43,7 @@ function markdown(dir) {
   })
 }
 
-// Each fenced shell block of a file that names git or gh.
+// Each fenced shell block of a file.
 function blocks(file) {
   const found = []
   let body
@@ -45,7 +52,7 @@ function blocks(file) {
     if (fence && body === undefined) {
       body = ['bash', 'sh', 'shell'].includes(fence[1]) ? [] : null
     } else if (fence) {
-      if (body && body.some(l => /\b(?:git|gh)\b/.test(l))) found.push(body.join('\n'))
+      if (body) found.push(body.join('\n'))
       body = undefined
     } else if (body) {
       body.push(line)
@@ -54,18 +61,65 @@ function blocks(file) {
   return found
 }
 
+const namesGit = block => /\b(?:git|gh)\b/.test(block)
+const whereOf = (file, block) => `${path.relative(ROOT, file)}: ${JSON.stringify(block.length > 120 ? `${block.slice(0, 120)}…` : block)}`
+// A `<placeholder>` such as `<clone path>` reads as a redirect, which hides
+// the commit from the statements, so a block is also read with every
+// placeholder filled in.
+const filledOf = block => block.replace(/<[a-z][a-z _-]*>/g, 'placeholder')
+
+// What core's hiddenCommandRefusal refuses, as the reading shows it.
+function hiddenCommand(parse) {
+  if (parse.unknowns.includes('expansion')) return 'a command name comes from a variable or a substitution'
+  if (parse.unknowns.includes('stdin')) return 'a script is piped or fed into a shell'
+  if (parse.unknowns.includes('wrapper') || parse.statements.some(s => !s.isPlaced)) return 'a wrapper option the reader cannot place'
+  return undefined
+}
+
 const files = [...fs.readdirSync(path.join(ROOT, 'agents')).filter(f => f.endsWith('.md')).map(f => path.join(ROOT, 'agents', f)), ...markdown(path.join(ROOT, 'references'))]
-let checked = 0
 let failed = 0
-for (const file of files) {
+
+// The rule's own lines, so a reader change that empties it shows here.
+const CORE_RULE = [
+  ['"$PY" script.py', true],
+  ['/usr/${X}/rm a', true],
+  ['curl -s x | bash', true],
+  ['env --spl=x true', true],
+  ['"$HOME/bin/x" a', false],
+  ['"${CLAUDE_PLUGIN_ROOT}/scripts/x.sh"', false],
+  ['python3 script.py', false],
+]
+for (const [line, isRefused] of CORE_RULE) {
+  if ((hiddenCommand(parseShell(line)) !== undefined) !== isRefused) {
+    failed++
+    console.log(`  ❌ workbench-core's rule ${isRefused ? 'lets through' : 'refuses'} ${JSON.stringify(line)}`)
+  }
+}
+
+// Core's rule, in every lane, on every shell block.
+let read = 0
+for (const file of [...files, ...markdown(path.join(ROOT, 'skills')), ...markdown(path.join(ROOT, 'commands'))]) {
   for (const block of blocks(file)) {
+    read++
+    const why = hiddenCommand(parseShell(filledOf(block)))
+    if (why !== undefined) {
+      failed++
+      console.log(`  ❌ refused by workbench-core in every lane (${why}): ${whereOf(file, block)}`)
+    }
+  }
+}
+if (read === 0) {
+  failed++
+  console.log('  ❌ no shell block found: the extraction stopped matching')
+}
+
+let checked = 0
+for (const file of files) {
+  for (const block of blocks(file).filter(namesGit)) {
     checked++
     const parse = parseShell(block)
-    const where = `${path.relative(ROOT, file)}: ${JSON.stringify(block.length > 120 ? `${block.slice(0, 120)}…` : block)}`
-    // A `<placeholder>` such as `<clone path>` reads as a redirect, which hides
-    // the commit from the statements, so the subject is read from a copy with
-    // every placeholder filled in.
-    const filled = parseShell(block.replace(/<[a-z][a-z _-]*>/g, 'placeholder'))
+    const where = whereOf(file, block)
+    const filled = parseShell(filledOf(block))
     const pipeline = commitVerdict(parse, block, { lane: 'top-level-agent', isUnattended: true }) ?? subjectVerdict(filled)
     if (pipeline !== undefined) {
       failed++
@@ -82,5 +136,10 @@ if (checked === 0) {
   failed++
   console.log('  ❌ no shell block names git or gh: the extraction stopped matching')
 }
-console.log(failed === 0 ? `  ✅ ${checked} shipped shell blocks pass the commit guard in the lanes that run them` : `\n${failed} failed`)
+if (failed === 0) {
+  console.log(`  ✅ ${read} shipped shell blocks name each command plainly, as workbench-core requires in every lane`)
+  console.log(`  ✅ ${checked} shipped shell blocks pass the commit guard in the lanes that run them`)
+} else {
+  console.log(`\n${failed} failed`)
+}
 process.exit(failed === 0 ? 0 : 1)

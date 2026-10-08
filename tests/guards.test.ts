@@ -100,7 +100,7 @@ describe('commit guard — an answer the nouns cannot give fails closed', () => 
     world(on, { lane: () => 'main', unattended: true })
     expect(await refusalOf($, bash('"$PY" script.py'))).toContain('a command name the guard cannot read')
   })
-  test('an attended top-level --agent run runs a command name built at run time', async ($, on) => {
+  test('an attended top-level --agent run does not meet the built-name rule', async ($, on) => {
     world(on, { lane: () => 'top-level-agent', unattended: false })
     expect(await refusalOf($, bash('"$PY" script.py'))).toBeUndefined()
   })
@@ -108,7 +108,9 @@ describe('commit guard — an answer the nouns cannot give fails closed', () => 
     world(on, { lane: () => 'top-level-agent', unattended: true })
     expect(await refusalOf($, bash('"$PY" script.py'))).toContain('a command name the guard cannot read')
   })
-  test('an attended main loop runs a command name built at run time', async ($, on) => {
+  // workbench-core's guards refuse this line in every lane before this one runs
+  // (4e83554). This guard leaves it to them in an attended main loop.
+  test('an attended main loop does not meet the built-name rule', async ($, on) => {
     world(on, { lane: () => 'main', unattended: false })
     expect(await refusalOf($, bash('"$PY" script.py'))).toBeUndefined()
     expect(await refusalOf($, bash('g$(echo it) com$(echo mit) -m x'))).toBeUndefined()

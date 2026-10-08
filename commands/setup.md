@@ -65,14 +65,14 @@ Save the answer as `INSTALL_JOB` (`yes` or `skip`).
 Run a single Bash check for the host tools the rest of the script needs:
 
 ```bash
-missing=()
+missing=""
 for cmd in gh jq security git curl python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
-    missing+=("$cmd")
+    missing="$missing $cmd"
   fi
 done
-if [ ${#missing[@]} -gt 0 ]; then
-  echo "❌ Missing prerequisites: ${missing[*]}"
+if [ -n "$missing" ]; then
+  echo "❌ Missing prerequisites:$missing"
   echo "   Install the missing tools and re-run /workbench-dev-team:setup."
   exit 1
 fi
@@ -425,10 +425,11 @@ PIN_REPLACE="${PIN_REPLACE:-}"
 PIN_TARGETS=""
 while IFS= read -r PIN_AGENT; do
   [ -n "$PIN_AGENT" ] || continue
-  case " $PIN_AGENTS " in
-    *" $PIN_AGENT "*) PIN_TARGETS="$PIN_TARGETS $PIN_AGENT" ;;
-    *) echo "⚠  '$PIN_AGENT' is not one of: $PIN_AGENTS — not written" ;;
-  esac
+  if [[ " $PIN_AGENTS " == *" $PIN_AGENT "* ]]; then
+    PIN_TARGETS="$PIN_TARGETS $PIN_AGENT"
+  else
+    echo "⚠  '$PIN_AGENT' is not one of: $PIN_AGENTS — not written"
+  fi
 done < <(printf '%s\n' "$PIN_REPLACE" | tr ' \t' '\n\n')
 
 # The same shape test as the pin check, for every named agent. The check never

@@ -51,6 +51,12 @@ export const COMMIT_PASSES: readonly string[] = [
   'gh api -X GET repos/o/r/pulls$X',
   'gh api -iX GET repos/$X',
   "gh api graphql -f query='query{viewer{login}}'",
+  // A plain "$NAME/…" or "${NAME}/…" in double quotes before a literal path
+  // names its program by the last path part, as workbench-core's reader has
+  // read it since 4e83554 (batch C1).
+  '"$HOME/bin/x" a',
+  '"${CLAUDE_PLUGIN_ROOT}/scripts/x.sh" a',
+  '"$HOME"/bin/x a',
 ]
 
 // Lines the commit guard lets through in the main lane: a plain commit, push
@@ -74,7 +80,8 @@ export const COMMIT_MAIN_PASSES: readonly string[] = [
   // A value built at run time decides no subcommand.
   'git -C "$(pwd)" push',
   'git commit -m "$(cat msg.txt)"',
-  // An attended main loop is not held to the built-name rule.
+  // This guard does not hold an attended main loop to the built-name rule.
+  // workbench-core's guards refuse the line there first (4e83554).
   '"$PY" script.py',
 ]
 
@@ -223,6 +230,22 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   ['$CMD status', ['sub-agent', 'pipeline']],
   ['$(which python3) script.py', ['sub-agent', 'pipeline']],
   ['sudo -s ls', ['sub-agent', 'pipeline']],
+  // The shapes workbench-core's reader has counted as built or not placed
+  // since 4e83554 (batch C1): an unquoted expansion before a path, which the
+  // shell splits into words, an expansion anywhere in the command word, and a
+  // long wrapper option the reader does not list exactly.
+  ['$HOME/bin/x a', ['sub-agent', 'pipeline']],
+  ['/usr/${X}/x a', ['sub-agent', 'pipeline']],
+  ['${X:-/bin/x} a', ['sub-agent', 'pipeline']],
+  ['env --spl=x true', ['sub-agent', 'pipeline']],
+  // A substitution in front of a literal path: the shell splits its output and
+  // runs the first word, though core's reader at 4e83554 reads it as a plain
+  // prefix (Holmes, C1 review).
+  ['$(echo a b)x/y c', ['sub-agent', 'pipeline']],
+  ['`echo a b`x/y c', ['sub-agent', 'pipeline']],
+  ['$((1))x/y c', ['sub-agent', 'pipeline']],
+  // A git named by a plain "$NAME/…" path is still a git the ask rules miss.
+  ['"$HOME/bin/git" push', ['main', 'sub-agent', 'pipeline']],
 ]
 
 // Lines a reviewer may run in the tree under review, with @SANDBOX@/repo as
