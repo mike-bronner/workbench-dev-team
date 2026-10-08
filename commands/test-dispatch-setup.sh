@@ -296,6 +296,24 @@ expect_eq "and the job is unloaded, not loaded again" "bootout gui/$(id -u)/$LAB
 expect_eq "LaunchAgents holds no job file for launchd to load at the next login" "" "$(agents_of gone)"
 expect_eq "the job file is on the shelf" "yes" "$([ -s "$(h gone)/.claude-workbench/dispatch-tick.plist.unloaded" ] && echo yes)"
 expect_eq "and the install stays marked, so the next run retries the restore" "installing" "$(mark_of gone)"
+expect_has "and names the missing file" "The proven set is missing escalation-comment.md." "$out"
+expect_has "and says a retry cannot fix it" "Running setup again cannot fix this. The install stays marked installing, so every run tries this restore first and fails the same way." "$out"
+expect_has "and gives the way out: empty the mark, then run setup again" \
+  "To get out, empty the mark with : > $(h gone)/.claude-workbench/dispatch-install.state, then run setup again." "$out"
+out=$(install_run gone "$(fake_src v2)"); rc=$?
+expect_eq "a setup run with the mark still set exits 1" 1 "$rc"
+expect_has "and fails the same restore, naming the same file" "The proven set is missing escalation-comment.md." "$out"
+: > "$(h gone)/.claude-workbench/dispatch-install.state"
+out=$(install_run gone "$(fake_src v2)"); rc=$?
+expect_eq "with the mark emptied, setup exits 1 at its checks" 1 "$rc"
+expect_has "and reaches the proven-set check, which says to move the folder aside" \
+  "is incomplete: it holds 3 of its 4 files, so a rollback could not restore it. Nothing changed. Put the missing files back, or move the folder aside to install as a first install." "$out"
+proven gone2 v1
+install_run gone2 "$(fake_src v2)" >/dev/null
+mv "$(h gone2)/.claude-workbench/bin.proven/dispatch-agent.sh" "$(h gone2)/away-1.sh"
+mv "$(h gone2)/.claude-workbench/bin.proven/escalation-comment.md" "$(h gone2)/away-2.md"
+out=$(restore gone2)
+expect_has "two missing files are both named" "The proven set is missing dispatch-agent.sh, escalation-comment.md." "$out"
 # A copy that fails partway: the second script's staged name cannot be
 # written. Every copy is staged before any rename, so nothing is renamed.
 proven midcopy v1

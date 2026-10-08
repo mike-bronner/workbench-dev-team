@@ -1130,14 +1130,17 @@ dispatch_finish_proven() {
 # is checked before any is copied. When the restore cannot vouch for what bin
 # holds, the job file leaves LaunchAgents, so launchd does not load it at the
 # next login. A finished restore clears the mark. One that could not finish
-# keeps it, so the next run tries again.
+# keeps it, so the next run tries again. A saved file missing from the proven
+# set fails every retry the same way, so that message names the file and says
+# to empty the mark, which lets the next run reach step 1's proven-set check.
 dispatch_restore() {
   trap '' INT TERM HUP
   launchctl bootout "$DR_JOB" >/dev/null 2>&1 || true
   DR_OK=1
   if [ -f "$DR_PROVEN_JOB" ]; then
+    DR_MISSING=
     for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
-      [ -f "$DR_PROVEN/$DR_F" ] || DR_OK=0
+      [ -f "$DR_PROVEN/$DR_F" ] || { DR_OK=0; DR_MISSING="${DR_MISSING:+$DR_MISSING, }$DR_F"; }
     done
     for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
       [ "$DR_OK" = 1 ] && { cp -p "$DR_PROVEN/$DR_F" "$DR_BIN/$DR_F.new" || DR_OK=0; }
@@ -1153,7 +1156,11 @@ dispatch_restore() {
         mv -f "$DR_PLIST" "$DR_SHELF" && DR_JOBMSG="its file is moved to $DR_SHELF, so launchd does not load it at the next login" \
           || DR_JOBMSG="its file could not be moved out of LaunchAgents, so launchd loads it at the next login with whatever $DR_BIN holds"
       fi
-      echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. Run setup again, which retries this restore."
+      if [ -n "$DR_MISSING" ]; then
+        echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. The proven set is missing $DR_MISSING. Running setup again cannot fix this. The install stays marked installing, so every run tries this restore first and fails the same way. To get out, empty the mark with : > $DR_MARK, then run setup again. Its first check reports the incomplete proven set and says what to do: put the missing file back, or move $DR_PROVEN aside to install as a first install."
+      else
+        echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. Run setup again, which retries this restore."
+      fi
       exit 1
     fi
     dispatch_mark ""
@@ -1466,14 +1473,17 @@ dispatch_finish_proven() {
 # is checked before any is copied. When the restore cannot vouch for what bin
 # holds, the job file leaves LaunchAgents, so launchd does not load it at the
 # next login. A finished restore clears the mark. One that could not finish
-# keeps it, so the next run tries again.
+# keeps it, so the next run tries again. A saved file missing from the proven
+# set fails every retry the same way, so that message names the file and says
+# to empty the mark, which lets the next run reach step 1's proven-set check.
 dispatch_restore() {
   trap '' INT TERM HUP
   launchctl bootout "$DR_JOB" >/dev/null 2>&1 || true
   DR_OK=1
   if [ -f "$DR_PROVEN_JOB" ]; then
+    DR_MISSING=
     for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
-      [ -f "$DR_PROVEN/$DR_F" ] || DR_OK=0
+      [ -f "$DR_PROVEN/$DR_F" ] || { DR_OK=0; DR_MISSING="${DR_MISSING:+$DR_MISSING, }$DR_F"; }
     done
     for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
       [ "$DR_OK" = 1 ] && { cp -p "$DR_PROVEN/$DR_F" "$DR_BIN/$DR_F.new" || DR_OK=0; }
@@ -1489,7 +1499,11 @@ dispatch_restore() {
         mv -f "$DR_PLIST" "$DR_SHELF" && DR_JOBMSG="its file is moved to $DR_SHELF, so launchd does not load it at the next login" \
           || DR_JOBMSG="its file could not be moved out of LaunchAgents, so launchd loads it at the next login with whatever $DR_BIN holds"
       fi
-      echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. Run setup again, which retries this restore."
+      if [ -n "$DR_MISSING" ]; then
+        echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. The proven set is missing $DR_MISSING. Running setup again cannot fix this. The install stays marked installing, so every run tries this restore first and fails the same way. To get out, empty the mark with : > $DR_MARK, then run setup again. Its first check reports the incomplete proven set and says what to do: put the missing file back, or move $DR_PROVEN aside to install as a first install."
+      else
+        echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. Run setup again, which retries this restore."
+      fi
       exit 1
     fi
     dispatch_mark ""
