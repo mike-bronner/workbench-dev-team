@@ -396,10 +396,11 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 
 ## What the dispatcher does
 
-A Watson Index-mode run ends in commits and pushes, and the commit guard refuses
-both to any sub-agent whose process does not carry
-`WORKBENCH_DEV_TEAM_PIPELINE=1`. The Agent tool cannot set an environment
-variable on the agent it spawns. `bin/dispatch-agent.sh` exports it.
+A Watson Index-mode run ends in commits and pushes. The commit guard refuses
+both to any sub-agent, and only the top-level loop of a `claude -p --agent` run
+commits, with `WORKBENCH_DEV_TEAM_PIPELINE=1` to answer its prompts. The Agent
+tool can start neither. `bin/dispatch-agent.sh` starts the run and exports the
+flag.
 
 `bin/dispatch-agent.sh` reads the same config — model, effort, fallback,
 budget — runs the circuit-breaker pre-flight, backgrounds the run in auto mode

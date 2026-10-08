@@ -17,14 +17,14 @@
 # three still describe it, so all four are checked here rather than in four
 # linters that each stay green.
 #
-# A fifth file joins them without being checked for prose: the guard hook at
-# hooks/scripts/local-review-guard.sh enforces the no-write limit at the harness
-# level. It is the answer to a lens sub-agent that ran `chmod` against the
-# human's tree with the prohibition sitting verbatim in its own prompt. This
-# linter calls the guard's `--classify` mode rather than re-describing what it
-# refuses, so the prose and the enforcement cannot drift apart. The guard's own
-# behaviour is tested in hooks/scripts/test-local-review-guard.sh, which is a
-# test and says so.
+# A fifth file joins them without being checked for prose: the review guard at
+# hooks/mods/review-guard.ts enforces the no-write limit at the harness level.
+# It is the answer to a lens sub-agent that ran `chmod` against the human's tree
+# with the prohibition sitting verbatim in its own prompt. This linter runs the
+# guard's own classifier (tests/review-classify.mjs, which needs node) rather
+# than re-describing what it refuses, so the prose and the enforcement cannot
+# drift apart. The guard's own behaviour is tested in tests/guards.test.ts and
+# tests/differential.mjs, which are tests and say so.
 #
 # What is pinned, and why each one:
 #   1. Local mode is the DEFAULT and ambiguous prose resolves to it. The cheap
@@ -68,7 +68,8 @@ HOLMES="$DIR/holmes.md"
 LOCAL="$ROOT/references/holmes/local-review.md"
 PHASES="$ROOT/references/holmes/review-phases.md"
 ORCH="$ROOT/skills/orchestrate/SKILL.md"
-GUARD="$ROOT/hooks/scripts/local-review-guard.sh"
+GUARD="$ROOT/hooks/mods/review-guard.ts"
+CLASSIFY="$ROOT/tests/review-classify.mjs"
 PASS=0
 FAIL=0
 
@@ -87,7 +88,7 @@ report() {
   fi
 }
 
-for f in "$HOLMES" "$LOCAL" "$PHASES" "$ORCH" "$GUARD"; do
+for f in "$HOLMES" "$LOCAL" "$PHASES" "$ORCH" "$GUARD" "$CLASSIFY"; do
   [ -f "$f" ] || { echo "  ❌ missing file: $f"; exit 1; }
 done
 
@@ -138,7 +139,7 @@ printf '%s' "$localsec" | grep -Fq 'references/holmes/local-review.md' \
   || limits+=("the Local-mode section no longer routes to its reference")
 # The harness-level backstop, named where a local run reads its limits. Prose
 # alone was measured failing on this mode's first exercise.
-printf '%s' "$localsec" | grep -Fq 'local-review-guard.sh' \
+printf '%s' "$localsec" | grep -Fq 'hooks/mods/review-guard.ts' \
   || limits+=("the Local-mode section no longer names the hook that enforces the no-write limit")
 report "limits — no Index call, no GitHub write, no write to the tree" ${limits[@]+"${limits[@]}"}
 
@@ -192,7 +193,7 @@ report "steps — every board-coupled step has a local replacement" ${steps[@]+"
 # no check: it tells the next author the danger was considered and handled.
 #
 # WHAT COUNTS AS DESTRUCTIVE IS NOT DECIDED HERE. The blocks are fed to the
-# shipped guard's own `--classify` mode, which is the same classifier that
+# shipped guard's own classifier (tests/review-classify.mjs), the same code that
 # refuses these commands at the harness level. A second copy of the rule living
 # in this file is exactly how the old one rotted: it listed stash, checkout,
 # reset, clean, commit, and push, and so it never saw `git restore` — the modern
@@ -202,7 +203,8 @@ report "steps — every board-coupled step has a local replacement" ${steps[@]+"
 # so a verb git ships next year is caught on the day it ships.
 #
 # What keeps that from reddening on the prohibition itself: the classifier
-# anchors at a COMMAND POSITION — the start of a line or of a shell segment.
+# reads each line as shell, so a verb counts only in COMMAND POSITION — the
+# start of a line or of a shell statement.
 # Prose that merely names the verbs names them mid-sentence ("every other git
 # verb is forbidden. That includes restore, stash..."), which is never a command
 # position, so the warning text stays legal and nobody is taught to delete it to
@@ -210,7 +212,7 @@ report "steps — every board-coupled step has a local replacement" ${steps[@]+"
 # deletes the work under review.
 fenced="$(awk '/^```/{f=!f; next} f' "$LOCAL")"
 destructive=()
-if ! classified="$(printf '%s\n' "$fenced" | bash "$GUARD" --classify 2>&1)"; then
+if ! classified="$(printf '%s\n' "$fenced" | node "$CLASSIFY" 2>&1)"; then
   while IFS= read -r line; do
     [ -n "$line" ] && destructive+=("a fenced block runs: $line")
   done <<< "$classified"

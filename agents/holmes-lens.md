@@ -25,9 +25,10 @@ is the clone every other helper reads at the same time.
 - A probe that needs a changed tree runs on a copy in your own scratch folder,
   made and deleted as "Scratch folders" below says. Change only that copy.
 
-A `PreToolUse` hook (`hooks/scripts/local-review-guard.sh`) enforces this. It
-refuses any write from your agent type outside the scratch roots: the session
-scratchpad, `~/Developer/scratchpad`, and `$TMPDIR`.
+The review guard in the plugin's hooks module (`hooks/mods/review-guard.ts`)
+enforces this. It refuses any write from your agent type outside the scratch
+roots: the session scratchpad, `~/Developer/scratchpad`, `~/.claude/plans`, and
+`$TMPDIR`.
 
 ## Fan-out worker, inside the orchestrator boundary
 

@@ -26,8 +26,8 @@ before it reports. The line says both, so no probe copy outlives its helper.
 **Every dispatch below names `subagent_type: "workbench-dev-team:holmes-lens"`**
 — the four lenses, the skeptic, the red team, the blue team, and the auditor.
 That type (`agents/holmes-lens.md`) holds `Bash`, `Read`, `Grep`, and `Glob` and
-no write tool, and `hooks/scripts/local-review-guard.sh` refuses any write it
-makes outside the scratch roots. Never leave the type out: the Agent tool then
+no write tool, and the review guard (`hooks/mods/review-guard.ts`) refuses any
+write it makes outside the scratch roots. Never leave the type out: the Agent tool then
 falls back to `general-purpose`, which carries Write and Edit, and a lens on it
 once mutated the checkout it was reviewing. The model stays `LENS_MODEL`, passed
 as the dispatch's `model`.

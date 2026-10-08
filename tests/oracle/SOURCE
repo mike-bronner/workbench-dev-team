@@ -1,0 +1,6 @@
+# The bash guards before the mod port, frozen unchanged as test oracles.
+# hooks/ never reads them. tests/differential.mjs runs them beside the ports.
+commit 391bb51
+463f2b46604265bf9a79e9d62e48f91d5c5bbfce42f3f8c8251395bc2641f846 hooks/scripts/commit-guard.sh
+4bbaecc4af577fd9b8dafe384eba89044009e036643cc09f2506efa8fbe4fd82 hooks/scripts/local-review-guard.sh
+1b14e9cbe74e16c6a9c10ffcdbb17f9e16c9b0c661aaf4a7360ef00d1652a337 hooks/scripts/read_allowlist.py

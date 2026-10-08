@@ -65,7 +65,7 @@ Run a single Bash check for the host tools the rest of the script needs:
 
 ```bash
 missing=()
-for cmd in gh jq security git python3; do
+for cmd in gh jq security git; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     missing+=("$cmd")
   fi
@@ -75,21 +75,21 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "   Install the missing tools and re-run /workbench-dev-team:setup."
   exit 1
 fi
-echo "✅ gh, jq, security, git, python3 all present"
+echo "✅ gh, jq, security, git all present"
 ```
 
 Do not check for `claude` — we're already running inside a Claude Code session.
 
-`jq` and `python3` are here because the hooks need them. The commit guard reads
-its hook payload with `jq`, and without it the guard refuses any call whose text
-names a commit or push. The review guard classifies commands in `python3`, and
-without it the guard refuses every Bash and editing call from Holmes and his
-helpers. So a missing tool blocks work rather than letting it through
-unchecked.
+`jq` is here because the pipeline's permission hook
+(`hooks/scripts/pipeline-scope.sh`) reads its payload with it, and without it
+the hook allows nothing, so a missing tool blocks the pipeline rather than
+letting it through unchecked. The commit guard and the review guard run in the
+plugin's hooks module, on workbench-core's `$.workbench` noun, and need no host
+tool.
 
 If any prerequisite is missing, stop and tell the user how to install it
 (`brew install gh jq` for the common case; `security` ships with macOS; `git`
-and `python3` come with the Xcode Command Line Tools, `xcode-select --install`).
+comes with the Xcode Command Line Tools, `xcode-select --install`).
 
 ## Step 3 — Seed Keychain credentials
 
@@ -713,9 +713,10 @@ guard refuses the git ones outright for a sub-agent.
 
 The rules do not see a commit, push, or merge behind `bash -c`, `sh -c`, `env`,
 `eval`, a leading `NAME=value` such as `HUSKY=0`, or a program named by its
-path. The plugin's commit guard (`hooks/scripts/commit-guard.sh`) refuses those
-forms and asks for the plain line. It also refuses a sub-agent's commit or push,
-any merge by a sub-agent or by the pipeline, and any push that forces or deletes.
+path. The plugin's commit guard (`hooks/mods/commit-guard.ts`, in its hooks
+module) refuses those forms and asks for the plain line. It also refuses a
+sub-agent's commit or push, any merge by a sub-agent or by the pipeline, and any
+push that forces or deletes.
 
 **This is a mistake-catcher, not a security boundary.** A script file, an
 interpreter such as `python3 -c`, or a shell alias gets past the rules and the

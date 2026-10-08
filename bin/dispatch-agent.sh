@@ -315,12 +315,13 @@ set -- --agent "workbench-dev-team:${MODE_TYPE}" \
 set -- "$@" --permission-mode auto --permission-prompts none \
   --output-format stream-json --verbose "$PROMPT"
 
-# Mark the child as the autonomous pipeline. Two hooks read it.
-# `hooks/scripts/commit-guard.sh` (PreToolUse) skips the sub-agent refusal, which
-# `--agent` would otherwise trigger, because it puts an agent_id in every payload.
-# It still refuses the pipeline's merges. `hooks/scripts/pipeline-scope.sh`
-# (PermissionRequest) answers a prompt for one plain `git -C <dir>`, rm, or rmdir
-# line with "allow" when every path is absolute and stays inside the roots: all
+# Mark the child as the autonomous pipeline. The commit guard in the hooks
+# module (hooks/mods/commit-guard.ts) needs no flag: it reads the run's main
+# loop as a top-level agent, which may commit and push, and still refuses its
+# merges and every sub-agent's commit. `hooks/scripts/pipeline-scope.sh`
+# (PermissionRequest) reads the flag, and answers a prompt for one plain
+# `git -C <dir>`, rm, or rmdir line with "allow" when every path is absolute and
+# stays inside the roots: all
 # of $TMPDIR, so another run's clone is in scope too, and the scratch roots.
 # Nobody is at the keyboard, and `--permission-prompts none` denies every prompt
 # the hook does not allow. An ask rule is matched before the classifier, so the

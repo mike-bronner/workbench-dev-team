@@ -35,10 +35,11 @@ states, in full here.
   posture you already hold on code covers you; §L4 is what carries the same
   limit to every sub-agent you dispatch.
 
-  **A `PreToolUse` hook enforces this** — `hooks/scripts/local-review-guard.sh`
-  refuses any write outside the scratch roots from your agent type and from the
+  **The review guard enforces this** — `hooks/mods/review-guard.ts` refuses any
+  write outside the scratch roots from your agent type, from the
   `workbench-dev-team:holmes-lens` type every helper you dispatch runs on, and
-  leaves reads and the test suite alone. It is a backstop for the
+  from any agent either of you spawns, and leaves reads and the test suite
+  alone. It is a backstop for the
   rule above, never a replacement: it reads the command an agent asked to run,
   so a verb inside a script is still yours to not write. Its denial is final and
   there is nothing to clear — if it refuses a command you believe a review needs,

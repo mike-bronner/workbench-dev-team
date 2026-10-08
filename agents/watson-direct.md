@@ -199,8 +199,8 @@ That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
 
 **Direct mode ends in an uncommitted working tree. You do not commit, merge, or
 push.** You are a sub-agent. The commit guard refuses your commit and your
-push, keyed on the harness-supplied `agent_id`, and it refuses a pull request
-merge too. Merging is not yours in either mode.
+push, keyed on the lane workbench-core reports for your call, and it refuses a
+pull request merge too. Merging is not yours in either mode.
 Do not go hunting for another route: a script, an interpreter, or an alias that
 slips past the guard is still a commit the human never saw.
 

@@ -234,13 +234,12 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
 
 **Which lane you are in decides what you may do at all.** Claude Code
 `permissions.ask` rules, installed by `/workbench-dev-team:setup`, prompt the
-human for every `git commit`, `git push`, and pull request merge. A plugin hook
-(`hooks/scripts/commit-guard.sh`) refuses what those rules cannot cover. It is
-a mistake-catcher, not a security boundary.
+human for every `git commit`, `git push`, and pull request merge. The commit
+guard (`hooks/mods/commit-guard.ts`) refuses what those rules cannot cover. It
+is a mistake-catcher, not a security boundary.
 
-**Sub-agent → you do not commit, merge, or push.** The hook refuses your commit,
-your push, and your pull request merge, keyed on the harness-supplied
-`agent_id`. Do not look for another route, and never reword, split, encode, or
+**Sub-agent → you do not commit, merge, or push.** The guard refuses your
+commit, your push, and your pull request merge, keyed on your lane. Do not look for another route, and never reword, split, encode, or
 rebuild a command to get past a refusal. **Hand the work back instead**, in
 your final report:
 

@@ -159,8 +159,8 @@ early="$(shipped '*.md' '*.sh' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
 if [ -z "$early" ]; then ok "no shipped text lists Commit it ahead of another option"; else bad "Commit it listed first in: $early"; fi
 
 # 8. One approval wording, and the boundary it must not move.
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md agents/watson.md README.md session-warmup.md commands/setup.md hooks/scripts/commit-guard.sh; do
-  joined="$(sed -E 's/^[[:space:]]*# ?//' "$ROOT/$f" | tr '\n' ' ' | tr -s ' ')"
+for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md agents/watson.md README.md session-warmup.md commands/setup.md hooks/mods/commit-guard.ts; do
+  joined="$(sed -E 's/^[[:space:]]*(#|\/\/) ?//' "$ROOT/$f" | tr '\n' ' ' | tr -s ' ')"
   check "$joined" "$APPROVAL" "$f uses the shared approval wording" "$f — no line carries: $APPROVAL"
 done
 # A sentence that pairs a commit approval with chat lets a typed message stand

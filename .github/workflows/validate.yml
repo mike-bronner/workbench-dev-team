@@ -55,6 +55,12 @@ jobs:
           done < <(git ls-files '*.sh')
           exit "$fail"
 
+      # The guard differential and the review guard's lint read the hooks
+      # module's TypeScript with node's type stripping (22.18 or later).
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 24
+
       - name: test suite — shipped shell logic against fixtures
         run: bash run-tests.sh tests
 

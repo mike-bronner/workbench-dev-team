@@ -6,9 +6,16 @@
 // The stand-in briefCheck reads the six headers and the two token shapes only. The
 // real check is workbench-core's, held to its bash gate case for case in that
 // repository. What these tests prove is how this module weighs the answer.
+//
+// parseShell is workbench-core's own reader, copied unchanged into tests/core/
+// (tests/test-core-copies.sh holds the copy to core's main branch), so the
+// guard tests read every line as the installed noun does. The disk the guards
+// stat is a map of paths, links included.
 
 import { mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
+
+import { parseShell } from './core/hooks/mods/shell'
 
 export const HOME = '/Users/tester'
 export const CONFIG_PATH = `${HOME}/.claude-workbench/dev-team-config.json`
@@ -50,6 +57,56 @@ export type World = {
   // What the engine answers to an Agent call.
   agentCall: 'ok' | 'error'
   nextAgentId: number
+  // Each tool call that reached the engine: its tool and command or path.
+  ran: string[]
+}
+
+// A disk entry: a directory, a file, or a symbolic link to a path.
+export type Entry = 'dir' | 'file' | { link: string }
+
+// What the guard tests set in the world beneath the module.
+export type GuardOptions = {
+  // The environment $.env.get answers (HOME is always set).
+  env?: Record<string, string>
+  // What isUnattended answers. An Error rejects.
+  unattended?: boolean | Error
+  // What scratchRoots answers.
+  roots?: string[]
+  // What $.agent.list() answers: each loop's id, type and parent. An Error rejects.
+  agents?: { id: string; type: string; parentId?: string }[] | Error
+  // What $.session.cwd() answers.
+  cwd?: string
+  // The disk, by absolute path.
+  disk?: Record<string, Entry>
+  // Makes parseShell reject.
+  parseFails?: boolean
+}
+
+// Where `path` lands on `disk`, every link followed, or undefined when it
+// leads nowhere.
+function walk(disk: Record<string, Entry>, path: string, hops = 0): string | undefined {
+  if (hops > 32) return undefined
+  const parts = path.split('/').filter(part => part !== '' && part !== '.')
+  let at = ''
+  for (let i = 0; i < parts.length; i++) {
+    const part = parts[i] ?? ''
+    if (part === '..') {
+      at = at.slice(0, at.lastIndexOf('/'))
+      continue
+    }
+    const next = `${at}/${part}`
+    const entry = disk[next]
+    if (entry === undefined) return undefined
+    if (typeof entry === 'object') {
+      const target = entry.link.startsWith('/') ? entry.link : `${at}/${entry.link}`
+      const landed = walk(disk, target, hops + 1)
+      if (landed === undefined) return undefined
+      at = landed
+    } else {
+      at = next
+    }
+  }
+  return at === '' ? '/' : at
 }
 
 function standInCheck(prompt: string) {
@@ -66,7 +123,7 @@ function standInCheck(prompt: string) {
 
 export function world(
   on: On,
-  options: Partial<Pick<World, 'lane' | 'isOn' | 'checkFails' | 'check'>> & { config?: string; envFails?: boolean } = {},
+  options: Partial<Pick<World, 'lane' | 'isOn' | 'checkFails' | 'check'>> & { config?: string; envFails?: boolean } & GuardOptions = {},
 ): World {
   const w: World = {
     lane: options.lane ?? (agentId => (agentId === undefined ? 'main' : 'sub-agent')),
@@ -78,13 +135,15 @@ export function world(
     steps: [],
     agentCall: 'ok',
     nextAgentId: 1,
+    ran: [],
   }
+  const disk: Record<string, Entry> = { ...(options.disk ?? {}) }
   if (options.envFails) {
     on('env.get', async () => {
       throw new Error('env unreadable')
     })
   } else {
-    mock.env(on, { HOME })
+    mock.env(on, { HOME, ...(options.env ?? {}) })
   }
 
   on('engine.create', async ($, e, next) => {
@@ -99,10 +158,11 @@ export function world(
           if (w.checkFails) return Promise.reject(new Error('no template'))
           return Promise.resolve((w.check ?? standInCheck)(prompt))
         },
-        scratchRoots: async () => [],
+        scratchRoots: async () => options.roots ?? [],
         orchestratorIsOn: async () => answer(w.isOn),
-        isUnattended: async () => false,
+        isUnattended: async () => answer(options.unattended ?? false),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
+        parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : parseShell(line)),
       },
     } as never
   })
@@ -111,6 +171,30 @@ export function world(
     const text = w.files.get(e.path)
     if (text === undefined) throw new Error(`ENOENT: ${e.path}`)
     return { value: text }
+  })
+
+  on('fs.stat', async ($, e) => {
+    const landed = walk(disk, e.path)
+    if (landed === undefined) throw new Error(`ENOENT: ${e.path}`)
+    const own = disk[e.path.replace(/\/+$/, '')]
+    return { value: { kind: landed === '/' || disk[landed] === 'dir' ? 'dir' : 'file', size: 0, mtimeMs: 0, isLink: typeof own === 'object', ...(e.resolve ? { realPath: landed } : {}) } } as never
+  })
+
+  on('fs.list', async ($, e) => {
+    const dir = e.path.replace(/\/+$/, '')
+    if (dir !== '' && disk[dir] !== 'dir') throw new Error(`ENOTDIR: ${e.path}`)
+    const names = Object.keys(disk).filter(p => p.slice(0, p.lastIndexOf('/')) === dir).map(p => p.slice(p.lastIndexOf('/') + 1))
+    return { value: names.map(name => ({ name, kind: 'other', size: 0, mtimeMs: 0 })) } as never
+  })
+
+  on('agent.list', async () => {
+    if (options.agents instanceof Error) throw options.agents
+    return { value: (options.agents ?? []).map(a => ({ ...a, description: 'a task', status: 'running' })) } as never
+  })
+
+  on('session.cwd', async () => {
+    if (options.cwd === undefined) throw new Error('no cwd')
+    return { value: options.cwd }
   })
 
   on('agent.spawn', async ($, e) => {
@@ -125,6 +209,8 @@ export function world(
   })
 
   on('tool.call', async ($, e) => {
+    const input = e as { tool: string; command?: unknown; file_path?: unknown; notebook_path?: unknown }
+    w.ran.push(`${input.tool}: ${String(input.command ?? input.file_path ?? input.notebook_path ?? '')}`)
     if (w.agentCall === 'error') return { isError: true, result: 'boom', text: 'boom' } as never
     return { result: { status: 'completed' } } as never
   })

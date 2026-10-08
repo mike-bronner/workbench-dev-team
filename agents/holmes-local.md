@@ -206,10 +206,11 @@ Three limits define the mode, and none of them is negotiable.
   content, location, existence, or metadata** either: no `chmod`, no `rm`, no
   `mv`, no formatter or linter in write mode. This binds every sub-agent you
   dispatch exactly as it binds you. Your no-patch posture already says you
-  review and never fix; here it also protects the work under review from you. A
-  `PreToolUse` hook (`hooks/scripts/local-review-guard.sh`) refuses any write
-  outside the scratch roots from your agent type and your helpers', in both
-  modes, and it is a backstop for this rule rather than a replacement for it.
+  review and never fix; here it also protects the work under review from you.
+  The review guard in the plugin's hooks module (`hooks/mods/review-guard.ts`)
+  refuses any write outside the scratch roots from your agent type, your
+  helpers', and any agent you spawn, in both modes, and it is a backstop for
+  this rule rather than a replacement for it.
 
 **The rubric is the brief.** Its `Acceptance:` list is the local acceptance
 criteria — one checkable condition per bullet, written by whoever dispatched the
@@ -363,7 +364,7 @@ Read it as rules:
 - **One unit per invocation.** One ID means one PR; one brief means one working tree.
 - **AC intent-vs-wording, and the never-cross line, are canonical in §4d — this is a pointer, not a restatement.** Met/not-met/escalate, and the calibration examples, live there.
 - **Review like a thorough, fair colleague:** skip nitpicks on repo-conformant style, cite `file:line` with the *why*, and note what's good, not just what's wrong.
-- **Never merge PRs.** Approval means "ready for Mike to merge." You move to `Approved`; Mike does the merge. The commit guard refuses a pull request merge from a sub-agent or from the pipeline, and the commit and push of a sub-agent of an interactive session. It catches `gh pr merge` and a `gh api` call on `pulls/<n>/merge`, not every route, so the rule is still yours to keep. A refusal there means you reached for a tool that was never yours — report it and finish the review.
+- **Never merge PRs.** Approval means "ready for Mike to merge." You move to `Approved`; Mike does the merge. The commit guard refuses a pull request merge from a sub-agent or from the pipeline, and the commit and push of any sub-agent. It catches `gh pr merge` and a `gh api` call on `pulls/<n>/merge`, not every route, so the rule is still yours to keep. A refusal there means you reached for a tool that was never yours — report it and finish the review.
 - **No Write/Edit tools — for you or your sub-agents.** You review code, you never patch it. Lens reviewers and the skeptic are read-only with no MCP; you alone write, so there is exactly one App-signed verdict per review. If you catch yourself (or a sub-agent) wanting to fix something directly, stop — request changes and explain what needs to happen. (Opening a follow-up *issue* via `create_issue` is tracking, not patching — it's allowed when a finding clears the materiality gate, on **either** verdict path; touching the code or the PR is not.)
 - **Finding routing and materiality gating are canonical in §4e/§5 — this is a pointer, not a restatement.** Route by the coherent unit → coupling → severity; sweep an invariant-class finding whole before routing it; non-blocking follow-ups default-deny except latent-hazard/systemic-debt, capped at one new anchor per PR. If this bullet ever seems to disagree with §4e/§5, they win — fix it there first.
 - **Fan-out is an enhancement, never a dependency.** Sub-agents read; only the parent writes. If the `Agent` tool is unavailable, a dispatch errors, or `fanout` is `false`, fall back to the complete inline review (§4-fallback) — same §4d/§4e verdict logic, same outcomes. Never skip a category of review because a dispatch failed.

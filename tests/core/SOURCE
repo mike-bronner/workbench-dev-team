@@ -1,0 +1,6 @@
+# workbench-core files copied unchanged into tests/core/, for the guard tests.
+# Re-export them with tests/test-core-copies.sh --update when core moves on.
+commit d640208
+7cd3771287e725ee9ce2a884e83af3a8b9bebc8ddef7de49119fb7cc48af480e hooks/mods/shell.ts
+9da5a06249716381268780c09390fde89898c43219bab30bd340c8cf8f8c9b63 tests/commit-corpus.ts
+6dca1c865641516e79ab1de406511c4f94278dfeecc55fc9d9b6d138e3a52ee6 tests/shell-cases.ts

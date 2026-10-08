@@ -1,0 +1,3910 @@
+{
+  "commit": [
+    {
+      "line": "# # git push'git push' -c;gh;rg main \n;'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# $(git push env;./x.sh echo<<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# -u GIT /repo\nGIT 'git push';while;>ci",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push ' in >\n-C;=git",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push )) fi -u-c 'git push' python3 ' do\n[[",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push +main +main",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "# git push --mirror\n\\\n2>&1\n-c",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "# git push -c ;{git,} repos/o/r/pulls/5/merge esac\nsh;/repo \\; -c -exec",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push 2>&1/repo fi ` (( origin env",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push ;;x.sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push <;EXIT;# awktrapgh pr merge 5",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push \";/repo xargs",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push \"git\" git push niceexec -f cia command git commit -m x\n))",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "# git push \\;\n((;zsh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push a :old make \\;commit\nsh;&&",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "# git push alias.ci=commit cdcommand;--mirror {git,} x.sh\nbash :old",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push command xargs",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push do main{\norigin trap\n-c",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push gh api $x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push later\ngit status",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push main`;merge \\ main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push |$'\\x67it'while;echo repos/o/r/pulls/5/merge;-- push push\neval",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push'import os; os.system(\"git push\")' rg;# git push-f;(( ` make 'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push;# env grep if",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push;\n-c 'EOF';rg );then exec /repo>",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push;` python3 & --delete \" main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push;while +main nice( \\; GIT[[",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push;|;} main rg git${IFS}push trap\nmake x ;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push\n<<\nzsh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push\n\"git\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push\ncommit zsh\nwhile\n-C--delete find((\\;\n[[",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push\nesac -exec;figrep\nfind",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push\ntrap\ncat gh api",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git push{ python3 zsh --delete",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "# git${IFS}push \"git\" pushevalin while;x.sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# git${IFS}push\n((\"git push\" --force-with-lease awk -C make",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "# origin done) grep (( main\npython3;'git push' < trap",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "# trap 'git push';cd",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "#&&git commit -m x -f;xargs;<<<if\ncommit 'EOF'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "#\n=git x # git push >;envsh\nsh;'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "$'\\x67it' 'git push' -d",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "$'\\x67it' (( cd 'BEGIN{system(\"git push\")}'git -f",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "$'\\x67it' command\n2>&1main'BEGIN{system(\"git push\")}' in[[esac-f < &",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "$'\\x67it' git push;exec { --delete ]] EOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "$'\\x67it';-C\n# git push \" gh pr merge 5;x.sh\"\nnice;> >>",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "$'\\x67it'x=1;<<;'git push' repos/o/r/pulls/5/merge\npush",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&& 'import os; os.system(\"git push\")' find\n< gh api",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&& ((--force-with-lease\nin )) ;\n'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&& =git\necho alias.ci=commit;)commit;user.name=x <<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&& \n;\\;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&& sh/usr/bin/git;git commit -m x\n--force-with-lease fi }",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "&&\nexec{git,} 2>&1 a\nalias.ci=commit \\ 'git push'trap fi",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&&if make;--;commit;make/repo\n'git push':old",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&;;;<<< >> git commit -m x ;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&\n\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "&\n||\n(( nice EXIT\n> git push\nawk\nwhile;repos/o/r/pulls/5/merge\n(",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'EOF';<<< user.name=x {git,}\npush",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'EOF';git push+main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'EOF'\n/repo # git push -u",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' # &zsh |",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' #$(user.name=x;\"git\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' && zsh # git push trap ]] {git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' --pre=git",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' -cHUSKY=0",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' ./x.sh if awk <;-c\n+main;\\;git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' alias.ci=commit;--force\nmain command awk x;EOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' cat",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' commit &&;origin ))\n[[ {git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' do",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' gh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' git",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' merge a\n# git push;merge' fi HUSKY=0$x;\\;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' merge push\n2>&1 if>> sh;rgcd;HUSKY=0;bash",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' sh 'EOF'\ncase repos/o/r/pulls/5/merge;merge a",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' trap 'EOF' eval;esac",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' while merge \"git\" -u;$'\\x67it'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' x\n+main +main gh api;--force-with-lease;-exec",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "'git push' x\n-C ci",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'./x.sh ./x.sh $'\\x67it'fi :old trap command",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "'git push';#gh apigh;alias.ci=commit -C <",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push';'git push';a;echonice eval sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push';-c { ;;make #\n)",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push';ci;HUSKY=0",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'\n[[ $'\\x67it' &",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'\nawk> gh api;\\;then;x gh;awk",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'\nif main\\; grep -f",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'\nx=1trap;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'\n}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'command",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'git push x.sh--force-with-lease\nnice & then--mirror",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'git push'x=1\n-c;\\",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' (\n<<<\ngh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' +main -f xargsawk",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' -c -u",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' -d)\nzsh # git push 'BEGIN{system(\"git push\")}'\nHUSKY=0",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' -d+main;in",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' -f\npr;a >>; -d( >\n=git",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' -u xargs",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' <<;push #",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' do;>> git${IFS}push then ci\n2>&1--delete\n2>&1|\norigin",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' exec cddo\n-f find case",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' pr command gh\n/usr/bin/gitalias.ci=commit command\\;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")' rg;-c\n'git push'git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")';--force\ncommit\n./x.shgit push -f user.name=x >>",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")';-execcd ci }",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")';>> (",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")';>>\na\"git\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")';echo;make do-f",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")';main;-f;git ) repos/o/r/pulls/5/mergepython3;esac",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "'import os; os.system(\"git push\")'\n-u alias.ci=commit;awk ||\n-f awk; push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "(( <awk;pr;>> git commit -m x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "((\n-d /repo < # { user.name=x (( 'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "((\n; push;# git push;-C;$'\\x67it'2>&1[[ \\; rg",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "(;--pre\ndo;cd;x;$'\\x67it' eval\nthenEXIT\n<\n'import os; os.system(\"git push\")'",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": ")) gh done 'BEGIN{system(\"git push\")}' push case \n zsh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "))\ncd git commit -m x while",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "))sh;GIT );then done\n#gh pr merge 5cd",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "+main x |\nGIT\"git push\"--force-with-lease +main'git push' python3",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "+main;{git,} ( cd;'git push' }",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-- ((\n;# git push\nci sudo :old ---f >\nrepos/o/r/pulls/5/merge",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-- --force'git push' |xargs\nGIT\nif",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "---exec'git push' GIT \\; user.name=x --mirror;origin;xargs ci;-exec",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--;$'\\x67it'\n-d {git,}\ncommand || main >> gh pr merge 5",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "--delete 'EOF' || if\n'import os; os.system(\"git push\")' # git push./x.sh [[;(",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--delete /usr/bin/git ;;-u -exec;commit git${IFS}push-d;make\"git push\" \n",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--delete do > git commit -m x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--delete nice\n=git x =git x.sh;\"git push\"cd gh api",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--delete;$'\\x67it' git push fi+main /usr/bin/git;commit | HUSKY=0 $'\\x67it';--force-with-lease",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "--delete\n\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--delete\nrg xargs;& \"git push\"in",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--force # gh pr merge 5 --force--force-with-lease",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "--force bash;# git push EOF ( if",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--force-with-lease ( # git push;))-d",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--force-with-lease;command ;# git push;user.name=x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--force;# git push | git commit -m x;make fi awkawk\n<<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--force;-Cesac;nice\nfi;--force-with-lease\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--force\n'git push'\nawk $x origin gh api",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--force\n-C\n)) env \"git push\";& zsh",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "--mirror fi find\n# git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--pre $'\\x67it'--mirror;# \\ gh api git${IFS}push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--pre )user.name=x esac\n\"git push\";; gh api <<<;if",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "--pre gh api;echo trap \\; main pr command git${IFS}push\n-f'git push'",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "-C;'git push' # HUSKY=0 ]]-exec -d\n( --force {git,}",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "-C;<<< git commit done \\;$'\\x67it' merge\n>>",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-C\n-u;$'\\x67it'>>;} # git push&;awk <<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-Csh;\\ fi --pre # git push xargs sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-c # git push;gh pr merge 5x.sh--delete",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "-c fi;;-exec'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-c;\\ exec env2>&1\n{git,}\n'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-c\n'git push' maincd;x=1;merge -exec push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-c\ngit git commit -m x main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-c\nx <grep GIT\n# git push /usr/bin/gitsudo --force < --",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "-c\n} > )) ) python3\"git push\" EXIT\\done\n>>",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-cpython3;\"git push\" x=1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-d -f\n-C;zsh # git push$( | env",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-d bash a\n'EOF' -c -u 'EOF' user.name=x\n'git push' }",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-d;/repo # git push gh pr merge 5 $x",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "-d;if 'import os; os.system(\"git push\")' origin\n/usr/bin/git\n--pre gitgh api{git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-d\n'EOF'\n-execpython3'import os; os.system(\"git push\")' while \\; > in",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-exec ))\n2>&1 commit;x=1 'import os; os.system(\"git push\")';awk\n<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-exec;'git push'| || trap",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-exec\nenv-C\n\"git push\" EXIT case\nsudo\nif while;--mirror",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-exec\ngit alias.ci=commit\n--pre;--\ncat",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-f =git\n'import os; os.system(\"git push\")' cdeval;-d\ngitexecsh;grep",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-f HUSKY=0;'git push' +main",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "-f commit -fsudo;\"git push\"\ngh api;-fzsh;cd;x=1 -f",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-u;then -- then\"git push\" main ]] & ));aalias.ci=commit",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "-u;|;/usr/bin/git > gh git push -f",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "-u=git\n./x.sh;:old then esac # git push\ngh&& GIT",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/repo;origin;git # git push\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/repo\nGIT # git push\n-f",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "/repofind;x\ncdx=1 'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git $'\\x67it'alias.ci=commit",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git +main make if push",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git EXIT /usr/bin/git --pre exec&&\n\"git push\";xargs;--force",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git alias.ci=commit;:old ));{\ncase origin",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git cat;'import os; os.system(\"git push\")'-f ( 'EOF'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git git commit -m x merge bash -c\n[[ |",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git git pushalias.ci=commit;-d;:old",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git python3 if +main \\ zsh 'git push'\"git push\"",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git;--delete\n/usr/bin/git;< <<< | main &'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git\n-d & 'import os; os.system(\"git push\")' gh ./x.sh \n;gh api;--\n--force HUSKY=0",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git\ncommand done && -- merge{;# git push;\" then",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "/usr/bin/git\nmake =git echo cat cd\n'git push';in;}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "2>&1 'BEGIN{system(\"git push\")}'repos/o/r/pulls/5/merge sh make;eval;)) > --force",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "2>&1 command gh command --force\necho\n[[< 'BEGIN{system(\"git push\")}' ./x.sh eval",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "2>&1;<;-- gh in'git push'\nHUSKY=0\ndone user.name=x\nzsh repos/o/r/pulls/5/merge",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "2>&1;\n;||\ngrep \\ git commit -m x -C",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ":old pr#push gh apimake;'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ":old { (( exec rg'EOF';/usr/bin/git\ngit commit -m x git push +main",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": ":old\"git push\";[['EOF'\neval<HUSKY=0 done sudo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ":old\n# git push;EOF cat;repos/o/r/pulls/5/merge -C",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ":old\n'git push' ( # git push sudo 'EOF' x :old",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": ":old\n'git push'esac ]] --pre \"git\"./x.sh;EXIT",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ":old\n./x.sh # git push;--mirror gh >>;&&",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ":oldmain\"git push\" then",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "; $'\\x67it' -f;\"git push\"\neval;:old ]] in",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "; (;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ";;-c <<\n# git push;HUSKY=0;find ci ci;--force whileci",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ";\n'import os; os.system(\"git push\")' :old EOF --pre -c",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "< --;--pre esac +main cat<<<\neval--;x\n\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "< git commit -m x;((nice|| \n< 'git push' gh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "<;\n;'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "<;alias.ci=commitifsh if;'git push'alias.ci=commit;)) -d",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "<<< :old # git push command sudo;\n",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "<<< \"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "<<<'BEGIN{system(\"git push\")}'\n{ /repo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "<<<;{ cat donecd # git pushpr# git push ifthen;-f",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "<\n-f =git # case \\}\n$'\\x67it' 'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "=git main \"git\";} alias.ci=commit if;-c # git push -u",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "=git;EOF\n\"git push\"\n\"git\" --force-with-lease -exec",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "=git\n# {git,}eval\npush;a",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "=git\n'import os; os.system(\"git push\")' push\nx=1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "> 'BEGIN{system(\"git push\")}' commit\\;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "> EXIT;'import os; os.system(\"git push\")' /repo;eval",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "> \"git push\" main alias.ci=commit;2>&1 xargs\nxargs \\\nzsh {git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "> git commit -m x cat;)xEXIT --delete",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "> x.shsudobash'BEGIN{system(\"git push\")}' >> $'\\x67it' -d\n{",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": ">> 'git push' dozsh -exec $x >>;x=1 <<;\n",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">> 'import os; os.system(\"git push\")'\nuser.name=x HUSKY=0\nuser.name=x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">> git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">>;-c'git push';=git",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">>;\\; {git,} -C'git push' >>",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">>\n ( ci # git push $(;command -d;-u x.sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">>\n--;--force-with-lease;# git push python3--force-with-lease",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">make echo\n'git push' sudomain",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": ">repos/o/r/pulls/5/merge {git,}\n'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EOF # eval;) echo)) 'import os; os.system(\"git push\")'exec{ cd\n--mirror",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "EOF $x {pr\n}\n-u;} trap 'EOF'\n'import os; os.system(\"git push\")'\n\\",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EOF \"git\" <<< git;ifgit push echo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EOF;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EOF;eval --pre\n'import os; os.system(\"git push\")'",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "EOFalias.ci=commit;cat 'BEGIN{system(\"git push\")}'\n-dmain echo EOF;$'\\x67it'",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "EOFgh pr merge 5 zsh;gh api -c # git push --",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EXIT (( alias.ci=commit git pushuser.name=x\n\"git push\"\nEXIT",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EXIT awk;main;> git commit -m x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EXIT commit\n\"git push\";-czshcommit &&'git push'+main EXIT >",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EXIT sudo <<<'import os; os.system(\"git push\")'\n;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EXIT+main\n-exec # git push GIT {;bash",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "EXIT;|;'git push' GITenv\ngh api",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "GIT -cpython3 cat\n/usr/bin/git 'BEGIN{system(\"git push\")}' &\nrg xargs \"git\"",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "GIT \"git\"=git \"git push\" >\nEOF-c",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "GIT git commit -m x;nice trap -c HUSKY=0;trap }",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "GIT grep git push > --force cd grep env;gh api",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "GIT sh #envzsh gh pr merge 5 -C\ngh api--\neval grep",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "GIT {git,}rg 'EOF' git commit -m x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "HUSKY=0 \"git push\" make a --pre\ncat-u",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "HUSKY=0 commandbash while;'import os; os.system(\"git push\")';'EOF' sudo cat echo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "HUSKY=0;\"git push\"|| exec\ncommit;do mergecommit\nci [[",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "HUSKY=0;zsh python3 =git || # git push;;nice -C",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "[[\n\"git push\" command",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "[[a --force-with-lease zsh\nuser.name=x find\n>;'import os; os.system(\"git push\")' &&",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"\"git # git push +main user.name=x '\nxargs",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" $x push\n \\;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" ) merge ; --forcexargs -f {git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" +main [[",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" --\nin repos/o/r/pulls/5/merge merge \\",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" ci gh;echo 'EOF' rg<\n|| then",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" done;fi ))[[ while",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" env find GIT \\;;]] x.sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" fi 2>&1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" if",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" rg echo --force-with-lease",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" then bash",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\" }\nsh if\ngrep <<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\";&;> done >> +main\nexec repos/o/r/pulls/5/merge zsh;+main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\";+main\nxargs} a -f -c",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\";>> +main /usr/bin/git",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\";[[ --mirror {git,} -c\nfind;/repo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\n--force-with-lease -u\n+main sudo\nsh-u\n./x.sh",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\n-f -exec\n-f rg $'\\x67it'in))",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\n-f;\\\n{ user.name=x /usr/bin/git;a awk <",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\nEOF --;# git push \n \"git push\"\n\\;;./x.sh -c",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\ndonepr\nsudo;sh;EOF /usr/bin/git $x\n--force",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\nif\n-u\nrepos/o/r/pulls/5/merge -u",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\nrg&&",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\ntrap env -execin main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"\nx \\;\npython3 main {",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"gh api <<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git push\"make",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\"git\" alias.ci=commit\nx GIT then 'EOF' zsh;gh api rg main rg",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\\ 'import os; os.system(\"git push\")'\nmain;]] xargs;a;$'\\x67it'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\\ } =git\nHUSKY=0 --force # git push $x",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\\; main user.name=x # git push --delete --force-with-lease <<<",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "\\; sudo exec {\nEOF rg # git push\nsh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\\;;if & \"git push\" ) \"git push\" |\ntrap gh api-C (",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\\\n-u { &x;-C\n}| \"git push\" command",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\n \"git push\"gh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\n | gh api git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "\n'import os; os.system(\"git push\")'\n(( xargsenvexec --force\n< =gitcd /repo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "]] # git push ci'EOF';trap",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "]] eval EXIT\ngit commit -m x",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "]];{;'git push' env\n$'\\x67it' & nice;--force-with-lease-C rg;$'\\x67it'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "]]\n>\n/repo\n# git push;(\nrepos/o/r/pulls/5/merge",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "a find xargs;exec;# git pushesac\n'git push'(",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "a zsh/repo--mirror eval;# git push EOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "a;=gitdo;do >;-f gh;'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "a;xargs # git push \"git\" sudo > command",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "a\n--force-with-lease # git push\n-c grep'EOF'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "alias.ci=commit find &'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "alias.ci=commit;)eval\n\"git push\" &&;do;; git push--force-with-lease;in",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "alias.ci=commit;--a a\n& esac;trap while || # git push\ngh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "awk #;findmake 'import os; os.system(\"git push\")';=git\n{ -c & cat",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "awk $x;\"git push\";'import os; os.system(\"git push\")'trap",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "awk catmerge-d ||;'git push'trap git",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "awk;) make -d-C done\nzsh\n=git;'import os; os.system(\"git push\")'\n--",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "awk\n--mirror ));# git push>>;eval;#pr",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "awk\n/usr/bin/git gh apialias.ci=commit\ndone x\nmake;do;--force-with-lease\n&&",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "awk\nGIT 'git push'-u\n;fi\nx=1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "bash >push ci cat\nfi $'\\x67it' --delete 'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "bash:old-exec;-fenv ./x.sh );&\ncommand env\n\"git push\"",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "bash;-C user.name=x env\nEOF EXIT\ngit commit -m x (\n<< |;gh api",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "bash\nEXIT # git push\nrgawk a",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "bash\necho x.shnice\n\n'import os; os.system(\"git push\")' EOF;EOF\n{",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "case x.sh;commit if # ) exec'BEGIN{system(\"git push\")}' awk fi rg",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "case;repos/o/r/pulls/5/merge\nthen -u <\n\"git push\" x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cat <<'EOF' > /tmp/m\nfix: Mike's rule\n\ngit push happens after review\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cat <<'EOF' > summary.txt\nWatson does not git commit or push.\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cat <<'EOF' | tee m\n$(git push)\n`git commit -m x`\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cat > /tmp/m <<EOF\ngit commit is wrapped onto this line\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cat > notes.md <<'EOF'\nAfter review, run git push origin main.\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cat > plan.md <<'EOF'\nThe pipeline pushes with `git push`, and Mike merges with gh pr merge.\nEOF",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "cat git${IFS}push { -c\n--mirror esac\n2>&1\npush;-exec a",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "cd # git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cd -C\ngit =git $x < pr\nx=1\n'git push'\nthen",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cd -d origin 'git push' echo findx$xmain",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cd cd+main git${IFS}push -u'import os; os.system(\"git push\")'GIT",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cd'git push'\nx.sh\n-d",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cd'import os; os.system(\"git push\")' 'EOF' done;eval",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cd;[[\n\\; >\n-u'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cd;mergecommand./x.sh\n'git push' case",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "cdbash;x +main ./x.sh;user.name=x commit --forcea\nsudo \"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "ci -c;HUSKY=0\n\"git push\"\n&& trap;'git push'\nfind --force-with-lease;x=1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "ci \"git\" esac bash -exec\ncommit;GIT :old",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "ci push # git push;\\;;sh { )) =git--mirror",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "command env\n'git push':old x=1",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "command if <'import os; os.system(\"git push\")' :old\n< <<<;EXIT",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "command origin) eval bash\n\"git push\";/usr/bin/git;EOF EOF",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "command python3 # git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "command;'git push' cd",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "command;GIT 'BEGIN{system(\"git push\")}' while;gh;sh HUSKY=0 --mirror",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "commanda;EOF & 'import os; os.system(\"git push\")'\n--mirrorcase;HUSKY=0pr'git push'",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "commit\n\\sudo cat # git push {git,} GIT\n{ 'import os; os.system(\"git push\")';user.name=x x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "commitpr { $x;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "do >>)) 'git push' || ( done",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "do done\"git\" || { \\;origin origin\n'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "donecase'git push' sh$'\\x67it'-f",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "doneesac ]] =git\ncommit )))",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "echo $'it\\'s'; cat <<EOF > m\ngit push is wrapped here\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "echo cdpython3 git push\n& 2>&1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "echo gh pr merge 5 <<",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "echo git push > x.sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "echo git push >> ~/.bashrc",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "echo merge GITgh;(;'import os; os.system(\"git push\")'\norigin\nin <<;\n",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "echo;cd sh\n/usr/bin/git\n&&echo gh pr merge 5",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "env EOF :old<< ; git commit -m x exec \"git\"$'\\x67it' x.sh",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "env findcase awk\ngit commit -m xcat <case",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "env gh ;git push",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "env'git push' repos/o/r/pulls/5/merge $'\\x67it' cd;done",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "envgh api --pre python3 x -exec\n'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "esacEOF commit;\\;;&& -c/repo/repo;2>&1;\"git push\"\n--force-with-lease",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "esac\n\\\n'git push'\nrgx cat",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "esac{git,}\n\"git push\";main\n-d\n|;#",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "eval [[\ngit commit -m x trap --force-with-lease pr",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "eval }--mirror\n'import os; os.system(\"git push\")' x=1 --force-with-lease -exec\"git\" cd",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "eval;'import os; os.system(\"git push\")'\nawk {git,} -u",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "eval\n'import os; os.system(\"git push\")' &&\n2>&1 <<< python3 'import os; os.system(\"git push\")' user.name=x",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "exec;EOF\npush;'import os; os.system(\"git push\")' \\;git\nEOF awk\nmake \n",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "exec< #git push {git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "exec\ngit ; origin\\; 'git push'sudo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "fi 'import os; os.system(\"git push\")' -f git",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "fi (($'\\x67it' +main & then;done\n# git push -f ]]",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "fi;# git push;'BEGIN{system(\"git push\")}' -f",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "fi;<<<git push -exec;do;gh api;zsh GITsudoawk",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "ficase alias.ci=commit sh alias.ci=commit -d EXIT gh\n# git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "find --delete\n=git;/usr/bin/git --;\"git\" -- git commit -m x $'\\x67it'cd pr",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "find;=git\nx # git push\n'EOF' \\;a cd;awk ./x.sh;do",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "findci\nxcommand;'import os; os.system(\"git push\")' gh api\n\n\n$'\\x67it'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "gh \"git push\"\n/repo a&&\npush eval find",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "gh api 'import os; os.system(\"git push\")';command;x=1 do\n&&awk -c--pre;case<<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "gh api :old\ngh api 'BEGIN{system(\"git push\")}'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "gh api cd 'BEGIN{system(\"git push\")}'2>&1 -f>make",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "gh eval # git push;echo\n-d $x;;-c",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "gh pr create --title \"git push fix\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "gh pr merge 5 'git push' \"git\" grep ((\n--delete x \\\n& git push alias.ci=commit",
+      "lanes": [
+        "main"
+      ]
+    },
+    {
+      "line": "gh pr merge 5 done \"git push\" x -c git commit -m x'import os; os.system(\"git push\")'\n-dpython3 ci |",
+      "lanes": [
+        "main"
+      ]
+    },
+    {
+      "line": "gh;# git push push 'EOF' \"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "gh\n| [[done;cd\ngit push\n--delete;a;./x.sh HUSKY=0--mirror",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git # --pre # git push python3\n-f -f while",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "git -C --forcecommit\nwhile;cd;command\n# git push command\nfi >",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git commit -F - <<'EOF'\nfeat: x\n\nMentions git push --force in the body.\nEOF",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git commit -m \"load env vars\" && git push",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git commit -m \"use bash -c and eval less\" && git push",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git commit -m x 'BEGIN{system(\"git push\")}' cd --force>>case",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git commit -m x x.sh while;main # git push;gh pr merge 5 user.name=x\n2>&1;--force-with-lease -u;)",
+      "lanes": [
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git commit -m x\npush;)=git\nrg--pre env\nHUSKY=0;git push",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git config alias.ci commit",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git grep -nOgit push foo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git help commit",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git log --format=%GG --grep=push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git log --grep push > out.txt",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git log --grep=push *",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git log --grep=push ^x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git log --pretty=format:%G? --grep push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git push ))\n-f x.sh;trap sh;origin doxargszsh\n$'\\x67it'",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git push /repo { -c=git) +main;((bash bash 2>&1",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git push EXIT gh pr merge 5;\"git\" --mirrorcase",
+      "lanes": [
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git push=git \\; 'EOF';)) <",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git push\nenv\nesac;'import os; os.system(\"git push\")' exec;--mirror cd",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "git pushx.sh\necho < git${IFS}push;]]|",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git show --format=%GS push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git status > commit.log",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git while 'import os; os.system(\"git push\")';/repo +main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "git;\"git\" bash alias.ci=commit;\"git\"git\n} 'import os; os.system(\"git push\")';\"git push\"awk",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "grep -f -f;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "grep -rn \"git push\" ?",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "grep -rn \"git push\" x#",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "grep\nfind /usr/bin/git fi;\"git push\"/repo eval x\n-u",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "if git 'git push'GIT\n$'\\x67it' sudo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "if } trap $x )) #'BEGIN{system(\"git push\")}'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "in git\n>\n||;\"git\" 'import os; os.system(\"git push\")' gh pr merge 5",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "in\n'import os; os.system(\"git push\")'trap user.name=x -C./x.sh origin",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "main # git push push;) trap;pr;case while GIT:old",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "main then x.sh'git push';'EOF' command ifuser.name=xzsh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "main;# git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "main;{git,};push --force-with-lease--force;do EOF;zsh",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "make # git push (( HUSKY=0\npush\n<<< ./x.sh env <<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "make ./x.sh\nsh;-u;# git push\nx;sh a",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "make user.name=x ) cd--pre ; gh $'\\x67it';\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "merge -u;'import os; os.system(\"git push\")'\nmain& [[>\nin\n&&-c $x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "merge >2>&1\"git push\"\nmain [[ {git,};sh\ngh [[ main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "merge-u;#;git push env 'import os; os.system(\"git push\")';rg;-u",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "merge\n-f\n'git push'/repo ||ci xargs;||;esac # git push trap",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "nice # git push python3;x=1 |",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin # cd -c'import os; os.system(\"git push\")'-- --",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin'git push';git;alias.ci=commit EOF --force-with-lease",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin/usr/bin/git\ncd&& < HUSKY=0 cd\n# git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin;'import os; os.system(\"git push\")' x while",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin;while \\grep'import os; os.system(\"git push\")' #;-c +main x.sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin;| \"git push\" python3 ]]",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "origin\n<\"git\"\ntrapcd\n{ ) &&;GIT \"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "pr )) --force-with-lease -f\"git push\" -f",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "pr git\ncommit",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "pr;echo +main & 'git push' rg # git push\n( 'EOF'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "pr;pr ./x.sh\npython3;$'\\x67it' gh pr merge 5 ;commit a\nzsh EOF",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "pr\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "pr\n+main\n\"git push\";x=1 python3--deleteesac &&-c;echo",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "pr\nin;2>&1\n--force-with-lease in command }\n'git push'rg ci",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "printf $'%s\\n' 'git commit'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "python3 - <<'EOF'\n    # then git commit or push, as the brief says\nprint('ok')\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "python3 - <<'EOF'\n# Apply the edit and hand it back: no git commit or push here.\nimport pathlib\np = pathlib.Path('notes.md')\np.write_text(p.read_text().replace('a', 'b'))\nEOF",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "python3 -d # git push\n[[ exec command 2>&1;alias.ci=commit",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "python3 awk\"git push\" >;--delete repos/o/r/pulls/5/merge --mirror\n{git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "python3 } -C;# x.sh in 'BEGIN{system(\"git push\")}' 'BEGIN{system(\"git push\")}'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "repos/o/r/pulls/5/merge # git push > $(",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "repos/o/r/pulls/5/merge find\ndone repos/o/r/pulls/5/merge mainGIT;\"git push\";--pre{ origin",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "repos/o/r/pulls/5/merge };echo user.name=x caseEXIT 'BEGIN{system(\"git push\")}' $x)) --mirror",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "repos/o/r/pulls/5/merge\"git push\"./x.shenv\n[[ ) {git,}awk;fi;<\n--",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "rg # git push$x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "rg \"git push\" *",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "rg \"git push\" ^x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "rg \"git push\" a~b",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "rg basha # git push bash bash\"git push\"-C cd\ngrep |",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "rg\nrepos/o/r/pulls/5/merge in 'git push'find-c-c\n-C",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "sh envnice \n 'import os; os.system(\"git push\")'#;;",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "sh'git push' -d",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "sh\n)) HUSKY=0\nif =git =git EXIT gh api\ncommit bash",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "sudo \\ python3\ngh # git push -f +main;fi \"",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "sudo \n;\"git push\" git x=1 (( while push\n[[",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "sudo esac case evalmake;cat;<<< pr 'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "tee m <<'EOF' >/dev/null\ngit commit -m x\nEOF\ngit status",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "then /usr/bin/git;./x.sh\nx=1\n'git push' <<\n{git,} [[",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "then \"git push\"#\nmake nice & > \\git push\n/repo +main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "then xargs \"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "then;xargs # git push HUSKY=0\ncommand",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "then\"git push\"cat;done\nx=1 EXIT >",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "thenbash --force-with-lease &git git push;echo\n(( trap repos/o/r/pulls/5/merge;-C",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "thengit push trap;'git push' -C\nx.sh",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "trap;+main\nenv;then bash <<< gh pr merge 5",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "trap;gh api gh pr merge 5grep <<\n+main -c # git push",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "user.name=x 'git push'cat > <<<",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "user.name=x make bash \"git\" # git push\n--pre x -exec",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "user.name=x\\ findtrap;\"git push\"\n/usr/bin/git <;if;env",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "user.name=x\n\"git push\" origin;( \"git\"\n commit",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "user.name=xgrep rgeval;=git\n'import os; os.system(\"git push\")'HUSKY=0",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "while # git push;-exec || $( fi\nmerge (",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "while 'git push' cd;-execcd # git push \\",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "while 'import os; os.system(\"git push\")'\nEOF\npython3nice\\\nmake ))",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "while;-C /usr/bin/git\npush",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "while\\; # git push)) } /usr/bin/git\ngh api",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "while\n/repo in \\; echo zsh env;alias.ci=commit x.sh +main;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "while\ngit if x=1 # git push -u;./x.sh\n\\)\nci",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x #;cd merge \"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x -u\n\"git push\";python3 +main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x x=1\n# git push ]]",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x.sh/repo thenfi git\ndo -f\npush merge ]] main",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x;'EOF';gh api git push{git,} --mirror <<<\n|| ||",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "x=1 awk \n\n\"git\" +main \"git\"\n'git push' command",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x=1 exec 'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x=1 nice do\n-c\nnice\n-c git;commit;-d",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x=1\npython3 gh\ndone<<< \"git push\" make | :old \"git\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "x\n:old\n;xargs;--delete;/usr/bin/git x=1\\; main # git push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "xargs gh api;# git push;grep -d\norigin",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "xargs rg x=1 -u[[while;done;'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "xargs sh\\\n-- # git push;in\n[[ eval",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "xargs# pr awk;# git push\n<<<\n+main && ghcase\n2>&1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "xargs\n< gh\n'import os; os.system(\"git push\")' ||\n\"git push\" (",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "zsh -c prGIT case \\;;git push x.sh",
+      "lanes": [
+        "main",
+        "pipeline"
+      ]
+    },
+    {
+      "line": "zsh ]] in -f\n'import os; os.system(\"git push\")'a",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "zsh do;'git push' git &;{git,}",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "zsh gh sudo\n--delete & \"git push\"-c origin;user.name=x{",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "zsh>> -exec\n'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{ ) -c(;\"git push\"",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{ if;# git push;a -c",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{ sudo;nice 'git push'-u pr x\n-c;EOF'EOF'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{;\"git push\"done (",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{HUSKY=0 if x.sh 2>&1 fi # git push x=1;2>&1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{\nci'git push'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{git,} # git push gh apiuser.name=x;git${IFS}push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{git,} # git push in [[\n-exec;bash bash azsh2>&1",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{git,}\n-- \n\ncommand &\n)\n2>&1 \"git push\" bash\ntrap&",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "{make[[ --delete;--force-with-lease\n'import os; os.system(\"git push\")' 'EOF'-C",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "| grep /repo git commit -m x ; esac # git push \\-u ci git${IFS}push",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "|;-d'import os; os.system(\"git push\")'",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "|;eval # git push;-c",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "|| #;\\; 'BEGIN{system(\"git push\")}' EOF \\;# ./x.sh repos/o/r/pulls/5/merge $x",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "|| 'import os; os.system(\"git push\")' x.sh -f",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "|| \"git push\" ) GIT",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "|| nice-d if;done esac merge env'git push' done",
+      "lanes": [
+        "sub-agent"
+      ]
+    },
+    {
+      "line": "} in;# git pushxargs\n# git push gh pr merge 5;-f;)) {git,}&case",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "};if 'import os; os.system(\"git push\")' main && EOFecho-c\nenv\ncase;+main",
+      "lanes": [
+        "sub-agent"
+      ]
+    }
+  ],
+  "review": [
+    {
+      "line": "&&;log\nstash esac '{print > \"o\"}'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/' ));::: EXIT\ncase perl| || -s",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/' -execrestore\nperl\nREADME.md;timeout",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/' /tmp/x--check-rf 2>&1 ddEOF -w -pi\n's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/' cat echo 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/' checkout.",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/' thenperl diff",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/';README.md '{print > \"o\"}'of=README.mdln restore\ntimeout",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/';mkdir-s;&\n-w;'w out'''",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/'\n\n -s \n paralleltrap diff src",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/=>/->/'\ntee\nexec ; '';find >&2",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "'s/a/b/' \\; (;-p\n's/=>/->/' -i;'w out'\nrestore ||",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "(( i > 0 )) && echo yes",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": ");x=1;x=1 's/=>/->/';fi --check;/tmp/xesac \\> |",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-- esac && a.tar644diff;stash \\ 's/=>/->/' diff;stash",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "--check -- 's/=>/->/' src",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-exec\necho\n-e case\n.;sh '{print > \"o\"}' esac@SANDBOX@/home/x;sed",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-p\necho status '{print > \"o\"}';-delete -pi 'w out'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-v 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-v xf\nperl 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-w '$1 > 2' -sechotimeout;-delete",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-w {}@SANDBOX@/tmp/scratch/a 's/=>/->/';perl command\nmkdir\n) npx",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "-w;exec\n's/=>/->/' &&nice cp file.txt @SANDBOX@/tmp/scratch/command",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": ". mkdir-rf of=README.md;)\n's/=>/->/'\nperl",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": ".;'s/=>/->/' README.md;( & findmv",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "/tmp/x ( 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "/tmp/x .;EXIT's/=>/->/';sudo trap restore >&2 chmodperl\n--",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "2>&1\ncase touch exec \\ @SANDBOX@/repo/a 's/=>/->/' mkdir ]] checkout;stash",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "644 's/=>/->/' \\;;setsid tee\nsrc",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": ":::\nof=README.md x } cd's/=>/->/'cd",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "@SANDBOX@/home/x '{print > \"o\"}'\n@SANDBOX@/repo/aEOF .npx stash",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "@SANDBOX@/home/x restore (( unbuffer commandtar 's/=>/->/' '{print > \"o\"}';sudo",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "@SANDBOX@/tmp/link-into-tree/n 's/=>/->/' 5 sh5",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "@SANDBOX@/tmp/link-into-tree/n 's/=>/->/';unbuffer",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "@SANDBOX@/tmp/link-into-tree/n-pi esac\n--check a.tar\ncommand ) -s '{print > \"o\"}'\ndd --",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "EXIT ( --mv;((restore;mv's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "README.md '$1 > 2';dd\n@SANDBOX@/tmp/scratch/a\ngrep",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "README.md;'s/=>/->/'\n@SANDBOX@/tmp/link-into-tree/n",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "README.md\n's/=>/->/';parallel\nprettier",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "[[ '$1 > 2' ]] && 644 '$1 > 2'\nenv",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "[[ a > b ]] && echo yes",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "[[ a.tar;EOF 's/=>/->/'restore 2>&1",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "a.tar\nlog::: restore mkdir-c '$1 > 2'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "awk '$3 > 5' data.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "awk '$3 > 5' file.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "awk '{ if ($1 > 0) print $1 }' file.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "awk -F, '{ if ($2 >= 10) print }' data.csv",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "bash -c 'echo \"a > b\"'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "bash -c 'grep -c \">\" file.txt'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cat <<'EOF' | grep -c x\n2>&1 > out.txt\nEOF",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cat <<'EOF'\na > b\ntee x\nEOF",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cat;parallel EXIT{5logfile.txt'w out'::: 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "catprettier's/=>/->/'\n~/x\n~/x [[restore",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cd's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "chmod <cat esac -w;::: cat --check",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "command grep awkcd's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cp ) [[\nsetsidlog",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cp )) restore",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cp src/a.txt src/b.txt @SANDBOX@/tmp/scratch/",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "dd\n--;setsid;| 's/=>/->/'\n-w;file.txt status fi",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "diff -w ]]\ndiff\nx '$1 > 2'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "echo $(( 3 > 2 ))",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "echo 'x; rm README.md' | tclsh",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "echo \"$(git status --short 2>&1)\"",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "echo\nln )) find x=1\nrestore;timeout -v & setsid EXIT",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "env;cp file.txt @SANDBOX@/tmp/scratch/;'s/=>/->/'echo",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "fi command 's/=>/->/'\n@SANDBOX@/tmp/scratch/a @SANDBOX@/tmp/link-into-tree/n 644case",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "file.txt;fi timeout xf\ncase mv\n's/=>/->/' '$1 > 2' sudo's/a/b/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "find '$1 > 2'x=1",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "git archive --format=tar HEAD > @SANDBOX@/tmp/scratch/head.tar",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "git archive HEAD -o @SANDBOX@/tmp/scratch/head.tar",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "grep -n \"->\" src/x.php",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "grep\n's/=>/->/'\ndd\n((;.;\n -exec",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "if 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "if in '{print > \"o\"}'{}@SANDBOX@/repo/a;.src-v",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "if;:::;/tmp/x '$1 > 2'\na.tar",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "in )\nif@SANDBOX@/repo/a;'s/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "in --\nfi's/=>/->/';'s/a/b/'|| then",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "in;'s/=>/->/' \n",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "log 's/=>/->/'\nsudo file.txt in x=1 xf\ntee;\\\nrestore",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "log\n{ 's/=>/->/' EOF",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "npx 's/=>/->/' {} 5 echo",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "npx (( -p 's/=>/->/' 's/a/b/'\ntouch",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "of=README.md @SANDBOX@/repo/a\n-s\n@SANDBOX@/repo/a src --check\nEOFEOF 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "perl -i -pe 's/a/b/' @SANDBOX@/tmp/scratch/target.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "perl -pi -e 's/a/b/' @SANDBOX@/tmp/scratch/target.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "print -r -- 'a > b'; git status",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "restore '{print > \"o\"}'\ncase;; @SANDBOX@/tmp/scratch/a README.mdcp file.txt @SANDBOX@/tmp/scratch/\na.tar",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "restore\n'' '$1 > 2';eval sedsudo README.md",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "restore\ncp file.txt @SANDBOX@/tmp/scratch/ )) trap>&2 xargs",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "rm )) echo\n# -delete xfecho fi",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "rm 2>&1\nrm",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "sed 's/=>/->/' file.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "sed -i '' 's/a/b/' @SANDBOX@/tmp/scratch/target.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "sed -i 's/a/b/' @SANDBOX@/tmp/scratch/target.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "sed -i.bak -e 's/a/b/' @SANDBOX@/tmp/scratch/target.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "sed -n '/a > b/p' file.txt",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "setsid case echo;in EOF 's/=>/->/'\ncd",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "setsid\nunbuffer tar 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "sh stash {}\n::: # -v )'{print > \"o\"}' eval 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "src;'s/=>/->/' in",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "src;@SANDBOX@/tmp/link-into-tree/n\nfind if setsid find restore -w's/=>/->/' tar{}",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "stash's/=>/->/';2>&1 <cp tar #-e)",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "sudo ::: EOF xf;-s 's/=>/->/'\n'w out'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "tar ))# '{print > \"o\"}'log",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "tara.tar'' >&2(cp file.txt @SANDBOX@/tmp/scratch/",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "timeout 's/=>/->/' (( -s\n's/=>/->/' -c\n@SANDBOX@/repo/a <<EOF",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "touch )src\ncd @SANDBOX@/home/x;command setsid",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "touch \"@SANDBOX@/tmp/scratch/a b\"",
+      "cwd": "@SANDBOX@/tmp/scratch"
+    },
+    {
+      "line": "touchchmod -p '{print > \"o\"}'",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "trap -scheckout 's/=>/->/'\\ echo & EOF in.\necho",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "x;#\n-rf\n@SANDBOX@/tmp/link-into-tree/n\n's/=>/->/'\ncommand",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "x=1 diff\n)) checkout '$1 > 2'mv",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "{ 's/=>/->/'",
+      "cwd": "@SANDBOX@/repo"
+    }
+  ]
+}

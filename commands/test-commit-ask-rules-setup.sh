@@ -106,7 +106,7 @@ done
 # with every other setup block in commands/test-setup-scope-guard.sh.
 
 echo "The docs name the same rules the block installs:"
-README="$REPO/README.md"; GUARD="$REPO/hooks/scripts/commit-guard.sh"
+README="$REPO/README.md"; GUARD="$REPO/hooks/mods/commit-guard.ts"
 for rule in "${WANT[@]}"; do
   inner=${rule#Bash(}; inner=${inner%)}
   grep -qF -- "- \`$rule\`" "$SETUP_MD" && grep -qF -- "$rule" "$README" && grep -qF -- "\`$inner\`" "$README" \
@@ -116,7 +116,7 @@ done
 grep -qE "Commit prompts: +${#WANT[@]} commit" "$SETUP_MD" && ok "the setup summary says ${#WANT[@]}" || bad "the setup summary states another count"
 for rule in "${WANT[@]:0:6}"; do
   inner=${rule#Bash(}; inner=${inner%)}
-  grep -qF -- "$inner," "$GUARD" && ok "commit-guard.sh names $inner" || bad "commit-guard.sh does not name $inner"
+  grep -qF -- "$inner," "$GUARD" && ok "commit-guard.ts names $inner" || bad "commit-guard.ts does not name $inner"
 done
 
 echo "An unreadable settings file fails closed:"

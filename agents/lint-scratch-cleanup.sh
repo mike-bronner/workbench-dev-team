@@ -32,7 +32,7 @@ set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/.." && pwd)"
 PHASES="$ROOT/references/holmes/review-phases.md"
-GUARD="$ROOT/hooks/scripts/local-review-guard.sh"
+GUARD="$ROOT/hooks/mods/review-guard.ts"
 PASS=0
 FAIL=0
 ok()  { PASS=$((PASS + 1)); echo "  ✅ $1"; }
