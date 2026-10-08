@@ -31,6 +31,16 @@
 //   session.end    deletes every scratch folder the mod still records, within
 //                  the end's short time budget: a run whose last turn ended
 //                  with a live child, and was never resumed, left one
+//   session.start  registers /dev-team-runs and /dev-team-board, and restarts
+//                  the panes' refresh timer when a reload finds a pane open
+//   command.run    those two commands open their pane (mods/panes.tsx)
+//   ui.render      draws the two panes, each read-only:
+//                  - runs: the newest dispatch logs (mods/runs.ts), read again
+//                    every 15 s while the pane is open
+//                  - board: The Index's three lanes from bin/dispatch-tick.sh
+//                    --board (mods/board.ts), fetched when the pane opens and
+//                    then once per dispatch cadence at most, and the items the
+//                    breaker escalated, from the log folder
 //   tool.call      on Bash, Edit, Write and NotebookEdit, before the call:
 //                  1. scratch: a dev-team agent's bare mktemp is pointed at a
 //                     folder of its own under a scratch root (mods/scratch.ts)
@@ -64,7 +74,12 @@
 // The /config rows reach this module as its options. Claude Code reloads the
 // module when one changes, so `register` runs again with the new values.
 
-import type { EngineInterface, Register, TurnUsage } from 'claude-code'
+import { atom, read, update } from 'claude-code'
+import type { EngineInterface, Register, Timer, TurnUsage } from 'claude-code'
+
+import type { RunsView } from '../types'
+
+import { BOARD_TIMEOUT_MS, EMPTY_BOARD, afterFetch, boardArgv, boardOutcome, cadenceMsOf, escalatedOf, isDue } from './mods/board'
 
 import { budgetNotice, contextOf, isOverBudget } from './mods/budget'
 import { commitVerdict } from './mods/commit-guard'
@@ -73,6 +88,9 @@ import { subjectVerdict } from './mods/commit-subject'
 import { DISPATCH_CONTEXT, dispatchDeny, dispatcherArgv, dispatchOutcome, dispatchResult, indexDispatchOf, isForcedBackground } from './mods/dispatch'
 import type { Disk } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
+import { BOARD_PANE, RUNS_PANE, boardTree, runsTree } from './mods/panes'
+import type { LogEnd } from './mods/runs'
+import { LOG_DIR, RUNS_REFRESH_MS, endsOf, livePairsOf, markersOf, newestRuns, rowsOf, scanArgv } from './mods/runs'
 import { hasBareMktemp, hasLiveChild, isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from './mods/scratch'
 import type { CallerLane } from './mods/spawn'
 import {
@@ -335,9 +353,143 @@ async function guard($: EngineInterface, e: GuardInput): Promise<string | undefi
   return `${deny}\n\nThe guard could not tell which agent made this call, so it held the call to the reviewer's rule. Report this to the human as a guard defect.`
 }
 
+// ── The panes ────────────────────────────────────────────────────────────────
+
+// Both panes only read. The runs pane lists the log folder and runs awk and
+// ps. The board pane runs the tick's board mode, which uses the cached token
+// only: it never mints, never reads the Keychain, and writes nothing.
+
+const RUNS_COMMAND = 'dev-team-runs'
+const BOARD_COMMAND = 'dev-team-board'
+const PANE_TITLE = { [RUNS_PANE]: 'Dev-team runs', [BOARD_PANE]: 'The Index board' } as const
+
+const runsAtom = atom({ plugin: 'workbench-dev-team', key: 'runs' } as const, { rows: [] } as RunsView)
+const boardAtom = atom({ plugin: 'workbench-dev-team', key: 'board' } as const, EMPTY_BOARD)
+
+// What the panes keep between refreshes in one load of the module: each read
+// log's end by name, with the size and mtime it was read at, whether a refresh
+// of each pane is under way, and the refresh timer.
+type PaneMemory = { ends: Map<string, { stamp: string; end: LogEnd }>; isRunsBusy: boolean; isBoardBusy: boolean; timer?: Timer }
+
+async function logDirOf($: EngineInterface): Promise<string | undefined> {
+  const home = await $.env.get('HOME').catch(() => undefined)
+  return home ? `${home}/${LOG_DIR}` : undefined
+}
+
+const stampOf = (run: { mtimeMs: number; size: number }): string => `${run.mtimeMs}:${run.size}`
+const NO_END: LogEnd = { tail: [], refusals: 0 }
+
+// The runs view from the newest logs. Only a log whose size or mtime changed
+// since its last read is read again.
+async function readRuns($: EngineInterface, memory: PaneMemory): Promise<RunsView> {
+  const dir = await logDirOf($)
+  if (dir === undefined) return { rows: [], error: 'HOME is not set, so the dispatch logs cannot be found.' }
+  const entries = await $.fs.list(dir).catch(() => undefined)
+  if (entries === undefined) return { rows: [], error: `There is no dispatch log folder at ${dir}.` }
+  const runs = newestRuns(entries)
+  if (runs.length === 0) return { rows: [] }
+  const changed = runs.filter(run => memory.ends.get(run.name)?.stamp !== stampOf(run))
+  if (changed.length > 0) {
+    const scan = await $.process.run(scanArgv($.plugin.root, changed.map(run => `${dir}/${run.name}`)), { timeoutMs: 20_000 }).catch(() => undefined)
+    // The scan skips a log it cannot open, so a non-zero exit with output is
+    // still the ends of the logs it read. No output and a failure is no read.
+    if (scan === undefined || (scan.exitCode !== 0 && scan.stdout === '')) return { rows: [], error: 'The dispatch logs could not be read.' }
+    const scanned = endsOf(scan.stdout)
+    for (const run of changed) {
+      const end = scanned.get(`${dir}/${run.name}`)
+      if (end === undefined) memory.ends.delete(run.name)
+      else memory.ends.set(run.name, { stamp: stampOf(run), end })
+    }
+  }
+  // A changed log the scan could not open was deleted since the listing: its
+  // run leaves the pane, and the others stay.
+  const read = runs.filter(run => memory.ends.get(run.name)?.stamp === stampOf(run))
+  for (const name of memory.ends.keys()) if (!read.some(run => run.name === name)) memory.ends.delete(name)
+  const ps = await $.process.run(['ps', '-axo', 'command='], { timeoutMs: 10_000 }).catch(() => undefined)
+  if (ps === undefined || ps.exitCode !== 0) return { rows: [], error: 'The process list could not be read, so which runs are live is unknown.' }
+  const ends = new Map(read.map(run => [`${dir}/${run.name}`, memory.ends.get(run.name)?.end ?? NO_END]))
+  return { rows: rowsOf(dir, read, ends, livePairsOf(ps.stdout), markersOf(entries)) }
+}
+
+async function refreshRuns($: EngineInterface, memory: PaneMemory): Promise<void> {
+  if (memory.isRunsBusy) return
+  memory.isRunsBusy = true
+  try {
+    const view = await readRuns($, memory)
+    await update($, runsAtom, () => view)
+  } finally {
+    memory.isRunsBusy = false
+  }
+}
+
+// The escalated items, read from the log folder on every refresh, and the
+// board from The Index when the cadence allows. The attempt is recorded before
+// the client runs, so no later refresh, and no reload, starts a second one
+// inside the cadence.
+async function refreshBoard($: EngineInterface, memory: PaneMemory, cadenceMs: number): Promise<void> {
+  const dir = await logDirOf($)
+  const entries = dir === undefined ? [] : await $.fs.list(dir).catch(() => [])
+  const escalated = escalatedOf(markersOf(entries))
+  await update($, boardAtom, view => ({ ...view, escalated }))
+  if (memory.isBoardBusy) return
+  const now = await $.clock.now()
+  if (!isDue(await read($, boardAtom), now, cadenceMs)) return
+  memory.isBoardBusy = true
+  try {
+    await update($, boardAtom, view => ({ ...view, attemptedAt: now }))
+    const run = await $.process.run(boardArgv($.plugin.root), { timeoutMs: BOARD_TIMEOUT_MS }).catch(() => undefined)
+    const outcome = boardOutcome(run)
+    await update($, boardAtom, view => afterFetch(view, now, outcome))
+  } finally {
+    memory.isBoardBusy = false
+  }
+}
+
+// One refresh of every open pane. With none open, the timer stops.
+async function refreshPanes($: EngineInterface, memory: PaneMemory, cadenceMs: number): Promise<void> {
+  const open = new Set((await $.ui.panes()).map(pane => pane.id))
+  if (!open.has(RUNS_PANE) && !open.has(BOARD_PANE)) {
+    memory.timer?.cancel()
+    memory.timer = undefined
+    return
+  }
+  await Promise.all([open.has(RUNS_PANE) ? refreshRuns($, memory) : undefined, open.has(BOARD_PANE) ? refreshBoard($, memory, cadenceMs) : undefined])
+}
+
+function startRefresh($: EngineInterface, memory: PaneMemory, cadenceMs: number): void {
+  memory.timer ??= $.clock.every(RUNS_REFRESH_MS, () => void refreshPanes($, memory, cadenceMs).catch(() => undefined))
+}
+
 export const register: Register = (on, options) => {
   // The rows, read once: the options are fixed for this activation.
   const config = configTextOf(options)
+
+  // The panes. Neither one writes: see refreshRuns and refreshBoard.
+  const cadenceMs = cadenceMsOf(options.dispatchCadenceMinutes)
+  const memory: PaneMemory = { ends: new Map(), isRunsBusy: false, isBoardBusy: false }
+
+  on('session.start', async ($, e, next) => {
+    await $.command.register({ name: RUNS_COMMAND, description: 'Show live and recent dev-team runs from the dispatch logs', immediate: true }).catch(() => undefined)
+    await $.command.register({ name: BOARD_COMMAND, description: "Show The Index board's lanes, fetched once per dispatch cadence at most", immediate: true }).catch(() => undefined)
+    const open = await $.ui.panes().catch(() => [])
+    if (open.some(pane => pane.id === RUNS_PANE || pane.id === BOARD_PANE)) startRefresh($, memory, cadenceMs)
+    return next(e)
+  })
+
+  on('command.run', async ($, e, next) => {
+    const pane = e.command === RUNS_COMMAND ? RUNS_PANE : e.command === BOARD_COMMAND ? BOARD_PANE : undefined
+    if (pane === undefined) return next(e)
+    await $.ui.open({ id: pane, title: PANE_TITLE[pane] })
+    startRefresh($, memory, cadenceMs)
+    void refreshPanes($, memory, cadenceMs).catch(() => undefined)
+    return { text: `${PANE_TITLE[pane]} pane opened.` }
+  }).catch(($, e, next) => (e.command === RUNS_COMMAND || e.command === BOARD_COMMAND ? { text: 'The dev-team pane could not open. Try the command again.' } : next(e)))
+
+  on('ui.render', { component: 'Pane' }, async ($, e, next) => {
+    if (e.requestId === RUNS_PANE) return runsTree($.ui.resolve(e), await read($, runsAtom), e.props.scroll.bodyRows)
+    if (e.requestId === BOARD_PANE) return boardTree($.ui.resolve(e), await read($, boardAtom), cadenceMs)
+    return next(e)
+  })
 
   // The gate fails closed: a dispatch it judges whose brief cannot be checked
   // is refused, and so is one whose gate throws before next is called.

@@ -63,7 +63,24 @@
 # `the-index unreachable — skipping this tick` and exits 0.
 #
 # Exit codes: 0 for a tick that ran or skipped cleanly, 1 when the tick could
-# not run (a missing tool, missing credentials, a refused protocol).
+# not run (a missing tool, missing credentials, a refused protocol), 2 for an
+# argument other than --board.
+#
+# ── Board mode ───────────────────────────────────────────────────────────────
+#
+# `dispatch-tick.sh --board` is the dev-team mod's board pane client. It uses
+# the cached token only: it never mints, never reads the Keychain, and writes
+# nothing. With no valid cached token, or on a 401, it says so and exits, and
+# the next tick drops the cache and mints. It calls the three list tools and
+# nothing else, prints one JSON object on stdout, and exits. It never calls the
+# dispatcher. Every other line goes to stderr, its last line the reason for a
+# failure, worded for the pane. The JSON:
+#   {"lanes": {"unrefined": L, "review": L, "development": L}}
+# where L is {"limit": N, "items": [...]} or {"error": "<the tool's error>"},
+# each item {id, number, isPr, repo, title, claimedAt}. The development lane is
+# listed with include_claimed, so claimed items are in it. It exits 0 with the
+# JSON, and 1 with the reason on stderr when there is no token or The Index
+# failed.
 #
 # Environment read, for tests only (the launchd job sets none of them):
 #   DISPATCH_INDEX_URL, DISPATCH_TOKEN_URL   The Index endpoints
@@ -71,6 +88,17 @@
 #   DISPATCH_AGENT                           the dispatcher script
 #   DISPATCH_ESCALATION_TEMPLATE             the escalation comment template
 set -u
+
+# Any argument but --board is refused, so a misspelled board call never runs a
+# tick that dispatches.
+BOARD=0
+case "$#:${1:-}" in
+  0:) ;;
+  1:--board) BOARD=1 ;;
+  *) echo "usage: $(basename "$0") [--board]" >&2; exit 2 ;;
+esac
+# Board mode's stdout is its JSON alone, on fd 3. Every message goes to stderr.
+if [ "$BOARD" = 1 ]; then exec 3>&1 1>&2; fi
 
 HERE=$(cd "$(dirname "$0")" && pwd)
 INDEX_URL="${DISPATCH_INDEX_URL:-https://the-index.mikebronner.dev/mcp}"
@@ -88,19 +116,25 @@ FALLBACK_LIFETIME=86400
 
 UNREACHABLE='the-index unreachable — skipping this tick'
 
+# Board mode prints each line for the pane, so its lines carry no tick prefix
+# and never speak of dispatching.
 for tool in curl jq; do
   if ! command -v "$tool" >/dev/null 2>&1; then
-    echo "dispatch-tick: $tool is not on PATH; nothing dispatched" >&2
+    if [ "$BOARD" = 1 ]; then
+      echo "$tool is not on PATH, so the board cannot be fetched." >&2
+    else
+      echo "dispatch-tick: $tool is not on PATH; nothing dispatched" >&2
+    fi
     exit 1
   fi
 done
-if [ ! -f "$DISPATCHER" ]; then
+if [ "$BOARD" = 0 ] && [ ! -f "$DISPATCHER" ]; then
   echo "dispatch-tick: the dispatcher is missing at $DISPATCHER; nothing dispatched" >&2
   exit 1
 fi
 
 TICK_START=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-echo "── tick $TICK_START ──"
+[ "$BOARD" = 1 ] || echo "── tick $TICK_START ──"
 
 # ── The token ────────────────────────────────────────────────────────────────
 
@@ -176,6 +210,12 @@ mint_token() {
 }
 
 TOKEN=$(cached_token) || TOKEN=
+# Board mode never mints: a pane opening must not read the Keychain or write
+# the cache. The next tick mints.
+if [ -z "$TOKEN" ] && [ "$BOARD" = 1 ]; then
+  echo "There is no valid cached Index token yet. The next Dispatch tick mints one."
+  exit 1
+fi
 if [ -z "$TOKEN" ]; then
   mint_token
   case $? in
@@ -208,6 +248,10 @@ call() {
     return 2
   fi
   if [ "$STATUS" = 401 ]; then
+    if [ "$BOARD" = 1 ]; then
+      FAILURE="The Index refused the cached token (HTTP 401). The next Dispatch tick drops it and mints a new one."
+      return 3
+    fi
     rm -f -- "$TOKEN_CACHE"
     FAILURE="The Index refused the cached token (HTTP 401). The cache is dropped, so the next tick mints a new one."
     return 3
@@ -237,6 +281,39 @@ call() {
   fi
   return 0
 }
+
+# ── Board mode ───────────────────────────────────────────────────────────────
+
+# board_lane <tool> <limit> [extra arguments JSON]: one lane as board JSON on
+# stdout. A tool error is the lane's own; any other failure ends the run.
+board_lane() {
+  local tool="$1" limit="$2" extra="${3:-}" args rc
+  [ -n "$extra" ] || extra='{}'
+  args=$(jq -nc --argjson limit "$limit" --argjson extra "$extra" '$extra + {limit: $limit}')
+  call "$tool" "$args"
+  rc=$?
+  case "$rc" in
+    0) ;;
+    1) jq -nc --arg e "$FAILURE" '{error: $e}'; return 0 ;;
+    2) echo "The Index could not be reached." >&2; return 1 ;;
+    *) printf '%s\n' "$FAILURE" >&2; return 1 ;;
+  esac
+  printf '%s' "$RESULT" | jq -c --argjson limit "$limit" '
+    if (.items | type) == "array" then
+      {limit: $limit, items: [.items[] | objects | {id, number: (.issue_number // .pr_number),
+        isPr: (.issue_number == null and .pr_number != null), repo, title, claimedAt: .in_flight_at}]}
+    else {error: "answered with no items list"} end' 2>/dev/null \
+    || jq -nc '{error: "answered with no items list"}'
+}
+
+if [ "$BOARD" = 1 ]; then
+  UNREFINED=$(board_lane list_unrefined_items 25) || exit 1
+  REVIEW=$(board_lane list_review_items 25) || exit 1
+  DEVELOPMENT=$(board_lane list_development_items 25 '{"include_claimed": true}') || exit 1
+  jq -nc --argjson u "$UNREFINED" --argjson r "$REVIEW" --argjson d "$DEVELOPMENT" \
+    '{lanes: {unrefined: $u, review: $r, development: $d}}' >&3
+  exit 0
+fi
 
 # ── The summary ──────────────────────────────────────────────────────────────
 

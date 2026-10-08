@@ -39,7 +39,9 @@ CLIENT='client-42'
 
 cat > "$WORK/stub/security" <<'EOF'
 #!/usr/bin/env bash
-# Answers find-generic-password for the-index-mcp from FAKE_* variables.
+# Answers find-generic-password for the-index-mcp from FAKE_* variables, and
+# records each call in SECURITY_CALLS when that is set.
+[ -n "${SECURITY_CALLS:-}" ] && printf '%s\n' "$*" >> "$SECURITY_CALLS"
 account=
 while [ $# -gt 0 ]; do case "$1" in -a) account="$2"; shift ;; esac; shift; done
 case "$account" in
@@ -472,6 +474,150 @@ expect_lacks "no client secret on curl's command line" "s3cret" "$ARGV"
 expect_lacks "no bearer token on curl's command line" "tok-1" "$ARGV"
 expect_lacks "no client secret in the output" "s3cret" "$OUT"
 expect_lacks "no token in the output" "tok-1" "$OUT"
+
+# ── Board mode ───────────────────────────────────────────────────────────────
+# board [url] [arguments…]: one run of the real script in board mode. Sets BOUT
+# (stdout), BERR (stderr) and RC.
+board() {
+  local url="${1:-$URL}"
+  [ $# -gt 0 ] && shift
+  [ $# -gt 0 ] || set -- --board
+  BOUT=$(DISPATCH_INDEX_URL="$url/mcp" DISPATCH_TOKEN_URL="$url/oauth/token" \
+    DISPATCH_TOKEN_CACHE="$CACHE" DISPATCH_AGENT="${BOARD_AGENT:-$WORK/dispatcher.sh}" \
+    FAKE_CLIENT_ID="$CLIENT" FAKE_CLIENT_SECRET="$SECRET" SECURITY_CALLS="$WORK/security.calls" \
+    PATH="$WORK/stub:$PATH" bash "$SCRIPT" "$@" 2>"$WORK/board.err")
+  RC=$?
+  BERR=$(cat "$WORK/board.err")
+  cat "$WORK/board.err" >> "$WORK/board-all.err"
+  # The pane shows the last line on stderr as the reason.
+  BREASON=$(printf '%s\n' "$BERR" | awk 'NF { last = $0 } END { print last }')
+}
+keychain_reads() { [ -e "$WORK/security.calls" ] && wc -l < "$WORK/security.calls" | tr -d ' ' || echo 0; }
+
+echo "— board mode: the three list tools, one JSON object, nothing else"
+seed_cache
+BOARD_SCENARIO=$(jq -nc --argjson u "$(items "[$(item 11 101 o/a), $(item 12 102 o/b)]")" \
+  --argjson r "$(jq -nc '{result: {count: 1, items: [{id: 21, issue_number: null, pr_number: 7, repo: "o/a", title: "Fix it", in_flight_at: null}]}}')" \
+  --argjson d "$(items "[$(item 31 301 o/a 2026-10-08T10:00:00+00:00), $(item 32 302 o/b)]")" \
+  '{valid_tokens: ["tok-1"], tools: {list_unrefined_items: $u, list_review_items: $r, "list_development_items#claimed": $d}}')
+reset "$BOARD_SCENARIO"
+touch "$WORK/before-board"
+board
+expect_eq "exit 0" 0 "$RC"
+expect_eq "prints nothing on stderr" "" "$BERR"
+expect_eq "calls the three list tools, each with its limit, and nothing else" \
+'list_unrefined_items {"limit":25}
+list_review_items {"limit":25}
+list_development_items {"include_claimed":true,"limit":25}' "$(trail)"
+expect_eq "mints nothing on a valid cache" 0 "$(mints)"
+expect_eq "reads no Keychain item" 0 "$(keychain_reads)"
+expect_eq "starts no agent" "no" "$([ -e "$WORK/claude.calls" ] && echo yes || echo no)"
+expect_eq "stdout is one JSON object with the three lanes" "unrefined review development" \
+  "$(printf '%s' "$BOUT" | jq -r '.lanes | keys_unsorted | join(" ")')"
+expect_eq "each lane carries its limit and its items" "25:2 25:1 25:2" \
+  "$(printf '%s' "$BOUT" | jq -r '[.lanes[] | "\(.limit):\(.items | length)"] | join(" ")')"
+expect_eq "an item keeps its id, number, repo and claim, and nothing else" \
+  '{"id":31,"number":301,"isPr":false,"repo":"o/a","title":null,"claimedAt":"2026-10-08T10:00:00+00:00"}' \
+  "$(printf '%s' "$BOUT" | jq -c '.lanes.development.items[0]')"
+expect_eq "a pull request item is marked as one" '7 true' "$(printf '%s' "$BOUT" | jq -r '.lanes.review.items[0] | "\(.number) \(.isPr)"')"
+expect_lacks "no token in the JSON" "tok-1" "$BOUT"
+expect_lacks "no token on a curl command line" "tok-1" "$(cat "$WORK/curl.argv")"
+expect_eq "writes nothing under HOME" "" "$(find "$HOME" -newer "$WORK/before-board" -print)"
+
+echo "— board mode never mints, never reads the Keychain, and writes nothing, in every cache state"
+NO_TOKEN="There is no valid cached Index token yet. The next Dispatch tick mints one."
+REFUSED="The Index refused the cached token (HTTP 401). The next Dispatch tick drops it and mints a new one."
+for state in missing expired near-expiry unreadable refused; do
+  case "$state" in
+    missing) rm -f "$CACHE" ;;
+    expired) seed_cache -10 ;;
+    near-expiry) seed_cache 600 ;;
+    unreadable) printf 'not json' > "$CACHE" ;;
+    refused) printf '{"access_token":"tok-revoked","expires_at":%s}' "$(( $(date +%s) + 86400 ))" > "$CACHE" ;;
+  esac
+  CACHE_BEFORE=$(cat "$CACHE" 2>/dev/null || echo none)
+  reset "$BOARD_SCENARIO"
+  rm -f "$WORK/security.calls"
+  sleep 1
+  touch "$WORK/before-board"
+  board
+  expect_eq "$state cache: exit 1" 1 "$RC"
+  expect_eq "$state cache: no mint request" 0 "$(mints)"
+  expect_eq "$state cache: no Keychain read" 0 "$(keychain_reads)"
+  expect_eq "$state cache: nothing written under HOME" "" "$(find "$HOME" -newer "$WORK/before-board" -print)"
+  expect_eq "$state cache: the cache is left as it was" "$CACHE_BEFORE" "$(cat "$CACHE" 2>/dev/null || echo none)"
+  expect_eq "$state cache: nothing on stdout" "" "$BOUT"
+  if [ "$state" = refused ]; then
+    expect_eq "$state cache: the reason is the 401, in pane wording" "$REFUSED" "$BREASON"
+    expect_eq "$state cache: one list call, then it stops" "list_unrefined_items {\"limit\":25}" "$(trail)"
+  else
+    expect_eq "$state cache: the reason says the next tick mints" "$NO_TOKEN" "$BREASON"
+    expect_eq "$state cache: no Index call" "" "$(trail)"
+  fi
+done
+
+echo "— board mode: each failure's reason is the last line on stderr"
+seed_cache
+reset "$BOARD_SCENARIO"
+board "http://127.0.0.1:9"
+expect_eq "an unreachable Index exits 1" 1 "$RC"
+expect_eq "and the reason says so" "The Index could not be reached." "$BREASON"
+expect_lacks "with no tick wording" "skipping this tick" "$BERR"
+reset "{$VALID, \"tools\": {\"list_unrefined_items\": {\"status\": 404, \"raw\": \"nope\"}}}"
+board
+expect_eq "a reply that is not a JSON-RPC result exits 1" 1 "$RC"
+expect_has "and the reason names the HTTP status" "The Index answered list_unrefined_items with HTTP 404." "$BREASON"
+reset "{$VALID, \"tools\": {\"list_review_items\": {\"rpcError\": {\"code\": -32601, \"message\": \"no such method\"}}}}"
+board
+expect_eq "a JSON-RPC error exits 1" 1 "$RC"
+expect_has "and the reason names it" "The Index refused list_review_items with JSON-RPC error -32601: no such method" "$BREASON"
+seed_cache
+reset "{$VALID, \"tools\": {\"list_review_items\": {\"isError\": \"review lane down\"}}}"
+board
+expect_eq "a tool error is the lane's own: exit 0" 0 "$RC"
+expect_eq "the lane carries the error" "review lane down" "$(printf '%s' "$BOUT" | jq -r '.lanes.review.error')"
+expect_eq "the other lanes still list" "25 25" "$(printf '%s' "$BOUT" | jq -r '[.lanes.unrefined.limit, .lanes.development.limit] | join(" ")')"
+reset "{$VALID, \"tools\": {\"list_unrefined_items\": {\"result\": {\"data\": []}}}}"
+board
+expect_eq "a lane with no items list is an error of its own" "answered with no items list" "$(printf '%s' "$BOUT" | jq -r '.lanes.unrefined.error')"
+reset "$BOARD_SCENARIO"
+BOARD_AGENT="$WORK/no-such-dispatcher.sh" board
+expect_eq "board mode needs no dispatcher" 0 "$RC"
+
+echo "— board mode: a missing curl or jq, in pane wording"
+# A PATH in this test's own folder holding only what the script runs before its
+# tool check, and one of the two tools.
+for missing in curl jq; do
+  MINPATH="$WORK/minpath-$missing"
+  mkdir -p "$MINPATH"
+  for t in dirname basename date curl jq; do
+    [ "$t" = "$missing" ] || ln -sf "$(command -v "$t")" "$MINPATH/$t"
+  done
+  OUT=$(DISPATCH_TOKEN_CACHE="$CACHE" PATH="$MINPATH" "$(command -v bash)" "$SCRIPT" --board 2>"$WORK/board.err")
+  RC=$?
+  BERR=$(cat "$WORK/board.err"); cat "$WORK/board.err" >> "$WORK/board-all.err"
+  expect_eq "board, $missing missing: exit 1" 1 "$RC"
+  expect_eq "board, $missing missing: the reason is pane wording" "$missing is not on PATH, so the board cannot be fetched." "$BERR"
+  expect_eq "board, $missing missing: nothing on stdout" "" "$OUT"
+  OUT=$(DISPATCH_TOKEN_CACHE="$CACHE" DISPATCH_AGENT="$WORK/dispatcher.sh" PATH="$MINPATH" "$(command -v bash)" "$SCRIPT" 2>&1)
+  expect_eq "tick, $missing missing: the tick's own line is unchanged" "dispatch-tick: $missing is not on PATH; nothing dispatched" "$OUT"
+done
+
+echo "— no line board mode printed carries the tick prefix or speaks of dispatching"
+expect_lacks "no tick prefix" "dispatch-tick" "$(cat "$WORK/board-all.err")"
+expect_lacks "nothing about dispatching" "dispatched" "$(cat "$WORK/board-all.err")"
+expect_lacks "no tick wording" "this tick" "$(cat "$WORK/board-all.err")"
+expect_eq "the board lines were collected" yes "$([ -s "$WORK/board-all.err" ] && echo yes || echo no)"
+
+echo "— any other argument is refused before anything runs"
+for args in "--boards" "--board extra" "board"; do
+  reset "$BOARD_SCENARIO"
+  # shellcheck disable=SC2086
+  board "$URL" $args
+  expect_eq "'$args' exits 2" 2 "$RC"
+  expect_has "'$args' prints the usage" "usage:" "$BERR"
+  expect_eq "'$args' calls nothing" "" "$(trail)"
+done
 
 # ── Setup's proof step, against this tick's real output ─────────────────────
 # Setup Step 7c-bis kickstarts the job and passes only a tick whose own last

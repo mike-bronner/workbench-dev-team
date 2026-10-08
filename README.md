@@ -330,6 +330,7 @@ Two ways to invoke the same agents, same definitions:
 - **The workspace check.** A gated Watson Direct-mode brief whose `Workdir:` is a bare path, on a repo whose branch is `main`, `master`, or `trunk`, is refused, and the refusal tells the orchestrator to ask you for a branch. A `Workdir:` that records a branch or a worktree beside the path passes, `(branch: main, Mike chose to work on main)` included, because you decided. A path git finds no branch at passes, and git that cannot run refuses.
 - **Index-mode Watson through the dispatcher, and the background.** A main-session Agent call of Watson with `Item ID: <n>` runs the dispatcher in its place (above, under the commit guard). Every other main-session dev-team dispatch runs in the background unless the call set `run_in_background: false`.
 - **Holmes's helpers** run as `holmes-lens` (above, under the review guard), and **the fan-out knobs** reach Holmes and Lestrade as a `Dev-team config:` line ("Configuration").
+- **Two read-only panes.** `/dev-team-runs` opens a pane of the newest eight dispatched runs, read from `~/.claude-workbench/dev-team-logs/` every 15 seconds while it is open: each run's agent, its item or sweep, its start, its state (running, done, failed, refused by the content filter, budget-killed, or escalated by the breaker), its refused tool calls, and its log path. It reads only the newest logs, with one `awk -f bin/scan-run-logs.awk` over the logs that changed and one `ps` for the live dispatchers. `/dev-team-board` opens a pane of The Index's unrefined, review and development lanes: each lane's count and top three items, the claimed development items, and the items the breaker escalated. It fetches through `bin/dispatch-tick.sh --board`, which uses the tick's cached token only, and calls the three list tools and nothing else. It never mints a token, never reads the Keychain, and writes nothing: with no valid cached token, or on a 401, the pane says so, and the next tick mints. The pane fetches when it opens and then at most once per `dispatchCadenceMinutes`, a failed fetch included. Neither pane writes a log, lock or state file, and no token reaches the module.
 - **Scratch and the context budget, per run.** A dev-team agent's bare `mktemp` lands in a folder of its own, deleted once a turn of that agent ends with no live child, and at the session's end in any case (above). Every model request of a dev-team run is measured, input tokens cached or not, and the first one past 250k raises one toast and one transcript line for you. Nothing is stopped, since `maxBudgetUsd` reaches only the scheduled path and the Agent tool has no budget parameter.
 
 **The mode agents are files.** `agents/watson-direct.md`, `watson-index.md`, `holmes-local.md`, `holmes-index.md`, `lestrade-item.md`, and `lestrade-sweep.md` each carry one mode of a public agent, so a dispatch never loads the mode it does not run. `bin/compose-agents.sh` builds each from its public agent file and a recipe in `references/agent-modes/`, and the output is a pure function of those two files, so a mode prompt is byte-stable for the prompt cache. Edit the public file and the recipe, never a mode file, then run the script. A section a recipe neither copies nor skips stops it. They are files and not types the mod registers because `claude -p --agent <type>` resolves its type before any hooks module loads, so the scheduled path can start only a file-defined type. The public files stay whole, and they run wherever the mod does not, such as Cowork.
@@ -341,6 +342,7 @@ Two ways to invoke the same agents, same definitions:
 - **Agent logs.** `~/.claude-workbench/dev-team-logs/<agent>-<item>-<timestamp>.log` — full agent output per dispatch.
 - **Review-learnings notes.** `dev-team/review-learnings/<repo>-pr<n>-<date>.md` (one note per bounce/escalation, written by Holmes at re-review) and `dev-team/top-lessons.md` (the frequency-ranked digest Watson and Lestrade read) in your memory vault. Nothing there yet means no PR has bounced or been AC-disputed since this shipped.
 - **Dispatch log.** `~/.claude-workbench/dev-team-logs/dispatch-tick.log` — one block per tick: a timestamp, one line per action, and the counts line, or `idle — nothing to dispatch`.
+- **The panes.** `/dev-team-runs` shows the live and recent runs from those logs, and `/dev-team-board` shows the board's lanes, inside Claude Code ("The dev-team mod" above).
 - **Project board.** Items flow Inbox → Backlog → Ready → In Progress → In Review → Approved / Escalated. Status drift (items stuck in a column) is your canary.
 
 ## Tests and CI
@@ -350,12 +352,14 @@ anything fails. Pass `tests` or `lints` to run one group.
 
 The two groups are named apart on purpose:
 
-- **`test-*.sh`** — fourteen scripts that execute shipped logic and assert on
-  its behaviour. Five run a shipped script as a subprocess, among them
+- **`test-*.sh`** — fifteen scripts that execute shipped logic and assert on
+  its behaviour. Six run a shipped script as a subprocess, among them
   `bin/test-compose-agents.sh`, which holds every committed mode agent to what
   the composer builds now, and `bin/test-dispatch-tick.sh`, which runs the
   Dispatch tick against `tests/fake-index.py`, a local fake of The Index's MCP
-  and token endpoints, with the Keychain, the dispatcher and `claude` stubbed.
+  and token endpoints, with the Keychain, the dispatcher and `claude` stubbed,
+  its board mode included, and `bin/test-scan-run-logs.sh`, which runs the runs
+  pane's log reader on fixture logs.
   Four extract the real bash from between sentinel
   markers in a Markdown prompt and run it against fixtures, so the test cannot
   drift from the logic it guards. One, `commands/test-setup-scope-guard.sh`,
