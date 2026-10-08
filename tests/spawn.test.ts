@@ -1,11 +1,11 @@
 // hooks/register.ts and hooks/mods/spawn.ts: what a dispatch of a dev-team
 // agent turns into. Routing to the mode agent, model and effort from the
-// config, and the dispatch gate with its advisory hint.
+// /config rows, and the dispatch gate with its advisory hint.
 
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { BRIEF, CONFIG_PATH, SLOTS, spawnInput, step, world } from './world'
+import { BRIEF, SLOTS, spawnInput, step, world } from './world'
 
 const T = (name: string) => `workbench-dev-team:${name}`
 
@@ -81,30 +81,27 @@ describe('routing — a public type runs the mode its token picks', () => {
   })
 })
 
-describe('model and effort — from dev-team-config.json at spawn', () => {
-  const CONFIG = JSON.stringify({
-    agents: {
-      watson: { model: 'claude-opus-5-5[1m]', effort: 'Medium' },
-      holmes: { model: 'sonnet', effort: 'high' },
-      lestrade: { model: 'bad model; rm', effort: 'turbo' },
-    },
-  })
+describe('model and effort — from the /config rows at spawn', () => {
+  // The plugin's /config rows, as the engine hands them to register(). An
+  // effort outside the row's options never arrives: the engine reads it as
+  // unset and hands over the default, so only the model can be malformed here.
+  const OPTIONS = { options: { holmesModel: 'sonnet', holmesEffort: 'high', lestradeModel: 'bad model; rm' } }
 
-  test('the config model is set when the caller names none', async ($, on) => {
-    const w = world(on, { config: CONFIG })
+  test('the row model is set when the caller names none', OPTIONS, async ($, on) => {
+    const w = world(on)
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     await $.agent.spawn(spawnInput(T('holmes'), BRIEF))
     expect(w.spawned.map(s => s.model)).toEqual(['claude-opus-5-5[1m]', 'sonnet'])
   })
 
-  test('a model the caller named stands', async ($, on) => {
-    const w = world(on, { config: CONFIG })
+  test('a model the caller named stands', OPTIONS, async ($, on) => {
+    const w = world(on)
     await $.agent.spawn(spawnInput(T('watson'), BRIEF, { model: 'haiku' }))
     expect(w.spawned[0]?.model).toBe('haiku')
   })
 
-  test("the config effort reaches every request of that agent's loop, and no other", async ($, on) => {
-    const w = world(on, { config: CONFIG })
+  test("the row effort reaches every request of that agent's loop, and no other", OPTIONS, async ($, on) => {
+    const w = world(on)
     await $.agent.spawn(spawnInput(T('watson'), BRIEF)) // agent-1, medium
     await $.agent.spawn(spawnInput(T('holmes'), BRIEF)) // agent-2, high
     await $.agent.spawn(spawnInput('general-purpose', BRIEF)) // agent-3, untouched
@@ -122,13 +119,6 @@ describe('model and effort — from dev-team-config.json at spawn', () => {
     ])
   })
 
-  test('a numeric effort is ignored, since a hook may set only a level', async ($, on) => {
-    const w = world(on, { config: JSON.stringify({ agents: { watson: { effort: 8000 } } }) })
-    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
-    await step($ as never, 'agent-1', 'low')
-    expect(w.steps).toEqual([{ agentId: 'agent-1', effort: 'low' }])
-  })
-
   test('a token from the main session runs the mode it names, past the gate', async ($, on) => {
     const w = world(on)
     await $.agent.spawn(spawnInput(T('lestrade'), 'Repo sweep: mike-bronner/phpcs-rules'))
@@ -136,42 +126,37 @@ describe('model and effort — from dev-team-config.json at spawn', () => {
     expect(w.spawned.map(s => s.subagentType)).toEqual([T('lestrade-sweep'), T('holmes-index')])
   })
 
-  test('a malformed model or effort is ignored, so the agent file applies', async ($, on) => {
-    const w = world(on, { config: CONFIG })
+  test('a malformed model is ignored, so the agent file applies, and the effort still does', OPTIONS, async ($, on) => {
+    const w = world(on)
     await $.agent.spawn(spawnInput(T('lestrade'), 'Item ID: 3'))
     await step($ as never, 'agent-1', 'low')
     expect(w.spawned[0]?.model).toBeUndefined()
-    expect(w.steps).toEqual([{ agentId: 'agent-1', effort: 'low' }])
+    expect(w.steps).toEqual([{ agentId: 'agent-1', effort: 'medium' }])
   })
 
-  for (const [label, config] of [
-    ['a missing config', undefined],
-    ['a config that is not JSON', '{not json'],
-    ['a config whose agents entry is not an object', JSON.stringify({ agents: { watson: 'opus' } })],
-    ['a config that is null', 'null'],
-  ] as const) {
-    test(`${label} changes nothing and blocks nothing`, async ($, on) => {
-      const w = world(on, { config })
-      const result = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
-      await step($ as never, 'agent-1', 'low')
-      expect(result).toMatchObject({ agentId: 'agent-1' })
-      expect(w.spawned).toEqual([{ subagentType: T('watson-direct'), model: undefined, prompt: BRIEF }])
-      expect(w.steps).toEqual([{ agentId: 'agent-1', effort: 'low' }])
-    })
-  }
+  test('with no row set, the rows\' defaults apply: the pin every agent file carries', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 4'))
+    await $.agent.spawn(spawnInput(T('lestrade'), 'Item ID: 5'))
+    await step($ as never, 'agent-1', 'low')
+    expect(w.spawned.map(s => s.model)).toEqual(['claude-opus-5-5[1m]', 'claude-opus-5-5[1m]', 'claude-opus-5-5[1m]'])
+    expect(w.steps).toEqual([{ agentId: 'agent-1', effort: 'medium' }])
+  })
 
-  test('a failure after the gate passes the dispatch on unchanged, never refused', async ($, on) => {
+  test('the old config file is never read', async ($, on) => {
+    const w = world(on, { config: JSON.stringify({ agents: { watson: { model: 'opus', effort: 'low' } } }) })
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await step($ as never, 'agent-1', 'high')
+    expect(w.spawned[0]?.model).toBe('claude-opus-5-5[1m]')
+    expect(w.steps).toEqual([{ agentId: 'agent-1', effort: 'medium' }])
+  })
+
+  test('an environment that cannot be read stops neither the routing nor the rows', async ($, on) => {
     const w = world(on, { envFails: true })
     const result = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     expect(result).toMatchObject({ agentId: 'agent-1' })
-    expect(w.spawned).toEqual([{ subagentType: T('watson'), model: undefined, prompt: BRIEF }])
-  })
-
-  test('the config is read from the home directory', async ($, on) => {
-    const w = world(on)
-    w.files.set(CONFIG_PATH.replace('dev-team-config', 'other'), JSON.stringify({ agents: { watson: { model: 'opus' } } }))
-    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
-    expect(w.spawned[0]?.model).toBeUndefined()
+    expect(w.spawned).toEqual([{ subagentType: T('watson-direct'), model: 'claude-opus-5-5[1m]', prompt: BRIEF }])
   })
 })
 

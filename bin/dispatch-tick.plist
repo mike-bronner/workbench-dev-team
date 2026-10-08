@@ -1,0 +1,52 @@
+<?xml version="1.0" encoding="UTF-8"?>
+<!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
+<!--
+  The launchd job that runs one Dispatch tick (bin/dispatch-tick.sh) every
+  StartInterval seconds. /workbench-dev-team:setup fills the four
+  placeholders below, each a name between two pairs of underscores, writes the
+  result to ~/Library/LaunchAgents, and loads it in the user's GUI domain,
+  where the login Keychain is open to it.
+
+  TICK      the installed tick script, ~/.claude-workbench/bin/dispatch-tick.sh
+  INTERVAL  the dispatchCadenceMinutes setting, in seconds
+  PATH      the setup session's PATH, which finds jq, curl, claude and security
+  LOG       the tick log, ~/.claude-workbench/dev-team-logs/dispatch-tick.log
+
+  launchd never starts a second copy of a job while one is running, so two
+  ticks cannot overlap.
+
+  AbandonProcessGroup is load-bearing. When a job ends, launchd kills every
+  process still in its process group unless this key is true. The tick ends in
+  seconds, and the agents it starts through dispatch-agent.sh stay in its
+  group, so without the key launchd would kill each agent mid-run.
+  ProcessType is Standard, not Background, so those agents, which can run for
+  hours, are not held to launchd's background resource limits.
+-->
+<plist version="1.0">
+<dict>
+  <key>Label</key>
+  <string>dev.workbench.dev-team-dispatch</string>
+  <key>ProgramArguments</key>
+  <array>
+    <string>/bin/bash</string>
+    <string>__TICK__</string>
+  </array>
+  <key>StartInterval</key>
+  <integer>__INTERVAL__</integer>
+  <key>RunAtLoad</key>
+  <false/>
+  <key>AbandonProcessGroup</key>
+  <true/>
+  <key>ProcessType</key>
+  <string>Standard</string>
+  <key>EnvironmentVariables</key>
+  <dict>
+    <key>PATH</key>
+    <string>__PATH__</string>
+  </dict>
+  <key>StandardOutPath</key>
+  <string>__LOG__</string>
+  <key>StandardErrorPath</key>
+  <string>__LOG__</string>
+</dict>
+</plist>

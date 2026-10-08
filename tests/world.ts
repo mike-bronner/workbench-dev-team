@@ -63,8 +63,12 @@ export type World = {
   calls: Record<string, unknown>[]
   // Each $.process.run the module made, as its argv.
   runs: string[][]
+  // Each $.process.run's timeoutMs, in the same order as runs.
+  timeouts: (number | undefined)[]
   // Folders the stand-in mktemp made and rm has not removed.
   made: Set<string>
+  // Makes scratchRoots reject, from the moment a test sets it.
+  rootsFail: boolean
   // Each toast and transcript line the module showed.
   shown: string[]
   // Each model request's usage, in order, as the stand-in engine reports it.
@@ -156,7 +160,9 @@ export function world(
     ran: [],
     calls: [],
     runs: [],
+    timeouts: [],
     made: new Set(),
+    rootsFail: false,
     shown: [],
     usage: [],
   }
@@ -181,7 +187,7 @@ export function world(
           if (w.checkFails) return Promise.reject(new Error('no template'))
           return Promise.resolve((w.check ?? standInCheck)(prompt))
         },
-        scratchRoots: async () => options.roots ?? [],
+        scratchRoots: async () => (w.rootsFail ? Promise.reject(new Error('no roots')) : (options.roots ?? [])),
         orchestratorIsOn: async () => answer(w.isOn),
         isUnattended: async () => answer(options.unattended ?? false),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
@@ -217,6 +223,7 @@ export function world(
 
   on('process.run', async ($, e) => {
     w.runs.push([...e.argv])
+    w.timeouts.push(e.init?.timeoutMs)
     const answer = options.run?.(e.argv) ?? defaultRun(w, e.argv)
     if (answer instanceof Error) throw answer
     return { value: { ...answer, isStdoutTruncated: false, isStderrTruncated: false } }
@@ -253,6 +260,8 @@ export function world(
 
   on('turn.complete', async ($, e) => ({ text: e.answer }))
 
+  on('session.end', async ($, e) => ({ sessionId: e.sessionId }))
+
   on('tool.call', async ($, e) => {
     const input = e as { tool: string; command?: unknown; file_path?: unknown; notebook_path?: unknown }
     w.ran.push(`${input.tool}: ${String(input.command ?? input.file_path ?? input.notebook_path ?? '')}`)
@@ -273,7 +282,7 @@ function defaultRun(w: World, argv: readonly string[]): RunAnswer {
     w.made.add(folder)
     return { exitCode: 0, stdout: `${folder}\n`, stderr: '' }
   }
-  if (argv[0] === 'rm') w.made.delete(argv[argv.length - 1] ?? '')
+  if (argv[0] === 'rm') for (const path of argv.slice(argv.indexOf('--') + 1)) w.made.delete(path)
   return { exitCode: 0, stdout: '', stderr: '' }
 }
 
@@ -303,6 +312,11 @@ export async function step($: { turn: { step: (e: never) => AsyncGenerator<unkno
 // The end of a run in the loop `agentId` names (main when undefined).
 export async function complete($: { turn: { complete: (e: never) => Promise<unknown> } }, agentId?: string): Promise<void> {
   await $.turn.complete({ answer: '', durationMs: 0, isAborted: false, turnId: 't', reason: 'answer', ...(agentId === undefined ? {} : { agentId }) } as never)
+}
+
+// The end of the session, as the engine raises it on exit.
+export async function endSession($: { session: { end: (e: never) => Promise<unknown> } }): Promise<void> {
+  await $.session.end({ reason: 'prompt_input_exit', sessionId: 's-1', resume: { id: 's-1' } } as never)
 }
 
 // A request's usage whose working context is `tokens`, most of it cached.

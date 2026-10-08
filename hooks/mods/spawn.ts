@@ -84,15 +84,14 @@ export function modeTypeOf(family: Family, prompt: string): string {
   }
 }
 
-// What ~/.claude-workbench/dev-team-config.json gives one family's interactive
-// dispatch. The file is the person's, so each value is checked before it is
+// What the /config rows give one family's interactive dispatch, read through
+// configTextOf. The values are the person's, so each is checked before it is
 // used: a model is an alias or a full id with an optional bracketed suffix
 // (`claude-opus-5-5[1m]`), and an effort is a level. turn.step refuses a
 // numeric effort from a hook ("a number is internal-only"), so a number is not
-// one. A
-// value outside that shape, a missing key, and an unreadable or malformed file
-// all leave the knob unset, so the agent file's own value applies. A config
-// problem never blocks a dispatch, as on the scheduled path.
+// one. A value outside that shape, and a missing one, leave the knob unset, so
+// the agent file's own value applies. A bad value never blocks a dispatch, as
+// on the scheduled path.
 export type Knobs = { model?: string; effort?: DevTeamEffort }
 
 const MODEL = /^[A-Za-z0-9][A-Za-z0-9._-]*(?:\[[A-Za-z0-9]+\])?$/
@@ -124,6 +123,18 @@ export const CONFIG_MODES: Readonly<Record<string, Family>> = {
   [`${PLUGIN}:holmes-local`]: 'holmes',
   [`${PLUGIN}:holmes-index`]: 'holmes',
   [`${PLUGIN}:lestrade-item`]: 'lestrade',
+}
+
+// The plugin's /config rows, as the config text knobsOf and configLineOf read:
+// one entry per agent, keyed as the old config file keyed it, so
+// `watsonModel` is `agents.watson.model`. A row with no value is left out.
+const ROW_KNOBS = ['model', 'effort', 'fanout', 'lensModel'] as const
+export function configTextOf(options: Readonly<Record<string, unknown>> | undefined): string {
+  const entry = (family: Family) =>
+    Object.fromEntries(
+      ROW_KNOBS.map(knob => [knob, options?.[`${family}${knob.charAt(0).toUpperCase()}${knob.slice(1)}`]] as const).filter(([, value]) => value !== undefined),
+    )
+  return JSON.stringify({ agents: Object.fromEntries((Object.keys(FAMILIES) as Family[]).map(family => [family, entry(family)])) })
 }
 
 // The line's label, which the agents' prose names.

@@ -24,6 +24,10 @@ declare module 'claude-code' {
       // for the top-level loop of a `claude -p --agent` run: made at its first
       // bare mktemp, deleted and set to "" when its run completes.
       scratch: StateFamily<string>
+      // Every scratch folder the mod made and has not deleted yet. A family
+      // cannot be listed, so session.end reads this to delete what each run's
+      // end left behind for a child that was still live.
+      scratchFolders: string[]
       // Whether the human was told this run passed its context budget, keyed
       // as scratch is, so the notice comes once per run.
       overBudget: StateFamily<boolean>

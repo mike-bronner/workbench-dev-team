@@ -421,18 +421,19 @@ ones.
 
 ## Model and effort come from the config, never from you
 
-Nothing in this skill reads `~/.claude-workbench/dev-team-config.json`. When you
-dispatch Watson, Holmes, or Lestrade by the public type, the dev-team mod reads
-it at spawn: it runs the mode agent the token picks, with the configured `model`
-and `effort`. All three ship `claude-opus-5-5[1m]` at `medium`.
+Nothing in this skill reads the dev-team settings, the plugin's rows in
+`/config`. When you dispatch Watson, Holmes, or Lestrade by the public type, the
+dev-team mod reads them at spawn: it runs the mode agent the token picks, with
+the configured `model` and `effort`. All three ship `claude-opus-5-5[1m]` at
+`medium`.
 
 **Never pass the Agent tool's `model` parameter to a dev-team agent.** It
 accepts only an alias (`sonnet`, `opus`, `haiku`, `fable`), so it cannot carry
 the exact ID, and the mod lets a model the caller named stand, so `opus` would
 silently replace the pin with whatever the alias points at today. The Agent
-tool has no effort, budget, or fallback parameter, so `maxBudgetUsd` and
-`fallback` reach only the scheduled path. When the human edits the config, both
-paths pick it up on the next dispatch.
+tool has no effort, budget, or fallback parameter, so the budget and fallback
+rows reach only the scheduled path. When the human edits a row in `/config`,
+both paths pick it up on the next dispatch.
 
 ## When NOT to orchestrate
 

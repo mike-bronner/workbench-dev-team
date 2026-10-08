@@ -76,8 +76,8 @@ accumulate on the way.
 
 **The dev-team mod measures it and stops nothing.** It reads the working
 context of every model request your run makes, and notifies the human once
-when a request passes 250k. No limit ends the run: the `maxBudgetUsd` knob in
-`dev-team-config.json` reaches only the scheduled path, and the Agent tool has
+when a request passes 250k. No limit ends the run: the `*MaxBudgetUsd` rows
+in `/config` reach only the scheduled path, and the Agent tool has
 no budget parameter. So the budget stays yours to keep.
 
 The lever is what you read. Grep before you open a file, read the part you need

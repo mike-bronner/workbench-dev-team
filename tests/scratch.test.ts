@@ -4,10 +4,10 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf } from '../hooks/mods/scratch'
+import { isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from '../hooks/mods/scratch'
 import { parseShell } from './core/hooks/mods/shell'
 import type { GuardOptions } from './world'
-import { BRIEF, complete, spawnInput, world } from './world'
+import { BRIEF, complete, endSession, spawnInput, world } from './world'
 
 const T = (name: string) => `workbench-dev-team:${name}`
 const ROOTS = ['/scratch/session', '/Users/tester/Developer/scratchpad', '/Users/tester/.claude/plans']
@@ -253,6 +253,161 @@ describe('scratch — no folder is deleted while a child of its run is live', ()
   })
 })
 
+describe('scratch — the session end deletes every folder still recorded', () => {
+  const rms = (w: { runs: string[][] }) => w.runs.filter(argv => argv[0] === 'rm')
+  type Listed = { id: string; type: string; parentId?: string; status?: string }
+
+  test('a folder kept for a live child, whose run never resumed, goes at the session end', async ($, on) => {
+    const agents: Listed[] = [
+      { id: 'agent-1', type: T('watson-direct') },
+      { id: 'lens-1', type: 'Explore', parentId: 'agent-1', status: 'running' },
+    ]
+    const w = world(on, { roots: ROOTS, agents })
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await complete($ as never, 'agent-1')
+    expect(rms(w)).toEqual([])
+    await endSession($ as never)
+    expect(rms(w)).toEqual([['rm', '-rf', '--', FOLDER]])
+    expect(w.made.has(FOLDER)).toBe(false)
+  })
+
+  test("only the folders still recorded go, in one rm: a run's end already took its own", async ($, on) => {
+    const agents: Listed[] = [
+      { id: 'agent-1', type: T('watson-direct') },
+      { id: 'agent-2', type: T('holmes-local') },
+      { id: 'lens-1', type: T('holmes-lens'), parentId: 'agent-2', status: 'running' },
+      { id: 'agent-3', type: T('lestrade-item') },
+    ]
+    let made = 0
+    const w = world(on, {
+      roots: ROOTS,
+      agents,
+      run: argv => (argv[0] === 'mktemp' ? { exitCode: 0, stdout: `/scratch/session/run.${++made}\n`, stderr: '' } : undefined),
+    })
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF)) // agent-1
+    await $.agent.spawn(spawnInput(T('holmes'), BRIEF)) // agent-2
+    await $.agent.spawn(spawnInput(T('lestrade'), 'Item ID: 9')) // agent-3
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await $.tool.call(bash('mktemp -d', 'agent-2'))
+    await $.tool.call(bash('mktemp -d', 'agent-3'))
+    await complete($ as never, 'agent-1') // no live child: its folder goes now
+    await complete($ as never, 'agent-2') // a live helper: kept
+    await complete($ as never, 'agent-3') // kept too: its turn has not ended (no complete)
+    expect(rms(w)).toEqual([['rm', '-rf', '--', '/scratch/session/run.1'], ['rm', '-rf', '--', '/scratch/session/run.3']])
+    await endSession($ as never)
+    expect(rms(w).at(-1)).toEqual(['rm', '-rf', '--', '/scratch/session/run.2'])
+    expect(rms(w).length).toBe(3)
+  })
+
+  test('a folder whose run never ended goes too', async ($, on) => {
+    const w = await withWatson($, on)
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await endSession($ as never)
+    expect(rms(w)).toEqual([['rm', '-rf', '--', FOLDER]])
+  })
+
+  test("the top-level run's folder, kept for a live sub-agent, goes at the end of a -p run", async ($, on) => {
+    const agents: Listed[] = [{ id: 'lens-1', type: T('holmes-lens'), status: 'running' }]
+    const w = world(on, { roots: ROOTS, agents, lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('holmes-index') } })
+    await $.tool.call(bash('mktemp -d'))
+    await complete($ as never)
+    expect(rms(w)).toEqual([])
+    await endSession($ as never)
+    expect(rms(w)).toEqual([['rm', '-rf', '--', '/scratch/session/holmes-index.abc123']])
+  })
+
+  test('a recorded folder no longer under a scratch root is never deleted', async ($, on) => {
+    const roots = [...ROOTS]
+    const w = world(on, { roots, agents: [{ id: 'agent-1', type: T('watson-direct') }, { id: 'c', type: 'Explore', parentId: 'agent-1' }] })
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await complete($ as never, 'agent-1')
+    roots.splice(0, roots.length, '/other')
+    await endSession($ as never)
+    expect(rms(w)).toEqual([])
+    // It stays recorded: back under a root, the next end deletes it.
+    roots.splice(0, roots.length, ...ROOTS)
+    await endSession($ as never)
+    expect(rms(w)).toEqual([['rm', '-rf', '--', FOLDER]])
+  })
+
+  test('an rm that fails keeps every folder it was given, so the next end tries again', async ($, on) => {
+    let fail = true
+    const w = await withWatson($, on, { run: argv => (argv[0] === 'rm' && fail ? { exitCode: 1, stdout: '', stderr: 'busy' } : undefined) })
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await endSession($ as never)
+    fail = false
+    await endSession($ as never)
+    await endSession($ as never)
+    expect(rms(w)).toEqual([['rm', '-rf', '--', FOLDER], ['rm', '-rf', '--', FOLDER]])
+  })
+
+  test('an rm that cannot run keeps the folders too', async ($, on) => {
+    let fail = true
+    const w = await withWatson($, on, { run: argv => (argv[0] === 'rm' && fail ? new Error('timed out') : undefined) })
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await endSession($ as never)
+    fail = false
+    await endSession($ as never)
+    expect(rms(w).length).toBe(2)
+    expect(w.made.has(FOLDER)).toBe(false)
+  })
+
+  test('a folder outside the roots stays recorded while the rest go', async ($, on) => {
+    let made = 0
+    const roots = [...ROOTS]
+    const w = world(on, {
+      roots,
+      agents: [{ id: 'agent-1', type: T('watson-direct') }, { id: 'agent-2', type: T('watson-direct') }],
+      run: argv => (argv[0] === 'mktemp' ? { exitCode: 0, stdout: `${made++ === 0 ? '/scratch/session' : '/Users/tester/Developer/scratchpad'}/run.${made}\n`, stderr: '' } : undefined),
+    })
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await $.tool.call(bash('mktemp -d', 'agent-2'))
+    roots.splice(0, roots.length, '/scratch/session')
+    await endSession($ as never)
+    expect(rms(w)).toEqual([['rm', '-rf', '--', '/scratch/session/run.1']])
+    roots.splice(0, roots.length, ...ROOTS)
+    await endSession($ as never)
+    expect(rms(w).at(-1)).toEqual(['rm', '-rf', '--', '/Users/tester/Developer/scratchpad/run.2'])
+    expect(rms(w).length).toBe(2)
+  })
+
+  test('the record is emptied, so a second end deletes nothing', async ($, on) => {
+    const w = await withWatson($, on)
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await endSession($ as never)
+    await endSession($ as never)
+    expect(rms(w).length).toBe(1)
+  })
+
+  test('no recorded folder, no rm', async ($, on) => {
+    const w = await withWatson($, on)
+    await endSession($ as never)
+    expect(rms(w)).toEqual([])
+  })
+
+  test('the rm is held to the end\'s short budget', async ($, on) => {
+    const w = await withWatson($, on)
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    await endSession($ as never)
+    const timeout = w.timeouts[w.runs.findIndex(argv => argv[0] === 'rm')]
+    expect(timeout).toBeGreaterThan(0)
+    expect(timeout).toBeLessThanOrEqual(1_000)
+  })
+
+  test('scratch roots that cannot be read leave the folders, and the session still ends', async ($, on) => {
+    const w = await withWatson($, on)
+    await $.tool.call(bash('mktemp -d', 'agent-1'))
+    w.rootsFail = true
+    await endSession($ as never)
+    expect(rms(w)).toEqual([])
+    expect(w.made.has(FOLDER)).toBe(true)
+  })
+})
+
 describe('scratch — the pure rules', () => {
   test('the rewrite stands only when it reads back as the line plus the template', () => {
     const line = 'echo "a; mktemp -d; b"'
@@ -279,6 +434,17 @@ describe('scratch — the pure rules', () => {
     expect(isDeletable('/scratch/sessionx/a', ROOTS)).toBe(false)
     expect(isDeletable('/scratch/session/../x', ROOTS)).toBe(false)
     expect(isDeletable('', ROOTS)).toBe(false)
+  })
+
+  test('sweepOf takes only folders under a root, and nothing when too little time is left', () => {
+    const kept = ['/scratch/session/a.1', '/elsewhere/b.2', '/Users/tester/Developer/scratchpad/c.3']
+    expect(sweepOf(kept, ROOTS, 1_500)).toEqual({ doomed: ['/scratch/session/a.1', '/Users/tester/Developer/scratchpad/c.3'], timeoutMs: 850 })
+    expect(sweepOf(kept, ROOTS, Infinity)?.timeoutMs).toBe(850)
+    expect(sweepOf(kept, ROOTS, 400)?.timeoutMs).toBe(250)
+    expect(sweepOf(kept, ROOTS, 150)).toBeUndefined()
+    expect(sweepOf(kept, ROOTS, 0)).toBeUndefined()
+    expect(sweepOf(['/elsewhere/b.2'], ROOTS, 1_500)).toBeUndefined()
+    expect(sweepOf([], ROOTS, 1_500)).toBeUndefined()
   })
 
   test('prefixOf names the folder for the bare type', () => {

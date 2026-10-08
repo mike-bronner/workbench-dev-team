@@ -1,7 +1,7 @@
 #!/usr/bin/env bash
 # Test for bin/dispatch-agent.sh.
 #
-# Runs the real script in DISPATCH_DRY_RUN mode against fixture configs, so the
+# Runs the real script in DISPATCH_DRY_RUN mode against fixture settings, so the
 # assertions cover the shipped argument-building logic without spawning agents.
 # The run-folder cases spawn for real, against a stub `claude` on PATH.
 #
@@ -17,31 +17,39 @@ if [ ! -f "$SCRIPT" ]; then
   echo "FAIL: $SCRIPT not found"; exit 1
 fi
 
-# dispatch-agent.sh resolves both its config and its log directory out of $HOME.
-# Every invocation below overrides DISPATCH_CONFIG and LOGDIR explicitly, but a
-# sandboxed HOME is what stops a case that forgets one from reading the
-# developer's real dev-team-config.json and writing their real log directory.
+# dispatch-agent.sh resolves both its settings and its log directory out of
+# $HOME. Every invocation below overrides DISPATCH_SETTINGS and LOGDIR
+# explicitly, but a sandboxed HOME is what stops a case that forgets one from
+# reading the developer's real ~/.claude/settings.json and writing their real
+# log directory.
 mkdir -p "$WORK/home"
 export HOME="$WORK/home"
 
 pass=0; fail=0
 
-# mkcfg <name> <json> -> echoes the config path
-mkcfg() { printf '%s' "$2" > "$WORK/$1.json"; printf '%s' "$WORK/$1.json"; }
+# mkcfg <name> <options JSON> -> echoes the path of a settings file holding
+# those userConfig values where Claude Code keeps them.
+KEY='workbench-dev-team@claude-workbench'
+mkcfg() {
+  jq -n --arg k "$KEY" --argjson o "$2" '{pluginConfigs: {($k): {options: $o}}}' > "$WORK/$1.json"
+  printf '%s' "$WORK/$1.json"
+}
+# mkraw <name> <text> -> echoes the path of a settings file holding the text as is
+mkraw() { printf '%s' "$2" > "$WORK/$1.json"; printf '%s' "$WORK/$1.json"; }
 
-# run <config> <agent> <target> -> echoes dry-run output (stdout+stderr)
+# run <settings> <agent> <target> -> echoes dry-run output (stdout+stderr)
 #
 # WORKBENCH_DEV_TEAM_PIPELINE is unset for every run. The pipeline assertions
 # below therefore prove the script sets the flag itself, rather than inheriting
 # it from the shell that ran this suite.
 run() {
-  DISPATCH_CONFIG="$1" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
+  DISPATCH_SETTINGS="$1" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
     env -u WORKBENCH_DEV_TEAM_PIPELINE bash "$SCRIPT" "$2" "$3" 2>&1
 }
 
-# rc <config> <agent> <target> -> echoes the exit code
+# rc <settings> <agent> <target> -> echoes the exit code
 rc() {
-  DISPATCH_CONFIG="$1" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
+  DISPATCH_SETTINGS="$1" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
     bash "$SCRIPT" "$2" "$3" >/dev/null 2>&1
   printf '%s' "$?"
 }
@@ -70,10 +78,12 @@ expect_eq() {
 
 echo "Testing dispatch-agent.sh ($SCRIPT):"
 
-FULL=$(mkcfg full '{"agents":{"lestrade":{"model":"haiku","effort":"low"},"holmes":{"model":"sonnet","effort":"high","maxBudgetUsd":5},"watson":{"model":"opus","effort":"high","maxBudgetUsd":10,"fallback":"sonnet","reprieveBudgetMultiplier":3}}}')
+FULL=$(mkcfg full '{"lestradeModel":"haiku","lestradeEffort":"low","holmesModel":"sonnet","holmesEffort":"high","holmesMaxBudgetUsd":5,"watsonModel":"opus","watsonEffort":"high","watsonMaxBudgetUsd":10,"watsonFallback":"sonnet","reprieveBudgetMultiplier":3}')
 EMPTY=$(mkcfg empty '{}')
-BROKEN=$(mkcfg broken 'not json at all {{{')
+BROKEN=$(mkraw broken 'not json at all {{{')
 MISSING="$WORK/does-not-exist.json"
+# Another plugin's options, and none of ours: every knob takes its default.
+FOREIGN=$(jq -n '{pluginConfigs: {"other@x": {options: {watsonModel: "haiku", watsonMaxBudgetUsd: 1}}}}' > "$WORK/foreign.json"; printf '%s' "$WORK/foreign.json")
 
 echo "— argument validation"
 expect_eq "unknown agent rejected"            "2" "$(rc "$FULL" mycroft 42)"
@@ -107,7 +117,7 @@ expect_has "sweep dispatch is flagged as pipeline" "pipeline=1" \
 # The script sets the flag, it does not pass through what it inherited. A stray
 # WORKBENCH_DEV_TEAM_PIPELINE=0 in the caller's environment must not disarm the
 # carve-out and strand the lane on an approval nobody can give.
-out=$(DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
+out=$(DISPATCH_SETTINGS="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
   WORKBENCH_DEV_TEAM_PIPELINE=0 bash "$SCRIPT" watson 7 2>&1)
 expect_has "an inherited 0 cannot disarm the carve-out" "pipeline=1" "$out"
 
@@ -143,10 +153,10 @@ for agent in lestrade holmes watson; do
 done
 out=$(run "$FULL" lestrade mike-bronner/phpcs-rules)
 expect_denied "sweep run is denied all 24 tools" "$(dry_denied "$out")"
-# A config silent on every knob leaves no config option after the lists, and the
+# Settings silent on model, effort and budget leave no such option after the lists, and the
 # prompt must still come last.
 out=$(run "$EMPTY" lestrade 7)
-expect_denied "denied with no config knobs" "$(dry_denied "$out")"
+expect_denied "denied with no settings" "$(dry_denied "$out")"
 expect_has "the prompt stays the last argument" "--verbose Item ID: 7" "$out"
 
 echo "— allowed MCP servers"
@@ -179,12 +189,12 @@ done
 out=$(run "$FULL" lestrade mike-bronner/phpcs-rules)
 expect_has "sweep run starts in auto mode" " --permission-mode auto --permission-prompts none " "$out"
 
-echo "— config resolution"
+echo "— settings resolution"
 out=$(run "$FULL" lestrade 7)
-expect_has  "model from config"  "--model haiku"       "$out"
-expect_has  "effort from config" "--effort low"        "$out"
+expect_has  "model from the lestradeModel row"  "--model haiku"       "$out"
+expect_has  "effort from the lestradeEffort row" "--effort low"        "$out"
 expect_lacks "no budget when unset" "--max-budget-usd" "$out"
-expect_lacks "no fallback when unset" "--fallback-model" "$out"
+expect_has  "fallback takes its default when unset" "--fallback-model haiku " "$out"
 
 out=$(run "$FULL" watson 7)
 expect_has  "fallback passed"    "--fallback-model sonnet" "$out"
@@ -207,14 +217,15 @@ for pair in watson:watson-index:7 holmes:holmes-index:7 lestrade:lestrade-item:7
   fi
 done
 
-echo "— defaults survive a bad config"
-for label in empty broken missing; do
+echo "— defaults survive bad settings"
+for label in empty broken missing foreign; do
   case "$label" in
     empty)   c="$EMPTY" ;;
     broken)  c="$BROKEN" ;;
     missing) c="$MISSING" ;;
+    foreign) c="$FOREIGN" ;;
   esac
-  # A config silent on model and effort must leave both flags off. An empty
+  # Settings silent on model and effort must leave both flags off. An empty
   # `--model` would either fail the run or pin a value, and either way the
   # agent definition's own value would never apply.
   for agent in lestrade holmes watson; do
@@ -226,44 +237,58 @@ for label in empty broken missing; do
   expect_has  "watson budget default ($label)"  "--max-budget-usd 10.00" "$out"
   out=$(run "$c" lestrade 7)
   expect_lacks "lestrade no budget ($label)"    "--max-budget-usd"      "$out"
-  # Holmes's default matches the shipped config's 10.00, so a lost config cannot
-  # lift the cap off the one multi-agent lane.
+  # Holmes's default matches its row's default, 10, so a lost settings file
+  # cannot lift the cap off the one multi-agent lane.
   out=$(run "$c" holmes 7)
   expect_has  "holmes budget default ($label)"  "--max-budget-usd 10.00" "$out"
+  expect_has  "holmes fallback default ($label)" "--fallback-model sonnet " "$out"
+  out=$(run "$c" watson 7)
+  expect_has  "watson fallback default ($label)" "--fallback-model sonnet,haiku " "$out"
+  out=$(run "$c" lestrade 7)
+  expect_has  "lestrade fallback default ($label)" "--fallback-model haiku " "$out"
 done
 
-echo "— the shipped default config"
-# Read out of setup.md's Step 6 heredoc rather than restated here, so this
-# checks the config users actually get. Every agent runs on the exact model ID,
-# `[1m]` variant included, at medium effort. The trailing space pins where the
-# value ends, so a longer value cannot pass as a prefix match.
-SHIPPED="$WORK/shipped.json"
-awk '/^SHIPPED_CONFIG=\$\(cat <<.EOF.$/{f=1;next} f && /^EOF$/{exit} f' \
-  "$HERE/../commands/setup.md" > "$SHIPPED"
-if [ -s "$SHIPPED" ] && jq empty "$SHIPPED" 2>/dev/null; then
-  for agent in lestrade holmes watson; do
-    out=$(run "$SHIPPED" "$agent" 7)
-    expect_has "shipped $agent model is the exact [1m] id" "--model claude-opus-5-5[1m] " "$out"
-    expect_has "shipped $agent effort is medium"           "--effort medium "              "$out"
-  done
-else
-  echo "  FAIL — could not extract the shipped config from commands/setup.md"
-  fail=$((fail+1))
-fi
+echo "— the userConfig defaults"
+# Claude Code stores only the values a user set, so every default the script
+# falls back on must equal its row's default in plugin.json, read here from the
+# manifest itself. Model and effort have no default in the script: their rows'
+# defaults must equal the pin in each agent's own frontmatter, which applies
+# when the flag is off.
+MANIFEST="$HERE/../.claude-plugin/plugin.json"
+default() { jq -r --arg f "$1" '.userConfig[$f].default // empty | tostring' "$MANIFEST"; }
+frontmatter() { awk -v k="$2:" 'NR==1 && $0=="---" {f=1; next} f && $0=="---" {exit} f && $1==k {print $2}' "$HERE/../agents/$1.md"; }
+for agent in lestrade holmes watson; do
+  expect_eq "$agent model row default is the agent's pin" "$(frontmatter "$agent" model)" "$(default "${agent}Model")"
+  expect_eq "$agent effort row default is the agent's pin" "$(frontmatter "$agent" effort)" "$(default "${agent}Effort")"
+  out=$(run "$EMPTY" "$agent" 7)
+  expect_has "$agent fallback default matches its row" "--fallback-model $(default "${agent}Fallback") " "$out"
+  want=$(default "${agent}MaxBudgetUsd")
+  if [ -z "$want" ]; then
+    expect_lacks "$agent has no budget row default and no budget" "--max-budget-usd" "$out"
+  else
+    got=$(printf '%s\n' "$out" | sed -n 's/.*--max-budget-usd \([0-9.]*\).*/\1/p')
+    expect_eq "$agent budget default matches its row" "$want" "$(awk -v g="$got" 'BEGIN{print g+0}')"
+  fi
+done
+mkdir -p "$WORK/logs"; touch "$WORK/logs/watson-6.escalated"
+got=$(run "$EMPTY" watson 6 | sed -n 's/.*--max-budget-usd \([0-9.]*\).*/\1/p')
+expect_eq "the reprieve multiplier default matches its row" \
+  "$(awk -v b="$(default watsonMaxBudgetUsd)" -v m="$(default reprieveBudgetMultiplier)" 'BEGIN{printf "%.2f", b*m}')" "$got"
+rm -f "$WORK/logs/watson-6.escalated"
 
 echo "— model and effort are independent"
 # One key set and the other absent, both ways round. A script that gated both
 # flags on one key would pass the all-or-nothing cases above.
-ONLY_MODEL=$(mkcfg only-model '{"agents":{"watson":{"model":"sonnet"}}}')
+ONLY_MODEL=$(mkcfg only-model '{"watsonModel":"sonnet"}')
 out=$(run "$ONLY_MODEL" watson 7)
 expect_has   "model alone is passed"          "--model sonnet" "$out"
 expect_lacks "absent effort stays off"        "--effort"       "$out"
-ONLY_EFFORT=$(mkcfg only-effort '{"agents":{"watson":{"effort":"medium"}}}')
+ONLY_EFFORT=$(mkcfg only-effort '{"watsonEffort":"medium"}')
 out=$(run "$ONLY_EFFORT" watson 7)
 expect_has   "effort alone is passed"         "--effort medium" "$out"
 expect_lacks "absent model stays off"         "--model"         "$out"
 # An empty string is absent, not a value: it must not reach the command line.
-BLANK=$(mkcfg blank '{"agents":{"watson":{"model":"","effort":""}}}')
+BLANK=$(mkcfg blank '{"watsonModel":"","watsonEffort":""}')
 out=$(run "$BLANK" watson 7)
 expect_lacks "empty model string omitted"     "--model"  "$out"
 expect_lacks "empty effort string omitted"    "--effort" "$out"
@@ -280,7 +305,7 @@ out=$(run "$FULL" holmes 8)
 expect_has  "holmes budget tripled"  "--max-budget-usd 15.00" "$out"
 out=$(run "$FULL" lestrade 8)
 expect_lacks "no budget stays absent under reprieve" "--max-budget-usd" "$out"
-out=$(REPRIEVE=1 DISPATCH_CONFIG="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
+out=$(REPRIEVE=1 DISPATCH_SETTINGS="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" watson 7 2>&1)
 expect_has  "an env REPRIEVE=1 buys nothing without a marker" "--max-budget-usd 10 " "$out"
 
 echo "— the run starts in a fresh, empty folder in a scratch root"
@@ -310,7 +335,7 @@ chmod +x "$STUB/security" "$STUB/claude" "$FAILSTUB/mktemp"
 # picks the lane, and RUNROOT the scratch root, when a case needs another.
 spawn() {
   (cd "$CALLER" && env -u WORKBENCH_DEV_TEAM_PIPELINE PATH="${2:+$2:}$STUB:$PATH" STUB_OUT="$WORK/stub-$1" \
-    CLAUDE_PROJECT_DIR="$CALLER" DISPATCH_CONFIG="$FULL" LOGDIR=logs RUNROOT="${RUNROOT_OVERRIDE:-$RUNS}" \
+    CLAUDE_PROJECT_DIR="$CALLER" DISPATCH_SETTINGS="$FULL" LOGDIR=logs RUNROOT="${RUNROOT_OVERRIDE:-$RUNS}" \
     bash "$SCRIPT" "${SPAWN_AGENT:-watson}" "$1" 2>&1)
 }
 wait_for() { local i=0; while [ ! -s "$1" ] && [ "$i" -lt 50 ]; do sleep 0.2; i=$((i + 1)); done; }

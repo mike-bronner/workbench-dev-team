@@ -1,15 +1,15 @@
 #!/usr/bin/env bash
-# Test for setup's config write, pin check and pin replacement (Step 6,
-# commands/setup.md).
+# Test for setup's pin check, pin replacement, and the move of an old config
+# into /config (Step 6, commands/setup.md).
 #
-# It extracts the *real* blocks from setup.md (between the `config-write`,
-# `config-pin-check` and `config-pin-replace` sentinel markers) and runs them
+# It extracts the *real* blocks from setup.md (between the `config-pin-check`,
+# `config-pin-replace` and `config-migrate` sentinel markers) and runs them
 # against fixture configs, so the test can never drift from the shipped logic.
 #
-# Why the blocks exist: setup never overwrites an existing config, so an install
-# from before the pins shipped keeps its old model and effort. Dispatch passes
-# those as flags and the dev-team mod applies them at every interactive spawn,
-# so the old values win on both paths. Setup asks the user, per agent, whether to replace them.
+# Why the blocks exist: an install from before the pins shipped keeps its old
+# model and effort in ~/.claude-workbench/dev-team-config.json, and the move
+# would carry them into /config, where they win on both paths. Setup asks the
+# user, per agent, whether to put them on the pin first.
 # The check finds what to ask about. The replacement writes only what the user
 # said yes to. The question itself is Claude's AskUserQuestion call, which no
 # shell test can run, so these cases hold the two halves either side of it.
@@ -40,11 +40,17 @@ for f in "$CHECK" "$REPLACE"; do
   if [ ! -s "$f" ]; then echo "FAIL: could not extract $(basename "$f" .sh) block from $SRC"; exit 1; fi
 done
 
-# The shipped default config, read out of Step 6's heredoc rather than restated.
+# The defaults, as an old config file would have held them: each agent's
+# userConfig rows, read out of plugin.json rather than restated.
 DEFAULT_CFG="$WORK/default-config.json"
-awk '/^SHIPPED_CONFIG=\$\(cat <<.EOF.$/{f=1;next} f && /^EOF$/{exit} f' "$SRC" > "$DEFAULT_CFG"
-if [ ! -s "$DEFAULT_CFG" ] || ! jq empty "$DEFAULT_CFG" 2>/dev/null; then
-  echo "FAIL: could not extract the default agent config heredoc from $SRC"; exit 1
+jq '.userConfig as $u
+  | {agents: (["lestrade", "holmes", "watson"] | map(. as $a | {key: $a, value: (
+      ["model", "effort", "fallback", "maxBudgetUsd", "fanout", "lensModel"]
+      | map(. as $k | $u[$a + ($k[0:1] | ascii_upcase) + $k[1:]].default as $d
+            | select($d != null) | {key: $k, value: $d}) | from_entries)}) | from_entries)}' \
+  "$REPO/.claude-plugin/plugin.json" > "$DEFAULT_CFG" 2>/dev/null
+if [ "$(jq -r '.agents.watson.model // empty' "$DEFAULT_CFG" 2>/dev/null)" = "" ]; then
+  echo "FAIL: could not read the userConfig defaults from plugin.json"; exit 1
 fi
 
 echo "Testing setup's pin check and pin replacement:"
@@ -322,67 +328,159 @@ else
   echo "  skip — read-only file case (root ignores file permissions)"
 fi
 
-# --- 7. the config write, and the router model's one home ---------------------
-# Step 6 writes the shipped config when there is none, and gives an older config
-# the one key it lacks, router.model, which Step 7d pins the router to. Nothing
-# else in an existing config may change.
-echo "Testing setup's config write:"
-WRITE="$WORK/write.sh"
-awk '/# >>> config-write >>>/{f=1;next} /# <<< config-write <<</{f=0} f' "$SRC" > "$WRITE"
-if [ ! -s "$WRITE" ]; then
-  bad "could not extract the config-write block from $SRC"
+# --- 12. the move into /config ------------------------------------------------
+# Step 6b writes each old value that differs from its row's default through
+# `claude plugin configure`, checks it landed where dispatch-agent.sh reads it,
+# and only then renames the old file. `claude` is a stub that stores the values
+# as Claude Code's own type declarations say it does: in the settings file,
+# under pluginConfigs[<plugin>].options. A second stub stores nothing, as a
+# write that lands somewhere else would look.
+echo "Testing setup's move of the old config into /config:"
+MIGRATE="$WORK/migrate.sh"
+awk '/# >>> config-migrate >>>/{f=1;next} /# <<< config-migrate <<</{f=0} f' "$SRC" > "$MIGRATE"
+if [ ! -s "$MIGRATE" ]; then
+  bad "could not extract the config-migrate block from $SRC"
 else
-  # write <name> [config text] -> runs the block under a throwaway HOME, prints
-  # its output, and leaves the config at $WORK/home-<name>/.claude-workbench/
-  write() {
-    mkdir -p "$WORK/home-$1/.claude-workbench"
-    [ $# -lt 2 ] || printf '%s' "$2" > "$WORK/home-$1/.claude-workbench/dev-team-config.json"
-    ( HOME="$WORK/home-$1" bash "$WRITE" 2>&1 )
+  MSTUB="$WORK/mstub"; LOST="$WORK/lost"; mkdir -p "$MSTUB" "$LOST"
+  cat > "$MSTUB/claude" <<STUB
+#!/usr/bin/env bash
+# claude plugin configure <key> --values-stdin: merges stdin into the settings.
+[ "\$1 \$2 \$4" = "plugin configure --values-stdin" ] || exit 64
+printf '%s ' "\$*" >> "$WORK/claude.calls"
+in=\$(cat)
+f="\${WORKBENCH_SETTINGS_FILE}"
+[ -f "\$f" ] || echo '{}' > "\$f"
+# Values arrive as strings. The row's type turns them back, as the CLI does.
+jq --arg k "\$3" --argjson v "\$in" --slurpfile m "$REPO/.claude-plugin/plugin.json" '
+  .pluginConfigs[\$k].options += (\$v | with_entries(
+    \$m[0].userConfig[.key].type as \$t
+    | .value |= (if \$t == "number" then tonumber elif \$t == "boolean" then (. == "true") else . end)))' "\$f" > "\$f.new" && mv "\$f.new" "\$f"
+STUB
+  printf '#!/bin/sh\ncat >/dev/null\nexit 0\n' > "$LOST/claude"
+  printf '#!/bin/sh\ncat >/dev/null\nexit 3\n' > "$WORK/refuse-claude"
+  mkdir -p "$WORK/refuse"; mv "$WORK/refuse-claude" "$WORK/refuse/claude"
+  chmod +x "$MSTUB/claude" "$LOST/claude" "$WORK/refuse/claude"
+  MANIFEST="$REPO/.claude-plugin/plugin.json"
+  # migrate <name> <old config, or "" for none> [stub dir] -> runs the block
+  migrate() {
+    local home="$WORK/mhome-$1"
+    mkdir -p "$home/.claude-workbench" "$home/.claude"
+    [ -z "$2" ] || printf '%s' "$2" > "$home/.claude-workbench/dev-team-config.json"
+    : > "$WORK/claude.calls"
+    ( HOME="$home" PLUGIN_MANIFEST="$MANIFEST" WORKBENCH_SETTINGS_FILE="$home/.claude/settings.json" \
+        PATH="${3:-$MSTUB}:$PATH" bash "$MIGRATE" 2>&1 )
   }
-  written() { printf '%s' "$WORK/home-$1/.claude-workbench/dev-team-config.json"; }
-  SHIPPED_ROUTER=$(jq -r '.router.model | strings' "$DEFAULT_CFG")
+  stored() { jq -c '.pluginConfigs["workbench-dev-team@claude-workbench"].options // {}' "$WORK/mhome-$1/.claude/settings.json" 2>/dev/null || echo none; }
+  old_file() { printf '%s' "$WORK/mhome-$1/.claude-workbench/dev-team-config.json"; }
+  moved() { find "$WORK/mhome-$1/.claude-workbench" -maxdepth 1 -name 'dev-team-config.json.migrated-*' | wc -l | tr -d ' '; }
 
-  [ -n "$SHIPPED_ROUTER" ] && ok "the shipped config names the router model ($SHIPPED_ROUTER)" \
-    || bad "the shipped config has no router.model"
+  # The rows' defaults, as an old config would have held them.
+  out=$(migrate defaults "$(cat "$DEFAULT_CFG")"); rc=$?
+  [ "$rc" -eq 0 ] && ok "a config equal to the defaults moves cleanly" || bad "defaults: rc $rc / $out"
+  [ -s "$WORK/claude.calls" ] && bad "a config equal to the defaults still wrote values" || ok "and writes no value"
+  [ -e "$(old_file defaults)" ] && bad "the old file was not renamed" || ok "the old file is renamed"
+  expect_moved=$(moved defaults); [ "$expect_moved" = 1 ] && ok "and kept beside it" || bad "renamed copies: $expect_moved"
 
-  write new >/dev/null
-  if jq -S . "$(written new)" 2>/dev/null | cmp -s - <(jq -S . "$DEFAULT_CFG"); then
-    ok "no config -> the shipped config is written"
+  # Mike's own shape: 10.00 is the default 10, and an effort in capitals is the
+  # default too, so nothing differs.
+  out=$(migrate cased '{"agents":{"watson":{"model":"claude-opus-5-5[1m]","maxBudgetUsd":10.00,"fallback":"sonnet,haiku","effort":"Medium"}}}')
+  [ -s "$WORK/claude.calls" ] && bad "10.00 or Medium read as different from the default: $out" || ok "10.00 and Medium read as the defaults"
+
+  out=$(migrate old "$OLD"); rc=$?
+  want='{"holmesEffort":"high","holmesModel":"opus","lestradeEffort":"high","lestradeModel":"sonnet","watsonModel":"opus"}'
+  if [ "$rc" -eq 0 ] && [ "$(stored old | jq -cS .)" = "$want" ]; then
+    ok "an old config writes exactly its values that differ from the defaults"
   else
-    bad "no config -> the written file is not the shipped config"
+    bad "an old config stored $(stored old) (rc $rc): $out"
+  fi
+  expect_lines=$(printf '%s\n' "$out" | grep -c '^MIGRATE ' | tr -d ' ')
+  [ "$expect_lines" = 5 ] && ok "one MIGRATE line per value" || bad "MIGRATE lines: $expect_lines"
+  printf '%s' "$out" | grep -qx 'MIGRATE watsonModel=opus' && ok "a MIGRATE line names the row and the value" || bad "no MIGRATE watsonModel=opus line: $out"
+  [ "$(cat "$WORK/claude.calls")" = "plugin configure workbench-dev-team@claude-workbench --values-stdin " ] \
+    && ok "one configure call, for this plugin" || bad "configure calls: $(cat "$WORK/claude.calls")"
+
+  out=$(migrate typed '{"agents":{"watson":{"maxBudgetUsd":25,"fanout":true,"effort":8000},"holmes":{"fanout":false,"lensModel":"haiku","maxBudgetUsd":"lots"},"lestrade":{"effort":"extreme","model":5}}}')
+  if [ "$(stored typed | jq -cS .)" = '{"holmesFanout":false,"holmesLensModel":"haiku","watsonMaxBudgetUsd":25}' ]; then
+    ok "numbers and booleans move as their row's type"
+  else
+    bad "typed values stored $(stored typed): $out"
+  fi
+  for skip in "watson.fanout no /config row takes it" "watson.effort the row takes text" \
+      "holmes.maxBudgetUsd the row takes a number" "lestrade.effort the row takes one of low, medium, high, xhigh, max" \
+      "lestrade.model the row takes text"; do
+    printf '%s\n' "$out" | grep -qxF "MIGRATE_SKIPPED $skip" && ok "skipped and named: $skip" || bad "no MIGRATE_SKIPPED $skip in: $out"
+  done
+
+  out=$(migrate agree '{"agents":{"watson":{"reprieveBudgetMultiplier":2},"holmes":{"reprieveBudgetMultiplier":2.0}}}')
+  [ "$(stored agree)" = '{"reprieveBudgetMultiplier":2}' ] && ok "agents that agree on the multiplier give one row" || bad "agree stored $(stored agree): $out"
+  out=$(migrate disagree '{"agents":{"watson":{"reprieveBudgetMultiplier":2},"holmes":{"reprieveBudgetMultiplier":4}}}')
+  [ "$(stored disagree)" = '{}' ] || [ "$(stored disagree)" = none ] && ok "agents that disagree write no multiplier" || bad "disagree stored $(stored disagree)"
+  printf '%s\n' "$out" | grep -q '^MIGRATE_SKIPPED watson.reprieveBudgetMultiplier the agents disagree' \
+    && ok "and name it for the user" || bad "disagree not named: $out"
+
+  out=$(migrate none ""); rc=$?
+  [ "$rc" -eq 0 ] && [[ $out == *"No old agent config"* ]] && ok "no old config: nothing to move" || bad "no old config: $out"
+  [ -s "$WORK/claude.calls" ] && bad "no old config, but configure ran" || ok "and no configure call"
+
+  out=$(migrate lost "$OLD" "$LOST"); rc=$?
+  [ "$rc" -eq 1 ] && ok "values that do not land in the settings file exit 1" || bad "lost: rc $rc / $out"
+  [[ $out == *"where dispatch-agent.sh reads them"* ]] && ok "and say where they were looked for" || bad "lost message: $out"
+  [ -e "$(old_file lost)" ] && ok "and the old file stays, so the move can run again" || bad "lost: the old file was renamed"
+
+  out=$(migrate refused "$OLD" "$WORK/refuse"); rc=$?
+  [ "$rc" -eq 1 ] && [ -e "$(old_file refused)" ] && ok "a refused configure exits 1 and keeps the old file" || bad "refused: rc $rc / $out"
+  [[ $out == *"claude plugin configure refused the values"* ]] && ok "and names the refusal" || bad "refused message: $out"
+
+  for shape in 'not json' '["a"]' '{"agents":["a"]}' '{"agents":{"watson":"opus"}}'; do
+    out=$(migrate shape "$shape"); rc=$?
+    [ "$rc" -eq 1 ] && [ ! -s "$WORK/claude.calls" ] && [ "$(cat "$(old_file shape)")" = "$shape" ] \
+      && ok "a wrong-shaped old config ($shape) moves nothing and is kept" || bad "shape $shape: rc $rc / $out"
+    [[ $out == *"is not valid JSON, or its shape is wrong"* ]] && ok "and says so ($shape)" || bad "shape message ($shape): $out"
+  done
+
+  # 6a runs in the session's own shell too. Under zsh a `for` over an unquoted
+  # list runs once over the whole string, so each pin loop must still run per
+  # agent there: the check names each agent that differs, and the replacement
+  # writes each agent named, and nothing for a name it does not know.
+  if command -v zsh >/dev/null 2>&1; then
+    zcfg="$WORK/zsh-pin.json"; printf '%s' "$OLD" > "$zcfg"
+    zout=$( HOME="$WORK/nohome" DEVTEAM_CONFIG="$zcfg" zsh "$CHECK" 2>&1 )
+    [ "$(differs "$zout")" = "$(differs "$(check "$zcfg")")" ] && [ "$(differs "$zout" | wc -l | tr -d ' ')" = 3 ] \
+      && ok "zsh: the pin check names each of the three agents, as bash does" || bad "zsh pin check: $zout"
+    zout=$( HOME="$WORK/nohome" DEVTEAM_CONFIG="$zcfg" PIN_REPLACE="holmes watson mycroft" zsh "$REPLACE" 2>&1 ); rc=$?
+    if [ "$rc" -eq 0 ] && [ "$(jq -c '[.agents.holmes.model, .agents.watson.effort, .agents.lestrade.model]' "$zcfg")" = '["claude-opus-5-5[1m]","medium","sonnet"]' ]; then
+      ok "zsh: the replacement writes holmes and watson, each on its own, and leaves lestrade"
+    else
+      bad "zsh replacement: rc $rc, $(jq -c .agents "$zcfg"): $zout"
+    fi
+    [[ $zout == *"'mycroft' is not one of"* ]] && ok "zsh: an unknown name is named and not written" || bad "zsh unknown name: $zout"
+    [ "$(jq -r '.agents | has("mycroft")' "$zcfg")" = false ] && ok "zsh: no entry for the unknown name" || bad "zsh wrote mycroft"
+    [ "$(printf '%s\n' "$zout" | grep -c '^✅ ')" = 2 ] && ok "zsh: one confirmation per agent written" || bad "zsh confirmations: $zout"
   fi
 
-  out=$(write old "$OLD")
-  if [ "$(jq -S 'del(.router)' "$(written old)")" = "$(printf '%s' "$OLD" | jq -S .)" ] \
-     && [ "$(jq -r '.router.model' "$(written old)")" = "$SHIPPED_ROUTER" ]; then
-    ok "a config without router.model gains it, and every other value stays"
-  else
-    bad "a config without router.model: $(cat "$(written old)") / $out"
+  # The block runs in the session's own shell, which can be zsh.
+  if command -v zsh >/dev/null 2>&1; then
+    home="$WORK/mhome-zsh"; mkdir -p "$home/.claude-workbench" "$home/.claude"
+    printf '%s' "$OLD" > "$home/.claude-workbench/dev-team-config.json"
+    out=$( HOME="$home" PLUGIN_MANIFEST="$MANIFEST" WORKBENCH_SETTINGS_FILE="$home/.claude/settings.json" PATH="$MSTUB:$PATH" zsh "$MIGRATE" 2>&1 ); rc=$?
+    [ "$rc" -eq 0 ] && [ "$(stored zsh | jq -cS .)" = "$want" ] && ok "zsh moves the same values as bash" || bad "zsh: rc $rc, stored $(stored zsh): $out"
   fi
 
-  OWN=$(jq -c '.router.model = "claude-haiku-5"' <<< "$OLD")
-  write own "$OWN" >/dev/null
-  if [ "$(cat "$(written own)")" = "$OWN" ]; then
-    ok "a config with its own router.model is left byte for byte"
-  else
-    bad "a config with its own router.model was changed: $(cat "$(written own)")"
-  fi
+  out=$( HOME="$WORK/mhome-nomanifest" DEVTEAM_CONFIG="$DEFAULT_CFG" PATH="$MSTUB:$PATH" bash -c 'unset PLUGIN_MANIFEST; bash "$1"' _ "$MIGRATE" 2>&1 ); rc=$?
+  [ "$rc" -eq 1 ] && ok "no PLUGIN_MANIFEST exits 1" || bad "no manifest: rc $rc / $out"
 
-  out=$(write array '["not","an","object"]')
-  if [ "$(cat "$(written array)")" = '["not","an","object"]' ] && [[ $out == *"not a JSON object"* ]]; then
-    ok "a config that is not an object is left untouched, with a warning"
-  else
-    bad "a non-object config: $(cat "$(written array)") / $out"
-  fi
-fi
-
-# Step 7d pins the router to the config's value and names no model of its own,
-# so the router's model has one home.
-pin7d=$(awk '/^### 7d\./{f=1;next} f && /^### /{exit} f' "$SRC" | awk '/^```bash/{f=1;next} /^```/{f=0} f')
-if [[ $pin7d == *'.router.model'* ]] && ! grep -Eq '"claude-[a-z0-9.-]+' <<< "$pin7d"; then
-  ok "Step 7d pins router.model from the config and names no model itself"
-else
-  bad "Step 7d no longer reads router.model, or names a model literal of its own"
+  # A value the user set in /config before the move is kept unless the old file
+  # differs on that row. And a second run finds no old file, so a later /config
+  # edit is never overwritten.
+  home="$WORK/mhome-rerun"; mkdir -p "$home/.claude"
+  jq -n '{pluginConfigs: {"workbench-dev-team@claude-workbench": {options: {holmesMaxBudgetUsd: 15}}}, other: 1}' > "$home/.claude/settings.json"
+  migrate rerun "$OLD" >/dev/null
+  [ "$(jq -c '[.pluginConfigs["workbench-dev-team@claude-workbench"].options.holmesMaxBudgetUsd, .other]' "$home/.claude/settings.json")" = '[15,1]' ] \
+    && ok "a row the old file left at its default keeps the /config value, and other keys stay" || bad "rerun settings: $(cat "$home/.claude/settings.json")"
+  jq '.pluginConfigs["workbench-dev-team@claude-workbench"].options.watsonModel = "haiku"' "$home/.claude/settings.json" > "$home/s" && mv "$home/s" "$home/.claude/settings.json"
+  out=$( HOME="$home" PLUGIN_MANIFEST="$MANIFEST" WORKBENCH_SETTINGS_FILE="$home/.claude/settings.json" PATH="$MSTUB:$PATH" bash "$MIGRATE" 2>&1 )
+  [ "$(jq -r '.pluginConfigs["workbench-dev-team@claude-workbench"].options.watsonModel' "$home/.claude/settings.json")" = haiku ] \
+    && [[ $out == *"No old agent config"* ]] && ok "a second run moves nothing over a later /config edit" || bad "second run: $out"
 fi
 
 echo

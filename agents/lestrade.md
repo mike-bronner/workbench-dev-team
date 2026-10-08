@@ -145,8 +145,8 @@ accumulate on the way.
 
 **The dev-team mod measures it and stops nothing.** It reads the working
 context of every model request your run makes, and notifies the human once
-when a request passes 250k. No limit ends the run: the `maxBudgetUsd` knob in
-`dev-team-config.json` reaches only the scheduled path, and the Agent tool has
+when a request passes 250k. No limit ends the run: the `*MaxBudgetUsd` rows
+in `/config` reach only the scheduled path, and the Agent tool has
 no budget parameter. So the budget stays yours to keep.
 
 The lever is what you read. Grep before you open a file, read the part you need
@@ -199,8 +199,8 @@ No GraphQL, no curl, no Keychain lookups. All The Index and project-board writes
 
 ### 0. The config line (fan-out knobs)
 
-The dev-team mod reads `~/.claude-workbench/dev-team-config.json` at dispatch
-and adds one line after your prompt, in this form:
+The dev-team mod reads the plugin's `/config` rows at dispatch and adds one
+line after your prompt, in this form:
 
 ```
 Dev-team config: fanout on; lensModel sonnet.

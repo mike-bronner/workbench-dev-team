@@ -1,6 +1,7 @@
 // Each dev-team agent's own scratch folder, as pure functions. hooks/register.ts
-// holds the hooks: tool.call points a bare mktemp at the folder, and
-// turn.complete deletes the folder when the agent's run ends.
+// holds the hooks: tool.call points a bare mktemp at the folder, turn.complete
+// deletes the folder when the agent's run ends with no live child, and
+// session.end deletes every folder still recorded.
 //
 // A bare mktemp is one with no template and no directory option (`mktemp`,
 // `mktemp -d`, `mktemp -dq`), which lands in $TMPDIR, outside every scratch
@@ -85,3 +86,17 @@ export const hasLiveChild = (agents: readonly { parentId?: string; status: strin
 // the scratch roots, never a root itself.
 export const isDeletable = (folder: string, roots: readonly string[]): boolean =>
   PLAIN_PATH.test(folder) && !folder.split('/').includes('..') && roots.some(root => folder.startsWith(`${root}/`) && folder.length > root.length + 1)
+
+// What leaves room for the engine's own end step out of the end's budget, and
+// the most the sweep's rm may take of it.
+const END_MARGIN_MS = 150
+const END_RM_CAP_MS = 1_000
+
+// The session end's sweep: the recorded folders one rm may delete, the ones
+// under a scratch root, and the time it may take, or undefined when there is
+// nothing to delete or too little time left. A folder left out stays recorded.
+export function sweepOf(folders: readonly string[], roots: readonly string[], remainingMs: number): { doomed: string[]; timeoutMs: number } | undefined {
+  const doomed = folders.filter(folder => isDeletable(folder, roots))
+  const timeoutMs = Math.min(remainingMs, END_RM_CAP_MS) - END_MARGIN_MS
+  return doomed.length === 0 || timeoutMs <= 0 ? undefined : { doomed, timeoutMs }
+}

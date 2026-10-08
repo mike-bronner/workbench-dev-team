@@ -1,6 +1,6 @@
 {
   "name": "workbench-dev-team",
-  "description": "The Index-driven development pipeline: Inspector Lestrade (triage), Dr. Watson (dev work), and Sherlock Holmes (code review). A local scheduled task called Dispatch polls The Index every 20–30 minutes via MCP and fires the right agent for each pending item.",
+  "description": "The Index-driven development pipeline: Inspector Lestrade (triage), Dr. Watson (dev work), and Sherlock Holmes (code review). A launchd job called Dispatch polls The Index every 20 to 30 minutes, with no model, and fires the right agent for each pending item.",
   "version": "0.52.0",
   "author": {
     "name": "Mike Bronner",
@@ -9,5 +9,135 @@
   "types": "./types/index.d.ts",
   "dependencies": [
     "workbench-core"
-  ]
+  ],
+  "userConfig": {
+    "dispatchCadenceMinutes": {
+      "type": "number",
+      "title": "Dispatch cadence (minutes)",
+      "description": "How often the Dispatch job polls The Index. Re-run /workbench-dev-team:setup after a change, so the job picks it up.",
+      "default": 20
+    },
+    "lestradeModel": {
+      "type": "string",
+      "title": "Lestrade model",
+      "description": "The model every Lestrade run uses, scheduled and interactive. An alias or a full model ID.",
+      "default": "claude-opus-5-5[1m]"
+    },
+    "lestradeEffort": {
+      "type": "string",
+      "title": "Lestrade effort",
+      "description": "The effort every Lestrade run uses. Sonnet takes high at most, short of max.",
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default": "medium"
+    },
+    "lestradeFallback": {
+      "type": "string",
+      "title": "Lestrade fallback models",
+      "description": "Comma-separated models a scheduled Lestrade run falls back to when its model is overloaded or retired.",
+      "default": "haiku"
+    },
+    "lestradeMaxBudgetUsd": {
+      "type": "number",
+      "title": "Lestrade budget (USD)",
+      "description": "The most one scheduled Lestrade run may spend, in US dollars. A run that reaches it is stopped. Empty means no cap."
+    },
+    "lestradeFanout": {
+      "type": "boolean",
+      "title": "Lestrade fan-out",
+      "description": "Whether Lestrade checks its draft acceptance criteria with four helper lenses.",
+      "default": true
+    },
+    "lestradeLensModel": {
+      "type": "string",
+      "title": "Lestrade helper model",
+      "description": "The model Lestrade's fan-out helpers run on. Empty means Lestrade's own model.",
+      "default": "sonnet"
+    },
+    "holmesModel": {
+      "type": "string",
+      "title": "Holmes model",
+      "description": "The model every Holmes run uses, scheduled and interactive. An alias or a full model ID.",
+      "default": "claude-opus-5-5[1m]"
+    },
+    "holmesEffort": {
+      "type": "string",
+      "title": "Holmes effort",
+      "description": "The effort every Holmes run uses. Sonnet takes high at most, short of max.",
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default": "medium"
+    },
+    "holmesFallback": {
+      "type": "string",
+      "title": "Holmes fallback models",
+      "description": "Comma-separated models a scheduled Holmes run falls back to when its model is overloaded or retired.",
+      "default": "sonnet"
+    },
+    "holmesMaxBudgetUsd": {
+      "type": "number",
+      "title": "Holmes budget (USD)",
+      "description": "The most one scheduled Holmes run may spend, in US dollars. A run that reaches it is stopped.",
+      "default": 10
+    },
+    "holmesFanout": {
+      "type": "boolean",
+      "title": "Holmes fan-out",
+      "description": "Whether Holmes reviews with several helper lenses.",
+      "default": true
+    },
+    "holmesLensModel": {
+      "type": "string",
+      "title": "Holmes helper model",
+      "description": "The model Holmes's fan-out helpers run on. Empty means Holmes's own model.",
+      "default": "sonnet"
+    },
+    "watsonModel": {
+      "type": "string",
+      "title": "Watson model",
+      "description": "The model every Watson run uses, scheduled and interactive. An alias or a full model ID.",
+      "default": "claude-opus-5-5[1m]"
+    },
+    "watsonEffort": {
+      "type": "string",
+      "title": "Watson effort",
+      "description": "The effort every Watson run uses. Sonnet takes high at most, short of max.",
+      "options": [
+        "low",
+        "medium",
+        "high",
+        "xhigh",
+        "max"
+      ],
+      "default": "medium"
+    },
+    "watsonFallback": {
+      "type": "string",
+      "title": "Watson fallback models",
+      "description": "Comma-separated models a scheduled Watson run falls back to when its model is overloaded or retired.",
+      "default": "sonnet,haiku"
+    },
+    "watsonMaxBudgetUsd": {
+      "type": "number",
+      "title": "Watson budget (USD)",
+      "description": "The most one scheduled Watson run may spend, in US dollars. A run that reaches it is stopped.",
+      "default": 10
+    },
+    "reprieveBudgetMultiplier": {
+      "type": "number",
+      "title": "Reprieve budget multiplier",
+      "description": "When a human moves an escalated item back to its lane, its one fresh run gets its agent's budget times this number.",
+      "default": 3
+    }
+  }
 }

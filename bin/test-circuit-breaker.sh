@@ -6,11 +6,11 @@
 # against a fixture log directory, so the test can never drift from the logic
 # the pipeline runs.
 #
-# Run: bash scheduled-tasks/test-circuit-breaker.sh
+# Run: bash bin/test-circuit-breaker.sh
 set -u
 
 HERE=$(cd "$(dirname "$0")" && pwd)
-SCRIPT="$HERE/../bin/dispatch-agent.sh"
+SCRIPT="$HERE/dispatch-agent.sh"
 WORK=$(mktemp -d)
 trap 'rm -rf "$WORK"' EXIT
 
@@ -256,11 +256,11 @@ printf '#!/bin/sh\nprintf "%%s\\n" "$*" >> "%s/spawned"\n' "$WORK" > "$STUB/clau
 printf '#!/bin/sh\nexit 1\n' > "$STUB/security"
 chmod +x "$STUB/claude" "$STUB/security"
 CFG="$WORK/cfg.json"
-printf '%s' '{"agents":{"holmes":{"maxBudgetUsd":10},"watson":{"maxBudgetUsd":10,"reprieveBudgetMultiplier":3}}}' > "$CFG"
+printf '%s' '{"pluginConfigs":{"workbench-dev-team@claude-workbench":{"options":{"holmesMaxBudgetUsd":10,"watsonMaxBudgetUsd":10,"reprieveBudgetMultiplier":3}}}}' > "$CFG"
 # dispatch <dir> <agent> <id> -> the script's output; spawns land in $WORK/spawned
 dispatch() {
   rm -f "$WORK/spawned"
-  LOGDIR="$1" DISPATCH_CONFIG="$CFG" HOME="$WORK/home" PATH="$STUB:$PATH" \
+  LOGDIR="$1" DISPATCH_SETTINGS="$CFG" HOME="$WORK/home" PATH="$STUB:$PATH" \
     bash "$SCRIPT" "$2" "$3" 2>&1
   sleep 1   # the stub runs detached; give it time to record its spawn
 }
@@ -300,7 +300,7 @@ expect "the next check is an ordinary verdict, not a second reprieve" "DISPATCH"
 
 d="$WORK/path4"; mkdir -p "$d"
 touch "$d/watson-77.escalated"
-LOGDIR="$d" DISPATCH_CONFIG="$CFG" DISPATCH_DRY_RUN=1 HOME="$WORK/home" bash "$SCRIPT" watson 77 >/dev/null 2>&1
+LOGDIR="$d" DISPATCH_SETTINGS="$CFG" DISPATCH_DRY_RUN=1 HOME="$WORK/home" bash "$SCRIPT" watson 77 >/dev/null 2>&1
 if [ -e "$d/watson-77.escalated" ]; then
   echo "  ok   — a dry run consumes no marker"; pass=$((pass+1))
 else

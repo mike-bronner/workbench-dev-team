@@ -1,5 +1,5 @@
 ---
-description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials, register The Index MCP, and deploy the scheduled Dispatch task. Re-run after a plugin update or to refresh the OAuth bearer token (annual).
+description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials, register The Index MCP, move an old agent config into /config, and install the Dispatch launchd job. Re-run after a plugin update, after a cadence change, or to refresh the OAuth bearer token (annual).
 disable-model-invocation: true
 ---
 
@@ -8,7 +8,12 @@ The user has invoked `/workbench-dev-team:setup`. Walk them through the one-time
 
 This command is fully idempotent — re-running is safe at any time. It will skip
 already-satisfied steps, refresh the OAuth bearer token (1-year lifetime), and
-update rather than duplicate the scheduled Dispatch task.
+replace rather than duplicate the Dispatch launchd job.
+
+Every plain setting (models, efforts, budgets, fan-out, the Dispatch cadence) is
+a row in `/config`, not a question here. This command keeps only the steps that
+need a model: Keychain secrets the user pastes, the questions it asks, and the
+scheduled-task tools that retire the old router.
 
 ## Constants
 
@@ -16,48 +21,44 @@ update rather than duplicate the scheduled Dispatch task.
 The Index MCP URL:    https://the-index.mikebronner.dev/mcp
 The Index OAuth URL:  https://the-index.mikebronner.dev/oauth/token
 Log directory:         ~/.claude-workbench/dev-team-logs
-Agent config:          ~/.claude-workbench/dev-team-config.json
-Scheduled task ID:     workbench-dev-team-dispatch
+Settings:              /config rows, kept in ~/.claude/settings.json
+                       under pluginConfigs["workbench-dev-team@claude-workbench"]
+Old agent config:      ~/.claude-workbench/dev-team-config.json (moved by Step 6b)
+Dispatch scripts:      ~/.claude-workbench/bin/dispatch-tick.sh, dispatch-agent.sh
+Dispatch job:          ~/Library/LaunchAgents/dev.workbench.dev-team-dispatch.plist
+Dispatch log:          ~/.claude-workbench/dev-team-logs/dispatch-tick.log
+Old scheduled task:    workbench-dev-team-dispatch (retired by Step 7d)
 Plugin registry:       ~/.claude/plugins/installed_plugins.json
-Orchestrator prompt:   <resolved install path>/scheduled-tasks/orchestrator.md
 ```
 
-The orchestrator prompt path is **resolved at run time in Step 7a**, not
-hard-coded off `${CLAUDE_PLUGIN_ROOT}` — the running root can be a frozen
-session snapshot. See Step 7a for the resolution order.
+The scripts' source is **resolved at run time in Step 7a**, not hard-coded off
+`${CLAUDE_PLUGIN_ROOT}` — the running root can be a frozen session snapshot.
+See Step 7a for the resolution order.
 
-## Step 1 — Collect cadence and scheduling preference
+## Step 1 — Ask whether to install the Dispatch job
 
-Use `AskUserQuestion` to gather two choices up front, so the rest of the run is
-non-interactive once credentials are in place:
+The cadence is the `dispatchCadenceMinutes` row in `/config` (default 20), so
+the one question here is whether to install the job now. Ask it with
+`AskUserQuestion`, so the rest of the run is non-interactive once credentials
+are in place:
 
 ```jsonc
 AskUserQuestion({
   questions: [
     {
-      question: "Dispatch cadence — how often should the orchestrator poll The Index?",
-      header: "Cadence",
+      question: "Install the Dispatch launchd job now? It polls The Index on the dispatchCadenceMinutes cadence from /config, with no model, and replaces the scheduled Claude task.",
+      header: "Dispatch",
       multiSelect: false,
       options: [
-        { label: "Every 20 min", description: "Default. Cron: */20 * * * *" },
-        { label: "Every 30 min", description: "Cron: */30 * * * *" }
-      ]
-    },
-    {
-      question: "Register the scheduled Dispatch task now?",
-      header: "Schedule",
-      multiSelect: false,
-      options: [
-        { label: "Yes — register it", description: "Creates or updates the workbench-dev-team-dispatch task" },
-        { label: "Skip — register it later", description: "MCP is set up but no task is scheduled. Re-run setup any time to register." }
+        { label: "Yes — install it", description: "Installs and loads the job, then retires the old workbench-dev-team-dispatch task and its permission rules." },
+        { label: "Skip — install it later", description: "The MCP is set up, but no job is loaded, and an old scheduled task keeps running. Re-run setup any time to install." }
       ]
     }
   ]
 })
 ```
 
-Save the answers as `CADENCE` (`20` or `30`) and `REGISTER_SCHEDULE` (boolean).
-Build `CRON="*/${CADENCE} * * * *"`.
+Save the answer as `INSTALL_JOB` (`yes` or `skip`).
 
 ## Step 2 — Verify prerequisites
 
@@ -65,7 +66,7 @@ Run a single Bash check for the host tools the rest of the script needs:
 
 ```bash
 missing=()
-for cmd in gh jq security git; do
+for cmd in gh jq security git curl python3; do
   if ! command -v "$cmd" >/dev/null 2>&1; then
     missing+=("$cmd")
   fi
@@ -75,12 +76,14 @@ if [ ${#missing[@]} -gt 0 ]; then
   echo "   Install the missing tools and re-run /workbench-dev-team:setup."
   exit 1
 fi
-echo "✅ gh, jq, security, git all present"
+echo "✅ gh, jq, security, git, curl, python3 all present"
 ```
 
 Do not check for `claude` — we're already running inside a Claude Code session.
 
-`jq` is here because the pipeline's permission hook
+`curl` and `jq` are what the Dispatch tick talks to The Index with. `python3`
+runs the tick's test suite, which Step 7b runs against a local fake Index
+before it installs anything. `jq` is also here because the pipeline's permission hook
 (`hooks/scripts/pipeline-scope.sh`) reads its payload with it, and without it
 the hook allows nothing, so a missing tool blocks the pipeline rather than
 letting it through unchecked. The commit guard and the review guard run in the
@@ -88,8 +91,9 @@ plugin's hooks module, on workbench-core's `$.workbench` noun, and need no host
 tool.
 
 If any prerequisite is missing, stop and tell the user how to install it
-(`brew install gh jq` for the common case; `security` ships with macOS; `git`
-comes with the Xcode Command Line Tools, `xcode-select --install`).
+(`brew install gh jq` for the common case; `security` and `curl` ship with
+macOS; `git` and `python3` come with the Xcode Command Line Tools,
+`xcode-select --install`).
 
 ## Step 3 — Seed Keychain credentials
 
@@ -165,7 +169,7 @@ if keychain_exists "claude-code" "oauth-token"; then
 fi
 ```
 
-If missing, tell the user: **"The scheduled Dispatch task needs a Claude Code
+If missing, tell the user: **"The Dispatch job needs a Claude Code
 OAuth token to invoke `claude -p` headlessly. Open a separate terminal and run:**
 
 ```
@@ -232,96 +236,57 @@ fi
 Code sessions (including the headless `claude -p` invocations used by Dispatch)
 will see it. The current session may need a restart to pick it up.
 
-## Step 6 — Create the log directory and agent config
+## Step 6 — Create the log directory, and move an old agent config into /config
 
 ```bash
 mkdir -p "$HOME/.claude-workbench/dev-team-logs"
 echo "✅ Log directory ready: $HOME/.claude-workbench/dev-team-logs"
-
-# >>> config-write >>>  (markers used by commands/test-config-pin.sh — keep them)
-CONFIG="$HOME/.claude-workbench/dev-team-config.json"
-SHIPPED_CONFIG=$(cat <<'EOF'
-{
-  "agents": {
-    "lestrade": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "fallback": "haiku" },
-    "holmes": { "model": "claude-opus-5-5[1m]", "effort": "medium", "fanout": true, "lensModel": "sonnet", "maxBudgetUsd": 10.00, "fallback": "sonnet" },
-    "watson": { "model": "claude-opus-5-5[1m]", "effort": "medium", "maxBudgetUsd": 10.00, "fallback": "sonnet,haiku" }
-  },
-  "router": { "model": "claude-sonnet-5" }
-}
-EOF
-)
-if [ ! -f "$CONFIG" ]; then
-  printf '%s\n' "$SHIPPED_CONFIG" > "$CONFIG"
-  echo "✅ Wrote default agent config: $CONFIG"
-elif jq -e '.router.model | strings' "$CONFIG" >/dev/null 2>&1; then
-  echo "✅ Agent config already present: $CONFIG (left untouched)"
-elif jq -e 'type == "object"' "$CONFIG" >/dev/null 2>&1; then
-  # A config from before the router key shipped gets that one key, from the
-  # shipped config above. Every value the user set stays as it is. Held in a
-  # variable and checked before it is written, so no temporary file is left.
-  NEW=$(jq --argjson shipped "$SHIPPED_CONFIG" '.router.model = $shipped.router.model' "$CONFIG")
-  if [ -n "$NEW" ] && printf '%s\n' "$NEW" | jq empty 2>/dev/null && printf '%s\n' "$NEW" > "$CONFIG"; then
-    echo "✅ Agent config already present: $CONFIG (added the missing router.model, nothing else changed)"
-  else
-    echo "⚠  Could not add router.model to $CONFIG — Step 7d will say the router is unpinned."
-  fi
-else
-  echo "⚠  $CONFIG is not a JSON object — left untouched. Fix it, then re-run setup."
-fi
-# <<< config-write <<<
 ```
 
-The config is the single source of truth for per-agent model, effort, fallback,
-and budget caps, and for the scheduled router's model (`router.model`, which
-Step 7d pins). Both dispatch paths take their values from it: the scheduled
-Dispatch task passes `--model` / `--effort` / `--fallback-model` /
-`--max-budget-usd` from it on every tick, each only when set, and the dev-team
-mod applies `model` and `effort` from it to every interactive dispatch of a
-dev-team agent (below the pin check). Setup never overwrites an existing config without asking —
-the user's edits stick across plugin updates and re-runs. The one write it makes
-to an existing config without asking adds a missing `router.model` from the
-shipped config, and changes no value the user set. The one question it asks
-about an existing config is the pin check below.
+Every dev-team knob is a row of the plugin's settings, declared under
+`userConfig` in `.claude-plugin/plugin.json` and edited in `/config`. There is
+no config file to write. The rows, with their defaults:
 
-**All three agents ship `claude-opus-5-5[1m]` at `medium` effort**, in the
-config and in their frontmatter, so they run on exactly that on both paths.
-Three reasons:
+| Row | Default | What it sets |
+|---|---|---|
+| `dispatchCadenceMinutes` | `20` | How often the Dispatch launchd job runs a tick. Step 7 reads it when it installs the job. |
+| `lestradeModel`, `holmesModel`, `watsonModel` | `claude-opus-5-5[1m]` | The model of every run, scheduled and interactive. |
+| `lestradeEffort`, `holmesEffort`, `watsonEffort` | `medium` | The effort of every run. |
+| `lestradeFallback`, `holmesFallback`, `watsonFallback` | `haiku`, `sonnet`, `sonnet,haiku` | The models a scheduled run falls back to. |
+| `lestradeMaxBudgetUsd`, `holmesMaxBudgetUsd`, `watsonMaxBudgetUsd` | none, `10`, `10` | The most one scheduled run may spend. |
+| `lestradeFanout`, `holmesFanout` | `true` | Whether the agent fans out to helper lenses. |
+| `lestradeLensModel`, `holmesLensModel` | `sonnet` | The model the helpers run on. |
+| `reprieveBudgetMultiplier` | `3` | What a reprieved run's budget is multiplied by. |
 
-- **The exact ID, not the `opus` alias.** The alias moves to a new release
-  without anyone approving the move. The pin exists to stop that.
-- **The `[1m]` variant.** The agents budget about 250k tokens of working
-  context, which the standard window may not hold. The pin is there to hold
-  the model still, never to shrink its context.
-- **`medium` for all three, Holmes included.** Anthropic's Opus 5.5 migration
-  guidance reports Opus 5.5 at `medium` beating Opus 5 at `high` on coding. It
-  also reports more bugs caught with fewer false alarms in code review. So
-  Holmes's old `high` no longer earns its cost.
+Claude Code keeps a value the user sets in `~/.claude/settings.json`, under
+`pluginConfigs["workbench-dev-team@claude-workbench"].options`, and keeps no
+default there. Both paths read it on the next dispatch, and nothing has to be
+re-run, except for the cadence:
 
-Speed and permission mode stay unpinned. Agent frontmatter has no speed key,
-and a pinned `permissionMode` could override the `--permission-mode auto` the
-headless scheduled path depends on.
+- The scheduled path. `bin/dispatch-agent.sh` reads each row from that file.
+  A row the user never set falls back to a default that matches the row's own,
+  and `bin/test-dispatch-agent.sh` holds the two together.
+- The interactive path. The dev-team mod receives the rows as its plugin
+  options, and Claude Code reloads it when one changes. It sets the model and
+  the effort at every spawn of Watson, Holmes, or Lestrade.
+- A top-level `claude -p --agent` run that `dispatch-agent.sh` starts loads the
+  mod too, so the fan-out rows reach Holmes and Lestrade there as well.
 
-**Two environment variables still override the pins, on purpose.** They are the
-deliberate opt-outs, for a project that needs a different model or effort:
+**An older install keeps its knobs in `~/.claude-workbench/dev-team-config.json`.**
+Nothing reads that file now. Setup moves it into `/config` once, below, and then
+renames it, so a later run never moves it over an edit made in `/config`. If the
+file does not exist, skip to Step 6.5.
 
-- `CLAUDE_CODE_SUBAGENT_MODEL` together with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1`
-  beats the frontmatter `model`. Without the `FORCE` flag, the frontmatter pin
-  wins.
-- `CLAUDE_CODE_EFFORT_LEVEL` is recorded as beating `--effort`, so it still
-  moves the effort of a scheduled run. How it ranks against a frontmatter
-  `effort` on the interactive path is not verified.
+### 6a. Pin check — an old config that differs from the shipped pins
 
-### Pin check — an existing config that differs from the shipped pins
+A config written by an earlier setup can still carry that release's defaults:
+for example Watson `opus` with no effort, Holmes `opus` at `high`, Lestrade
+`sonnet` at `high`. The move below copies every value that differs from its
+row's default, so those old values would keep winning on both paths.
 
-A config written by an earlier setup still carries that release's defaults: for
-example Watson `opus` with no effort, Holmes `opus` at `high`, Lestrade `sonnet`
-at `high`. Dispatch passes those as `--model` / `--effort`, which beat the
-frontmatter, and the dev-team mod applies them at every interactive spawn. So an old
-config is never silent. It keeps the old values on both paths until it changes.
-
-Setup changes it only with the user's say-so, one agent at a time. Run the
-check. It writes nothing:
+So before the move, setup offers to put each agent's model and effort on the
+pin, one agent at a time, and only with the user's say-so. The pin is the
+`*Model` and `*Effort` rows' default. Run the check. It writes nothing:
 
 ```bash
 # >>> config-pin-check >>>  (markers used by commands/test-config-pin.sh — keep them)
@@ -335,6 +300,10 @@ check. It writes nothing:
 #          "agents" (.agents is not an object), or an agent name (its entry is
 #          not an object). No agent it covers gets a PIN_DIFFERS line.
 # Exits:   0 always. It reads and never writes.
+# Each list is read one word per line through `while read … < <(…)`, never
+# split from an unquoted variable: zsh does not split one, so a `for` over
+# "$PIN_AGENTS" would run once over the whole string there. The loop runs in
+# the current shell in bash and zsh alike, so its counters survive it.
 PIN_CFG="${DEVTEAM_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
 PIN_AGENTS="lestrade holmes watson"
 PIN_MODEL="claude-opus-5-5[1m]"
@@ -358,7 +327,8 @@ else
     PIN_BAD=1
     PIN_AGENTS=""
   fi
-  for PIN_AGENT in $PIN_AGENTS; do
+  while IFS= read -r PIN_AGENT; do
+    [ -n "$PIN_AGENT" ] || continue
     PIN_TYPE=$(jq -r --arg a "$PIN_AGENT" '.agents[$a] | type' "$PIN_CFG" 2>/dev/null)
     case "$PIN_TYPE" in
       object|null) ;;
@@ -376,7 +346,7 @@ else
       echo "PIN_DIFFERS $PIN_AGENT model=${PIN_CUR_MODEL:-(none)} effort=${PIN_CUR_EFFORT:-(none)}"
       PIN_COUNT=$((PIN_COUNT + 1))
     fi
-  done
+  done < <(printf '%s\n' "$PIN_AGENTS" | tr ' ' '\n')
   if [ "$PIN_BAD" -gt 0 ]; then
     echo "⚠  Wrong-shaped entries in $PIN_CFG: $PIN_BAD. They are not asked about. Fix each PIN_MALFORMED entry by hand, then re-run setup."
   fi
@@ -403,7 +373,7 @@ what it must hold:
 
 The user fixes the file and re-runs setup, which then checks the fixed entry.
 
-**No `PIN_DIFFERS` line → skip to Step 6.5.** Otherwise, ask with one
+**No `PIN_DIFFERS` line → go on to 6b.** Otherwise, ask with one
 `AskUserQuestion` call holding one question per `PIN_DIFFERS` line (three at
 most). Each question names the agent, its current values exactly as printed,
 and exactly what replaces them. List the Recommended option first:
@@ -414,12 +384,12 @@ AskUserQuestion({
     {
       // One per PIN_DIFFERS line. {MODEL} and {EFFORT} are the printed values,
       // "(none)" included — "(none)" means Claude Code's default applies.
-      question: "{Agent} currently runs on model {MODEL} at effort {EFFORT}, from your dev-team config. Replace those two values with the shipped pin: model claude-opus-5-5[1m] at effort medium? Every other key for {Agent} stays as it is.",
+      question: "{Agent} currently runs on model {MODEL} at effort {EFFORT}, from your old dev-team config file. Setup is moving that file into /config. Move {Agent} onto the shipped pin, model claude-opus-5-5[1m] at effort medium, instead of those two values? Every other {Agent} value moves as it is.",
       header: "{Agent} pin",
       multiSelect: false,
       options: [
         { label: "Replace with the pin (Recommended)", description: "Sets {Agent}'s model to claude-opus-5-5[1m] and effort to medium. Fanout, lensModel, fallback, and budget are not touched." },
-        { label: "Keep my values", description: "Leaves {Agent}'s entry exactly as it is. Setup asks again on its next run." }
+        { label: "Keep my values", description: "Moves {Agent}'s model and effort into /config as they are. You can change them there later." }
       ]
     }
   ]
@@ -449,34 +419,37 @@ PIN_EFFORT="medium"
 PIN_REPLACE="${PIN_REPLACE:-}"
 
 # Only an agent the pin check knows about. A typo or an unexpected name would
-# otherwise write a new agent entry nobody asked for.
+# otherwise write a new agent entry nobody asked for. Each list is read one
+# word per line, never split from an unquoted variable, so zsh reads it as
+# bash does (the pin check says why).
 PIN_TARGETS=""
-for PIN_AGENT in $PIN_REPLACE; do
+while IFS= read -r PIN_AGENT; do
+  [ -n "$PIN_AGENT" ] || continue
   case " $PIN_AGENTS " in
     *" $PIN_AGENT "*) PIN_TARGETS="$PIN_TARGETS $PIN_AGENT" ;;
     *) echo "⚠  '$PIN_AGENT' is not one of: $PIN_AGENTS — not written" ;;
   esac
-done
+done < <(printf '%s\n' "$PIN_REPLACE" | tr ' \t' '\n\n')
 
 # The same shape test as the pin check, for every named agent. The check never
 # asks about a wrong-shaped entry, so this fires only when the file changed in
 # between. It refuses the whole write, so no replacement is ever partial.
+# The targets reach jq as one string, $targets, which jq splits itself.
 # shellcheck disable=SC2016  # jq expands these, not the shell
 PIN_SHAPE_JQ='if type != "object" then "the config is a JSON \(type), not an object"
   elif (.agents | type) as $t | ($t != "object" and $t != "null")
     then ".agents is a JSON \(.agents | type), not an object"
-  else . as $c | $ARGS.positional[]
+  else . as $c | $targets | split(" ")[] | select(length > 0)
     | ($c.agents[.] | type) as $t | select($t != "object" and $t != "null")
     | ".agents.\(.) is a JSON \($t), not an object"
   end'
 
-# shellcheck disable=SC2086  # word-splitting PIN_TARGETS into args is the point
 if [ -z "$PIN_TARGETS" ]; then
   echo "✅ No pin replacement approved — $PIN_CFG left untouched"
 elif [ ! -f "$PIN_CFG" ] || ! jq empty "$PIN_CFG" 2>/dev/null; then
   echo "❌ Refusing to touch $PIN_CFG — it is missing or not valid JSON. Fix it by hand, then re-run."
   exit 1
-elif PIN_SHAPE=$(jq -r "$PIN_SHAPE_JQ" "$PIN_CFG" --args $PIN_TARGETS 2>/dev/null) \
+elif PIN_SHAPE=$(jq -r --arg targets "$PIN_TARGETS" "$PIN_SHAPE_JQ" "$PIN_CFG" 2>/dev/null) \
        || PIN_SHAPE="its shape could not be read"; [ -n "$PIN_SHAPE" ]; then
   printf '%s\n' "$PIN_SHAPE" | while IFS= read -r PIN_WHY; do
     echo "❌ Refusing to touch $PIN_CFG — $PIN_WHY. Fix that entry by hand, then re-run setup."
@@ -487,15 +460,15 @@ else
   # temporary file is left to tidy up. This block must name no file-removal verb:
   # workbench-core's destructive-scope guard refuses a whole command that removes
   # a path it cannot resolve.
-  if PIN_NEW=$(jq --arg m "$PIN_MODEL" --arg e "$PIN_EFFORT" \
-        'reduce $ARGS.positional[] as $a (.;
+  if PIN_NEW=$(jq --arg m "$PIN_MODEL" --arg e "$PIN_EFFORT" --arg targets "$PIN_TARGETS" \
+        'reduce ($targets | split(" ")[] | select(length > 0)) as $a (.;
            .agents[$a] = ((.agents[$a] // {}) + {model: $m, effort: $e}))' \
-        "$PIN_CFG" --args $PIN_TARGETS 2>/dev/null) \
+        "$PIN_CFG" 2>/dev/null) \
      && [ -n "$PIN_NEW" ] && printf '%s\n' "$PIN_NEW" | jq empty 2>/dev/null \
      && printf '%s\n' "$PIN_NEW" 2>/dev/null > "$PIN_CFG"; then
-    for PIN_AGENT in $PIN_TARGETS; do
-      echo "✅ $PIN_AGENT — model: $PIN_MODEL, effort: $PIN_EFFORT (other keys unchanged)"
-    done
+    while IFS= read -r PIN_AGENT; do
+      [ -n "$PIN_AGENT" ] && echo "✅ $PIN_AGENT — model: $PIN_MODEL, effort: $PIN_EFFORT (other keys unchanged)"
+    done < <(printf '%s\n' "$PIN_TARGETS" | tr ' ' '\n')
   else
     echo "❌ Could not write $PIN_CFG."
     exit 1
@@ -505,37 +478,138 @@ fi
 ```
 
 `commands/test-config-pin.sh` runs both blocks against fixture configs. It
-holds their pin to the shipped default config above, so the check can never
-ask about a value the default config does not ship.
+holds their pin to the `*Model` and `*Effort` rows' defaults in plugin.json, so
+the check can never ask about a value the rows do not default to.
 
-Both keys are still settable here by hand, per agent. `model` takes any alias
-or full model ID. `effort` takes `low`, `medium`, `high`, `xhigh`, or `max`. An
-integer reaches the scheduled path alone: the dev-team mod sets no numeric effort. Note `xhigh` is not supported on Sonnet, so a Sonnet agent's ceiling
-short of `max` is `high`. Holmes's optional `fanout`
-(bool, default `true`) toggles its multi-lens review fan-out, and `lensModel`
-(default: Holmes's own `model`) sets the model its lens and skeptic sub-agents run
-on — both default cleanly when absent. Lestrade carries the same two knobs for its
-own fan-out — four blind lenses that check the draft acceptance criteria before
-scoring (`agents/lestrade.md`, §4.6). The optional `fallback` knob (a
-comma-separated model list) is passed to `--fallback-model` on the scheduled path,
-so a dispatch degrades to the next model when the primary is overloaded or
-unavailable — e.g. a retired model — instead of failing. `maxBudgetUsd` caps a
-run's spend: Watson defaults to `10.00`, Holmes's is optional and applied only
-when set, and both default cleanly when absent.
+### 6b. Move the old config into /config
 
-### How each path gets the model and the effort
+Run this with `PLUGIN_MANIFEST` set to the plugin's manifest,
+`$SRC_ROOT/.claude-plugin/plugin.json` once Step 7a has resolved `SRC_ROOT`, or
+`${CLAUDE_PLUGIN_ROOT}/.claude-plugin/plugin.json` before it. It writes every
+value in the old file that differs from its row's default through
+`claude plugin configure`, then checks each one landed where
+`dispatch-agent.sh` reads it, and only then renames the old file:
 
-The scheduled path passes `model` and `effort` as `--model` and `--effort` on
-every tick. An interactive dispatch takes them at spawn: when a session
-dispatches Watson, Holmes, or Lestrade, the dev-team mod (`hooks/register.ts`)
-reads this config, sets the model unless the caller named one, and applies the
-effort to every model request of that sub-agent. So an edit to the config moves
-both paths on the next dispatch, and nothing has to be re-run.
+```bash
+# >>> config-migrate >>>  (markers used by commands/test-config-pin.sh — keep them)
+# Inputs:  PLUGIN_MANIFEST  the plugin's .claude-plugin/plugin.json.
+#          DEVTEAM_CONFIG   (optional) the old agent config. Defaults to
+#                           ~/.claude-workbench/dev-team-config.json.
+#          WORKBENCH_SETTINGS_FILE (optional) Claude Code's user settings.
+#                           Defaults to ~/.claude/settings.json.
+# Prints:  one "MIGRATE <row>=<value>" line per value written, and one
+#          "MIGRATE_SKIPPED <agent>.<key> <why>" line per value no row takes.
+# Writes:  the plugin's settings, with `claude plugin configure`. Then the old
+#          file is renamed to dev-team-config.json.migrated-<stamp>.
+# Exits:   1 when the manifest or the old file cannot be read, when the old
+#          file has the wrong shape, when the write fails, or when a written
+#          value is not in the settings file afterwards. The old file is renamed
+#          only after every check passes, so a failed move can be re-run.
+MIG_CFG="${DEVTEAM_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
+MIG_MANIFEST="${PLUGIN_MANIFEST:-}"
+MIG_SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+MIG_KEY="workbench-dev-team@claude-workbench"
+
+# The plan, from one jq program: each old value, the row it moves to, and
+# whether it moves. A value equal to its row's default is left to the default.
+# A value no row takes, or one its row cannot hold, is skipped and named. Rows
+# hold flat values, so reprieveBudgetMultiplier, once per agent, becomes one
+# row, and agents that disagree on it are skipped.
+# shellcheck disable=SC2016  # jq expands these, not the shell
+MIG_JQ='
+  $m[0].userConfig as $rows
+  | [ (.agents // {}) | to_entries[] | .key as $agent | .value | to_entries[]
+      | { at: "\($agent).\(.key)", value: .value,
+          row: (if .key == "reprieveBudgetMultiplier" then .key
+                else $agent + (.key[0:1] | ascii_upcase) + .key[1:] end) } ]
+  | map(. as $e | $rows[$e.row] as $r
+      | ($e.value | type) as $t
+      | if $r == null then $e + {skip: "no /config row takes it"}
+        elif $t == "null" then $e + {skip: "it is null"}
+        elif $r.type == "number" and $t != "number" then $e + {skip: "the row takes a number"}
+        elif $r.type == "boolean" and $t != "boolean" then $e + {skip: "the row takes true or false"}
+        elif $r.type == "string" and $t != "string" then $e + {skip: "the row takes text"}
+        elif $r.options != null and ($r.options | index($e.value | ascii_downcase)) == null
+          then $e + {skip: "the row takes one of \($r.options | join(", "))"}
+        else ($e.value | if $r.options != null then ascii_downcase else . end) as $v
+          | $e + {text: ($v | if type == "number" then . + 0 else . end | tostring), same: ($v == $r.default)}
+        end)
+  | (map(select(.skip == null)) | group_by(.row)
+      | map(if (map(.text) | unique | length) > 1
+            then map(. + {skip: "the agents disagree, so set it in /config"})
+            else [.[0]] end) | add // []) as $kept
+  | { write: ([$kept[] | select(.skip == null and (.same | not)) | {key: .row, value: .text}] | from_entries),
+      skipped: ([.[], $kept[] | select(.skip != null) | "\(.at) \(.skip)"] | unique) }'
+
+if [ ! -f "$MIG_CFG" ]; then
+  echo "✅ No old agent config at $MIG_CFG. Every setting lives in /config."
+elif [ -z "$MIG_MANIFEST" ] || ! jq -e '.userConfig | type == "object"' "$MIG_MANIFEST" >/dev/null 2>&1; then
+  echo "❌ PLUGIN_MANIFEST does not name a plugin.json with userConfig rows. Nothing moved."
+  exit 1
+elif ! jq -e 'type == "object" and ((.agents // {}) | type == "object") and ([(.agents // {})[] | type == "object"] | all)' "$MIG_CFG" >/dev/null 2>&1; then
+  echo "❌ $MIG_CFG is not valid JSON, or its shape is wrong. Nothing moved. Fix it by hand, then re-run setup."
+  exit 1
+elif ! MIG_PLAN=$(jq -c --slurpfile m "$MIG_MANIFEST" "$MIG_JQ" "$MIG_CFG" 2>/dev/null) || [ -z "$MIG_PLAN" ]; then
+  echo "❌ Could not read a plan out of $MIG_CFG. Nothing moved."
+  exit 1
+else
+  printf '%s\n' "$MIG_PLAN" | jq -r '.skipped[] | "MIGRATE_SKIPPED \(.)"'
+  MIG_WRITE=$(printf '%s\n' "$MIG_PLAN" | jq -c '.write')
+  if [ "$MIG_WRITE" != "{}" ]; then
+    # `command` skips a shell alias, which can put an option before `plugin`.
+    if ! printf '%s\n' "$MIG_WRITE" | command claude plugin configure "$MIG_KEY" --values-stdin >/dev/null 2>&1; then
+      echo "❌ claude plugin configure refused the values. Nothing moved, and $MIG_CFG is left as it is."
+      exit 1
+    fi
+    # Each value must now be where bin/dispatch-agent.sh reads it. A number may
+    # come back as a number, so it is compared as one.
+    MIG_MISSING=$(jq -r --arg k "$MIG_KEY" --argjson w "$MIG_WRITE" '
+        (.pluginConfigs[$k].options // {}) as $o
+        | $w | to_entries[]
+        | select(($o[.key] | tostring) != .value and ($o[.key] | type != "number" or $o[.key] != (.value | tonumber? // null)))
+        | .key' "$MIG_SETTINGS" 2>/dev/null) || MIG_MISSING="(the settings file could not be read)"
+    if [ -n "$MIG_MISSING" ]; then
+      echo "❌ These values are not in $MIG_SETTINGS under pluginConfigs[\"$MIG_KEY\"], where dispatch-agent.sh reads them: $(printf '%s' "$MIG_MISSING" | tr '\n' ' ')"
+      echo "   $MIG_CFG is left as it is. Set the values in /config, then check the file."
+      exit 1
+    fi
+    printf '%s\n' "$MIG_WRITE" | jq -r 'to_entries[] | "MIGRATE \(.key)=\(.value)"'
+  fi
+  # Renamed, never removed, so the old values stay readable.
+  MIG_DONE="$MIG_CFG.migrated-$(date +%Y%m%d-%H%M%S)"
+  if ! mv "$MIG_CFG" "$MIG_DONE"; then
+    echo "❌ Could not rename $MIG_CFG. The values are in /config, but the next setup run would move the file again."
+    exit 1
+  fi
+  echo "✅ Old agent config moved into /config. It is kept as $MIG_DONE."
+fi
+# <<< config-migrate <<<
+```
+
+**Each `MIGRATE_SKIPPED` line → tell the user which value did not move, and
+why.** Each one is a value the old file held that no row takes, or that its row
+cannot hold, such as an integer effort. The user sets it in `/config` by hand,
+or drops it. The renamed file keeps it readable.
+
+**If this block exits non-zero, say so plainly in the Step 8 summary.** The old
+file is left in place, so nothing is lost, and the next run tries the move
+again.
+
+### How each path reads the rows
+
+`model` takes any alias or full model ID. `effort` takes `low`, `medium`,
+`high`, `xhigh`, or `max`. Sonnet does not support `xhigh`, so a Sonnet agent's
+ceiling short of `max` is `high`. The fan-out rows turn Holmes's multi-lens
+review and Lestrade's four acceptance-criteria lenses (`agents/lestrade.md`,
+§4.6) on or off, and the helper-model rows set the model those helpers run on.
+The fallback rows go to `--fallback-model` on the scheduled path, so a dispatch
+degrades to the next model when the primary is overloaded or retired, instead of
+failing. The budget rows cap a run's spend.
 
 The mod ignores a value outside the shape it accepts: a model that is not an
-alias or a full ID, and an effort that is not `low`, `medium`, `high`, `xhigh`,
-or `max`. The agent file's own frontmatter value then applies, and it applies
-too wherever the mod does not run, such as Cowork.
+alias or a full ID, and an effort that is not one of the five levels. The agent
+file's own frontmatter value then applies, and it applies too wherever the mod
+does not run, such as Cowork.
 
 ## Step 6.5 — Choose commit attribution behavior
 
@@ -819,22 +893,29 @@ its commits and pushes raise no prompt, so the scope hook never judges them. The
 guard still refuses its merges and force pushes, and workbench-core's
 destructive-scope guard still holds its deletes to scope.
 
-## Step 7 — Register the scheduled Dispatch task
+## Step 7 — Install the Dispatch launchd job
 
-Skip this step entirely if `REGISTER_SCHEDULE` from Step 1 was "Skip".
+Skip this step entirely if `INSTALL_JOB` from Step 1 was "Skip".
 
-### 7a. Resolve the orchestrator source, then read and strip it
+Dispatch is a shell script, `bin/dispatch-tick.sh`. A launchd job runs it on the
+`dispatchCadenceMinutes` cadence. It polls The Index's three lanes over HTTPS
+and calls `bin/dispatch-agent.sh` for each item, so no model runs in the
+router, and a tick with nothing to dispatch costs no tokens. It replaces the
+scheduled Claude task, `workbench-dev-team-dispatch`, that ran the same routing
+as a prompt. Step 7d retires that task, and only after 7c has proven one tick
+of the job works.
 
-**Never read the orchestrator from `${CLAUDE_PLUGIN_ROOT}` when a better source
-exists.** The harness expands that variable to the *executing* copy of the
-plugin, which in a resumed session is a snapshot materialized once at session
-creation under `~/Library/Application Support/Claude/local-agent-mode-sessions/…/plugin_<hash>/`
+### 7a. Resolve the plugin source
+
+**Never install from `${CLAUDE_PLUGIN_ROOT}` when a better source exists.** The
+harness expands that variable to the *executing* copy of the plugin, which in a
+resumed session is a snapshot materialized once at session creation under
+`~/Library/Application Support/Claude/local-agent-mode-sessions/…/plugin_<hash>/`
 and never refreshed — not even by a full app restart, because the app resumes
-the same session (anthropics/claude-code#45810). Deploying from that copy
-silently pins Dispatch to whatever the plugin looked like weeks ago, and
-because the stale prompt equals the stale source, setup reports success. Resolve
-the install path recorded in `~/.claude/plugins/installed_plugins.json` instead,
-and only fall back to the running root when that file can't answer:
+the same session (anthropics/claude-code#45810). Installing from that copy
+silently pins Dispatch to whatever the plugin looked like weeks ago. Resolve the
+install path recorded in `~/.claude/plugins/installed_plugins.json` instead, and
+only fall back to the running root when that file can't answer:
 
 ```bash
 RUN_ROOT="${CLAUDE_PLUGIN_ROOT:-}"
@@ -861,11 +942,11 @@ if [ -f "$REGISTRY" ] && jq empty "$REGISTRY" 2>/dev/null; then
     CAND_ROOT=$(printf '%s' "$ENTRY" | jq -r '.installPath // ""')
     CAND_VERSION=$(printf '%s' "$ENTRY" | jq -r '.version // ""')
     # Trust the registry only if the file we actually need is really there.
-    if [ -n "$CAND_ROOT" ] && [ -f "$CAND_ROOT/scheduled-tasks/orchestrator.md" ]; then
+    if [ -n "$CAND_ROOT" ] && [ -f "$CAND_ROOT/bin/dispatch-tick.sh" ]; then
       SRC_ROOT="$CAND_ROOT"
       SRC_VERSION="$CAND_VERSION"
     elif [ -n "$CAND_ROOT" ]; then
-      echo "⚠  $REGISTRY points at $CAND_ROOT, but scheduled-tasks/orchestrator.md is not readable there."
+      echo "⚠  $REGISTRY points at $CAND_ROOT, but bin/dispatch-tick.sh is not readable there."
     fi
   fi
 fi
@@ -873,14 +954,14 @@ fi
 # Fallback: the running root. Correct in a fresh session, stale in a resumed one
 # — say so out loud rather than deploying from it quietly.
 if [ -z "$SRC_ROOT" ]; then
-  if [ -n "$RUN_ROOT" ] && [ -f "$RUN_ROOT/scheduled-tasks/orchestrator.md" ]; then
+  if [ -n "$RUN_ROOT" ] && [ -f "$RUN_ROOT/bin/dispatch-tick.sh" ]; then
     SRC_ROOT="$RUN_ROOT"
     SRC_VERSION=$(jq -r '.version // ""' "$RUN_ROOT/.claude-plugin/plugin.json" 2>/dev/null || true)
     echo "⚠  Could not resolve an install path from $REGISTRY — falling back to the running"
-    echo "   plugin root ($SRC_ROOT). If this session's copy is frozen, the prompt deployed"
-    echo "   below is frozen with it."
+    echo "   plugin root ($SRC_ROOT). If this session's copy is frozen, the scripts installed"
+    echo "   below are frozen with it."
   else
-    echo "❌ Could not locate scheduled-tasks/orchestrator.md — neither $REGISTRY nor"
+    echo "❌ Could not locate bin/dispatch-tick.sh — neither $REGISTRY nor"
     echo "   \$CLAUDE_PLUGIN_ROOT resolved a readable copy. Re-install or update the plugin,"
     echo "   then re-run /workbench-dev-team:setup."
     exit 1
@@ -893,12 +974,11 @@ if [ -n "$RUN_ROOT" ] && jq empty "$RUN_ROOT/.claude-plugin/plugin.json" 2>/dev/
   RUN_VERSION=$(jq -r '.version // ""' "$RUN_ROOT/.claude-plugin/plugin.json")
 fi
 
-ORCHESTRATOR_SRC="$SRC_ROOT/scheduled-tasks/orchestrator.md"
 STALE_ROOT_WARNING=""
 
 if [ -n "$RUN_VERSION" ] && [ -n "$SRC_VERSION" ] && [ "$RUN_VERSION" != "$SRC_VERSION" ]; then
-  STALE_ROOT_WARNING="⚠  STALE PLUGIN ROOT — this session ran v$RUN_VERSION; Dispatch was deployed from installed v$SRC_VERSION"
-  cat <<EOF
+  STALE_ROOT_WARNING="⚠  STALE PLUGIN ROOT — this session ran v$RUN_VERSION; Dispatch was installed from v$SRC_VERSION"
+  cat <<EOF2
 ⚠  ═══════════════ STALE PLUGIN ROOT ═══════════════
    This session is EXECUTING workbench-dev-team v$RUN_VERSION from:
      $RUN_ROOT
@@ -907,284 +987,690 @@ if [ -n "$RUN_VERSION" ] && [ -n "$SRC_VERSION" ] && [ "$RUN_VERSION" != "$SRC_V
    \$CLAUDE_PLUGIN_ROOT is materialized once when a session is created and is
    never refreshed — not even by an app restart that resumes the same session
    (anthropics/claude-code#45810).
-   → The Dispatch prompt IS being deployed from the installed path (v$SRC_VERSION),
-     so the scheduled task will be current.
+   → The Dispatch scripts ARE being installed from the installed path (v$SRC_VERSION).
    → Every OTHER step in this run still came from the stale v$RUN_VERSION copy.
      Start a brand-new session and re-run /workbench-dev-team:setup for a fully
      current run.
    ═══════════════════════════════════════════════════
-EOF
+EOF2
 fi
 
-echo "Orchestrator source: $ORCHESTRATOR_SRC (v${SRC_VERSION:-unknown})"
+echo "Dispatch source: $SRC_ROOT (v${SRC_VERSION:-unknown})"
 ```
 
-Carry `STALE_ROOT_WARNING` (empty when the running root is current) into the
-Step 8 summary.
+Carry `SRC_ROOT`, `SRC_VERSION` and `STALE_ROOT_WARNING` (empty when the
+running root is current) into the steps below and the Step 8 summary. If this
+block exits non-zero, stop Step 7 entirely.
 
-### 7a-bis. Strip and verify the orchestrator body
+### 7b. Install the Dispatch scripts and the launchd job, as one step
 
-**Resolving the right file is not the same as reading a good file.** Step 7a
-guarantees the *path* is the installed one; nothing yet guarantees the
-*content*. 7a accepts any candidate root where `orchestrator.md` merely
-**exists** — truncated, half-written, or the wrong file entirely all pass
-unchallenged, and whatever is there becomes the prompt Dispatch runs every
-tick. (Staleness is Step 7a's job, not this one: `setup.md` and the
-orchestrator resolve from the same root, so a frozen root carries a frozen
-guard. This step is about integrity.)
+The job runs the scripts from a **stable** path, `~/.claude-workbench/bin/`,
+not from the plugin cache, whose path carries the version and moves on every
+update. The job file is `bin/dispatch-tick.plist`, with its placeholders
+filled. It goes in `~/Library/LaunchAgents`, and loads in the user's GUI domain,
+where the login Keychain is open to the tick's credential reads. Its PATH is
+this session's PATH, less any temporary folder and the plugin cache, so the
+agents the tick starts find the same `git`, `gh` and `claude` an interactive
+session does.
 
-So strip the frontmatter **deterministically here**, in bash, rather than by
-hand — and refuse to deploy a body that has lost anything load-bearing. The
-checks are **derived from the body**, not a hand-maintained list of names: they
-count lanes and locks rather than looking for `lestrade`/`holmes`/`watson`, so a
-rename or a fourth lane needs no edit here. Run this with `ORCHESTRATOR_SRC` set
-to the path Step 7a printed:
+**Run this block, and 7c's, with the Bash tool's `timeout` set to 600000**
+(ten minutes). 7b's worst case is its three suites, about 40 seconds, plus up to
+ten seconds of launchd retries. 7c's is a 90-second wait for the tick, plus
+the same retries. The default two-minute timeout could kill 7c's failure path
+before it restores.
+
+The step is one transaction, so no mix of new and old scripts can run:
+
+1. **Every check runs first, and changes nothing but empty folders.** The
+   source files and their three suites (the tick's suite runs against a local
+   fake Index, so it needs `python3`, and reaches nothing real), the cadence,
+   the tools on PATH, the job file's render and lint, the folders it writes,
+   and the copy a rollback would restore.
+2. **Then it replaces the scripts, writes the job file, and loads it.** Any
+   failure from the first replace on runs one restore, which puts back
+   everything that ran Dispatch before this setup, all or nothing, and says
+   what runs now.
+
+It also survives being stopped:
+
+- From the first replace until success, an INT, TERM or HUP runs the same
+  restore, with "Setup was stopped" as its reason.
+- A kill no trap can catch leaves `~/.claude-workbench/dispatch-install.state`
+  reading `installing`. The next run reads it first, restores what ran before,
+  and stops, so it never snapshots unproven scripts as the originals. A kill
+  while 7c writes the proven set leaves it reading `proving`, and the next run
+  finishes that write.
+- The job is unloaded before the first script is replaced, and before a
+  restore copies anything, so no tick runs while files move.
+
+What a rollback restores depends on the case:
+
+- **A re-run** restores the **proven set**: the scripts and the job file in
+  `~/.claude-workbench/bin.proven/`. Only 7c writes that set, whole, after a
+  tick passes its proof, so unproven scripts never reach it.
+- **A first install**, where there is no proven set, restores the scripts as
+  they were before this setup, from a snapshot taken just before the replace.
+  It unloads the new job and moves its file out of LaunchAgents, so launchd
+  does not load it at the next login. The old scheduled task, if there is one,
+  keeps running Dispatch.
 
 ```bash
-# >>> orchestrator-body-guard >>>  (markers used by scheduled-tasks/test-setup-orchestrator-guard.sh — keep them)
-# Inputs:  ORCHESTRATOR_SRC — absolute path to the resolved orchestrator.md.
-#          BODY_OUT (optional) — destination for the stripped body; defaults to a temp file.
-# Prints:  "Orchestrator body: <path>" on success; "❌ …" and exit 1 on any failure.
-# Fails closed: a body that cannot be verified is never deployed.
-set -u
+# >>> dispatch-install >>>  (markers used by commands/test-dispatch-setup.sh — keep them)
+# Inputs:  SRC_ROOT — the plugin root Step 7a resolved.
+#          WORKBENCH_SETTINGS_FILE (optional) Claude Code's user settings.
+# Writes:  dispatch-agent.sh, dispatch-tick.sh and escalation-comment.md in
+#          ~/.claude-workbench/bin, then
+#          ~/Library/LaunchAgents/dev.workbench.dev-team-dispatch.plist, and
+#          loads it, replacing a job an earlier run loaded. On a first install
+#          it also writes ~/.claude-workbench/bin.before, a snapshot of bin.
+#          It sets ~/.claude-workbench/dispatch-install.state to "installing"
+#          before the first replace, and 7c clears it.
+# Exits:   1 when a check fails, before anything is replaced, with "Nothing
+#          changed". 1 when a step after the first replace fails, or when the
+#          shell gets INT, TERM or HUP, after the restore below, whose message
+#          says what runs now. 1 after it restores what an earlier, unfinished
+#          setup left.
+# Every list is written out, never split from a variable, so zsh runs the block
+# as bash does.
+LD_LABEL="dev.workbench.dev-team-dispatch"
+LD_TEMPLATE="${SRC_ROOT:-}/bin/dispatch-tick.plist"
+LD_DIR="$HOME/Library/LaunchAgents"
+LD_PLIST="$LD_DIR/$LD_LABEL.plist"
+LD_STATE="$HOME/.claude-workbench"
+LD_BIN="$LD_STATE/bin"
+LD_TICK="$LD_BIN/dispatch-tick.sh"
+LD_LOG="$LD_STATE/dev-team-logs/dispatch-tick.log"
+LD_STAGE="$LD_STATE/dispatch-tick.plist.new"
+LD_SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+LD_DOMAIN="gui/$(id -u)"
 
-if [ -z "${ORCHESTRATOR_SRC:-}" ] || [ ! -f "$ORCHESTRATOR_SRC" ]; then
-  echo "❌ ORCHESTRATOR_SRC is unset or not a readable file — cannot verify the Dispatch prompt."
-  exit 1
-fi
-BODY_OUT="${BODY_OUT:-$(mktemp)}"
-
-# Strip the leading YAML frontmatter: the opening `---` fence, everything through
-# its matching `---`, and any blank lines immediately following. A file with no
-# frontmatter passes through unchanged; an unterminated fence yields an empty
-# body, which the size check below rejects.
-awk 'NR==1 && $0=="---" {fm=1; next}
-     fm==1 && $0=="---" {fm=2; next}
-     fm==2 {if (!started && $0 ~ /^[[:space:]]*$/) next; started=1; print; next}
-     fm!=1 {print}' "$ORCHESTRATOR_SRC" > "$BODY_OUT"
-
-og_fail=0
-og_reject() { echo "   ✗ $1"; og_fail=1; }
-
-# 1. The strip produced something, and produced a body — not frontmatter.
-[ -s "$BODY_OUT" ] || og_reject "stripped body is empty (unterminated frontmatter fence, or empty source)"
-head -1 "$BODY_OUT" | grep -qx -- '---' && og_reject "body still opens with a '---' frontmatter fence"
-grep -qF -- 'name: dispatch-orchestrator' "$BODY_OUT" && og_reject "frontmatter survived the strip"
-
-# 2. Non-trivial size — catches truncation and wrong-file.
-og_lines=$(wc -l < "$BODY_OUT" | tr -d ' ')
-[ "$og_lines" -ge 120 ] || og_reject "body is only $og_lines lines (expected >= 120) — truncated or not the orchestrator"
-
-# 3. Lane structure, DERIVED from the body — no agent names appear here, so
-#    renaming a lane or adding a fourth one needs no edit in this file. Every
-#    dispatch goes through the wrapper script, so one count covers it: distinct
-#    `dispatch-agent.sh <agent>` invocations, which must reach all three lanes.
-#    (Lestrade's per-repo sweep reuses the `lestrade` token and so collapses
-#    into its lane rather than inflating the count.)
+# >>> dispatch-restore >>>  (the same text in 7b and 7c; commands/test-dispatch-setup.sh holds the two copies equal)
+# The state 7b and 7c share, and the one restore path.
 #
-#    The per-item in-flight lock (#39) is NOT checked here any more. It moved
-#    into the wrapper script when the dispatch block collapsed into one command,
-#    and 7a-ter verifies it by RUNNING the script's own test suite — an executed
-#    assertion rather than a grep for a string in a prompt.
-#    The agent token starts with a letter, so the `--check` and `--mark-escalated`
-#    modes are not counted as lanes.
-og_agents=$(grep -oE -- 'dispatch-agent\.sh"? +[a-z][a-z-]*' "$BODY_OUT" | sort -u | wc -l | tr -d ' ')
-[ "$og_agents" -ge 3 ] || og_reject "only $og_agents distinct agent lane(s) dispatched (expected >= 3) — a lane is missing"
+# DR_MARK says what an unfinished setup left: "installing" from just before
+# 7b's first replace until a 7c pass or a finished restore, and "proving" while
+# 7c writes the proven set. Empty means nothing is unfinished. A later run
+# reads it first, so a setup that was killed is recovered, never snapshotted.
+DR_STATE="$HOME/.claude-workbench"
+DR_BIN="$DR_STATE/bin"
+DR_PROVEN="$DR_STATE/bin.proven"
+DR_PROVEN_JOB="$DR_PROVEN/dispatch-tick.plist"
+DR_NEXT="$DR_STATE/bin.proven.next"
+DR_REPLACED="$DR_STATE/bin.proven.replaced"
+DR_BEFORE="$DR_STATE/bin.before"
+DR_ASIDE="$DR_STATE/bin.unproven"
+DR_SHELF="$DR_STATE/dispatch-tick.plist.unloaded"
+DR_STAGE="$DR_STATE/dispatch-tick.plist.restore"
+DR_MARK="$DR_STATE/dispatch-install.state"
+DR_PLIST="$HOME/Library/LaunchAgents/dev.workbench.dev-team-dispatch.plist"
+DR_JOB="gui/$(id -u)/dev.workbench.dev-team-dispatch"
 
-# 4. The circuit breaker's two calls back into the wrapper. The pre-flight itself
-#    runs inside dispatch-agent.sh, and 7a-ter runs its suite. What the body must
-#    still carry is the escalation record, without which a human's re-activation
-#    is never recognised, and the stale-claim sweep's liveness check.
-grep -qF -- 'dispatch-agent.sh" --mark-escalated' "$BODY_OUT" || og_reject "missing the circuit breaker's --mark-escalated call"
-grep -qF -- 'dispatch-agent.sh" --check' "$BODY_OUT" || og_reject "missing the stale-claim sweep's --check call"
+# dispatch_mark <state>: DR_MARK becomes <state>, written whole. "" clears it.
+dispatch_mark() { printf '%s\n' "$1" > "$DR_MARK.new" && mv -f "$DR_MARK.new" "$DR_MARK"; }
+dispatch_marked() { [ "$(cat "$DR_MARK" 2>/dev/null)" = "$1" ]; }
 
-if [ "$og_fail" -ne 0 ]; then
-  cat <<EOF
-❌ ═══════ ORCHESTRATOR BODY FAILED VERIFICATION ═══════
-   Source: $ORCHESTRATOR_SRC
-   The resolved Dispatch prompt is missing content the pipeline depends on.
-   Deploying it would silently downgrade the running pipeline, so setup is
-   stopping rather than writing it.
-   → Update or re-install the plugin, then re-run /workbench-dev-team:setup.
-   ═════════════════════════════════════════════════════
-EOF
+# dispatch_finish_proven: move the staged proven set from DR_NEXT into
+# DR_PROVEN, then clear the mark. A kill partway leaves the mark at
+# "proving", and the next run calls this again to finish.
+dispatch_finish_proven() {
+  for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md dispatch-tick.plist; do
+    if [ -f "$DR_NEXT/$DR_F" ]; then mv -f "$DR_NEXT/$DR_F" "$DR_PROVEN/$DR_F" || return 1; fi
+  done
+  dispatch_mark ""
+}
+
+# dispatch_restore <why>: put back what ran Dispatch before this setup, all or
+# nothing, say what runs now, and exit 1. It first ignores further INT, TERM
+# and HUP, and unloads the job, so no tick runs while files move. A re-run (a
+# proven job file exists) gets the proven scripts and job file back, loaded. A
+# first install gets the scripts from the bin.before snapshot back, the new job
+# unloaded and its file moved out of LaunchAgents, and the old scheduled task,
+# if any, still runs. Every file is copied to a staged name first, and renamed
+# into place only when every copy succeeded. Every saved file a restore needs
+# is checked before any is copied. When the restore cannot vouch for what bin
+# holds, the job file leaves LaunchAgents, so launchd does not load it at the
+# next login. A finished restore clears the mark. One that could not finish
+# keeps it, so the next run tries again.
+dispatch_restore() {
+  trap '' INT TERM HUP
+  launchctl bootout "$DR_JOB" >/dev/null 2>&1 || true
+  DR_OK=1
+  if [ -f "$DR_PROVEN_JOB" ]; then
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ -f "$DR_PROVEN/$DR_F" ] || DR_OK=0
+    done
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ "$DR_OK" = 1 ] && { cp -p "$DR_PROVEN/$DR_F" "$DR_BIN/$DR_F.new" || DR_OK=0; }
+    done
+    [ "$DR_OK" = 1 ] && { cp "$DR_PROVEN_JOB" "$DR_STAGE" || DR_OK=0; }
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ "$DR_OK" = 1 ] && { mv -f "$DR_BIN/$DR_F.new" "$DR_BIN/$DR_F" || DR_OK=0; }
+    done
+    [ "$DR_OK" = 1 ] && { mv -f "$DR_STAGE" "$DR_PLIST" || DR_OK=0; }
+    if [ "$DR_OK" != 1 ]; then
+      DR_JOBMSG="no job file is left in LaunchAgents for launchd to load at the next login"
+      if [ -e "$DR_PLIST" ]; then
+        mv -f "$DR_PLIST" "$DR_SHELF" && DR_JOBMSG="its file is moved to $DR_SHELF, so launchd does not load it at the next login" \
+          || DR_JOBMSG="its file could not be moved out of LaunchAgents, so launchd loads it at the next login with whatever $DR_BIN holds"
+      fi
+      echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. Run setup again, which retries this restore."
+      exit 1
+    fi
+    dispatch_mark ""
+    DR_LOADED=0
+    for DR_TRY in 1 2 3 4 5; do
+      if launchctl bootstrap "gui/$(id -u)" "$DR_PLIST" >/dev/null 2>&1; then
+        launchctl print "$DR_JOB" >/dev/null 2>&1 && DR_LOADED=1
+        break
+      fi
+      sleep 1
+    done
+    if [ "$DR_LOADED" = 1 ]; then
+      echo "❌ $1 This is a re-run, so the proven scripts and job file are back and loaded, and Dispatch runs as it did before this setup."
+    else
+      echo "❌ $1 This is a re-run. The proven scripts and job file are back on disk, but launchctl did not load the job, so no Dispatch job runs now. launchd loads it at the next login. To load it now, run: launchctl bootstrap gui/$(id -u) $DR_PLIST"
+    fi
+  else
+    DR_JOBMSG="The new job is unloaded, and there is no job file in LaunchAgents for launchd to load at the next login."
+    if [ -e "$DR_PLIST" ]; then
+      if mv -f "$DR_PLIST" "$DR_SHELF"; then
+        DR_JOBMSG="The new job is unloaded, and its file is moved to $DR_SHELF, where launchd does not load it at the next login."
+      else
+        DR_JOBMSG="The new job is unloaded, but its file could not be moved out of LaunchAgents, so launchd loads it again at the next login, beside the old scheduled task, until you remove it."
+      fi
+    fi
+    # The snapshot names the scripts that were there before this setup. A
+    # script listed there comes back from it. One that was not there is moved
+    # aside, so nothing new is left for the old scheduled task to run.
+    [ -f "$DR_BEFORE/manifest" ] || DR_OK=0
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      if [ "$DR_OK" = 1 ] && grep -qx "$DR_F" "$DR_BEFORE/manifest"; then
+        [ -f "$DR_BEFORE/$DR_F" ] || DR_OK=0
+      fi
+    done
+    [ "$DR_OK" = 1 ] && { mkdir -p "$DR_ASIDE" || DR_OK=0; }
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      if [ "$DR_OK" = 1 ] && grep -qx "$DR_F" "$DR_BEFORE/manifest"; then
+        cp -p "$DR_BEFORE/$DR_F" "$DR_BIN/$DR_F.new" || DR_OK=0
+      fi
+    done
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ "$DR_OK" = 1 ] || continue
+      if grep -qx "$DR_F" "$DR_BEFORE/manifest"; then
+        mv -f "$DR_BIN/$DR_F.new" "$DR_BIN/$DR_F" || DR_OK=0
+      elif [ -e "$DR_BIN/$DR_F" ]; then
+        mv -f "$DR_BIN/$DR_F" "$DR_ASIDE/$DR_F" || DR_OK=0
+      fi
+    done
+    if [ "$DR_OK" = 1 ]; then
+      dispatch_mark ""
+      echo "❌ $1 This is a first install. $DR_JOBMSG The scripts in $DR_BIN are as they were before this setup, and the old scheduled task, if you have one, still runs Dispatch with them."
+    else
+      echo "❌ $1 This is a first install. $DR_JOBMSG The scripts in $DR_BIN could not all be put back from $DR_BEFORE, so the old scheduled task, if you have one, may run new or mixed scripts. Run setup again, which retries this restore, or copy them back from $DR_BEFORE by hand."
+    fi
+  fi
   exit 1
+}
+# <<< dispatch-restore <<<
+
+# ── 0. An earlier setup that did not finish. ────────────────────────────────
+if dispatch_marked proving; then
+  if ! dispatch_finish_proven; then
+    echo "❌ An earlier setup passed its proof, then stopped while it wrote the proven set to $DR_PROVEN, and finishing that write failed. Nothing else changed. Run setup again once the folder can be written."
+    exit 1
+  fi
+  echo "ℹ  An earlier setup passed its proof, then stopped while it wrote the proven set. That write is finished now."
+elif dispatch_marked installing; then
+  dispatch_restore "An earlier setup stopped after it replaced the scripts and before a tick was proven, so this run restored what ran before it, and changed nothing else. Run setup again to install."
 fi
 
-echo "✅ Orchestrator body verified ($og_lines lines, $og_agents lanes)"
-echo "Orchestrator body: $BODY_OUT"
-# <<< orchestrator-body-guard <<<
-```
-
-**If this block exits non-zero, stop Step 7 entirely** — do not create or update
-the scheduled task, and report the failure in the Step 8 summary. A verified-bad
-body is a worse outcome than no deployment.
-
-Otherwise use the `Read` tool on the **absolute path** the block printed as
-`Orchestrator body:` — that file is already stripped, so read it verbatim. Never
-re-derive the path from `${CLAUDE_PLUGIN_ROOT}`, and never re-strip by hand. Its
-contents are the prompt the scheduled task will execute every tick.
-
-### 7a-ter. Install the dispatch wrapper and prove it works
-
-The verified body dispatches every lane through `dispatch-agent.sh`. That script
-has to exist at a **stable** path before the task is registered, or every tick
-fails at the shell. It is installed to `$HOME/.claude-workbench/bin/` — not the
-plugin cache, whose path carries the version and moves on every update (the same
-trap #40 fixed for the orchestrator itself).
-
-Run from the resolved `$SRC_ROOT` (Step 7a), not `${CLAUDE_PLUGIN_ROOT}`:
-
-```bash
-set -u
-WRAPPER_SRC="$SRC_ROOT/bin/dispatch-agent.sh"
-WRAPPER_TEST="$SRC_ROOT/bin/test-dispatch-agent.sh"
-BREAKER_TEST="$SRC_ROOT/scheduled-tasks/test-circuit-breaker.sh"
-WRAPPER_DST="$HOME/.claude-workbench/bin/dispatch-agent.sh"
-
-if [ ! -f "$WRAPPER_SRC" ] || [ ! -f "$WRAPPER_TEST" ] || [ ! -f "$BREAKER_TEST" ]; then
-  echo "❌ Dispatch wrapper or one of its tests is missing under $SRC_ROOT — cannot deploy."
-  exit 1
-fi
-
-# Prove the shipped script behaves before installing it. The two suites cover
-# the per-item in-flight lock (#39), the budget cap and its reprieve multiple,
-# the per-agent defaults that survive a missing or malformed config, and the
-# circuit-breaker pre-flight with its one-shot reprieve marker.
-for suite in "$WRAPPER_TEST" "$BREAKER_TEST"; do
-  if ! bash "$suite" >/dev/null 2>&1; then
-    echo "❌ $suite FAILED — refusing to install a wrapper that does not pass its own suite."
-    echo "   Re-run it directly for the detail:  bash $suite"
+# ── 1. Checks. Nothing but empty folders changes until all pass. ─────────────
+for LD_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md dispatch-tick.plist \
+            test-dispatch-agent.sh test-circuit-breaker.sh test-dispatch-tick.sh; do
+  [ -f "${SRC_ROOT:-}/bin/$LD_F" ] || { echo "❌ ${SRC_ROOT:-(SRC_ROOT is unset)}/bin/$LD_F is missing. Nothing changed."; exit 1; }
+done
+# The shipped scripts' own suites: the per-item lock, the budget cap and its
+# reprieve multiple, the defaults that survive missing settings, the circuit
+# breaker, and every tick behavior.
+for LD_S in test-dispatch-agent.sh test-circuit-breaker.sh test-dispatch-tick.sh; do
+  if ! bash "$SRC_ROOT/bin/$LD_S" >/dev/null 2>&1; then
+    echo "❌ bin/$LD_S FAILED. Refusing to install scripts that do not pass their own suite. Nothing changed."
+    echo "   Re-run it directly for the detail:  bash $SRC_ROOT/bin/$LD_S"
     exit 1
   fi
 done
 
-mkdir -p "$HOME/.claude-workbench/bin"
-install -m 755 "$WRAPPER_SRC" "$WRAPPER_DST"
-echo "✅ Dispatch wrapper installed and self-tested: $WRAPPER_DST"
-```
-
-**If this block exits non-zero, stop Step 7 entirely**, exactly as for the body
-guard above — a registered task pointing at a missing or broken wrapper stalls
-every lane silently.
-
-Then ensure the permission rule exists, so Dispatch's own Bash call is matched by
-a rule rather than judged by the auto-mode classifier. Without it the classifier
-re-decides the spawn on every tick and refuses nondeterministically — the stall
-this wrapper exists to end. Both spellings are added: the `$HOME` form the
-orchestrator writes, and the absolute path it expands to.
-
-```bash
-SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
-[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
-cp "$SETTINGS" "$SETTINGS.bak-wrapper-$(date +%Y%m%d-%H%M%S)"
-# The new file is held in a variable and checked before it is written, so no
-# temporary file is left to tidy up, and workbench-core's destructive-scope
-# guard finds no file-removal verb to refuse.
-NEW=$(jq --arg abs "Bash(bash $HOME/.claude-workbench/bin/dispatch-agent.sh:*)" \
-   --arg home 'Bash(bash "$HOME/.claude-workbench/bin/dispatch-agent.sh":*)' \
-   '.permissions.allow = ((.permissions.allow // []) + [$abs, $home] | unique)' \
-   "$SETTINGS") \
-  && printf '%s\n' "$NEW" | jq -e 'type == "object"' >/dev/null \
-  && printf '%s\n' "$NEW" > "$SETTINGS" \
-  && echo "✅ Dispatch permission rules present in $SETTINGS" \
-  || echo "⚠  Could not update $SETTINGS — add the rules by hand or Dispatch stays under the classifier."
-```
-
-A failure here is a **warning, not a stop**: the task is still worth registering,
-it will just be at the classifier's mercy until the rules land.
-
-### 7b. Check for an existing task
-
-Call `mcp__scheduled-tasks__list_scheduled_tasks` and look for a task whose
-`taskId` is `workbench-dev-team-dispatch`.
-
-### 7c. Create or update
-
-Build the description string: `"Dispatch — poll The Index every {CADENCE} min and fire workbench-dev-team agents on pending items."`
-
-**If the task already exists**, call `mcp__scheduled-tasks__update_scheduled_task`:
-
-```jsonc
-{
-  taskId: "workbench-dev-team-dispatch",
-  cronExpression: CRON,
-  prompt: <stripped orchestrator body>,
-  description: <description string>
-}
-```
-
-**If the task does not exist**, call `mcp__scheduled-tasks__create_scheduled_task`
-with the same four arguments.
-
-Confirm to the user which action was taken (`registered` or `updated`).
-
-### 7d. Pin the router's model and working directory (best effort)
-
-`create_scheduled_task`/`update_scheduled_task` have no `model` or `cwd`
-parameter — Dispatch silently inherits whatever the app resolves as its
-current default at registration time. That default is not guaranteed to be
-Sonnet: a fresh registration has been observed picking up Opus instead,
-roughly doubling the router's per-tick cost with no error or warning. The
-actual value lives outside the MCP tool surface, in the app's own per-profile
-`scheduled-tasks.json` registry — a separate file from the `SKILL.md` Step 7c
-just wrote.
-
-The working directory pinned here is the router's own. The agents it dispatches
-do not inherit it: `bin/dispatch-agent.sh` starts each one in a fresh, empty
-folder in `~/Developer/scratchpad`, deletes it when the run ends, and unsets
-`CLAUDE_PROJECT_DIR`. A run started in this repo
-would take the live plugin repo as its project folder, where workbench-core's
-destructive-scope guard lets a delete run unprompted. The cost is that a run
-loads no project `CLAUDE.md` and no project settings. User-level settings still
-apply, and the tool deny rules runs used to take from this repo's
-`settings.local.json` are passed with `--disallowedTools` (`DENIED_TOOLS` in the
-wrapper).
-
-The model is the config's `router.model`, which Step 6 writes. Nothing here
-names a model of its own, so the value cannot drift from the config.
-
-```bash
-TARGET_CWD="$HOME/Developer/workbench-dev-team"
-PATCHED=0
-ROUTER_MODEL=$(jq -r '.router.model | strings' "$HOME/.claude-workbench/dev-team-config.json" 2>/dev/null)
-if [ -z "$ROUTER_MODEL" ]; then
-  echo "⚠  No router.model in ~/.claude-workbench/dev-team-config.json — the router's model is not pinned. Re-run Step 6, then this step."
+# The cadence: the user's dispatchCadenceMinutes, or the row's default.
+LD_CADENCE=$(jq -r '.pluginConfigs["workbench-dev-team@claude-workbench"].options.dispatchCadenceMinutes // empty | tostring' "$LD_SETTINGS" 2>/dev/null)
+[ -n "$LD_CADENCE" ] || LD_CADENCE=$(jq -r '.userConfig.dispatchCadenceMinutes.default // empty | tostring' "$SRC_ROOT/.claude-plugin/plugin.json" 2>/dev/null)
+case "$LD_CADENCE" in
+  ''|*[!0-9]*) LD_CADENCE_OK=0 ;;
+  *) if [ "$LD_CADENCE" -ge 5 ] && [ "$LD_CADENCE" -le 120 ]; then LD_CADENCE_OK=1; else LD_CADENCE_OK=0; fi ;;
+esac
+if [ "$LD_CADENCE_OK" != 1 ]; then
+  echo "❌ dispatchCadenceMinutes is '${LD_CADENCE}'. Set a whole number of minutes from 5 to 120 in /config, then re-run setup. Nothing changed."
+  exit 1
 fi
-while [ -n "$ROUTER_MODEL" ] && IFS= read -r -d '' REG; do
-  jq -e '.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")' "$REG" >/dev/null 2>&1 || continue
-  if ! jq empty "$REG" 2>/dev/null; then
-    echo "⚠  $REG is not valid JSON — skipping"
-    continue
+
+# Each tool is looked for as a file on PATH, not with `command -v`, which
+# answers with an alias where the shell has one. The search runs in a command
+# substitution, a subshell in bash and zsh alike.
+for LD_TOOL in jq curl claude; do
+  LD_FOUND=$(printf '%s\n' "$PATH" | tr ':' '\n' | while IFS= read -r LD_D; do
+    if [ -x "$LD_D/$LD_TOOL" ]; then printf '%s' "$LD_D/$LD_TOOL"; break; fi
+  done)
+  if [ -z "$LD_FOUND" ]; then
+    echo "❌ $LD_TOOL is not on this session's PATH, so the job could not find it either. Install it, then re-run setup. Nothing changed."
+    exit 1
   fi
+done
+
+# This session's PATH, each folder once, then the system folders. Left out:
+# temporary folders, which another session owns, and the plugin cache, whose
+# folders carry a version that the next update moves.
+LD_PATH=$(printf '%s:/usr/bin:/bin:/usr/sbin:/sbin' "$PATH" | tr ':' '\n' \
+  | awk '/^\// && !/^\/(private\/)?(tmp|var\/folders)\// && !/\/\.claude\/plugins\/cache\// && !seen[$0]++' \
+  | paste -sd: -)
+
+# The job file, with each value XML-escaped and put in by plain string
+# replacement, so no character in a path can be read as a pattern.
+LD_NEW=$(LD_INTERVAL=$((LD_CADENCE * 60)) LD_TICK="$LD_TICK" LD_PATH="$LD_PATH" LD_LOG="$LD_LOG" awk '
+  function xml(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); return s }
+  function put(line, name, value,   at) {
+    while ((at = index(line, name)) > 0) line = substr(line, 1, at - 1) value substr(line, at + length(name))
+    return line
+  }
+  { line = $0
+    line = put(line, "__TICK__", xml(ENVIRON["LD_TICK"]))
+    line = put(line, "__INTERVAL__", ENVIRON["LD_INTERVAL"])
+    line = put(line, "__PATH__", xml(ENVIRON["LD_PATH"]))
+    line = put(line, "__LOG__", xml(ENVIRON["LD_LOG"]))
+    print line }' "$LD_TEMPLATE")
+case "$LD_NEW" in
+  *__TICK__*|*__INTERVAL__*|*__PATH__*|*__LOG__*) LD_NEW= ;;
+esac
+# plutil is launchd's own reader. Where it is missing, python3 parses instead.
+if [ -n "$LD_NEW" ]; then
+  if command -v plutil >/dev/null 2>&1; then
+    printf '%s\n' "$LD_NEW" | plutil -lint -s - >/dev/null 2>&1 || LD_NEW=
+  else
+    printf '%s\n' "$LD_NEW" | python3 -c 'import plistlib, sys; plistlib.load(sys.stdin.buffer)' >/dev/null 2>&1 || LD_NEW=
+  fi
+fi
+if [ -z "$LD_NEW" ]; then
+  echo "❌ The job rendered from $LD_TEMPLATE is not a valid property list. Nothing changed."
+  exit 1
+fi
+
+# A re-run has a complete proven set, a first install has none of it. Part of
+# one means a restore could not be complete, so nothing is replaced.
+LD_PROVEN_COUNT=0
+for LD_P in "$DR_PROVEN/dispatch-agent.sh" "$DR_PROVEN/dispatch-tick.sh" "$DR_PROVEN/escalation-comment.md" "$DR_PROVEN_JOB"; do
+  [ -f "$LD_P" ] && LD_PROVEN_COUNT=$((LD_PROVEN_COUNT + 1))
+done
+case "$LD_PROVEN_COUNT" in
+  4) LD_RERUN=1 ;;
+  0) LD_RERUN=0 ;;
+  *) echo "❌ The proven set in $DR_PROVEN is incomplete: it holds $LD_PROVEN_COUNT of its 4 files, so a rollback could not restore it. Nothing changed. Put the missing files back, or move the folder aside to install as a first install."; exit 1 ;;
+esac
+
+# Every folder a write lands in, made if missing, and writable.
+for LD_W in "$LD_BIN" "$LD_DIR" "$LD_STATE" "$(dirname "$LD_LOG")"; do
+  mkdir -p "$LD_W" 2>/dev/null
+  [ -d "$LD_W" ] && [ -w "$LD_W" ] || { echo "❌ $LD_W cannot be written. Nothing changed."; exit 1; }
+done
+
+# ── 2. The change. From the first replace on, every failure restores. ───────
+if [ "$LD_RERUN" = 0 ]; then
+  # A first install keeps a snapshot of the scripts as they are now, for the
+  # restore. A snapshot that fails changes nothing that runs.
+  LD_SNAP_OK=1
+  mkdir -p "$DR_BEFORE" || LD_SNAP_OK=0
+  : > "$DR_BEFORE/manifest.new" || LD_SNAP_OK=0
+  for LD_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+    if [ "$LD_SNAP_OK" = 1 ] && [ -f "$LD_BIN/$LD_F" ]; then
+      { cp -p "$LD_BIN/$LD_F" "$DR_BEFORE/$LD_F" && printf '%s\n' "$LD_F" >> "$DR_BEFORE/manifest.new"; } || LD_SNAP_OK=0
+    fi
+  done
+  [ "$LD_SNAP_OK" = 1 ] && mv -f "$DR_BEFORE/manifest.new" "$DR_BEFORE/manifest" || LD_SNAP_OK=0
+  if [ "$LD_SNAP_OK" != 1 ]; then
+    echo "❌ Could not snapshot the scripts in $LD_BIN to $DR_BEFORE, so a rollback could not restore them. Nothing changed."
+    exit 1
+  fi
+fi
+
+# From here on the mark says an install is unfinished, and a stop restores.
+if ! dispatch_mark installing; then
+  echo "❌ Could not write $DR_MARK, so a stopped setup could not be recovered. Nothing changed."
+  exit 1
+fi
+trap 'dispatch_restore "Setup was stopped."' INT TERM HUP
+# No tick may run while the scripts are replaced.
+launchctl bootout "$LD_DOMAIN/$LD_LABEL" >/dev/null 2>&1 || true
+
+for LD_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+  case "$LD_F" in *.sh) LD_MODE=755 ;; *) LD_MODE=644 ;; esac
+  { install -m "$LD_MODE" "$SRC_ROOT/bin/$LD_F" "$LD_BIN/$LD_F.new" && mv -f "$LD_BIN/$LD_F.new" "$LD_BIN/$LD_F"; } \
+    || dispatch_restore "Could not install $LD_BIN/$LD_F."
+done
+{ printf '%s\n' "$LD_NEW" > "$LD_STAGE" && mv -f "$LD_STAGE" "$LD_PLIST"; } \
+  || dispatch_restore "Could not write $LD_PLIST."
+
+# The job was unloaded before the replace. A bootout returns before launchd
+# lets go of the label, so the bootstrap is tried a few times.
+LD_LOADED=0
+for LD_TRY in 1 2 3 4 5; do
+  if launchctl bootstrap "$LD_DOMAIN" "$LD_PLIST" >/dev/null 2>&1; then
+    launchctl print "$LD_DOMAIN/$LD_LABEL" >/dev/null 2>&1 && LD_LOADED=1
+    break
+  fi
+  sleep 1
+done
+[ "$LD_LOADED" = 1 ] || dispatch_restore "launchctl did not load the new job."
+# 7c clears the mark when its tick passes. Until then a stopped setup is
+# recovered by the next run.
+trap - INT TERM HUP
+echo "✅ Dispatch scripts installed and self-tested in $LD_BIN, and the job loaded: $LD_LABEL, every $LD_CADENCE minutes. Its log is $LD_LOG"
+# <<< dispatch-install <<<
+```
+
+**If this block exits non-zero, stop Step 7 here, and skip 7c and 7d.** Read
+its last line to the human. A check that failed says "Nothing changed". A
+later failure says whether this was a first install or a re-run, and what
+runs Dispatch now.
+
+A change to `dispatchCadenceMinutes` in `/config` reaches the job only when
+setup runs again, because launchd reads the interval from the job file.
+
+### 7c. Prove one tick works
+
+A loaded job is not yet a working one: launchd lists a job whose tick fails at
+once, or one that kills the agents it starts. So before 7d removes the old
+scheduled task, run one tick now and read its log.
+
+**Tell the human first, in plain words:** "Setup now
+runs one real Dispatch tick. It polls The Index, and if a lane has work it
+dispatches that agent now, exactly as the next scheduled tick would." Then run
+the block. It starts the job once with `launchctl kickstart`, and waits up to
+90 seconds for this tick's last line, `tick ok <start time>`. A tick prints
+that line only when every list call returned an items list, so a lane that
+could not list fails the proof too. A tick that stops early, because The Index
+cannot be reached, refuses the token, or breaks the protocol, never prints it,
+even when it printed the idle line first.
+
+**Run this block with the Bash tool's `timeout` set to 600000** (ten minutes),
+as for 7b. Its worst case is the 90-second wait plus about ten seconds of
+launchd retries in the restore.
+
+On a pass, the block records the scripts and the job file as the **proven
+set**, the copy a later re-run's rollback restores. On a failure, or on an
+INT, TERM or HUP before the set is marked, it runs the same restore as 7b.
+
+```bash
+# >>> launchd-prove >>>  (markers used by commands/test-dispatch-setup.sh — keep them)
+# Inputs:  none. It reads the job, the log, the proven set and the bin.before
+#          snapshot 7b left.
+# Prints:  the tick's new log lines, then "✅ …" or "❌ …".
+# Writes:  on a pass, ~/.claude-workbench/bin.proven, the proven set, through
+#          bin.proven.next, and the set it replaces to bin.proven.replaced.
+#          Clears ~/.claude-workbench/dispatch-install.state.
+# Exits:   1 when no install is waiting for its proof. 1 when launchctl cannot
+#          start the job, when this tick's `tick ok` line does not reach the
+#          log within 90 seconds, or when the shell gets INT, TERM or HUP, after
+#          the restore below. 1 when the proven set cannot be written.
+LP_LOG="$HOME/.claude-workbench/dev-team-logs/dispatch-tick.log"
+
+# >>> dispatch-restore >>>  (the same text in 7b and 7c; commands/test-dispatch-setup.sh holds the two copies equal)
+# The state 7b and 7c share, and the one restore path.
+#
+# DR_MARK says what an unfinished setup left: "installing" from just before
+# 7b's first replace until a 7c pass or a finished restore, and "proving" while
+# 7c writes the proven set. Empty means nothing is unfinished. A later run
+# reads it first, so a setup that was killed is recovered, never snapshotted.
+DR_STATE="$HOME/.claude-workbench"
+DR_BIN="$DR_STATE/bin"
+DR_PROVEN="$DR_STATE/bin.proven"
+DR_PROVEN_JOB="$DR_PROVEN/dispatch-tick.plist"
+DR_NEXT="$DR_STATE/bin.proven.next"
+DR_REPLACED="$DR_STATE/bin.proven.replaced"
+DR_BEFORE="$DR_STATE/bin.before"
+DR_ASIDE="$DR_STATE/bin.unproven"
+DR_SHELF="$DR_STATE/dispatch-tick.plist.unloaded"
+DR_STAGE="$DR_STATE/dispatch-tick.plist.restore"
+DR_MARK="$DR_STATE/dispatch-install.state"
+DR_PLIST="$HOME/Library/LaunchAgents/dev.workbench.dev-team-dispatch.plist"
+DR_JOB="gui/$(id -u)/dev.workbench.dev-team-dispatch"
+
+# dispatch_mark <state>: DR_MARK becomes <state>, written whole. "" clears it.
+dispatch_mark() { printf '%s\n' "$1" > "$DR_MARK.new" && mv -f "$DR_MARK.new" "$DR_MARK"; }
+dispatch_marked() { [ "$(cat "$DR_MARK" 2>/dev/null)" = "$1" ]; }
+
+# dispatch_finish_proven: move the staged proven set from DR_NEXT into
+# DR_PROVEN, then clear the mark. A kill partway leaves the mark at
+# "proving", and the next run calls this again to finish.
+dispatch_finish_proven() {
+  for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md dispatch-tick.plist; do
+    if [ -f "$DR_NEXT/$DR_F" ]; then mv -f "$DR_NEXT/$DR_F" "$DR_PROVEN/$DR_F" || return 1; fi
+  done
+  dispatch_mark ""
+}
+
+# dispatch_restore <why>: put back what ran Dispatch before this setup, all or
+# nothing, say what runs now, and exit 1. It first ignores further INT, TERM
+# and HUP, and unloads the job, so no tick runs while files move. A re-run (a
+# proven job file exists) gets the proven scripts and job file back, loaded. A
+# first install gets the scripts from the bin.before snapshot back, the new job
+# unloaded and its file moved out of LaunchAgents, and the old scheduled task,
+# if any, still runs. Every file is copied to a staged name first, and renamed
+# into place only when every copy succeeded. Every saved file a restore needs
+# is checked before any is copied. When the restore cannot vouch for what bin
+# holds, the job file leaves LaunchAgents, so launchd does not load it at the
+# next login. A finished restore clears the mark. One that could not finish
+# keeps it, so the next run tries again.
+dispatch_restore() {
+  trap '' INT TERM HUP
+  launchctl bootout "$DR_JOB" >/dev/null 2>&1 || true
+  DR_OK=1
+  if [ -f "$DR_PROVEN_JOB" ]; then
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ -f "$DR_PROVEN/$DR_F" ] || DR_OK=0
+    done
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ "$DR_OK" = 1 ] && { cp -p "$DR_PROVEN/$DR_F" "$DR_BIN/$DR_F.new" || DR_OK=0; }
+    done
+    [ "$DR_OK" = 1 ] && { cp "$DR_PROVEN_JOB" "$DR_STAGE" || DR_OK=0; }
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ "$DR_OK" = 1 ] && { mv -f "$DR_BIN/$DR_F.new" "$DR_BIN/$DR_F" || DR_OK=0; }
+    done
+    [ "$DR_OK" = 1 ] && { mv -f "$DR_STAGE" "$DR_PLIST" || DR_OK=0; }
+    if [ "$DR_OK" != 1 ]; then
+      DR_JOBMSG="no job file is left in LaunchAgents for launchd to load at the next login"
+      if [ -e "$DR_PLIST" ]; then
+        mv -f "$DR_PLIST" "$DR_SHELF" && DR_JOBMSG="its file is moved to $DR_SHELF, so launchd does not load it at the next login" \
+          || DR_JOBMSG="its file could not be moved out of LaunchAgents, so launchd loads it at the next login with whatever $DR_BIN holds"
+      fi
+      echo "❌ $1 This is a re-run, and the proven scripts and job file in $DR_PROVEN could not all be put back, so $DR_BIN may hold new or mixed scripts. The job is unloaded, $DR_JOBMSG, and no Dispatch job runs now. Run setup again, which retries this restore."
+      exit 1
+    fi
+    dispatch_mark ""
+    DR_LOADED=0
+    for DR_TRY in 1 2 3 4 5; do
+      if launchctl bootstrap "gui/$(id -u)" "$DR_PLIST" >/dev/null 2>&1; then
+        launchctl print "$DR_JOB" >/dev/null 2>&1 && DR_LOADED=1
+        break
+      fi
+      sleep 1
+    done
+    if [ "$DR_LOADED" = 1 ]; then
+      echo "❌ $1 This is a re-run, so the proven scripts and job file are back and loaded, and Dispatch runs as it did before this setup."
+    else
+      echo "❌ $1 This is a re-run. The proven scripts and job file are back on disk, but launchctl did not load the job, so no Dispatch job runs now. launchd loads it at the next login. To load it now, run: launchctl bootstrap gui/$(id -u) $DR_PLIST"
+    fi
+  else
+    DR_JOBMSG="The new job is unloaded, and there is no job file in LaunchAgents for launchd to load at the next login."
+    if [ -e "$DR_PLIST" ]; then
+      if mv -f "$DR_PLIST" "$DR_SHELF"; then
+        DR_JOBMSG="The new job is unloaded, and its file is moved to $DR_SHELF, where launchd does not load it at the next login."
+      else
+        DR_JOBMSG="The new job is unloaded, but its file could not be moved out of LaunchAgents, so launchd loads it again at the next login, beside the old scheduled task, until you remove it."
+      fi
+    fi
+    # The snapshot names the scripts that were there before this setup. A
+    # script listed there comes back from it. One that was not there is moved
+    # aside, so nothing new is left for the old scheduled task to run.
+    [ -f "$DR_BEFORE/manifest" ] || DR_OK=0
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      if [ "$DR_OK" = 1 ] && grep -qx "$DR_F" "$DR_BEFORE/manifest"; then
+        [ -f "$DR_BEFORE/$DR_F" ] || DR_OK=0
+      fi
+    done
+    [ "$DR_OK" = 1 ] && { mkdir -p "$DR_ASIDE" || DR_OK=0; }
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      if [ "$DR_OK" = 1 ] && grep -qx "$DR_F" "$DR_BEFORE/manifest"; then
+        cp -p "$DR_BEFORE/$DR_F" "$DR_BIN/$DR_F.new" || DR_OK=0
+      fi
+    done
+    for DR_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+      [ "$DR_OK" = 1 ] || continue
+      if grep -qx "$DR_F" "$DR_BEFORE/manifest"; then
+        mv -f "$DR_BIN/$DR_F.new" "$DR_BIN/$DR_F" || DR_OK=0
+      elif [ -e "$DR_BIN/$DR_F" ]; then
+        mv -f "$DR_BIN/$DR_F" "$DR_ASIDE/$DR_F" || DR_OK=0
+      fi
+    done
+    if [ "$DR_OK" = 1 ]; then
+      dispatch_mark ""
+      echo "❌ $1 This is a first install. $DR_JOBMSG The scripts in $DR_BIN are as they were before this setup, and the old scheduled task, if you have one, still runs Dispatch with them."
+    else
+      echo "❌ $1 This is a first install. $DR_JOBMSG The scripts in $DR_BIN could not all be put back from $DR_BEFORE, so the old scheduled task, if you have one, may run new or mixed scripts. Run setup again, which retries this restore, or copy them back from $DR_BEFORE by hand."
+    fi
+  fi
+  exit 1
+}
+# <<< dispatch-restore <<<
+
+# Only an install 7b left unproven has a tick to prove.
+if ! dispatch_marked installing; then
+  echo "❌ No install is waiting for its proof: 7b did not finish one, or it was already proven or restored. Run 7b first. Nothing changed."
+  exit 1
+fi
+# A stop from here until the proven set is marked runs the restore.
+trap 'dispatch_restore "Setup was stopped before the tick was proven."' INT TERM HUP
+
+# Only what this tick writes counts, so the log's size now is the start line.
+LP_FROM=0
+[ -f "$LP_LOG" ] && LP_FROM=$(wc -c < "$LP_LOG" | tr -d ' ')
+launchctl kickstart "$DR_JOB" >/dev/null 2>&1 || dispatch_restore "launchctl could not start the job."
+# The wait: LP_TRIES reads, LP_STEP seconds apart, 90 seconds in all. It stays
+# well inside the 600000 ms timeout the prose asks for, with the restore's
+# retries, so a failed proof always reaches its restore.
+LP_TRIES=45
+LP_STEP=2
+LP_NEW=
+LP_OK=0
+LP_TRY=0
+while [ "$LP_TRY" -lt "$LP_TRIES" ]; do
+  LP_TRY=$((LP_TRY + 1))
+  [ -f "$LP_LOG" ] && LP_NEW=$(tail -c "+$((LP_FROM + 1))" "$LP_LOG")
+  if printf '%s\n' "$LP_NEW" | grep -Eq '^tick ok [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'; then
+    LP_OK=1
+    break
+  fi
+  sleep "$LP_STEP"
+done
+[ -n "$LP_NEW" ] && printf '%s\n' "$LP_NEW"
+[ "$LP_OK" = 1 ] || dispatch_restore "The tick did not finish cleanly within 90 seconds: no 'tick ok' line reached $LP_LOG. Read the lines above for the cause."
+
+# The tick passed, so these scripts and this job file are the proven set now.
+# All four are staged in DR_NEXT, and the set they replace is copied to the one
+# DR_REPLACED slot, both fixed folders reused each run. Then the mark turns to
+# "proving", and the staged files are renamed into DR_PROVEN. A kill after the
+# mark leaves the next run to finish the renames.
+LP_FIRST=1
+[ -f "$DR_PROVEN_JOB" ] && LP_FIRST=0
+LP_SET=1
+mkdir -p "$DR_NEXT" "$DR_PROVEN" "$DR_REPLACED" || LP_SET=0
+for LP_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md; do
+  [ "$LP_SET" = 1 ] && { cp -p "$DR_BIN/$LP_F" "$DR_NEXT/$LP_F" || LP_SET=0; }
+done
+[ "$LP_SET" = 1 ] && { cp "$DR_PLIST" "$DR_NEXT/dispatch-tick.plist" || LP_SET=0; }
+for LP_F in dispatch-agent.sh dispatch-tick.sh escalation-comment.md dispatch-tick.plist; do
+  if [ "$LP_SET" = 1 ] && [ -f "$DR_PROVEN/$LP_F" ]; then cp -p "$DR_PROVEN/$LP_F" "$DR_REPLACED/$LP_F" || LP_SET=0; fi
+done
+[ "$LP_SET" = 1 ] && { dispatch_mark proving || LP_SET=0; }
+trap - INT TERM HUP
+[ "$LP_SET" = 1 ] && { dispatch_finish_proven || LP_SET=2; }
+LP_CASE="This is a re-run."
+[ "$LP_FIRST" = 1 ] && LP_CASE="This is a first install, so skip 7d: the old scheduled task keeps running beside the new job until a setup run proves it."
+if [ "$LP_SET" = 0 ]; then
+  echo "❌ The tick passed, and the new job runs, but the proven set could not be staged in $DR_NEXT, so $DR_PROVEN is unchanged. $LP_CASE The install is still marked unfinished, so the next setup run restores what ran before it. Fix the folder, then run setup again."
+  exit 1
+fi
+if [ "$LP_SET" = 2 ]; then
+  echo "❌ The tick passed, and the new job runs, but the proven set was only partly written to $DR_PROVEN. $LP_CASE The next setup run finishes that write before anything else."
+  exit 1
+fi
+echo "✅ Dispatch tick proven: the tick polled every lane and wrote 'tick ok' to $LP_LOG. These scripts and this job file are now the proven set."
+# <<< launchd-prove <<<
+```
+
+**If this block exits non-zero, skip 7d**, and read its last line and the log
+lines it printed to the human. That line says whether this was a first install,
+where the old scheduled task still runs Dispatch, or a re-run, where the proven
+scripts and job file are back.
+
+### 7d. Retire the model-run router
+
+Run this step only when 7c printed `✅ Dispatch tick proven`. Two pieces of the
+old router are left behind, and each would run beside the new job:
+
+1. **The scheduled task.** Call `mcp__scheduled-tasks__list_scheduled_tasks`.
+   If it lists a task whose `taskId` is `workbench-dev-team-dispatch`, call
+   `mcp__scheduled-tasks__delete_scheduled_task` with that `taskId`. Dispatch
+   would otherwise run twice each cadence, once as a model and once as the job.
+   If the tools are not available in this session, tell the human to delete the
+   task in the Scheduled panel, and repeat that in the Step 8 summary.
+2. **The router's permission rules.** The model-run router called
+   `dispatch-agent.sh` through two `permissions.allow` rules. Nothing calls it
+   through the Bash tool now: the job runs it directly, and the dev-team mod
+   runs it without a tool call. Run this block to remove both rules:
+
+```bash
+# >>> router-retire >>>  (markers used by commands/test-dispatch-setup.sh — keep them)
+# Inputs:  WORKBENCH_SETTINGS_FILE (optional) Claude Code's user settings.
+#          Defaults to ~/.claude/settings.json.
+# Writes:  the settings file, less the two dispatch-agent.sh allow rules. Every
+#          other rule and key stays. A backup is taken first.
+# Exits:   1 when the file is not a JSON object, or the write fails.
+RR_SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+RR_ABS="Bash(bash $HOME/.claude-workbench/bin/dispatch-agent.sh:*)"
+# shellcheck disable=SC2016  # the rule spells $HOME literally, as the router wrote it
+RR_HOME='Bash(bash "$HOME/.claude-workbench/bin/dispatch-agent.sh":*)'
+if [ ! -f "$RR_SETTINGS" ]; then
+  echo "✅ No $RR_SETTINGS, so no router rules to remove"
+elif ! jq -e 'type == "object"' "$RR_SETTINGS" >/dev/null 2>&1; then
+  echo "❌ $RR_SETTINGS is not a JSON object. Left untouched. Remove the two dispatch-agent.sh allow rules by hand."
+  exit 1
+elif ! jq -e --arg a "$RR_ABS" --arg h "$RR_HOME" '(.permissions.allow // []) | any(. == $a or . == $h)' "$RR_SETTINGS" >/dev/null 2>&1; then
+  echo "✅ No router allow rules in $RR_SETTINGS"
+else
+  cp "$RR_SETTINGS" "$RR_SETTINGS.bak-router-$(date +%Y%m%d-%H%M%S)"
   # Held in a variable and checked before it is written: no temporary file, and
   # no file-removal verb for workbench-core's destructive-scope guard to refuse.
-  if [ -d "$TARGET_CWD" ]; then
-    NEW=$(jq --arg cwd "$TARGET_CWD" --arg model "$ROUTER_MODEL" \
-      '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = $model | .cwd = $cwd)' \
-      "$REG")
-  else
-    NEW=$(jq --arg model "$ROUTER_MODEL" '(.scheduledTasks[] | select(.id == "workbench-dev-team-dispatch")) |= (.model = $model)' \
-      "$REG")
-  fi
-  if [ -n "$NEW" ] && printf '%s\n' "$NEW" | jq empty 2>/dev/null && printf '%s\n' "$NEW" > "$REG"; then
-    echo "✅ pinned model=$ROUTER_MODEL in $REG"
-    PATCHED=$((PATCHED + 1))
-  else
-    echo "⚠  produced invalid JSON patching $REG, or could not write it"
-  fi
-done < <(find "$HOME/Library/Application Support" -path "*/claude-code-sessions/*/scheduled-tasks.json" -print0 2>/dev/null)
-
-if [ "$PATCHED" -eq 0 ]; then
-  echo "⚠  Could not locate/patch the scheduled-tasks registry — verify manually in the Scheduled panel."
+  RR_NEW=$(jq --arg a "$RR_ABS" --arg h "$RR_HOME" '.permissions.allow -= [$a, $h]' "$RR_SETTINGS") \
+    && printf '%s\n' "$RR_NEW" | jq -e 'type == "object"' >/dev/null \
+    && printf '%s\n' "$RR_NEW" > "$RR_SETTINGS" \
+    || { echo "❌ Could not update $RR_SETTINGS. Remove the two dispatch-agent.sh allow rules by hand."; exit 1; }
+  echo "✅ Removed the router's two dispatch-agent.sh allow rules from $RR_SETTINGS"
 fi
+# <<< router-retire <<<
 ```
 
-This edits undocumented internal app state, not a supported API — the file's
-location or shape can change silently on a future app update and this step
-can start finding nothing without any other symptom. That's exactly why
-Step 8 always prints the manual verification line below, regardless of
-whether this step reports success.
+A failure here is a **warning, not a stop**: the rules are inert once nothing
+runs the router. Say so in the Step 8 summary.
+
+The app's own `scheduled-tasks.json`, which older setups patched to pin the
+router's model, needs nothing. Deleting the task removes its entry.
 
 ## Step 8 — Final summary
 
@@ -1197,36 +1683,40 @@ Print a clean summary block:
 
   The Index MCP:   https://the-index.mikebronner.dev/mcp
   Log directory:    ~/.claude-workbench/dev-team-logs
-  Agent config:     ~/.claude-workbench/dev-team-config.json
+  Settings:         /config, workbench-dev-team rows
+                    {MIGRATION}
   Attribution:      {ATTR_RESULT} in ~/.claude/settings.json
                     (suppressed = no Co-Authored-By; default (visible) = trailer on)
   Commit prompts:   10 commit, push, and merge ask rules in ~/.claude/settings.json
                     (or: ⚠ not installed — foreground commits and merges are not prompted)
                     {LEGACY_COMMANDS}
-  Scheduled task:   workbench-dev-team-dispatch @ */{CADENCE} * * * *
-                    (or: ⚠ not registered — re-run setup to register)
-  Prompt source:    {SRC_ROOT}/scheduled-tasks/orchestrator.md (v{SRC_VERSION})
-                    body verified — {BODY_LINES} lines, {BODY_LANES} lanes
-  Router model:     pinned to {ROUTER_MODEL} ({PATCHED} registry(ies) patched)
-                    (or: ⚠ could not confirm — verify in the Scheduled panel)
+  Dispatch job:     dev.workbench.dev-team-dispatch, every {CADENCE} min, no model
+                    (or: ⚠ not installed — re-run setup to install)
+  Dispatch log:     ~/.claude-workbench/dev-team-logs/dispatch-tick.log
+  Scripts from:     {SRC_ROOT}/bin (v{SRC_VERSION}), self-tested
+  Old router:       scheduled task deleted, allow rules removed
+                    (or: ⚠ {ROUTER_LEFT})
 
   {STALE_ROOT_WARNING}
 
   Agents:           Lestrade, Holmes ($10 cap), Watson ($10 cap)
-                    — models/effort/fallback/budget editable in the agent config,
+                    — models, effort, fallback and budget are /config rows,
                       read on every dispatch, scheduled and interactive
-
-  Verify in Claude Code's scheduled-tasks panel that Dispatch shows {ROUTER_MODEL} —
-  Step 7d's patch isn't a supported API and can silently stop working.
 ═══════════════════════════════════════════
 ```
 
-Substitute the actual cadence, fill `{ATTR_RESULT}` from the user's Step 6.5
-choice (`suppressed` or `default (visible)`), fill `{PATCHED}` from Step 7d's
-count, fill `{SRC_ROOT}`/`{SRC_VERSION}` from Step 7a,
-`{BODY_LINES}`/`{BODY_LANES}` from Step 7a-bis's success line, and
-`{ROUTER_MODEL}` from Step 7d's `ROUTER_MODEL`, and adjust the scheduled-task, prompt-source and router-model lines if
-registration was skipped or the patch found nothing.
+Fill each slot from the step that produced it:
+
+- `{MIGRATION}`: Step 6b's result. `old config moved, kept as <file>`, with one
+  more line per `MIGRATE_SKIPPED` value. Omit the line when there was no old
+  config.
+- `{ATTR_RESULT}`: the user's Step 6.5 choice, `suppressed` or
+  `default (visible)`.
+- `{CADENCE}`: the minutes Step 7b printed.
+- `{SRC_ROOT}`, `{SRC_VERSION}`: Step 7a.
+- `{ROUTER_LEFT}`: what Step 7d could not retire, such as "delete the
+  workbench-dev-team-dispatch task in the Scheduled panel". When Step 7 was
+  skipped, say the old task, if any, still runs.
 
 `{LEGACY_COMMANDS}` is the `! rm` command for each `LEGACY_LEFT` line Step 6.6
 printed, one per line. When Step 6.6 printed none, omit that line.
@@ -1240,8 +1730,10 @@ failure this summary exists to surface.
 ## Notes
 
 - **Idempotency.** All four keychain checks, the MCP registration (`remove ||
-  true` then `add`), the `mkdir -p`, and the scheduled-task list-then-create-or-
-  update flow are safe to re-run. Step 4 always fetches a fresh token, which is
+  true` then `add`), the `mkdir -p`, the job install (a bootout, then a
+  bootstrap of the same label), and the router retirement are safe to re-run.
+  Step 6b renames the old config once it has moved, so a re-run never moves it
+  over a later `/config` edit. Step 4 always fetches a fresh token, which is
   exactly the desired behavior on re-run (annual refresh is the dominant use
   case).
 - **Why dev-team owns commit attribution.** The harness re-injects a
@@ -1259,7 +1751,11 @@ failure this summary exists to surface.
   already matches the chosen end-state.
 - **OAuth token lifetime.** The Index issues 1-year tokens via
   client_credentials. Schedule a calendar reminder, or just re-run this command
-  any time `claude mcp list` shows `the-index` as `Failed to connect`.
+  any time `claude mcp list` shows `the-index` as `Failed to connect`. The
+  Dispatch tick mints its own token from the same Keychain client, and caches it
+  in `~/.claude-workbench/the-index-token.json` (readable by the user alone)
+  until it expires, so it adds one token row to The Index a year, not one a
+  tick.
 - **Why Step 7a resolves its own source.** Discovered 2026-08-27: the live
   Dispatch prompt was missing the in-flight dispatch lock shipped in v0.37.0+
   and had been stale for 23 days, across two apparently-successful setup runs.
@@ -1268,57 +1764,28 @@ failure this summary exists to surface.
   materialized once at session creation and never refreshed (a full app restart
   resumes the same session, so it doesn't help either —
   anthropics/claude-code#45810). The running root was v0.35.0 while
-  `installed_plugins.json` correctly resolved v0.37.4; setup compared the
-  installed task prompt against the *stale* source, found them identical, wrote
-  nothing, and printed the normal success summary. Equal-and-stale was
-  indistinguishable from equal-and-correct. Step 7a now prefers the install path
-  recorded in `installed_plugins.json` and only falls back to the running root
-  when that file is missing, unparseable, or names no usable path — and it
-  compares the two versions so a frozen root produces a loud warning instead of
-  a green checkmark. **Caveat: this doesn't repair an already-frozen session.**
-  A stale root still carries the old Step 7a, so the fix needs one clean
-  bootstrap — a single session started after the update, running the patched
-  setup — after which the failure class is closed by construction.
-- **Why Step 7a-bis verifies the body.** Step 7a resolves the right *path*;
-  that is not the same as reading a good *file*. 7a accepts any candidate root
-  where `orchestrator.md` merely **exists** — a truncated, half-written, or
-  wrong file passes unchallenged, and the deployed prompt is whatever was
-  there. Step 7a-bis closes that by stripping the frontmatter deterministically
-  in bash (rather than by hand, which is its own error class) and refusing to
-  deploy a body that has lost structure, shrunk below a plausible size, or kept
-  its frontmatter. It fails closed: a body that cannot be verified is never
-  written to the scheduled task.
-  **The lane checks are derived, not listed.** They count distinct dispatched
-  lanes, so no agent name appears in this file — renaming a lane or adding a
-  fourth needs no edit here. The guard's literals are the two circuit-breaker
-  calls the body makes back into `dispatch-agent.sh` (`--mark-escalated` and
-  `--check`). The pre-flight itself lives in that script, where
-  `scheduled-tasks/test-circuit-breaker.sh` runs it and Step 7a-ter runs the
-  wrapper's own suite before installing it.
-  *Scope note: this guards integrity, not staleness.* `setup.md` and the
-  orchestrator resolve from the same root, so a frozen root carries a frozen
-  guard — staleness is Step 7a's job, via the registry and the version
-  comparison.
-  Tests: `scheduled-tasks/test-setup-orchestrator-guard.sh` (happy path,
-  absent/unreadable input, strip failures, truncation, one case per derived
-  check, a boundary case so the Lestrade sweep cannot stand in for a lane, and
-  one case per circuit-breaker call)
-  extracts the *shipped* guard from between this file's
-  `orchestrator-body-guard` sentinels, so the test cannot drift from the logic
-  it guards.
-- **Why Step 7d exists.** Discovered 2026-08-04: recreating the scheduled task
-  left it running on Opus instead of Sonnet — roughly double the router's
-  per-tick cost, with no error to notice it by. Root cause: neither
-  `create_scheduled_task` nor `update_scheduled_task` exposes a `model` or
-  `cwd` parameter, so the task inherits the app's default at registration
-  time instead of anything this skill controls. The actual value lives in a
-  per-profile `scheduled-tasks.json` the scheduled-tasks MCP tools don't
-  expose either — Step 7d patches it directly as a best-effort workaround,
-  not a supported fix. If a future Claude Code version changes that file's
-  location or shape, Step 7d quietly patches nothing; the Step 8 reminder to
-  check the Scheduled panel is the backstop for that failure mode.
-- **No headless `claude -p` subprocess.** Earlier versions of this configuration
-  spawned a headless `claude -p --dangerously-skip-permissions` to register the
-  scheduled task. Inside a slash command the parent session calls
-  `mcp__scheduled-tasks__*` tools directly, eliminating subprocess spawn,
-  shell-quoted prompt templates, and the skip-permissions flag.
+  `installed_plugins.json` correctly resolved v0.37.4. Step 7a prefers the
+  install path recorded in `installed_plugins.json` and only falls back to the
+  running root when that file is missing, unparseable, or names no usable path
+  — and it compares the two versions so a frozen root produces a loud warning
+  instead of a green checkmark. **Caveat: this doesn't repair an
+  already-frozen session.** A stale root still carries the old Step 7a, so the
+  fix needs one clean bootstrap — a single session started after the update,
+  running the patched setup.
+- **Why Dispatch is a script, not a scheduled Claude task.** The model-run
+  router read a ~3K-token prompt, loaded its tools, and polled four lists on
+  every tick, whether or not there was work, and its model was pinned only by
+  patching the app's internal `scheduled-tasks.json`. The Index's MCP endpoint
+  answers a bare JSON-RPC `tools/call` with a plain JSON reply, so a shell
+  script can do the same routing over HTTPS. Every filter and sort already ran
+  on the server, and the circuit breaker, budgets and reprieve already lived in
+  `dispatch-agent.sh`. The one model-written piece, the escalation comment, is
+  now the checked-in `bin/escalation-comment.md`, which the tick's suite holds
+  to comms-style, because a comment posted over curl passes no Claude-side
+  prose check. The script depends on that endpoint staying stateless. Any reply
+  that is not a JSON-RPC result stops the tick with a message that names this.
+- **Tests.** `commands/test-dispatch-setup.sh` runs the `dispatch-install`,
+  `launchd-prove` and `router-retire` blocks, extracted from between this
+  file's sentinels, and holds the two copies of `dispatch_restore` equal, against a throwaway `HOME`, with `launchctl` stubbed, so
+  nothing is installed or loaded. `commands/test-config-pin.sh` runs Step 6's
+  pin check, pin replacement and move the same way, with `claude` stubbed.

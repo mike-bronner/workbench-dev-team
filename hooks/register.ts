@@ -15,9 +15,10 @@
 //                  4. routing: a dispatch of watson, holmes or lestrade runs the
 //                     mode agent its token picks (bin/compose-agents.sh builds
 //                     them), so the public names keep working
-//                  5. model and effort from ~/.claude-workbench/dev-team-config.json,
-//                     and for holmes-local, holmes-index and lestrade-item the
-//                     config line (fanout, lensModel) added to the prompt
+//                  5. model and effort from the plugin's /config rows (its
+//                     options), and for holmes-local, holmes-index and
+//                     lestrade-item the config line (fanout, lensModel) added
+//                     to the prompt
 //                  Each dev-team agent's type is kept by its agentId.
 //   prompt.submit  the config line, as context, for the top-level loop of a
 //                  `claude -p --agent` run of those three modes: the run
@@ -27,6 +28,9 @@
 //                  against the budget, notifying the human once per run
 //   turn.complete  deletes the run's scratch folder unless a child it spawned is
 //                  still live, and resets its budget notice
+//   session.end    deletes every scratch folder the mod still records, within
+//                  the end's short time budget: a run whose last turn ended
+//                  with a live child, and was never resumed, left one
 //   tool.call      on Bash, Edit, Write and NotebookEdit, before the call:
 //                  1. scratch: a dev-team agent's bare mktemp is pointed at a
 //                     folder of its own under a scratch root (mods/scratch.ts)
@@ -54,8 +58,11 @@
 //
 // The scheduled path never reaches agent.spawn: it starts the mode type
 // directly (`claude -p --agent workbench-dev-team:watson-index`), and
-// bin/dispatch-agent.sh passes the config's model and effort as flags. The
+// bin/dispatch-agent.sh passes the rows' model and effort as flags. The
 // other hooks run in that process too.
+//
+// The /config rows reach this module as its options. Claude Code reloads the
+// module when one changes, so `register` runs again with the new values.
 
 import type { EngineInterface, Register, TurnUsage } from 'claude-code'
 
@@ -66,7 +73,7 @@ import { subjectVerdict } from './mods/commit-subject'
 import { DISPATCH_CONTEXT, dispatchDeny, dispatcherArgv, dispatchOutcome, dispatchResult, indexDispatchOf, isForcedBackground } from './mods/dispatch'
 import type { Disk } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
-import { hasBareMktemp, hasLiveChild, isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf } from './mods/scratch'
+import { hasBareMktemp, hasLiveChild, isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from './mods/scratch'
 import type { CallerLane } from './mods/spawn'
 import {
   CONFIG_MODES,
@@ -74,6 +81,7 @@ import {
   branchDeny,
   branchUnreadDeny,
   configLineOf,
+  configTextOf,
   denyOf,
   familyOf,
   hintOf,
@@ -88,8 +96,6 @@ import {
   workdirOf,
 } from './mods/spawn'
 
-const CONFIG = '.claude-workbench/dev-team-config.json'
-
 // Whether the dispatch gate judges a call made in the loop `agentId` names.
 // The lane rejects while it is unknown; a gate then reads it as the main
 // session, so the brief is still checked. orchestratorIsOn already fails toward
@@ -98,13 +104,6 @@ async function gated($: EngineInterface, agentId: string | undefined): Promise<b
   const lane = await $.workbench.callerLane(agentId === undefined ? {} : { agentId }).catch(() => 'main' as const)
   const isOn = await $.workbench.orchestratorIsOn().catch(() => true)
   return isGated(lane, isOn)
-}
-
-// The config's text, or undefined when it cannot be read.
-async function configText($: EngineInterface): Promise<string | undefined> {
-  const home = await $.env.get('HOME')
-  if (!home) return undefined
-  return $.fs.read(`${home}/${CONFIG}`).catch(() => undefined)
 }
 
 // ── Whose run a loop is ──────────────────────────────────────────────────────
@@ -149,7 +148,38 @@ async function scratchFolderOf($: EngineInterface, run: Run): Promise<string | u
   const folder = made.stdout.trim()
   if (made.exitCode !== 0 || !isDeletable(folder, roots)) return undefined
   await $.state.set({ plugin: 'workbench-dev-team', key: 'scratch', id: run.key }, folder)
+  await recordFolder($, [folder], 'add')
   return folder
+}
+
+const FOLDERS = { plugin: 'workbench-dev-team', key: 'scratchFolders' } as const
+
+// Adds folders to the record, or takes them out. Two runs can write at once,
+// so the write lands only on the version it read, and is tried again when
+// another write came first.
+async function recordFolder($: EngineInterface, folders: readonly string[], change: 'add' | 'remove'): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const { value = [], version } = await $.state.get(FOLDERS)
+    const rest = value.filter(kept => !folders.includes(kept))
+    if ((await $.state.set(FOLDERS, change === 'add' ? [...rest, ...folders] : rest, { ifVersion: version })).isSet) return
+  }
+}
+
+// The end of the session: every folder still recorded is deleted, in one rm,
+// when it lies under a scratch root. Each was kept because its run had not
+// ended, or a child of its run was live at the run's last turn, and nothing is
+// live once the session ends.
+// The rm is held to what the end's one short budget leaves, and skipped when
+// too little is left. A folder outside every root is never deleted. Only what
+// an rm that exited 0 deleted leaves the record: a folder the rm skipped, or
+// one an rm that failed or ran out of time may have left, stays recorded.
+async function endSession($: EngineInterface, budget: { remainingMs: number }): Promise<void> {
+  const { value: folders = [] } = await $.state.get(FOLDERS)
+  if (folders.length === 0) return
+  const sweep = sweepOf(folders, await $.workbench.scratchRoots(), budget.remainingMs)
+  if (sweep === undefined) return
+  const removed = await $.process.run(['rm', '-rf', '--', ...sweep.doomed], { timeoutMs: sweep.timeoutMs }).catch(() => undefined)
+  if (removed?.exitCode === 0) await recordFolder($, sweep.doomed, 'remove')
 }
 
 // The Bash line with a dev-team agent's bare mktemp pointed at its folder, or
@@ -186,6 +216,7 @@ async function endRun($: EngineInterface, agentId: string | undefined): Promise<
   if (folder && agents !== undefined && !hasLiveChild(agents, agentId)) {
     if (isDeletable(folder, await $.workbench.scratchRoots())) await $.process.run(['rm', '-rf', '--', folder])
     await $.state.set({ plugin: 'workbench-dev-team', key: 'scratch', id: key }, '')
+    await recordFolder($, [folder], 'remove')
   }
   const { value: told } = await $.state.get({ plugin: 'workbench-dev-team', key: 'overBudget', id: key })
   if (told) await $.state.set({ plugin: 'workbench-dev-team', key: 'overBudget', id: key }, false)
@@ -304,7 +335,10 @@ async function guard($: EngineInterface, e: GuardInput): Promise<string | undefi
   return `${deny}\n\nThe guard could not tell which agent made this call, so it held the call to the reviewer's rule. Report this to the human as a guard defect.`
 }
 
-export const register: Register = on => {
+export const register: Register = (on, options) => {
+  // The rows, read once: the options are fixed for this activation.
+  const config = configTextOf(options)
+
   // The gate fails closed: a dispatch it judges whose brief cannot be checked
   // is refused, and so is one whose gate throws before next is called.
   // workbench-core is a declared dependency, so a check that rejects is a
@@ -358,11 +392,10 @@ export const register: Register = on => {
     try {
       const family = familyOf(input.subagentType)
       if (family !== undefined) {
-        const text = await configText($)
-        knobs = knobsOf(text, family)
+        knobs = knobsOf(config, family)
         const subagentType = modeTypeOf(family, input.prompt)
         const configFamily = CONFIG_MODES[subagentType]
-        const prompt = configFamily === undefined ? input.prompt : withConfigLine(input.prompt, configLineOf(text, configFamily))
+        const prompt = configFamily === undefined ? input.prompt : withConfigLine(input.prompt, configLineOf(config, configFamily))
         // A model the caller named is the caller's choice, and stands.
         const model = input.model ?? knobs.model
         routed = { ...input, subagentType, prompt, ...(model === undefined ? {} : { model }) }
@@ -390,7 +423,7 @@ export const register: Register = on => {
     try {
       if ((await $.workbench.callerLane({})) === 'top-level-agent') {
         const family = CONFIG_MODES[(await $.env.get('CLAUDE_CODE_AGENT')) ?? '']
-        if (family !== undefined) line = configLineOf(await configText($), family)
+        if (family !== undefined) line = configLineOf(config, family)
       }
     } catch {
       line = undefined
@@ -413,6 +446,13 @@ export const register: Register = on => {
     const result = await next(e)
     await endRun($, e.agentId).catch(() => undefined)
     return result
+  })
+
+  // The sweep runs before the engine's own end step, and its failure leaves
+  // the folders where they are rather than holding the exit up.
+  on('session.end', async ($, e, next) => {
+    await endSession($, next.budget).catch(() => undefined)
+    return next(e)
   })
 
   // One tool.call hook, since a plugin registers each event once. A guard that

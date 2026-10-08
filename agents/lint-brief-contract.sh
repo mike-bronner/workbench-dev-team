@@ -199,7 +199,7 @@ fi
 #
 # What stands behind the figure is checked as hard as the figure, and that is
 # the whole point. The dev-team mod measures each request and notifies the human
-# once a run passes the budget, and nothing stops the run: `maxBudgetUsd` reaches
+# once a run passes the budget, and nothing stops the run: the MaxBudgetUsd rows reach
 # the scheduled dispatch path alone and the Agent tool exposes no budget
 # parameter. A limit an agent believes is enforced is one it trusts and then
 # exceeds silently, so a copy that keeps the figure and drops "stops nothing" is
@@ -218,8 +218,8 @@ for budget_file in "$DIR"/*.md; do
     || budget_problems+=("$budget_agent — the budget names no figure to aim at")
   printf '%s\n' "$budget_section" | grep -Fq 'The dev-team mod measures it and stops nothing.' \
     || budget_problems+=("$budget_agent — the budget no longer says the mod measures it and stops nothing")
-  printf '%s\n' "$budget_section" | grep -Fq 'maxBudgetUsd' \
-    || budget_problems+=("$budget_agent — the budget drops why: maxBudgetUsd reaches only the scheduled path")
+  printf '%s\n' "$budget_section" | grep -Fq 'MaxBudgetUsd' \
+    || budget_problems+=("$budget_agent — the budget drops why: the MaxBudgetUsd rows reach only the scheduled path")
   printf '%s\n' "$budget_section" | grep -Fq 'no budget parameter' \
     || budget_problems+=("$budget_agent — the budget drops why: the Agent tool has no budget parameter")
 done

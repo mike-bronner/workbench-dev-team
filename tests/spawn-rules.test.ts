@@ -6,7 +6,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { configLineOf, isHolmesMode, lensSpawnOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
+import { configLineOf, configTextOf, isHolmesMode, knobsOf, lensSpawnOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
 import type { RunAnswer } from './world'
 import { BRIEF, spawnInput, world } from './world'
 
@@ -153,12 +153,11 @@ describe('the workspace check — a bare Workdir on a default branch asks for a 
 })
 
 describe('config knobs — fanout and lensModel reach the agents that read them', () => {
-  const CONFIG = JSON.stringify({
-    agents: { holmes: { fanout: true, lensModel: 'sonnet' }, lestrade: { fanout: false, lensModel: 'bad model;' }, watson: { fanout: false } },
-  })
+  // The plugin's /config rows, as the engine hands them to register().
+  const OPTIONS = { options: { holmesFanout: true, holmesLensModel: 'sonnet', lestradeFanout: false, lestradeLensModel: 'bad model;' } }
 
-  test('Holmes Local and Holmes Index get the line at the end of the prompt', async ($, on) => {
-    const w = world(on, { config: CONFIG })
+  test('Holmes Local and Holmes Index get the line at the end of the prompt', OPTIONS, async ($, on) => {
+    const w = world(on)
     await $.agent.spawn(spawnInput(T('holmes'), BRIEF))
     await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 5', { parentAgentId: 'agent-x' }))
     expect(w.spawned.map(s => s.prompt)).toEqual([
@@ -167,32 +166,39 @@ describe('config knobs — fanout and lensModel reach the agents that read them'
     ])
   })
 
-  test('Lestrade Item mode gets its own knobs, and a bad lensModel reads as unset', async ($, on) => {
-    const w = world(on, { config: CONFIG })
+  test('Lestrade Item mode gets its own knobs, and a bad lensModel reads as unset', OPTIONS, async ($, on) => {
+    const w = world(on)
     await $.agent.spawn(spawnInput(T('lestrade'), 'Item ID: 6'))
     expect(w.spawned.map(s => s.prompt)).toEqual(['Item ID: 6\n\nDev-team config: fanout off; lensModel unset.'])
   })
 
-  test('Watson, Lestrade Sweep and a generic agent get no line', async ($, on) => {
-    const w = world(on, { config: CONFIG })
+  test('Watson, Lestrade Sweep and a generic agent get no line', OPTIONS, async ($, on) => {
+    const w = world(on)
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     await $.agent.spawn(spawnInput(T('lestrade'), 'Repo sweep: o/r'))
     await $.agent.spawn(spawnInput('general-purpose', BRIEF))
     expect(w.spawned.map(s => s.prompt)).toEqual([BRIEF, 'Repo sweep: o/r', BRIEF])
   })
 
-  test('a missing config gives the defaults, so the agent never reads the file', async ($, on) => {
+  test('with no row set, the line carries the rows\' defaults, so the agent never reads a file', async ($, on) => {
     const w = world(on)
     await $.agent.spawn(spawnInput(T('holmes'), BRIEF))
-    expect(w.spawned[0]?.prompt).toBe(`${BRIEF}\n\nDev-team config: fanout on; lensModel unset.`)
+    await $.agent.spawn(spawnInput(T('lestrade'), 'Item ID: 7'))
+    expect(w.spawned.map(s => s.prompt)).toEqual([`${BRIEF}\n\nDev-team config: fanout on; lensModel sonnet.`, 'Item ID: 7\n\nDev-team config: fanout on; lensModel sonnet.'])
+  })
+
+  test('the old config file is never read', async ($, on) => {
+    const w = world(on, { config: JSON.stringify({ agents: { holmes: { fanout: false, lensModel: 'haiku' } } }) })
+    await $.agent.spawn(spawnInput(T('holmes'), BRIEF))
+    expect(w.spawned[0]?.prompt).toBe(`${BRIEF}\n\nDev-team config: fanout on; lensModel sonnet.`)
   })
 
   for (const [mode, line] of [
     ['holmes-index', 'Dev-team config: fanout on; lensModel sonnet.'],
     ['lestrade-item', 'Dev-team config: fanout off; lensModel unset.'],
   ] as const) {
-    test(`a top-level ${mode} run gets its own line as context on its prompt`, async ($, on) => {
-      world(on, { config: CONFIG, lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T(mode) } })
+    test(`a top-level ${mode} run gets its own line as context on its prompt`, OPTIONS, async ($, on) => {
+      world(on, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T(mode) } })
       const seen: unknown[] = []
       on('prompt.submit', async ($, e) => {
         seen.push(e)
@@ -207,8 +213,8 @@ describe('config knobs — fanout and lensModel reach the agents that read them'
     ['a top-level Watson Index run', 'top-level-agent', T('watson-index')],
     ['the main session', 'main', undefined],
   ] as const) {
-    test(`${label} gets no context`, async ($, on) => {
-      world(on, { config: CONFIG, lane: () => lane, env: agent === undefined ? {} : { CLAUDE_CODE_AGENT: agent } })
+    test(`${label} gets no context`, OPTIONS, async ($, on) => {
+      world(on, { lane: () => lane, env: agent === undefined ? {} : { CLAUDE_CODE_AGENT: agent } })
       const seen: { context?: unknown }[] = []
       on('prompt.submit', async ($, e) => {
         seen.push(e)
@@ -236,6 +242,16 @@ describe('spawn rules — the pure parts', () => {
   test('lensSpawnOf retypes a plain spawn and refuses a fork', () => {
     expect(lensSpawnOf({ subagentType: 'Explore', fork: false })).toEqual({ subagentType: T('holmes-lens') })
     expect(lensSpawnOf({ subagentType: 'fork', fork: true })).toHaveProperty('deny')
+  })
+
+  test('configTextOf keys each row under its agent, as the old file did, and leaves an unset row out', () => {
+    expect(JSON.parse(configTextOf({ watsonModel: 'opus', watsonEffort: 'high', holmesFanout: false, holmesLensModel: 'haiku', reprieveBudgetMultiplier: 3 }))).toEqual({
+      agents: { watson: { model: 'opus', effort: 'high' }, holmes: { fanout: false, lensModel: 'haiku' }, lestrade: {} },
+    })
+    expect(JSON.parse(configTextOf(undefined))).toEqual({ agents: { watson: {}, holmes: {}, lestrade: {} } })
+    expect(knobsOf(configTextOf({ watsonModel: 'bad model; rm', watsonEffort: 'turbo' }), 'watson')).toEqual({})
+    expect(knobsOf(configTextOf({ watsonModel: 'sonnet', watsonEffort: 'High' }), 'watson')).toEqual({ model: 'sonnet', effort: 'high' })
+    expect(configLineOf(configTextOf({ lestradeFanout: false, lestradeLensModel: 'haiku' }), 'lestrade')).toBe('Dev-team config: fanout off; lensModel haiku.')
   })
 
   test('configLineOf turns the fan-out off only for false, and withConfigLine adds the line once', () => {

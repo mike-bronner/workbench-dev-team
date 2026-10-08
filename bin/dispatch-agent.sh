@@ -1,21 +1,19 @@
 #!/usr/bin/env bash
 # Dispatch one dev-team agent as a detached subprocess, behind the circuit breaker.
 #
-# Dispatch (the scheduled orchestrator) runs under the auto-mode classifier,
-# which judges every Bash command it cannot match to a permission rule. The
-# multi-line dispatch block this replaces — config reads, a Keychain fetch, and
-# a backgrounded `nohup claude -p … &` — has no matchable prefix,
-# so it was re-judged on every tick and refused nondeterministically. A single
-# stable invocation can be covered by one `permissions.allow` prefix rule, which
-# is evaluated *before* the classifier and takes the judgment call off the table.
+# Two callers run it. bin/dispatch-tick.sh, the scheduled Dispatch router that a
+# launchd job runs with no model, calls it once per item. The dev-team mod
+# (hooks/mods/dispatch.ts) runs it in place of an interactive Watson Index-mode
+# Agent call, because only this script gives the run its pipeline flag.
 #
-# The circuit-breaker pre-flight and its marker live here for the same reason.
-# They used to be a ~115-line bash block the orchestrator re-typed for every item
-# on every tick (about 7K tokens a tick), and the reprieve step then consumed its
-# marker with an `rm` outside every scratch root, which workbench-core's
-# destructive-scope guard always denies. The marker survived, so a reprieved item
-# re-ran on every tick at the multiplied budget. Inside this allowlisted script
-# neither the rm nor the reprieve budget is a separate Bash call.
+# It started as one stable command for a model-run router, so a single
+# `permissions.allow` rule could cover the spawn and the auto-mode classifier
+# never judged it. The circuit-breaker pre-flight and its marker moved in at the
+# same time. They had been a ~115-line block that router re-typed for every item
+# on every tick, and its reprieve step consumed the marker with an `rm` outside
+# every scratch root, which workbench-core's destructive-scope guard always
+# denies. Neither caller needs that rule now, and the breaker stays here, beside
+# the spawn it guards.
 #
 # Usage:
 #   dispatch-agent.sh lestrade <item-id>        # triage one item
@@ -37,7 +35,7 @@
 #
 # Environment read:
 #   DISPATCH_DRY_RUN=1  print the command that would run; spawn nothing, consume nothing
-#   LOGDIR, DISPATCH_CONFIG, RUNROOT  test overrides
+#   LOGDIR, DISPATCH_SETTINGS, DISPATCH_PLUGIN_KEY, RUNROOT  test overrides
 #
 # Environment set on the child:
 #   WORKBENCH_DEV_TEAM_PIPELINE=1   tells the plugin's hooks this run is the
@@ -45,14 +43,22 @@
 #
 # Exits non-zero on bad arguments, and when the run's folder cannot be made
 # empty and outside every git repository. That check comes before any log or
-# lock is written. A malformed or absent config never blocks a dispatch — every
+# lock is written. A malformed or absent setting never blocks a dispatch — every
 # knob falls back to its default,
 # and a knob with no default (model, effort) is left off, so the agent
 # definition's own pin applies where it has one and Claude Code's default
 # applies where it has none.
+#
+# The knobs are the plugin's userConfig rows, edited in /config. Claude Code
+# keeps a value the user set in ~/.claude/settings.json, under
+# .pluginConfigs["workbench-dev-team@claude-workbench"].options, and keeps no
+# default there: a row the user never set is absent. So each default below
+# matches the row's default in .claude-plugin/plugin.json, and
+# bin/test-dispatch-agent.sh holds the two together.
 set -u
 
-CONFIG="${DISPATCH_CONFIG:-$HOME/.claude-workbench/dev-team-config.json}"
+SETTINGS="${DISPATCH_SETTINGS:-$HOME/.claude/settings.json}"
+PLUGIN_KEY="${DISPATCH_PLUGIN_KEY:-workbench-dev-team@claude-workbench}"
 LOGDIR="${LOGDIR:-$HOME/.claude-workbench/dev-team-logs}"
 RUNROOT="${RUNROOT:-$HOME/Developer/scratchpad}"   # a scratch root; each run's folder goes here
 
@@ -156,7 +162,7 @@ preflight() {
         cb_strikes=$((cb_strikes + 1))
       done < <(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null)
       if [ "$cb_strikes" -ge "$CB_FATAL_STRIKES" ]; then
-        printf 'ESCALATE\t%s consecutive runs were killed by the USD budget cap without reaching review — raise agents.watson.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve\n' "$cb_strikes"
+        printf 'ESCALATE\t%s consecutive runs were killed by the USD budget cap without reaching review — raise the watsonMaxBudgetUsd setting in /config or split the work, then move the item back to its lane for a raised-budget reprieve\n' "$cb_strikes"
       else
         echo DISPATCH
       fi
@@ -165,7 +171,7 @@ preflight() {
       if [ "$AGENT" = holmes ] && [ -n "$cb_newer_watson" ] && [ "$cb_newer_watson" -nt "$cb_latest" ]; then
         echo DISPATCH   # the dev lane moved this item on — not the same wall
       else
-        printf 'ESCALATE\tthe run hit the configured USD budget cap before completing, so re-running at the same cap will hit the same wall — raise agents.%s.maxBudgetUsd or split the work, then move the item back to its lane for a raised-budget reprieve\n' "$AGENT"
+        printf 'ESCALATE\tthe run hit the configured USD budget cap before completing, so re-running at the same cap will hit the same wall — raise the %sMaxBudgetUsd setting in /config or split the work, then move the item back to its lane for a raised-budget reprieve\n' "$AGENT"
       fi
     fi
   elif [ "$AGENT" = watson ]; then
@@ -212,35 +218,37 @@ if [ "$SWEEP" = 0 ]; then
   esac
 fi
 
-# Per-agent budget default, used when the config is missing, malformed, or silent
-# on the key. It matches the shipped config, so a lost config cannot lift a cap.
-# Model and effort have no default here on purpose. The config is where they are
-# set, and the shipped one pins every agent to claude-opus-5-5[1m] at medium. An
-# absent key omits the flag, so the run falls back to the mode agent's own
-# frontmatter, which bin/compose-agents.sh copies from the public agent file. A
-# baked-in value here would be one more copy to drift.
+# Per-agent defaults, used when the settings file is missing, malformed, or has
+# no value for the row. Each matches the row's default in plugin.json, so a
+# lost settings file cannot lift a cap. Model and effort have no default here on
+# purpose. Their rows default to the agents' own pin, claude-opus-5-5[1m] at
+# medium, and an absent value omits the flag, so the run falls back to the mode
+# agent's own frontmatter, which bin/compose-agents.sh copies from the public
+# agent file. A baked-in value here would be one more copy to drift.
 case "$AGENT" in
-  lestrade) DEFAULT_BUDGET= ;;
-  holmes)   DEFAULT_BUDGET=10.00 ;;
-  watson)   DEFAULT_BUDGET=10.00 ;;
+  lestrade) DEFAULT_BUDGET=;      DEFAULT_FALLBACK=haiku ;;
+  holmes)   DEFAULT_BUDGET=10.00; DEFAULT_FALLBACK=sonnet ;;
+  watson)   DEFAULT_BUDGET=10.00; DEFAULT_FALLBACK=sonnet,haiku ;;
 esac
 
 cfg() {
-  # cfg <jq-path> <fallback> — read one key, falling back on any failure.
+  # cfg <row> <fallback>: the row's value, or the fallback when it is absent,
+  # empty, or unreadable.
   local value
-  value=$(jq -r "${1} // empty" "$CONFIG" 2>/dev/null) || value=""
+  value=$(jq -r --arg k "$PLUGIN_KEY" --arg f "$1" \
+    '.pluginConfigs[$k].options[$f] // empty | tostring' "$SETTINGS" 2>/dev/null) || value=""
   [ -n "$value" ] && printf '%s' "$value" || printf '%s' "$2"
 }
 
-MODEL=$(cfg ".agents.${AGENT}.model" "")
-EFFORT=$(cfg ".agents.${AGENT}.effort" "")
-FALLBACK=$(cfg ".agents.${AGENT}.fallback" "")
-BUDGET=$(cfg ".agents.${AGENT}.maxBudgetUsd" "$DEFAULT_BUDGET")
+MODEL=$(cfg "${AGENT}Model" "")
+EFFORT=$(cfg "${AGENT}Effort" "")
+FALLBACK=$(cfg "${AGENT}Fallback" "$DEFAULT_FALLBACK")
+BUDGET=$(cfg "${AGENT}MaxBudgetUsd" "$DEFAULT_BUDGET")
 
 # Reprieve: a human re-activated a previously-escalated item, so they have
 # accepted the cost — raise the cap for this one run. Inert on ordinary ticks.
 if [ "$REPRIEVE" = 1 ] && [ -n "$BUDGET" ]; then
-  MULT=$(cfg ".agents.${AGENT}.reprieveBudgetMultiplier" "3")
+  MULT=$(cfg reprieveBudgetMultiplier 3)
   BUDGET=$(awk -v b="$BUDGET" -v m="$MULT" 'BEGIN{printf "%.2f", b*m}')
 fi
 
@@ -345,9 +353,10 @@ if [ "${DISPATCH_DRY_RUN:-0}" = 1 ]; then
   exit 0
 fi
 
-# The run starts in a fresh, empty folder, never in the caller's cwd. Dispatch
-# itself runs in ~/Developer/workbench-dev-team, and a child started there would
-# take the live plugin repo as its project folder. workbench-core's
+# The run starts in a fresh, empty folder, never in the caller's cwd. A caller
+# can sit in a repository (the old model-run router ran in
+# ~/Developer/workbench-dev-team), and a child started there would take that
+# repository as its project folder. workbench-core's
 # destructive-scope guard treats the project folder as in scope, so a pipeline
 # `git reset --hard` or `rm -rf` there would run unprompted. The cost, accepted:
 # the run loads no project CLAUDE.md and no project settings. The deny rules it
@@ -376,9 +385,10 @@ unset CLAUDE_PROJECT_DIR
 
 mkdir -p "$LOGDIR"
 
-# The one thing the classifier reliably flagged: a Keychain read feeding a
-# detached subprocess. Inside an allowlisted script it is no longer a judgment
-# call. A missing token is not fatal — `claude` falls back to its own auth.
+# The Claude Code OAuth token for the headless run, from the Keychain. A
+# Keychain read feeding a detached subprocess was the one step the old
+# model-run router's classifier reliably flagged, which is why it lives in this
+# script. A missing token is not fatal — `claude` falls back to its own auth.
 CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 export CLAUDE_CODE_OAUTH_TOKEN
 
