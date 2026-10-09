@@ -57,9 +57,12 @@
 //      before a literal path names its program, so it is not refused. Since
 //      workbench-core 4e83554, core's guards refuse each of these lines first,
 //      in every lane. This rule stays as dev-team's own check in the lanes no
-//      human watches. It also refuses a substitution in front of a literal
-//      path (`$(…)x/y`), which core's reader at 4e83554 misses. That check
-//      stays until core's reader marks an unquoted substitution.
+//      human watches. A substitution in front of a literal path (`$(…)x/y`)
+//      is refused here through the reader's own `expansion` unknown, since
+//      workbench-core 47a5e27. So is any line with any unknown at all
+//      (HIDES_NAME): each can leave a command with no name to read, and the
+//      cost is a rare line refused, such as one whose $'…' holds an escape the
+//      reader does not decode (a Unicode or control escape).
 //
 // THE FOURTH RULE IS KEPT. workbench-core's commit approval gate reads past
 // every hidden form above, but only for a commit or push in the main loop of an
@@ -87,7 +90,13 @@
 //     command, a runner the shell reader does not list, `rg --pre`), a git -c
 //     value, `git grep -O`, and a `-c alias.<name>=!…` shell alias. A mention of
 //     git commit, push, or gh pr merge there counts as that command behind a
-//     wrapper: rules 1 to 4.
+//     wrapper: rules 1 to 4. A mention that is only a quote is refused too,
+//     on purpose: a `node -e` that counts the string 'git push' reads the same
+//     as one that runs it through child_process, and the guard cannot show a
+//     script cannot run git. Node reaches child_process with no fixed word in
+//     the text (`require(['child', 'process'].join('_'))`), so no word list
+//     proves its absence. This is the cost of a mistake-catcher that does not
+//     read code (workbench-core report, 2026-10-09).
 //   - Text a plain reader handles (echo, cat, a heredoc data file) on a line
 //     that also runs a program that could read it back, such as
 //     `echo git push > x.sh; bash x.sh`: rules 1 to 3, not rule 4.
@@ -426,7 +435,7 @@ export function findOps(parse: ShellParse, line: string): Found {
 }
 
 const READS =
-  'A command that only reads or quotes these words, such as git log --grep, a grep for them, or a heredoc of notes, is not refused here. If one was, report it as a guard defect, and use the Read tool for the file meanwhile.'
+  'A command that only reads or quotes these words, such as git log --grep, a grep for them, or a heredoc of notes, is not refused here. The code of a program such as node -e or python3 -c is refused when it names them, even in a quote, because the guard cannot tell a quote there from a call. Read or count that text with grep or the Read tool. If any other read was refused, report it as a guard defect, and use the Read tool for the file meanwhile.'
 
 const refusal = (line: string, why: string): Refusal => ({ deny: `🛑 Blocked: ${line}\n\nCommit guard (workbench-dev-team). ${why}` })
 
@@ -447,12 +456,12 @@ export const SUBAGENT_REFUSAL = refusal(
 
 export const PLAIN_REFUSAL = refusal(
   'run the commit, push, or merge as a plain line, so you are asked.',
-  'The permission rules that prompt the human match a plain git or gh line, and they miss one behind a wrapper such as env or sudo, a leading NAME=value, bash -c, eval, a substitution, a path, an escape, or an alias, and one inside a program or a line the guard cannot read. Run it as git commit …, git push …, or gh pr merge …, with git -C <dir> for a directory and git -c <key>=<value> for configuration. Drop a variable prefix such as HUSKY=0.',
+  'The permission rules that prompt the human match a plain git or gh line, and they miss one behind a wrapper such as env or sudo, a leading NAME=value, bash -c, eval, a substitution, a path, an escape, or an alias, and one inside a program or a line the guard cannot read. Run it as git commit …, git push …, or gh pr merge …, with git -C <dir> for a directory and git -c <key>=<value> for configuration. Drop a variable prefix such as HUSKY=0. If the line only quotes these words in the code of a program such as node -e, the guard cannot tell that from a call either. Read or count that text with grep or the Read tool.',
 )
 
 export const BUILT_REFUSAL = refusal(
   'a command name the guard cannot read, from a sub-agent or an unattended run.',
-  'The command this line runs is named by a variable or a substitution, or sits behind a wrapper option the guard cannot place, so the guard cannot tell whether it commits, pushes, or merges. Name the program in plain words, such as python3 script.py rather than "$PY" script.py. Do not look for another spelling.',
+  'The command this line runs is named by a variable or a substitution, or the guard cannot read the whole line: a wrapper option it cannot place, a quote, substitution, heredoc, array or case it cannot close, an escape it cannot decode, a script piped into a shell, or scripts nested past four levels. So the guard cannot tell whether it commits, pushes, or merges. Name the program in plain words, such as python3 script.py rather than "$PY" script.py, and write the line so every quote, substitution, heredoc, array and case closes plainly. Do not look for another spelling.',
 )
 
 export const FAILED_REFUSAL = refusal(
@@ -460,22 +469,40 @@ export const FAILED_REFUSAL = refusal(
   'The guard failed while reading this command, so it refuses it rather than let a commit, push, or merge through unread. Report this to the human as a guard defect. Do not try another spelling.',
 )
 
-// Whether any statement's command name is unplaced or built at run time, as
-// parseShell reads it. Since workbench-core 4e83554 its `expansion` unknown
-// covers a `$` or a backtick anywhere in a command word, except a plain
-// `"$NAME/…"` or `"${NAME}/…"` in double quotes before a literal path, whose
-// last path part names the program.
+// Whether any statement's command name is unplaced or built at run time, or
+// may be misread, as parseShell reads it. Its `expansion` unknown covers a `$`
+// or a backtick anywhere in a command word, except a plain `"$NAME/…"` or
+// `"${NAME}/…"` in double quotes before a literal path, whose last path part
+// names the program. Since workbench-core 47a5e27 that includes a
+// substitution before a path, quoted or not (`$(…)x/y`, `$((…))x/y`), whose
+// output only the run decides.
 //
-// The reader writes a substitution into the word as `$_` with no mark for an
-// unquoted one, so `$(echo a b)x/y` reads as the plain prefix `$_x/` and gets
-// no unknown, though the shell splits the output and runs its first word. A
-// name word holding `$_` is refused here too. A quoted "$(…)x/…" looks the
-// same once the words are stripped, so it is refused as well. This check
-// stays until core's reader marks an unquoted substitution.
+// HIDES_NAME holds every unknown the reader can set, because each can leave a
+// command the shell runs with no name to read:
+//   quote         the reader and the shell can disagree on where a quote
+//                 ends: zsh closes the quote in `echo $[ "1 ]; $x$y` and
+//                 runs `$x$y`, which the reader reads as quoted text
+//   substitution  likewise for a `$(( … ))` or `$( … )` the reader reads as
+//                 unclosed
+//   heredoc       a delimiter the reader does not decode (`<<$'EOF'`), so it
+//                 reads the lines after the shell's terminator as body
+//   escape        a $'…' escape the reader does not decode (a Unicode or
+//                 control escape), which may spell any name, git included
+//   wrapper       a wrapper option the reader cannot place
+//   expansion     a name built from a variable or a substitution
+//   stdin         a script piped or fed into a shell (`curl … | sh`)
+//   depth         scripts nested past four levels, which are not read
+//   compound      an array or a case still open where the script ends, where
+//                 the reader cannot tell where it was meant to end
+// The record is keyed by core's unknown type, so tsc fails when core adds an
+// unknown this list does not hold. tests/shipped-lines.mjs reads the list, so
+// every shipped shell block is held to it too.
+const EVERY_UNKNOWN: Record<ShellParse['unknowns'][number], true> = {
+  quote: true, substitution: true, heredoc: true, escape: true, wrapper: true, expansion: true, stdin: true, depth: true, compound: true,
+}
+export const HIDES_NAME = Object.keys(EVERY_UNKNOWN) as readonly ShellParse['unknowns'][number][]
 const hasBuiltName = (parse: ShellParse): boolean =>
-  parse.unknowns.includes('expansion') ||
-  parse.unknowns.includes('wrapper') ||
-  parse.statements.some(s => !s.isPlaced || (s.nameAt >= 0 && (s.words[s.nameAt] ?? '').includes('$_')))
+  parse.unknowns.some(u => HIDES_NAME.includes(u)) || parse.statements.some(s => !s.isPlaced)
 
 // The verdict on one Bash line, in the order of the header's rules.
 export function commitVerdict(parse: ShellParse, line: string, caller: Caller): Refusal | undefined {

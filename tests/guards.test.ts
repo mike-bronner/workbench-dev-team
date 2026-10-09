@@ -5,7 +5,7 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { PLAIN_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard'
+import { BUILT_REFUSAL, PLAIN_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard'
 import { reviewBash } from '../hooks/mods/review-guard'
 import { parseShell } from './core/hooks/mods/shell'
 import { COMMIT_MAIN_PASSES, COMMIT_PASSES, COMMIT_REFUSALS, REVIEW_PASSES, REVIEW_REFUSALS } from './guard-cases'
@@ -147,6 +147,61 @@ describe('both guards — a statement not placed is refused even with no unknown
   })
   test('the review guard refuses it', () => {
     expect('finding' in reviewBash(unplaced('sudo -s rm x'), { cwd: '/SB/repo', home: '/SB/home' })).toBe(true)
+  })
+})
+
+// ── The compound unknown ──────────────────────────────────────────────────────
+
+// Since workbench-core 47a5e27 the reader sets `compound` when an array or a
+// case is still open where the line ends. Each guard that names unknowns, or
+// counts them, must refuse on it.
+describe('both guards — an array or case still open, and the other unknowns, are refused', () => {
+  const OPEN = ['x=(a $(echo b)', 'case x in\n a) ls ;;']
+  for (const line of OPEN) {
+    test(`the reader marks it: ${JSON.stringify(line)}`, () => {
+      expect(parseShell(line).unknowns).toEqual(['compound'])
+    })
+    test(`the commit guard refuses it where nobody watches: ${JSON.stringify(line)}`, () => {
+      expect(commitVerdict(parseShell(line), line, { lane: 'sub-agent', isUnattended: false })).toEqual(BUILT_REFUSAL)
+      expect(commitVerdict(parseShell(line), line, { lane: 'top-level-agent', isUnattended: true })).toEqual(BUILT_REFUSAL)
+      expect(commitVerdict(parseShell(line), line, { lane: 'main', isUnattended: false })).toBeUndefined()
+    })
+    test(`the review guard refuses it: ${JSON.stringify(line)}`, () => {
+      const verdict = reviewBash(parseShell(line), { cwd: '/SB/repo', home: '/SB/home' })
+      expect('finding' in verdict && JSON.stringify(verdict.finding)).toContain('compound')
+    })
+  }
+  test('a push inside an open case is a hidden push, in every lane', () => {
+    const line = 'case x in\n a) git push ;;'
+    expect(commitVerdict(parseShell(line), line, { lane: 'main', isUnattended: false })).toEqual(PLAIN_REFUSAL)
+  })
+  test('scripts nested past four levels set depth, and rule 5 refuses them where nobody watches', () => {
+    const line = "bash -c 'bash -c \"bash -c \\\"bash -c \\\\\\\"bash -c ls\\\\\\\"\\\"\"'"
+    expect(parseShell(line).unknowns).toEqual(['depth'])
+    expect(commitVerdict(parseShell(line), line, { lane: 'sub-agent', isUnattended: false })).toEqual(BUILT_REFUSAL)
+    expect(commitVerdict(parseShell(line), line, { lane: 'top-level-agent', isUnattended: true })).toEqual(BUILT_REFUSAL)
+  })
+  // Where the reader and the shell disagree on where a quote, a substitution
+  // or a heredoc ends, the shell runs a command the reader read as text
+  // (Holmes, 47a5e27 review: zsh runs `$x$y` in the first two, and bash and
+  // zsh both in the third). Rule 5 refuses each unknown where nobody watches.
+  test('a quote, substitution or heredoc the reader cannot close is refused where nobody watches', () => {
+    const lines: [string, string[]][] = [
+      ['x=ech; y=o; echo $[ "1 ]; $x$y MARK', ['quote']],
+      ['echo $(( 1 + "1 )); $x$y MARK', ['quote', 'substitution']],
+      ["cat <<$'EOF'\nhi\nEOF\n$x$y MARK", ['heredoc']],
+    ]
+    for (const [line, unknowns] of lines) {
+      expect(parseShell(line).unknowns).toEqual(unknowns)
+      expect(commitVerdict(parseShell(line), line, { lane: 'sub-agent', isUnattended: false })).toEqual(BUILT_REFUSAL)
+      expect(commitVerdict(parseShell(line), line, { lane: 'top-level-agent', isUnattended: true })).toEqual(BUILT_REFUSAL)
+    }
+  })
+  test('a closed array and a closed case are not refused', () => {
+    for (const line of ['x=(a b) ; ls', 'case x in\n a) ls ;;\nesac']) {
+      expect(parseShell(line).unknowns).toEqual([])
+      expect(commitVerdict(parseShell(line), line, { lane: 'sub-agent', isUnattended: false })).toBeUndefined()
+    }
   })
 })
 

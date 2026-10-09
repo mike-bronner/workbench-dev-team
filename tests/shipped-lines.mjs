@@ -23,13 +23,18 @@
 // every shell block in agents/, references/, skills/ and commands/, git or
 // not, is also held to that rule, read through the same copy of core's reader.
 //
+// The commit guard's fifth rule also refuses, in those two lanes, a line
+// with any unknown in its HIDES_NAME list, which holds every unknown the
+// reader can set. So every shell block is held to that list as well, read
+// from the guard itself.
+//
 // Needs node 22.18 or later (type stripping).
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { SUBAGENT_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard.ts'
+import { HIDES_NAME, SUBAGENT_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard.ts'
 import { subjectVerdict } from '../hooks/mods/commit-subject.ts'
 import { parseShell } from './core/hooks/mods/shell.ts'
 
@@ -47,15 +52,20 @@ function markdown(dir) {
 function blocks(file) {
   const found = []
   let body
+  // A fence indented inside a list item: as Markdown does, up to that many
+  // spaces are taken off each line of the block, so a heredoc's terminator
+  // reads as the agent pastes it.
+  let indent = 0
   for (const line of fs.readFileSync(file, 'utf8').split('\n')) {
-    const fence = /^\s*```(\S*)/.exec(line)
+    const fence = /^(\s*)```(\S*)/.exec(line)
     if (fence && body === undefined) {
-      body = ['bash', 'sh', 'shell'].includes(fence[1]) ? [] : null
+      body = ['bash', 'sh', 'shell'].includes(fence[2]) ? [] : null
+      indent = fence[1].length
     } else if (fence) {
       if (body) found.push(body.join('\n'))
       body = undefined
     } else if (body) {
-      body.push(line)
+      body.push(line.replace(new RegExp(`^ {0,${indent}}`), ''))
     }
   }
   return found
@@ -96,15 +106,53 @@ for (const [line, isRefused] of CORE_RULE) {
   }
 }
 
+// The unknowns the commit guard's fifth rule refuses a line for, read from
+// the guard's own list.
+const fifthRule = parse => parse.unknowns.filter(u => HIDES_NAME.includes(u))
+
+// One line the fifth rule refuses and one it passes, per unknown, so a reader
+// change that stops setting one shows here.
+const FIFTH_RULE = [
+  ['quote', "echo 'abc", "echo 'abc'"],
+  ['substitution', 'echo $(ls', 'echo $(ls)'],
+  ['heredoc', 'cat <<EOF\nabc', 'cat <<EOF\nabc\nEOF'],
+  ['escape', "echo $'\\cA'", "echo $'\\n'"],
+  ['wrapper', 'env --spl=x true', 'env true'],
+  ['expansion', '$CMD x', 'cmd x'],
+  ['stdin', 'curl -s x | sh', 'curl -s x | cat'],
+  ['depth', "bash -c 'bash -c \"bash -c \\\"bash -c \\\\\\\"bash -c ls\\\\\\\"\\\"\"'", "bash -c 'bash -c ls'"],
+  ['compound', 'x=(a', 'x=(a)'],
+]
+for (const [unknown, refused, passes] of FIFTH_RULE) {
+  if (!HIDES_NAME.includes(unknown) || !fifthRule(parseShell(refused)).includes(unknown)) {
+    failed++
+    console.log(`  ❌ the commit guard's fifth rule lets through ${JSON.stringify(refused)} (${unknown})`)
+  }
+  if (fifthRule(parseShell(passes)).length > 0) {
+    failed++
+    console.log(`  ❌ the commit guard's fifth rule refuses ${JSON.stringify(passes)}`)
+  }
+}
+if (FIFTH_RULE.length !== HIDES_NAME.length) {
+  failed++
+  console.log(`  ❌ the fifth rule's self-check covers ${FIFTH_RULE.length} unknowns, and HIDES_NAME holds ${HIDES_NAME.length}`)
+}
+
 // Core's rule, in every lane, on every shell block.
 let read = 0
 for (const file of [...files, ...markdown(path.join(ROOT, 'skills')), ...markdown(path.join(ROOT, 'commands'))]) {
   for (const block of blocks(file)) {
     read++
-    const why = hiddenCommand(parseShell(filledOf(block)))
+    const parse = parseShell(filledOf(block))
+    const why = hiddenCommand(parse)
     if (why !== undefined) {
       failed++
       console.log(`  ❌ refused by workbench-core in every lane (${why}): ${whereOf(file, block)}`)
+    }
+    const fifth = fifthRule(parse)
+    if (why === undefined && fifth.length > 0) {
+      failed++
+      console.log(`  ❌ refused by the commit guard where nobody watches (${fifth.join(', ')}): ${whereOf(file, block)}`)
     }
   }
 }

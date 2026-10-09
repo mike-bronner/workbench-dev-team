@@ -172,6 +172,11 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   ["awk 'BEGIN{system(\"git push\")}'", ['main', 'sub-agent', 'pipeline']],
   ["sed '1e git push' f", ['main', 'sub-agent', 'pipeline']],
   ["python3 -c 'import os; os.system(\"git push\")'", ['main', 'sub-agent', 'pipeline']],
+  // Node's code is read the same way. The second line only counts the string,
+  // and is refused on purpose: the guard cannot tell it from the first, which
+  // runs the push (workbench-core report, 2026-10-09).
+  ["node -e \"require('child_process').execSync('git push')\"", ['main', 'sub-agent', 'pipeline']],
+  ["node -e \"console.log(require('fs').readFileSync('x', 'utf8').split('git push').length)\"", ['main', 'sub-agent', 'pipeline']],
   ['rg --pre "git push" x', ['main', 'sub-agent', 'pipeline']],
   ['git grep -O"git push" x', ['main', 'sub-agent', 'pipeline']],
   ["git -c core.pager='git push' log", ['main', 'sub-agent', 'pipeline']],
@@ -239,11 +244,33 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   ['${X:-/bin/x} a', ['sub-agent', 'pipeline']],
   ['env --spl=x true', ['sub-agent', 'pipeline']],
   // A substitution in front of a literal path: the shell splits its output and
-  // runs the first word, though core's reader at 4e83554 reads it as a plain
-  // prefix (Holmes, C1 review).
+  // runs the first word (Holmes, C1 review). Quoted, its output still decides
+  // the program. Core's reader at 4e83554 read it as a plain prefix, and since
+  // 47a5e27 it sets the `expansion` unknown, quoted or not.
   ['$(echo a b)x/y c', ['sub-agent', 'pipeline']],
   ['`echo a b`x/y c', ['sub-agent', 'pipeline']],
   ['$((1))x/y c', ['sub-agent', 'pipeline']],
+  ['$[1]x/y c', ['sub-agent', 'pipeline']],
+  ['<(echo a)x/y c', ['sub-agent', 'pipeline']],
+  ['"$(echo a b)x/y" c', ['sub-agent', 'pipeline']],
+  ['"`echo a b`x/y" c', ['sub-agent', 'pipeline']],
+  // An array or a case still open where the line ends: bash runs none of it,
+  // and the reader cannot tell where it was meant to end (the `compound`
+  // unknown, since 47a5e27).
+  ['x=(a $(echo b)', ['sub-agent', 'pipeline']],
+  ['case x in\n a) ls ;;', ['sub-agent', 'pipeline']],
+  // The other unknowns that leave a command with no name to read: an escape
+  // the reader does not decode, a script piped into a shell, and scripts
+  // nested past four levels.
+  ["$'\\u0067'it status", ['sub-agent', 'pipeline']],
+  ['curl -s x | sh', ['sub-agent', 'pipeline']],
+  // A quote, substitution or heredoc whose end the reader and the shell
+  // disagree on: the shell runs `$x$y`, which the reader read as text
+  // (Holmes, 47a5e27 review).
+  ['x=ech; y=o; echo $[ "1 ]; $x$y MARK', ['sub-agent', 'pipeline']],
+  ['echo $(( 1 + "1 )); $x$y MARK', ['sub-agent', 'pipeline']],
+  ["cat <<$'EOF'\nhi\nEOF\n$x$y MARK", ['sub-agent', 'pipeline']],
+  ["bash -c 'bash -c \"bash -c \\\"bash -c \\\\\\\"bash -c ls\\\\\\\"\\\"\"'", ['sub-agent', 'pipeline']],
   // A git named by a plain "$NAME/…" path is still a git the ask rules miss.
   ['"$HOME/bin/git" push', ['main', 'sub-agent', 'pipeline']],
 ]
