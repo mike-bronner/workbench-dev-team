@@ -61,6 +61,16 @@
 //                  call that did not ask for the foreground runs in the
 //                  background. After the call ran: the gate's advisory hint on
 //                  a complete brief that dictates method.
+//   prompt.compose the dev-team session rules (mods/session-rules.ts) as one
+//                  shared system-prompt section, in every lane but
+//                  WORKBENCH_SKIP_WARMUP=1: after workbench-core's sections
+//                  when this hook wraps core's, before them when core's wraps
+//                  this one (withRules says why)
+//   classic.SubagentStart
+//                  the same rules as context at a sub-agent's start, as
+//                  workbench-core gives its own, unless the agent is a fork,
+//                  whose inherited prompt already holds the section, or its
+//                  type leaves CLAUDE.md out
 //
 // The logic is pure and lives in mods/. Every hook that touches `$` lives in
 // this file, because the engine follows `$` into no imported function, and a
@@ -91,6 +101,7 @@ import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from '
 import { BOARD_PANE, RUNS_PANE, boardTree, runsTree } from './mods/panes'
 import type { LogEnd } from './mods/runs'
 import { LOG_DIR, RUNS_REFRESH_MS, endsOf, livePairsOf, markersOf, newestRuns, rowsOf, scanArgv } from './mods/runs'
+import { RULES, isRulesLane, isRulesSubagent, withRules } from './mods/session-rules'
 import { hasBareMktemp, hasLiveChild, isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from './mods/scratch'
 import type { CallerLane } from './mods/spawn'
 import {
@@ -460,6 +471,13 @@ function startRefresh($: EngineInterface, memory: PaneMemory, cadenceMs: number)
   memory.timer ??= $.clock.every(RUNS_REFRESH_MS, () => void refreshPanes($, memory, cadenceMs).catch(() => undefined))
 }
 
+// Whether this session gets the dev-team rules (mods/session-rules.ts). An
+// environment that cannot be read sends them: losing the rules is the worse
+// failure, as workbench-core rules for its own.
+async function isRulesSession($: EngineInterface): Promise<boolean> {
+  return $.env.get('WORKBENCH_SKIP_WARMUP').then(isRulesLane, () => true)
+}
+
 export const register: Register = (on, options) => {
   // The rows, read once: the options are fixed for this activation.
   const config = configTextOf(options)
@@ -567,6 +585,19 @@ export const register: Register = (on, options) => {
     }
     return result
   }).catch(($, e, next) => (next.called ? next(e) : { deny: uncheckedDeny() }))
+
+  // The dev-team session rules: a shared section in the main loop's system
+  // prompt, and context at a sub-agent's start.
+  on('prompt.compose', async ($, e, next) => {
+    const result = await next(e)
+    return (await isRulesSession($)) ? { sections: withRules(result.sections) } : result
+  })
+
+  on('classic.SubagentStart', async ($, e, next) => {
+    const result = await next(e)
+    if (!isRulesSubagent(e.agent_type) || !(await isRulesSession($))) return result
+    return { ...result, additionalContext: [...(result.additionalContext ?? []), RULES] }
+  })
 
   // The config line for a top-level run of a mode that reads it. Nothing here
   // calls next, so a failure leaves the prompt as it came.

@@ -33,8 +33,8 @@ That installs the agents, the Dispatch scripts, and the bundled skills (see belo
 
 The plugin ships three skills for general use, plus one skill the agents write by:
 
-- **`develop`** and **`git-commit`** — universal development standards. They register themselves globally via `session-warmup.md`, which workbench-core picks up at session start and injects into `~/.claude/CLAUDE.md`. They apply to every Claude Code / Cowork session, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are. Require workbench-core 0.2.0+ for the session-warmup discovery mechanism — install it first if you don't already have it (Claude Code does not enforce plugin install order).
-- **`orchestrate`** — runs the team as background sub-agents from any interactive session (see below). A `session-warmup.md` hint makes every session aware the team is available for delegation.
+- **`develop`** and **`git-commit`** — universal development standards. They register themselves globally through the plugin's session rules (`hooks/mods/session-rules.ts`), which the hooks module sends as one shared system-prompt section, and as context at each sub-agent's start. They apply to every Claude Code / Cowork session, `claude -p` runs included, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are.
+- **`orchestrate`** — runs the team as background sub-agents from any interactive session (see below). The same session rules make every session aware the team is available for delegation.
 
 One more skill exists for the agents rather than for you. **`comms-style`** is how Lestrade, Watson, and Holmes write every piece of prose that isn't code — ticket comments, PR bodies, review verdicts — modeled on ASD-STE100 (Simplified Technical English).
 

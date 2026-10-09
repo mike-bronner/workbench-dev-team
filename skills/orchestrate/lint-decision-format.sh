@@ -66,6 +66,21 @@ section() { # $1 file, $2 start, $3 end, $4 label
   s="$(between "$1" "$2" "$3")"
   [ -n "$s" ] || bad "$4 — no section from '$2' to '$3' in $1"
 }
+# The dev-team session rules (hooks/mods/session-rules.ts) as the model reads
+# them: the RULES template literal, its backticks unescaped, joined into one
+# line. It fails, under pipefail, when the literal is not found or never
+# closes, and the text is then emptied so every check on it fails too.
+rules_text() {
+  awk '
+    /^export const RULES = `/ { f = 1; sub(/^export const RULES = `/, "") }
+    f && /[^\\]`$/ { sub(/`$/, ""); print; found = 1; exit }
+    f { print }
+    END { exit !found }' "$ROOT/hooks/mods/session-rules.ts" | sed 's/\\`/`/g' | tr '\n' ' ' | tr -s ' '
+}
+if ! RULES_TEXT="$(set -o pipefail; rules_text)" || [ -z "$RULES_TEXT" ]; then
+  bad "hooks/mods/session-rules.ts — no closed RULES template literal found"
+  RULES_TEXT=""
+fi
 # Shipped files, NUL-separated so a path with a space or newline stays whole.
 shipped() { (cd "$ROOT" && git ls-files -z -co --exclude-standard -- "$@"); }
 
@@ -159,13 +174,15 @@ early="$(shipped '*.md' '*.sh' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
 if [ -z "$early" ]; then ok "no shipped text lists Commit it ahead of another option"; else bad "Commit it listed first in: $early"; fi
 
 # 8. One approval wording, and the boundary it must not move.
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md agents/watson.md README.md session-warmup.md commands/setup.md hooks/mods/commit-guard.ts; do
+for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md agents/watson.md README.md commands/setup.md hooks/mods/commit-guard.ts; do
   joined="$(sed -E 's/^[[:space:]]*(#|\/\/) ?//' "$ROOT/$f" | tr '\n' ' ' | tr -s ' ')"
   check "$joined" "$APPROVAL" "$f uses the shared approval wording" "$f — no line carries: $APPROVAL"
 done
+check "$RULES_TEXT" "$APPROVAL" "the session rules use the shared approval wording" "session rules — no line carries: $APPROVAL"
 # A sentence that pairs a commit approval with chat lets a typed message stand
 # as approval, unless the sentence is the one saying it does not count.
-stale="$(shipped '*.md' '*.sh' '*.json' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
+# The same sentence check runs on the session rules, which live in a .ts file.
+STALE_PL='
   next if $ARGV =~ m{lint-decision-format\.sh$|/testdata/};
   (my $t = $_) =~ s/\n\s*#?\s*/ /g;
   for my $sentence (split /(?<=[.!?])\s+/, $t) {
@@ -174,18 +191,21 @@ stale="$(shipped '*.md' '*.sh' '*.json' | (cd "$ROOT" && xargs -0 perl -0777 -ne
     next if $sentence =~ /does not count|not a typed/i;
     print "$ARGV: $sentence\n";
   }
-  close ARGV'))"
+  close ARGV'
+stale="$(shipped '*.md' '*.sh' '*.json' | (cd "$ROOT" && xargs -0 perl -0777 -ne "$STALE_PL"))"
+stale="$stale$(printf '%s' "$RULES_TEXT" | perl -0777 -ne "$STALE_PL" | sed 's|^-: |session rules: |')"
 if [ -z "$stale" ]; then ok "no text lets a chat message stand as commit approval"; else bad "chat counts as commit approval in: $stale"; fi
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md README.md session-warmup.md; do
+for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md README.md; do
   joined="$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')"
   check "$joined" 'typed "commit it" in chat' "$f says a typed message does not count" "$f — no longer says a typed \"commit it\" in chat does not count"
 done
+check "$RULES_TEXT" 'typed "commit it" in chat' "the session rules say a typed message does not count" "session rules — no longer say a typed \"commit it\" in chat does not count"
 [ -n "$gc" ] && check "$gc" 'A sub-agent does not commit or push, and never asks to.' "git-commit still bars a sub-agent from committing or asking to" "git-commit — lost 'A sub-agent does not commit or push, and never asks to.'"
 
 # 8a. A sub-agent never asks to commit, and no report template invites one.
 check "$(tr '\n' ' ' < "$ROOT/agents/watson.md" | tr -s ' ')" 'Your report never asks to commit and never invites a commit' "watson's Direct-mode report never invites a commit" "watson — the Direct-mode report no longer says it never invites a commit"
 check "$(tr '\n' ' ' < "$ROOT/skills/develop/SKILL.md" | tr -s ' ')" 'The report never asks to commit and never invites a commit' "develop's sub-agent report never invites a commit" "develop — the sub-agent hand-back no longer says it never invites a commit"
-check "$(tr '\n' ' ' < "$ROOT/session-warmup.md" | tr -s ' ')" 'does not commit, merge, or push, and never asks to.' "session-warmup bars a sub-agent from asking to commit" "session-warmup — lost 'and never asks to.' for sub-agents"
+check "$RULES_TEXT" 'does not commit, merge, or push, and never asks to.' "the session rules bar a sub-agent from asking to commit" "session rules — lost 'and never asks to.' for sub-agents"
 invite="$(shipped 'agents/*.md' 'skills/*.md' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
   (my $t = $_) =~ s/\s+/ /g;
   print "$ARGV: $1\n" while $t =~ /((?:shall|should|may|can) I commit|want me to commit|ready to (?:be )?commit|say the word and I\S* commit)/gi;
@@ -193,9 +213,10 @@ invite="$(shipped 'agents/*.md' 'skills/*.md' | (cd "$ROOT" && xargs -0 perl -07
 if [ -z "$invite" ]; then ok "no agent or skill text invites a commit"; else bad "text invites a commit: $invite"; fi
 
 # 8b. Index-mode development never asks about committing or pushing.
-for f in skills/git-commit/SKILL.md session-warmup.md README.md; do
+for f in skills/git-commit/SKILL.md README.md; do
   check "$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')" 'never asks about committing or pushing' "$f: Index mode never asks about committing or pushing" "$f — no longer says Index mode never asks about committing or pushing"
 done
+check "$RULES_TEXT" 'never asks about committing or pushing' "the session rules: Index mode never asks about committing or pushing" "session rules — no longer say Index mode never asks about committing or pushing"
 check "$(tr '\n' ' ' < "$ROOT/skills/develop/SKILL.md" | tr -s ' ')" 'The pipeline never asks about committing or pushing, and never waits for approval' "develop: the pipeline never asks or waits" "develop — the pipeline lane no longer says it never asks or waits"
 index_text="$(cat "$ROOT/references/watson/index-mode-pipeline.md"; awk '/^## The Index mode/{f=1} /^## Rules/{f=0} f' "$ROOT/agents/watson.md")"
 if printf '%s' "$index_text" | grep -Eqi 'AskUserQuestion|Commit it|approval to (commit|push)|wait for .*approv'; then

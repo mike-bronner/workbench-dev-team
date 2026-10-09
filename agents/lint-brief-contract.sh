@@ -232,9 +232,10 @@ else
 fi
 
 # ── The sending half: every doc that describes the brief ──────────────────────
-# session-warmup.md is not one of them. It reaches every session and every
-# sub-agent through ~/.claude/CLAUDE.md, so Mike ruled it carries the routing and
-# a pointer to /workbench-dev-team:orchestrate and no brief rules of its own.
+# The session rules (hooks/mods/session-rules.ts) are not one of them. They
+# reach every session and every sub-agent, so Mike ruled they carry the routing
+# and a pointer to /workbench-dev-team:orchestrate and no brief rules of their
+# own.
 #
 # A token-only mode file (exempted above) describes no brief, so it is not one
 # of them either.
