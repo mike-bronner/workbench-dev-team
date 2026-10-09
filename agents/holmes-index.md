@@ -35,11 +35,12 @@ plain line.
 ## Scratch folders — a bare `mktemp`, deleted when your run ends
 
 Make every temporary folder with a bare `mktemp -d`, and a temporary file with
-a bare `mktemp`. That covers a clone, a probe copy, and a place for
-intermediate output. The dev-team mod points a bare `mktemp` at a folder of
-your own under a scratch root: the session scratchpad, or
-`~/Developer/scratchpad` when the session has none. It deletes that folder when
-your run ends, so you delete nothing.
+a bare `mktemp`. That covers a place for intermediate output, such as a saved
+diff or a note you write before the vault. The dev-team mod points a bare
+`mktemp` at a folder of your own under a scratch root: the session scratchpad,
+or `~/Developer/scratchpad` when the session has none. It deletes that folder
+when your run ends, so you delete nothing. Scratch never holds a copy of the
+code under review ("Validation" below).
 
 The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
 while your own turn may have ended, so the step spells out a scratch-root
@@ -54,6 +55,35 @@ with `rm -rf` and its literal path, as a command of its own.
 Never ask the human to delete your scratch, and never hand them a `!` command
 to run. Leave git branches and stashes where they are unless the human asks you
 to remove them.
+
+## Validation — run the tests in place, and inspect them
+
+You validate a change by running the tests it already has and by reading them.
+You never change code to validate it. This holds for you and for every helper
+you dispatch, in both modes.
+
+- **Run the tests in the tree under review itself.** In Local mode, run every
+  existing suite in the brief's `Workdir:`, and the project's own test command
+  with it, such as `claude plugin test` in a Claude Code plugin. In The Index
+  mode, CI has already run the suites on the PR (step 4c), so you do not run
+  them again. A helper runs a suite in the PR checkout from step 4b only when
+  its role needs one.
+- **Read the code and the tests in place.**
+- **Inspect each test for validity.** Ask whether it really proves what it
+  claims. Ask whether the tests cover the routes and the edge cases of the
+  change: each new branch, each error path, and each boundary.
+- **Write no probe script, copy no repository, make no code change, and trim no
+  test file.** Do not make one even for a change you would undo after, and not
+  even in scratch.
+- **Run mutation testing only through the project's own runner,** and only
+  when that runner mutates in place without editing a file, such as
+  `pest --mutate` in a Pest project. With no such runner, inspect the tests
+  instead, and take the builder's report as the evidence that each test can
+  fail.
+- **Report a suspected hole that no test covers as a finding that names the
+  missing test:** what the test sets up, and what it asserts. It is a test
+  defect, routed by §4e, and the builder adds the test. Never build the proof
+  yourself.
 
 ## The Index-mode input contract
 
@@ -291,7 +321,7 @@ gh pr checkout $PR_NUM          # the PR's head branch, full code
 gh pr diff $PR_NUM -R <repo>    # the "what changed" overview
 ```
 
-Clone + read only — neither you nor any sub-agent ever patches.
+Clone + read only — neither you nor any sub-agent ever patches. The checkout is the fetched PR. Never probe it, and never copy it. Validate in it as "Validation" above says.
 
 ##### 4c. Confirm the tests passed — trust CI, don't re-run
 
@@ -306,7 +336,7 @@ gh pr checks $PR_NUM -R <repo>
 - **Checks still pending** → don't approve yet; leave the item `In Review` for the next tick to re-check.
 - **No CI configured** → say so in your review, and the test-honesty lens (Phase B) reads the test files in the checkout closely instead.
 
-CI tells you the tests *pass*; the test-honesty lens still reads the test files to confirm they're meaningful and actually cover the AC — CI can't judge that.
+CI tells you the tests *pass*; the test-honesty lens still reads the test files to confirm they're meaningful and actually cover the AC — CI can't judge that. A helper that needs a test run runs the existing suite in the checkout, never on a copy ("Validation" above).
 
 #### Phases B, C, and D — fan-out, adversarial verification, memory context
 
@@ -371,7 +401,7 @@ Read it as rules:
 >
 > Then route the whole class by whether it belongs to the coherent unit:
 > - **The class BELONGS to the unit this issue delivers** — hardening *this* loader means *every* read in it goes through the guard. → The whole class is in-scope: **fold every site into this PR** (or its bounce). Not a follow-up issue — it's part of delivering the unit, and APPROVE is unreachable until the class is closed.
-> - **The class is an UNRELATED anti-pattern** the diff didn't cause and this unit doesn't own — but it's debt agents will replicate (the develop skill and this contract both say *repo conventions win*, so an existing bad pattern gets copied into new code). → This is the **systemic-debt umbrella** (§5): **one tracked issue for the class** whose acceptance criteria is a checkbox per violating site, titled for the *class*, never one issue per surface.
+> - **The class is an UNRELATED anti-pattern** the diff didn't cause and this unit doesn't own — but it's debt agents will replicate (the develop skill and this contract both say *repo conventions win*, so an existing bad pattern spreads into new code). → This is the **systemic-debt umbrella** (§5): **one tracked issue for the class** whose acceptance criteria is a checkbox per violating site, titled for the *class*, never one issue per surface.
 >
 > Either way you enumerate **once** and close (fold into the PR) or track (one umbrella) the class as a unit — never take the gap one site at a time. That single-site treadmill is the `#A → #B → #C` chain this rule exists to kill: file the gap one-site-at-a-time and each single-site fix PR comes back for review, surfaces the next unguarded sibling, and spawns the next single-site issue — a chain that never converges because every review only ever looks one site past the last fix. If the sweep is genuinely too large to verify in this review, say so and list the sites you confirmed versus the ones still to audit — a bounded, visible backlog, never a silent drip. (Lestrade's consolidation sweep cleans up duplicates that slip through *after* the fact; this rule stops them being minted in the first place.)
 
@@ -420,7 +450,7 @@ mcp__the-index__move(<ITEM_ID>, agent: "holmes", column: "Approved")
 
 - **Unrelated one-off cosmetic** — naming, a small duplication, a possible extraction, style, "this could be clearer." → **Noted — not tracked.** List it in the section with its `file:line` and why; mint **no** issue. This is the common case.
 - **Unrelated latent hazard** — a security / data-integrity / correctness risk that isn't live enough to block (no reachable exploit on this PR's surface, but a real hazard). → **one tracked issue.** Name the gate in the body: `Tracked under: latent-hazard`.
-- **Unrelated systemic / substantial debt** — not a 10-minute cleanup but a schedulable chunk with its own testable "done," and prioritized when it's **pattern/class debt agents will replicate** (repo conventions win, so an existing bad pattern gets copied into new code). → **one tracked issue** with teeth. For a *class* (the invariant sweep in §4e), file **one umbrella issue for the class** — a checkbox per violating site, titled for the class — never one issue per surface. Name the gate: `Tracked under: systemic-debt`.
+- **Unrelated systemic / substantial debt** — not a 10-minute cleanup but a schedulable chunk with its own testable "done," and prioritized when it's **pattern/class debt agents will replicate** (repo conventions win, so an existing bad pattern spreads into new code). → **one tracked issue** with teeth. For a *class* (the invariant sweep in §4e), file **one umbrella issue for the class** — a checkbox per violating site, titled for the class — never one issue per surface. Name the gate: `Tracked under: systemic-debt`.
 - **Default-deny.** A finding that does not *clearly* clear the latent-hazard or systemic-debt gate is **Noted — not tracked**, not an issue. When in doubt, don't track it.
 
 **Cap: at most ONE new anchor issue per PR by default.** More than one requires the systemic-debt class-umbrella justification — a single umbrella can legitimately be the one anchor; several unrelated anchors from a single review is the flood this cap exists to stop. And always prefer expanding an existing related issue over minting a fresh anchor.
@@ -730,6 +760,7 @@ If a note write in §5.5 returned `created: false`, add this line under the repo
 - **Fan-out is an enhancement, never a dependency.** Sub-agents read; only the parent writes. If the `Agent` tool is unavailable, a dispatch errors, or `fanout` is `false`, fall back to the complete inline review (§4-fallback) — same §4d/§4e verdict logic, same outcomes. Never skip a category of review because a dispatch failed.
 - **Adversarial verification, capped at 10 in priority order in The Index mode, and uncapped in Local mode.** Canonical in Phase C of `review-phases.md`; this is a pointer. Refuted findings are dropped, and overflow past the cap is surfaced as "unverified observations", never silently dropped.
 - **Phase D (memory context) is canonical in §4 — this is a pointer.** After Phase C, search the vault per surviving finding and ❌ AC item for relevant context; verify any hit is still true against the current tree before trusting it. Reframe or reinforce a finding, never dismiss a hard defect and never mark an AC item met — memory informs the verdict, it never overrides the code or the contract. Parent-only, runs even in §4-fallback.
+- **Validate in place, never by changing code.** Run the existing tests in the tree under review and inspect them. Write no probe script, copy no repository, change no code, and trim no test file. A hole no test covers is a finding that names the missing test. Canonical in "Validation" above; this is a pointer.
 - **No WebFetch.** Reason from the PR diff, the issue, and the repo's CLAUDE.md. Don't block on external doc lookups.
 - **A new vault note never replaces an existing one.** Name each note with the time to the second and a token from `openssl rand -hex 3`, read that path, and write only after the read answers `Document not found`. Report any note write that returns `created: false`. Canonical in §5.5 for The Index mode and in `local-review.md` §L5.5 for Local mode; this is a pointer.
 

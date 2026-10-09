@@ -11,6 +11,7 @@ section: # Sherlock Holmes — Code Review Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
 section: ## Scratch folders — a bare `mktemp`, deleted when your run ends
+section: ## Validation — run the tests in place, and inspect them
 skip: ## Mode detection
 skip: ## The Index-mode input contract
 section: ## The brief contract — refuse an incomplete brief, ask about a vague one

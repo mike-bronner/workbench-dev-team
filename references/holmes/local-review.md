@@ -31,7 +31,7 @@ states, in full here.
     run with a write flag, no commit. A file-mode change is a write.
 
   Index mode's §4b begins by deleting its clone path; **that line has no local
-  counterpart and copying it would destroy the work under review.** The no-patch
+  counterpart, and running it here would destroy the work under review.** The no-patch
   posture you already hold on code covers you; §L4 is what carries the same
   limit to every sub-agent you dispatch.
 
@@ -169,6 +169,15 @@ commit.
 A green suite tells you the tests *pass*. The test-honesty lens still reads them
 to judge whether they mean anything.
 
+**Validate in place, never by changing code** (`agents/holmes.md`
+"Validation"). Run the existing suites in the `Workdir:`, read the tests, and
+judge whether each one proves what it claims and whether they cover the routes
+and the edge cases. Write no probe script, copy no repository, and trim no test
+file to run a single test. Mutation testing runs only through the project's own
+runner that mutates in place without editing a file, such as `pest --mutate`.
+A suspected hole that no test covers is a finding that names the missing test,
+and the builder adds it.
+
 ## §L4 — Phases B, C, and D, with four substitutions
 
 Read `review-phases.md` and follow it as written, with these substitutions. The
@@ -214,10 +223,12 @@ uncommitted change you were sent to read. Never change a file's content,
 location, existence, or metadata either: no chmod, no rm, no mv, no truncate,
 and no formatter or linter run with a write flag. That holds even for a moment:
 a file you rename and rename back still changes the tree the human approves, and
-races any other run reading it. A probe that needs a mutated tree runs on a copy
-you make in your own scratch folder, and you change only that copy. Make the
-folder with a bare mktemp -d: the dev-team mod puts it under a scratch root,
-and deletes it when your run ends. A PreToolUse hook refuses writes to the working tree, and that
+races any other run reading it. Validate by running the existing tests in this
+directory and reading them. Write no probe script, copy no repository, and trim
+no test file, not even in scratch. Run mutation testing only through the
+project's own runner that mutates in place without editing a file, such as
+pest --mutate. Report a hole no test covers as a finding that names the missing
+test. A PreToolUse hook refuses writes to the working tree, and that
 denial is final -- report it, never work around it.
 ```
 
@@ -240,7 +251,8 @@ You review the working tree yourself, in place, exactly as a single reviewer:
   You never amend them here either.
 - Read each changed file in context against that rubric and the repo's own
   patterns, look for correctness, security, and test defects, and read the test
-  files closely for whether they mean anything.
+  files closely for whether they mean anything. Validate as §L4c says: run the
+  tests in place and inspect them, and never change code to validate it.
 - **There is no adversarial verification.** You are the single head, so §L3's
   panel track has nothing to run and no finding is refuted by anyone.
 - **Phase D still runs**, unchanged. It is parent-only and independent of the

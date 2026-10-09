@@ -484,8 +484,10 @@ export const FAILED_REFUSAL = refusal(
 //                 runs `$x$y`, which the reader reads as quoted text
 //   substitution  likewise for a `$(( … ))` or `$( … )` the reader reads as
 //                 unclosed
-//   heredoc       a delimiter the reader does not decode (`<<$'EOF'`), so it
-//                 reads the lines after the shell's terminator as body
+//   heredoc       a delimiter whose $'…' part holds an escape the reader keeps
+//                 undecoded, so it reads the lines after the shell's
+//                 terminator as body (a plain `<<$'EOF'` is decoded since
+//                 workbench-core 159f51a)
 //   escape        a $'…' escape the reader does not decode (a Unicode or
 //                 control escape), which may spell any name, git included
 //   wrapper       a wrapper option the reader cannot place

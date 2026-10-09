@@ -15,13 +15,16 @@ its own way is one the substitution silently misses, leaving that sub-agent
 pointed at a scratch clone Local mode never creates. Add a sixth skeleton and it
 carries the same line verbatim.
 
-**Every skeleton also carries the no-mutation line under it, verbatim.** Lenses
+**Every skeleton also carries the validation block under it, verbatim.** Lenses
 and verifiers never change a file in the tree under review, not even to probe a
 fail-open path and put it back. In Local mode that tree is exactly what the human
-approves, and a mutation, even an undone one, can corrupt it and races any other
-run reading it. A probe that needs a mutated tree runs on a copy in the
-sub-agent's own scratch folder, made with a bare `mktemp -d`. The dev-team mod
-deletes that folder when the helper's run ends, so no probe copy outlives it.
+approves. A write there is never safe, even one you undo: it can corrupt the
+tree and races any other run reading it. They validate as `agents/holmes.md` "Validation" says: run the
+existing tests in that tree, and inspect them. They write no probe script and
+copy no repository, not even into scratch, and mutation testing runs only
+through a project's own in-place runner such as `pest --mutate`. A hole no test
+covers comes back as a finding that names the missing test, and the builder adds
+it.
 
 **Every dispatch below names `subagent_type: "workbench-dev-team:holmes-lens"`**
 — the four lenses, the skeptic, the red team, the blue team, and the auditor.
@@ -49,7 +52,7 @@ The four lenses:
 1. **AC conformance lens** — for *each* AC checkbox, return one of: **met** (the implementation satisfies the criterion's *intent* — including when it does so by a different mechanism than the literal wording anticipated, as long as it drops nothing the criterion cared about and the result is equal or better) / **not met** (the intent is missing, weakened, or traded away) / **the AC item itself looks defective** (wrong, imprecise, impossible, or contradicted by the codebase), each with file:line evidence. When a criterion is met by a *divergence* from its wording, say so explicitly and cite the divergence — so the parent can confirm it's a genuine improvement and not a quietly dropped requirement. It does not decide the verdict — it reports per-criterion status for you to apply in §4d.
 2. **Correctness lens** — real bugs, logic errors, and breaks to existing behaviour. Not style, not preference.
 3. **Security lens** — hardcoded secrets, missing validation at a boundary, OWASP-class risks (injection, XSS, SSRF, …).
-4. **Test-honesty lens** — do the tests *meaningfully* cover the AC and the change, or do they merely compile / assert trivia? Reads the test files in the checkout directly.
+4. **Test-honesty lens** — do the tests *meaningfully* cover the AC and the change, or do they merely compile / assert trivia? Reads the test files in the checkout directly, and judges whether each test really proves what it claims and whether the tests cover the routes and the edge cases. A suspected hole that no test covers is a `blocker` finding that names the missing test: what it sets up, and what it asserts.
 
 Prompt skeleton for each lens (fill the bracketed parts; vary only the lens-specific task):
 
@@ -57,10 +60,11 @@ Prompt skeleton for each lens (fill the bracketed parts; vary only the lens-spec
 You are a read-only code-review lens. You have NO write tools and you never patch.
 Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
-even to undo it after. A probe that needs a mutated tree runs on a copy you make
-in your own scratch folder, and you change only that copy. Make the folder with
-a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
-it when your run ends.
+even to undo it after. Validate by running the existing tests in that tree and
+reading them. Write no probe script, copy no repository, change no code, and
+trim no test file. Run mutation testing only through the project's own runner
+that mutates in place without editing a file, such as `pest --mutate`. Report a
+hole no test covers as a finding that names the missing test.
 PR number: <PR_NUM>   Repo: <repo>
 
 Acceptance criteria (verbatim — never amend or reinterpret):
@@ -110,10 +114,11 @@ A fresh **skeptic** sub-agent (`workbench-dev-team:holmes-lens`, `LENS_MODEL`, b
 You are an adversarial verifier. Read-only, no write tools, no patching.
 Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
-even to undo it after. A probe that needs a mutated tree runs on a copy you make
-in your own scratch folder, and you change only that copy. Make the folder with
-a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
-it when your run ends.
+even to undo it after. Validate by running the existing tests in that tree and
+reading them. Write no probe script, copy no repository, change no code, and
+trim no test file. Run mutation testing only through the project's own runner
+that mutates in place without editing a file, such as `pest --mutate`. Report a
+hole no test covers as a finding that names the missing test.
 A reviewer claims the following BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -134,10 +139,11 @@ Dispatch the attacker and defender **in parallel** (single message, two `Agent` 
 You are a red-team attacker. Read-only, no write tools, no patching.
 Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
-even to undo it after. A probe that needs a mutated tree runs on a copy you make
-in your own scratch folder, and you change only that copy. Make the folder with
-a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
-it when your run ends.
+even to undo it after. Validate by running the existing tests in that tree and
+reading them. Write no probe script, copy no repository, change no code, and
+trim no test file. Run mutation testing only through the project's own runner
+that mutates in place without editing a file, such as `pest --mutate`. Report a
+hole no test covers as a finding that names the missing test.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -151,10 +157,11 @@ this claim is real and reachable. Return exactly one of:
 You are a blue-team defender. Read-only, no write tools, no patching.
 Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
-even to undo it after. A probe that needs a mutated tree runs on a copy you make
-in your own scratch folder, and you change only that copy. Make the folder with
-a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
-it when your run ends.
+even to undo it after. Validate by running the existing tests in that tree and
+reading them. Write no probe script, copy no repository, change no code, and
+trim no test file. Run mutation testing only through the project's own runner
+that mutates in place without editing a file, such as `pest --mutate`. Report a
+hole no test covers as a finding that names the missing test.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
 
@@ -172,10 +179,11 @@ You are the auditor. Read-only, no write tools, no patching. You did not write
 either report below — weigh them against the tree yourself, don't just trust them.
 Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
-even to undo it after. A probe that needs a mutated tree runs on a copy you make
-in your own scratch folder, and you change only that copy. Make the folder with
-a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
-it when your run ends.
+even to undo it after. Validate by running the existing tests in that tree and
+reading them. Write no probe script, copy no repository, change no code, and
+trim no test file. Run mutation testing only through the project's own runner
+that mutates in place without editing a file, such as `pest --mutate`. Report a
+hole no test covers as a finding that names the missing test.
 Claim: <claim>   location: <file:line>   evidence: <evidence>
 
 Attacker report: <attacker output>
@@ -219,4 +227,4 @@ Skip this phase entirely on a clean review — no surviving findings and no ❌ 
 
 #### §4-fallback — inline review (no fan-out)
 
-When the `Agent` tool is unavailable in the runtime, `fanout` is `false`, or every dispatch path errors, **you review the checkout yourself, inline**, exactly as a single reviewer: read each changed file in context against the AC and the repo's patterns (the AC-conformance check), look for correctness / security / test defects, and read the test files for meaningfulness. There is no adversarial verification step in the fallback — you are the single head. **Phase D still runs** — it's independent of the fan-out — and so does the check against Mike's `feedback/` rules from §4a.5. Feed your findings into the **same** §4d/§4e verdict logic. The fan-out is an enhancement layered over this path; this path is always complete on its own.
+When the `Agent` tool is unavailable in the runtime, `fanout` is `false`, or every dispatch path errors, **you review the checkout yourself, inline**, exactly as a single reviewer: read each changed file in context against the AC and the repo's patterns (the AC-conformance check), look for correctness / security / test defects, and read the test files for meaningfulness, validating as `agents/holmes.md` "Validation" says. There is no adversarial verification step in the fallback — you are the single head. **Phase D still runs** — it's independent of the fan-out — and so does the check against Mike's `feedback/` rules from §4a.5. Feed your findings into the **same** §4d/§4e verdict logic. The fan-out is an enhancement layered over this path; this path is always complete on its own.

@@ -133,9 +133,16 @@ for (const [unknown, refused, passes] of FIFTH_RULE) {
     console.log(`  ❌ the commit guard's fifth rule refuses ${JSON.stringify(passes)}`)
   }
 }
-if (FIFTH_RULE.length !== HIDES_NAME.length) {
+// The sets, not their sizes: a row duplicated for one unknown would hide a row
+// dropped for another.
+const covered = new Set(FIFTH_RULE.map(([unknown]) => unknown))
+for (const unknown of HIDES_NAME.filter(u => !covered.has(u))) {
   failed++
-  console.log(`  ❌ the fifth rule's self-check covers ${FIFTH_RULE.length} unknowns, and HIDES_NAME holds ${HIDES_NAME.length}`)
+  console.log(`  ❌ the fifth rule's self-check has no row for ${unknown}, which HIDES_NAME holds`)
+}
+if (covered.size !== FIFTH_RULE.length) {
+  failed++
+  console.log(`  ❌ the fifth rule's self-check has ${FIFTH_RULE.length} rows for ${covered.size} unknowns, so one unknown has two`)
 }
 
 // Core's rule, in every lane, on every shell block.

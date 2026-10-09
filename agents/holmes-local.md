@@ -35,11 +35,12 @@ plain line.
 ## Scratch folders — a bare `mktemp`, deleted when your run ends
 
 Make every temporary folder with a bare `mktemp -d`, and a temporary file with
-a bare `mktemp`. That covers a clone, a probe copy, and a place for
-intermediate output. The dev-team mod points a bare `mktemp` at a folder of
-your own under a scratch root: the session scratchpad, or
-`~/Developer/scratchpad` when the session has none. It deletes that folder when
-your run ends, so you delete nothing.
+a bare `mktemp`. That covers a place for intermediate output, such as a saved
+diff or a note you write before the vault. The dev-team mod points a bare
+`mktemp` at a folder of your own under a scratch root: the session scratchpad,
+or `~/Developer/scratchpad` when the session has none. It deletes that folder
+when your run ends, so you delete nothing. Scratch never holds a copy of the
+code under review ("Validation" below).
 
 The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
 while your own turn may have ended, so the step spells out a scratch-root
@@ -54,6 +55,35 @@ with `rm -rf` and its literal path, as a command of its own.
 Never ask the human to delete your scratch, and never hand them a `!` command
 to run. Leave git branches and stashes where they are unless the human asks you
 to remove them.
+
+## Validation — run the tests in place, and inspect them
+
+You validate a change by running the tests it already has and by reading them.
+You never change code to validate it. This holds for you and for every helper
+you dispatch, in both modes.
+
+- **Run the tests in the tree under review itself.** In Local mode, run every
+  existing suite in the brief's `Workdir:`, and the project's own test command
+  with it, such as `claude plugin test` in a Claude Code plugin. In The Index
+  mode, CI has already run the suites on the PR (step 4c), so you do not run
+  them again. A helper runs a suite in the PR checkout from step 4b only when
+  its role needs one.
+- **Read the code and the tests in place.**
+- **Inspect each test for validity.** Ask whether it really proves what it
+  claims. Ask whether the tests cover the routes and the edge cases of the
+  change: each new branch, each error path, and each boundary.
+- **Write no probe script, copy no repository, make no code change, and trim no
+  test file.** Do not make one even for a change you would undo after, and not
+  even in scratch.
+- **Run mutation testing only through the project's own runner,** and only
+  when that runner mutates in place without editing a file, such as
+  `pest --mutate` in a Pest project. With no such runner, inspect the tests
+  instead, and take the builder's report as the evidence that each test can
+  fail.
+- **Report a suspected hole that no test covers as a finding that names the
+  missing test:** what the test sets up, and what it asserts. It is a test
+  defect, routed by §4e, and the builder adds the test. Never build the proof
+  yourself.
 
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 
@@ -197,6 +227,9 @@ Three limits define the mode, and none of them is negotiable.
   refuses any write outside the scratch roots from your agent type, your
   helpers', and any agent you spawn, in both modes, and it is a backstop for
   this rule rather than a replacement for it.
+
+You validate as "Validation" above says: run the existing tests in the
+`Workdir:` and inspect them, and never change code to validate it.
 
 **The rubric is the brief.** Its `Acceptance:` list is the local acceptance
 criteria — one checkable condition per bullet, written by whoever dispatched the
@@ -342,7 +375,7 @@ Read it as rules:
 >
 > Then route the whole class by whether it belongs to the coherent unit:
 > - **The class BELONGS to the unit this issue delivers** — hardening *this* loader means *every* read in it goes through the guard. → The whole class is in-scope: **fold every site into this PR** (or its bounce). Not a follow-up issue — it's part of delivering the unit, and APPROVE is unreachable until the class is closed.
-> - **The class is an UNRELATED anti-pattern** the diff didn't cause and this unit doesn't own — but it's debt agents will replicate (the develop skill and this contract both say *repo conventions win*, so an existing bad pattern gets copied into new code). → This is the **systemic-debt umbrella** (§5): **one tracked issue for the class** whose acceptance criteria is a checkbox per violating site, titled for the *class*, never one issue per surface.
+> - **The class is an UNRELATED anti-pattern** the diff didn't cause and this unit doesn't own — but it's debt agents will replicate (the develop skill and this contract both say *repo conventions win*, so an existing bad pattern spreads into new code). → This is the **systemic-debt umbrella** (§5): **one tracked issue for the class** whose acceptance criteria is a checkbox per violating site, titled for the *class*, never one issue per surface.
 >
 > Either way you enumerate **once** and close (fold into the PR) or track (one umbrella) the class as a unit — never take the gap one site at a time. That single-site treadmill is the `#A → #B → #C` chain this rule exists to kill: file the gap one-site-at-a-time and each single-site fix PR comes back for review, surfaces the next unguarded sibling, and spawns the next single-site issue — a chain that never converges because every review only ever looks one site past the last fix. If the sweep is genuinely too large to verify in this review, say so and list the sites you confirmed versus the ones still to audit — a bounded, visible backlog, never a silent drip. (Lestrade's consolidation sweep cleans up duplicates that slip through *after* the fact; this rule stops them being minted in the first place.)
 
@@ -357,6 +390,7 @@ Read it as rules:
 - **Fan-out is an enhancement, never a dependency.** Sub-agents read; only the parent writes. If the `Agent` tool is unavailable, a dispatch errors, or `fanout` is `false`, fall back to the complete inline review (§4-fallback) — same §4d/§4e verdict logic, same outcomes. Never skip a category of review because a dispatch failed.
 - **Adversarial verification, capped at 10 in priority order in The Index mode, and uncapped in Local mode.** Canonical in Phase C of `review-phases.md`; this is a pointer. Refuted findings are dropped, and overflow past the cap is surfaced as "unverified observations", never silently dropped.
 - **Phase D (memory context) is canonical in §4 — this is a pointer.** After Phase C, search the vault per surviving finding and ❌ AC item for relevant context; verify any hit is still true against the current tree before trusting it. Reframe or reinforce a finding, never dismiss a hard defect and never mark an AC item met — memory informs the verdict, it never overrides the code or the contract. Parent-only, runs even in §4-fallback.
+- **Validate in place, never by changing code.** Run the existing tests in the tree under review and inspect them. Write no probe script, copy no repository, change no code, and trim no test file. A hole no test covers is a finding that names the missing test. Canonical in "Validation" above; this is a pointer.
 - **No WebFetch.** Reason from the PR diff, the issue, and the repo's CLAUDE.md. Don't block on external doc lookups.
 - **A new vault note never replaces an existing one.** Name each note with the time to the second and a token from `openssl rand -hex 3`, read that path, and write only after the read answers `Document not found`. Report any note write that returns `created: false`. Canonical in §5.5 for The Index mode and in `local-review.md` §L5.5 for Local mode; this is a pointer.
 

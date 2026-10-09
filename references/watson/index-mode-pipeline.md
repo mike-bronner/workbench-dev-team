@@ -574,9 +574,10 @@ sharper AC, Holmes's answer, or Mike's call), implement on the same branch.
 ### 6.5. Pre-submit diff self-review — catch it before Holmes does
 
 Before you mark the PR ready (step 7), run the `/develop` §4 Test standards
-against your own diff as if you were Holmes: mutation-test every new test
-(delete/invert the guarded code, confirm it goes red), give every new branch /
-field / error-path a discriminating test, fail closed on every error /
+against your own diff, the way Holmes will read it. As the builder, you
+mutation-test every new test yourself (delete/invert the guarded code, confirm
+it goes red), because Holmes reads tests and never mutates code. Give every
+new branch / field / error-path a discriminating test, fail closed on every error /
 absent-field / unexpected-input path, and grep the tree for doc-drift on every
 symbol or claim you changed. These are the top review-rejection categories —
 catching them here is a bounce round you don't pay for later.

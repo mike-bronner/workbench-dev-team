@@ -3647,11 +3647,19 @@
       "cwd": "@SANDBOX@/repo"
     },
     {
+      "line": "cat <<'EOF' > @SANDBOX@/tmp/scratch/notes.md\nconst pick = (row) => {\n  return row.id\n}\nEOF",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
       "line": "cat <<'EOF' | grep -c x\n2>&1 > out.txt\nEOF",
       "cwd": "@SANDBOX@/repo"
     },
     {
       "line": "cat <<'EOF'\na > b\ntee x\nEOF",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "cat > @SANDBOX@/tmp/scratch/notes.md <<'EOF'\nfind . -name '*.md' | xargs -I{} cp {} out/\nEOF",
       "cwd": "@SANDBOX@/repo"
     },
     {

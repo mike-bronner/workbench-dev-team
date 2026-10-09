@@ -26,11 +26,11 @@
 #      its own step deletes: the Watson Index pipeline's, Holmes's Index-mode PR
 #      checkout, which his helpers read while his turn may have ended, and
 #      Lestrade's Item-mode clone.
-#   3. Every helper skeleton in review-phases.md carries the same probe-copy
-#      block, which makes the folder with a bare mktemp. One skeleton worded its
-#      own way is a helper that leaks its copy again.
-#   4. The review guard's deny text sends a probe to a scratch root, not to a
-#      bare `mktemp -d` in $TMPDIR.
+#   3. Every helper skeleton in review-phases.md carries the same validation
+#      block: run the existing tests in place, and copy nothing into scratch.
+#      One skeleton worded its own way is a helper that makes a copy again.
+#   4. The review guard's deny text sends a reviewer to the tests in place, and
+#      never to a copy in scratch (Mike, 2026-10-09: reviews work in place).
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -83,23 +83,26 @@ else
   while IFS= read -r line; do bad "templated mktemp: $line"; done <<< "$templated"
 fi
 
-# ── 3. One probe-copy block, in every helper skeleton ─────────────────────────
-PROBE='in your own scratch folder, and you change only that copy. Make the folder with
-a bare `mktemp -d`: the dev-team mod puts it under a scratch root, and deletes
-it when your run ends.'
+# ── 3. One validation block, in every helper skeleton ─────────────────────────
+VALIDATE='even to undo it after. Validate by running the existing tests in that tree and
+reading them. Write no probe script, copy no repository, change no code, and
+trim no test file. Run mutation testing only through the project'"'"'s own runner
+that mutates in place without editing a file, such as `pest --mutate`. Report a
+hole no test covers as a finding that names the missing test.'
 skeletons="$(grep -c '^Checkout (' "$PHASES")"
-blocks="$(python3 -c 'import sys; print(open(sys.argv[1]).read().count(sys.argv[2]))' "$PHASES" "$PROBE")"
+blocks="$(python3 -c 'import sys; print(open(sys.argv[1]).read().count(sys.argv[2]))' "$PHASES" "$VALIDATE")"
 if [ "$skeletons" -gt 0 ] && [ "$skeletons" = "$blocks" ]; then
-  ok "all $skeletons helper skeletons carry the same probe-copy block"
+  ok "all $skeletons helper skeletons carry the same validation block"
 else
-  bad "$blocks of $skeletons helper skeletons carry the probe-copy block word for word"
+  bad "$blocks of $skeletons helper skeletons carry the validation block word for word"
 fi
 
-# ── 4. The guard's deny text points a probe at a scratch root ─────────────────
-if grep -Fq 'under the session scratchpad or ~/Developer/scratchpad, and deleted' "$GUARD"; then
-  ok "the review guard's deny text sends a probe copy to a scratch root"
+# ── 4. The guard's deny text sends a reviewer to the tests in place ───────────
+if grep -Fq "'Validate by running the existing tests in place and reading them." "$GUARD" \
+  && ! grep -Eq 'runs on a copy|probe copy' "$GUARD"; then
+  ok "the review guard's deny text sends a reviewer to the tests in place, never to a copy"
 else
-  bad "the review guard's deny text no longer sends a probe copy to a scratch root"
+  bad "the review guard's deny text no longer sends a reviewer to the tests in place, or still offers a copy"
 fi
 
 echo

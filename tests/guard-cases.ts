@@ -270,13 +270,17 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   ['x=ech; y=o; echo $[ "1 ]; $x$y MARK', ['sub-agent', 'pipeline']],
   ['echo $(( 1 + "1 )); $x$y MARK', ['sub-agent', 'pipeline']],
   ["cat <<$'EOF'\nhi\nEOF\n$x$y MARK", ['sub-agent', 'pipeline']],
+  // Since 159f51a the reader decodes the delimiter above. One with an escape it
+  // keeps undecoded leaves the heredoc open, and the line is still refused.
+  ["cat <<$'E\\cAOF'\nhi\nEOF\n$x$y MARK", ['sub-agent', 'pipeline']],
   ["bash -c 'bash -c \"bash -c \\\"bash -c \\\\\\\"bash -c ls\\\\\\\"\\\"\"'", ['sub-agent', 'pipeline']],
   // A git named by a plain "$NAME/…" path is still a git the ask rules miss.
   ['"$HOME/bin/git" push', ['main', 'sub-agent', 'pipeline']],
 ]
 
 // Lines a reviewer may run in the tree under review, with @SANDBOX@/repo as
-// the working directory, though the bash guard refused them.
+// the working directory, though the bash guard refused them or a reviewer
+// reported them refused.
 export const REVIEW_PASSES: readonly string[] = [
   // A > or => inside a sed or awk program.
   "awk '$3 > 5' file.txt",
@@ -286,6 +290,19 @@ export const REVIEW_PASSES: readonly string[] = [
   // A > and a tee inside a quoted heredoc body.
   "cat <<'EOF'\na > b\ntee x\nEOF",
   "cat <<'EOF' | grep -c x\n2>&1 > out.txt\nEOF",
+  // A quoted heredoc body written to a scratch file is data, whatever its text
+  // holds: an `-I{}` and an `=> {` refused a Holmes write under the 0.52.0 bash
+  // guard (2026-10-09).
+  "cat > @SANDBOX@/tmp/scratch/notes.md <<'EOF'\nfind . -name '*.md' | xargs -I{} cp {} out/\nEOF",
+  "cat <<'EOF' > @SANDBOX@/tmp/scratch/notes.md\nconst pick = (row) => {\n  return row.id\n}\nEOF",
+  // A git read through process substitution, and a quoted grep pattern that
+  // names a git verb. A Holmes review reported both refused (2026-10-09).
+  // Neither the 0.52.0 bash guard nor this port refuses them. They are pinned
+  // so neither starts to.
+  'diff <(git show HEAD:README.md) README.md',
+  "grep -n 'git status' README.md",
+  // The same pattern naming a writing verb, which a misread would refuse.
+  "grep -n 'git restore' README.md",
   // A > inside single-quoted bash -c text.
   "bash -c 'grep -c \">\" file.txt'",
   "bash -c 'echo \"a > b\"'",

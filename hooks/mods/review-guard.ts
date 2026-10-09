@@ -65,6 +65,8 @@
 //   5. Redirects bash really performs (>, >>, >|, &>, <>, a >& to a file),
 //      judged by target. A > inside quotes, an awk or sed program, a heredoc
 //      body, arithmetic or [[ ]] is not a redirect, and the reader says so.
+//      A quoted heredoc body is data, so a body written to a scratch file
+//      passes whatever text it holds (an `-I{}`, an `=> {`).
 //
 // FAIL CLOSED. A line parseShell cannot read whole (any unknown), a wrapper
 // it cannot place (isPlaced false), a command name built at run time, and a
@@ -821,9 +823,9 @@ export function refusalOf(finding: Finding, roots: readonly string[]): string {
     'directory, and the uncommitted change in it is the only copy of the work.\n\n' +
     'Read it instead. `git status`, `git diff HEAD`, `git ls-files --others ' +
     '--exclude-standard`, and `git show` are all allowed, and so is the test suite. ' +
-    'A probe that needs a changed tree runs on a copy in your own folder, made with ' +
-    '`mktemp -d` under the session scratchpad or ~/Developer/scratchpad, and deleted ' +
-    'before you report with `rm -rf` and its literal path as its own command. ' +
+    'Validate by running the existing tests in place and reading them. Write no ' +
+    'probe script, copy no repository, and change no code, not even in scratch. ' +
+    'Report a hole no test covers as a finding that names the missing test. ' +
     'If a failure looks pre-existing, say so in your findings — never ' +
     'isolate it by changing the tree.\n\n' +
     'There is no flag to clear and no path around this. If you believe you are not ' +

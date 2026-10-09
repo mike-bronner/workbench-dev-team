@@ -185,11 +185,16 @@ describe('both guards — an array or case still open, and the other unknowns, a
   // or a heredoc ends, the shell runs a command the reader read as text
   // (Holmes, 47a5e27 review: zsh runs `$x$y` in the first two, and bash and
   // zsh both in the third). Rule 5 refuses each unknown where nobody watches.
+  // Since workbench-core 159f51a the reader decodes a $'…' delimiter, so it
+  // ends the third heredoc where the shell does and reads `$x$y` as a built
+  // name. A delimiter with an escape it keeps undecoded still leaves the
+  // heredoc open.
   test('a quote, substitution or heredoc the reader cannot close is refused where nobody watches', () => {
     const lines: [string, string[]][] = [
       ['x=ech; y=o; echo $[ "1 ]; $x$y MARK', ['quote']],
       ['echo $(( 1 + "1 )); $x$y MARK', ['quote', 'substitution']],
-      ["cat <<$'EOF'\nhi\nEOF\n$x$y MARK", ['heredoc']],
+      ["cat <<$'EOF'\nhi\nEOF\n$x$y MARK", ['expansion']],
+      ["cat <<$'E\\cAOF'\nhi\nEOF\n$x$y MARK", ['heredoc']],
     ]
     for (const [line, unknowns] of lines) {
       expect(parseShell(line).unknowns).toEqual(unknowns)
@@ -374,10 +379,12 @@ describe('review guard — paths are judged on the disk', () => {
     reviewWorld(on, { cwd: undefined })
     expect(await refusalOf($, bash('touch x'), 'lens-1')).toContain('cannot be resolved')
   })
-  test('the refusal names the roots and sends a probe to a scratch copy', async ($, on) => {
+  test('the refusal names the roots and sends the reviewer to the tests in place, never a copy', async ($, on) => {
     reviewWorld(on)
     const refusal = await refusalOf($, bash(`chmod 644 ${SB}/repo/README.md`), 'lens-1')
     expect(refusal).toContain(`\`${SB}/home/Developer/scratchpad\`, \`${SB}/tmp\``)
-    expect(refusal).toContain('under the session scratchpad or ~/Developer/scratchpad, and deleted')
+    expect(refusal).toContain('Validate by running the existing tests in place and reading them.')
+    expect(refusal).toContain('copy no repository')
+    expect(refusal).not.toMatch(/runs on a copy|probe copy/)
   })
 })
