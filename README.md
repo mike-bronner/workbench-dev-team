@@ -18,6 +18,8 @@ A fourth component — **Dispatch** — is a local launchd job that polls the bo
 
 Lestrade, Watson, and Holmes used to have no memory of their own reviews: nothing recorded *what* Holmes rejected, *why*, or *how* it got fixed, so the same lessons got re-taught every review (test-honesty is ~38% of all rejections, fail-open ~11%, doc-drift ~11%). There's no separate harvesting agent for this — **Holmes is the only one who holds both halves of a rejection** (what he flagged, and whether the next push actually fixed it), so he records it himself, live, at re-review: one atomic vault note per bounce or AC-dispute event, categorized against a fixed taxonomy, plus an incrementally-refreshed `dev-team/top-lessons.md` digest (recurring categories, frequency-ranked, each with the concrete prevention rule). **Watson reads that digest and searches the vault for anything task-specific before coding; Lestrade reads it before writing acceptance criteria**, so the pipeline gets smarter instead of repeating itself on both sides — what gets built and what gets asked for. Your own corrections take a second channel, because no review rejection records them: they live under `feedback/` in the vault, and all three agents are required to search it: Watson before building (`/develop` requires it in every lane, Direct mode included), Holmes before judging, in both Local and Index mode, and Lestrade before writing acceptance criteria. Your corrections bind every stage, and a stage that never reads them never catches a violation of one.
 
+**A review note never replaces an existing one.** Holmes builds each learnings note's path himself, and the memory MCP's `write` replaces any note already at that path. A read cannot prove a path is free, because the server answers `Document not found` both for a missing file and for a note it cannot parse. So each name ends with the time to the second and a token from `openssl rand -hex 3`, and he writes only after a read of that path answers `Document not found`. A write that still answers `created: false` replaced a note, and his report names the path so the old note can be restored from the vault's git history. `agents/lint-vault-note-paths.sh` fails when a note write by a built path, in any Markdown file, loses its unique name or its read, or stands outside a code fence.
+
 ## Install
 
 ```
@@ -382,11 +384,12 @@ The two groups are named apart on purpose:
 The hooks module has its own tests, `tests/*.test.ts`, which run with
 `claude plugin test .`. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
-- **`lint-*.sh`** — nine scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — ten scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
   `agents/lint-brief-contract.sh`, `agents/lint-gate-refusal.sh`,
   `agents/lint-holmes-local-mode.sh`, `agents/lint-scratch-cleanup.sh`,
+  `agents/lint-vault-note-paths.sh`,
   `skills/orchestrate/lint-compaction.sh`,
   `skills/orchestrate/lint-decision-format.sh`,
   `skills/orchestrate/lint-rationale-split.sh`, and

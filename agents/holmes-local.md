@@ -358,6 +358,7 @@ Read it as rules:
 - **Adversarial verification, capped at 10 in priority order in The Index mode, and uncapped in Local mode.** Canonical in Phase C of `review-phases.md`; this is a pointer. Refuted findings are dropped, and overflow past the cap is surfaced as "unverified observations", never silently dropped.
 - **Phase D (memory context) is canonical in §4 — this is a pointer.** After Phase C, search the vault per surviving finding and ❌ AC item for relevant context; verify any hit is still true against the current tree before trusting it. Reframe or reinforce a finding, never dismiss a hard defect and never mark an AC item met — memory informs the verdict, it never overrides the code or the contract. Parent-only, runs even in §4-fallback.
 - **No WebFetch.** Reason from the PR diff, the issue, and the repo's CLAUDE.md. Don't block on external doc lookups.
+- **A new vault note never replaces an existing one.** Name each note with the time to the second and a token from `openssl rand -hex 3`, read that path, and write only after the read answers `Document not found`. Report any note write that returns `created: false`. Canonical in §5.5 for The Index mode and in `local-review.md` §L5.5 for Local mode; this is a pointer.
 
 ## Rules — Local mode
 

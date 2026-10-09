@@ -325,11 +325,37 @@ taxonomy (`test-honesty`, `security-hardening`, `fail-open`, `correctness`,
 reads as *rubric not met*. An approve with no findings is `clean`.
 
 **The path is keyed on what a local review can supply.** There is no PR number,
-so the key is the workdir's basename, the date, and the time to the minute:
+so the key is the workdir's basename, the date, the time to the second, and a
+random token.
+
+**The note gets a name no other note has.** Two reviews can build the same time
+key, and `write` replaces any file already at that path. A read cannot prove a
+path is free: the memory server answers `Document not found: <path>` both for a
+missing file and for a note it cannot parse (invalid UTF-8, an I/O error, or
+malformed frontmatter). So the uniqueness comes from the name. Run these two
+commands, each on a line of its own:
 
 ```
+date +%H%M%S
+openssl rand -hex 3
+```
+
+Put the time in `<hhmmss>` and the six hex digits in `<token>`. Never make up
+the token yourself. Then read the path:
+
+- **The read answers `Document not found: <path>`:** no parseable note is
+  there, and the token makes an unparseable one at that name all but
+  impossible. Write the note there. This is the only answer that counts as
+  free.
+- **The read returns a note:** the name is taken. Run `openssl rand -hex 3`
+  again, and read the new path. Never write to a path that returned a note.
+- **The read fails with any other error:** the path is unproven. Skip the note
+  and log it, as for a write error.
+
+```
+mcp__plugin_workbench-core_memory__read("dev-team/review-learnings/<workdir-basename>-local-<yyyy-mm-dd>-<hhmmss>-<token>.md")   # only "Document not found" counts as free
 mcp__plugin_workbench-core_memory__write(
-  path: "dev-team/review-learnings/<workdir-basename>-local-<yyyy-mm-dd>-<hhmm>.md",
+  path: "dev-team/review-learnings/<workdir-basename>-local-<yyyy-mm-dd>-<hhmmss>-<token>.md",   # the path just read; created: false → report it
   frontmatter: {
     name: "<workdir-basename> local review — <category|clean>",
     type: "insight", scope: "topical", date: "<today>",
@@ -349,6 +375,16 @@ mcp__plugin_workbench-core_memory__write(
 The `local-review` tag is what keeps this population separable from the PR notes
 beside it. If the workdir is not a git repository, or HEAD does not exist yet,
 say so in the note instead of the SHA; the path never depends on it.
+
+Write the note before you return the verdict, and check the write's result.
+`created: true` is the expected answer. **`created: false` means the write
+replaced an existing note.** Do not write again. Add this line at the end of
+your verdict, so the orchestrator can restore the old note from the vault's git
+history:
+
+```
+⚠️ Vault note replaced: <path> (created: false). Restore the earlier note from the vault's git history.
+```
 
 A memory-write failure is logged and never changes your verdict or blocks your
 report — same rule as Index mode.

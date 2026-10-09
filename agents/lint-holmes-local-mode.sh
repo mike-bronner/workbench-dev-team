@@ -303,7 +303,7 @@ printf '%s\n' "$fenced" | grep -Fq 'path: "dev-team/top-lessons.md"' \
   && vault+=("a write block targets the top-lessons digest from a local review")
 printf '%s\n' "$fenced" | grep -Fq 'pr<pr_num>' \
   && vault+=("the local note path is still keyed on a PR number, which a local review has not got")
-printf '%s\n' "$fenced" | grep -Fq -- '-local-<yyyy-mm-dd>-<hhmm>.md' \
+printf '%s\n' "$fenced" | grep -Fq -- '-local-<yyyy-mm-dd>-<hhmmss>-<token>.md' \
   || vault+=("the local note path no longer uses a key a local review can supply")
 printf '%s\n' "$fenced" | grep -Fq '"local-review"' \
   || vault+=("the local-review tag is gone, so the two populations stop being separable")

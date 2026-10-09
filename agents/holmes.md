@@ -726,13 +726,29 @@ The PR waits for Mike to pick an option (amend or confirm the AC), then it flows
 
 After submitting your verdict (§5), record what happened to the shared memory vault. This is the pipeline's only feedback loop, and you're the only one positioned to run it. Two paths, branching on the verdict:
 
-**Path A — bounce (re-review) or AC-dispute escalation.** `CHANGES_COUNT >= 1` from §3 (at least one prior Holmes change-request already exists on this PR), or your verdict is an **AC-dispute escalation**. You hold the prior rejection *and* you just checked whether this push actually fixed it — a separate agent reconstructing that after the fact only degrades what you already know firsthand. Follow steps 1-4 below.
-
-**Path B — clean first-pass approve.** Verdict is **APPROVE** and `CHANGES_COUNT == 0` (no prior change-request on this PR, no AC dispute). There's nothing to categorize, but the run is still a data point: without it, the digest only ever reflects failure, which reads worse in isolation than it is in context. Write a lightweight note — no category, no prevention rule — then bump the digest's running tally:
+**A new note gets a name no other note has.** You build each note's path yourself, and `write` replaces any file already at that path. A read cannot prove a path is free: the memory server answers `Document not found: <path>` both for a missing file and for a note it cannot parse (invalid UTF-8, an I/O error, or malformed frontmatter). So the uniqueness comes from the name. Before each note `write` below, run these two commands, each on a line of its own:
 
 ```
+date +%H%M%S
+openssl rand -hex 3
+```
+
+Put the time in `<hhmmss>` and the six hex digits in `<token>`. Never make up the token yourself. Then read the path:
+
+- **The read answers `Document not found: <path>`:** no parseable note is there, and the token makes an unparseable one at that name all but impossible. Write the note there. This is the only answer that counts as free.
+- **The read returns a note:** the name is taken. Run `openssl rand -hex 3` again, and read the new path. Never write to a path that returned a note.
+- **The read fails with any other error:** the path is unproven. Skip the note and log it, as for a write error.
+
+Then check the write's result. `created: true` is the expected answer. **`created: false` means the write replaced an existing note.** Do not write again. Add the §6 replaced-note line to your report, so the orchestrator can restore the old note from the vault's git history. This rule covers the per-event notes. `dev-team/top-lessons.md` is one fixed file that you read and then update in place, so it is exempt.
+
+**Path A — bounce (re-review) or AC-dispute escalation.** `CHANGES_COUNT >= 1` from §3 (at least one prior Holmes change-request already exists on this PR), or your verdict is an **AC-dispute escalation**. You hold the prior rejection *and* you just checked whether this push actually fixed it — a separate agent reconstructing that after the fact only degrades what you already know firsthand. Follow steps 1-4 below.
+
+**Path B — clean first-pass approve.** Verdict is **APPROVE** and `CHANGES_COUNT == 0` (no prior change-request on this PR, no AC dispute). There's nothing to categorize, but the run is still a data point: without it, the digest only ever reflects failure, which reads worse in isolation than it is in context. Write a lightweight note — no category, no prevention rule — under a unique name, then bump the digest's running tally:
+
+```
+mcp__plugin_workbench-core_memory__read("dev-team/review-learnings/<repo-slug>-pr<pr_num>-<yyyy-mm-dd>-<hhmmss>-<token>.md")   # only "Document not found" counts as free
 mcp__plugin_workbench-core_memory__write(
-  path: "dev-team/review-learnings/<repo-slug>-pr<pr_num>-<yyyy-mm-dd>.md",
+  path: "dev-team/review-learnings/<repo-slug>-pr<pr_num>-<yyyy-mm-dd>-<hhmmss>-<token>.md",   # the path just read; created: false → report it (§6)
   frontmatter: {
     name: "<repo> PR #<pr_num> — clean-approve",
     type: "insight", scope: "topical", date: "<today>",
@@ -777,11 +793,12 @@ The clean-approval tally is **never** a ranked category — it has no prevention
 | **nitpick** | naming, duplication, a soft refactor |
 | **escalation** | an AC dispute — the AC itself was wrong, imprecise, or contradicted by the codebase |
 
-**3. Write the event** — one atomic note per event (never append to a shared file — concurrent Holmes runs across repos would race on it):
+**3. Write the event** — one atomic note per event, under a unique name (never append to a shared file — concurrent Holmes runs across repos would race on it):
 
 ```
+mcp__plugin_workbench-core_memory__read("dev-team/review-learnings/<repo-slug>-pr<pr_num>-<yyyy-mm-dd>-<hhmmss>-<token>.md")   # only "Document not found" counts as free
 mcp__plugin_workbench-core_memory__write(
-  path: "dev-team/review-learnings/<repo-slug>-pr<pr_num>-<yyyy-mm-dd>.md",
+  path: "dev-team/review-learnings/<repo-slug>-pr<pr_num>-<yyyy-mm-dd>-<hhmmss>-<token>.md",   # the path just read; created: false → report it (§6)
   frontmatter: {
     name: "<repo> PR #<pr_num> — <category>",
     type: "insight", scope: "topical", date: "<today>",
@@ -861,6 +878,12 @@ Or, when the freshness check in §5 caught a stale item and nothing was written:
 ⏭️ reviewed #<issue_number> (<repo>) PR #<pr_num> → stale (item now <status>); verdict <Approved|Changes|Escalated> not written
 ```
 
+If a note write in §5.5 returned `created: false`, add this line under the report line. The PR review is already posted, so the report is where the orchestrator sees it:
+
+```
+⚠️ Vault note replaced: <path> (created: false). Restore the earlier note from the vault's git history.
+```
+
 ## Rules
 
 - **One unit per invocation.** One ID means one PR; one brief means one working tree.
@@ -873,6 +896,7 @@ Or, when the freshness check in §5 caught a stale item and nothing was written:
 - **Adversarial verification, capped at 10 in priority order in The Index mode, and uncapped in Local mode.** Canonical in Phase C of `review-phases.md`; this is a pointer. Refuted findings are dropped, and overflow past the cap is surfaced as "unverified observations", never silently dropped.
 - **Phase D (memory context) is canonical in §4 — this is a pointer.** After Phase C, search the vault per surviving finding and ❌ AC item for relevant context; verify any hit is still true against the current tree before trusting it. Reframe or reinforce a finding, never dismiss a hard defect and never mark an AC item met — memory informs the verdict, it never overrides the code or the contract. Parent-only, runs even in §4-fallback.
 - **No WebFetch.** Reason from the PR diff, the issue, and the repo's CLAUDE.md. Don't block on external doc lookups.
+- **A new vault note never replaces an existing one.** Name each note with the time to the second and a token from `openssl rand -hex 3`, read that path, and write only after the read answers `Document not found`. Report any note write that returns `created: false`. Canonical in §5.5 for The Index mode and in `local-review.md` §L5.5 for Local mode; this is a pointer.
 
 ## Rules — Local mode
 
