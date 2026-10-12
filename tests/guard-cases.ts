@@ -21,6 +21,7 @@ export const COMMIT_PASSES: readonly string[] = [
   "cat > notes.md <<'EOF'\nAfter review, run git push origin main.\nEOF",
   "cat > plan.md <<'EOF'\nThe pipeline pushes with `git push`, and Mike merges with gh pr merge.\nEOF",
   "cat <<'EOF' > summary.txt\nWatson does not git commit or push.\nEOF",
+  "cat > tests/zz-probe.test.ts <<'EOF'\nimport { describe, expect, test } from 'claude-code/testing'\nconst VAULT = `${HOME}/Documents/Claude/Memory`\nconst cases = [\n  'gh pr merge -m \"$PR\"',\n  'gh pr merge --merge \"$PR\"',\n  'gh pr merge -m 12 --delete-branch',\n]\nfor (const c of cases) test(c, async ($) => { await $.tool.call({ tool: 'Bash', command: c }) })\nEOF",
   // Reads that name the words.
   'grep -rn "git push" .',
   "grep -E 'git (commit|push)' notes.md",
@@ -114,6 +115,8 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   ['gh api -X PUT repos/o/r/pulls/5/merge', ['sub-agent', 'pipeline']],
   ['gh api -X PUT "repos/o/r/pulls/5/merge?merge_method=squash"', ['sub-agent', 'pipeline']],
   ['echo gh pr merge 5 > x.sh; bash x.sh', ['sub-agent', 'pipeline']],
+  ["cat > x.sh <<'EOF'\ngh pr merge 5\nEOF\nbash x.sh", ['sub-agent', 'pipeline']],
+  ["python3 - <<'EOF'\ncases = ['gh pr merge 1 --squash --delete-branch']\nprint(cases)\nEOF", ['main', 'sub-agent', 'pipeline']],
   // A sub-agent's commit or push, in the spellings review rounds found. A
   // commit the main lane and the pipeline pass carries a subject in the
   // git-commit format, which the subject check holds them to.
@@ -290,6 +293,7 @@ export const REVIEW_PASSES: readonly string[] = [
   // A > and a tee inside a quoted heredoc body.
   "cat <<'EOF'\na > b\ntee x\nEOF",
   "cat <<'EOF' | grep -c x\n2>&1 > out.txt\nEOF",
+  'for t in hooks/test-*.sh; do out=$(bash "$t" 2>&1); rc=$?; if [ $rc -ne 0 ]; then echo "FAIL $t"; echo "$out" | tail -5; fi; done',
   // A quoted heredoc body written to a scratch file is data, whatever its text
   // holds: an `-I{}` and an `=> {` refused a Holmes write under the 0.52.0 bash
   // guard (2026-10-09).
@@ -367,6 +371,8 @@ export const REVIEW_REFUSALS: readonly string[] = [
   'git stash',
   'echo x > README.md',
   'echo x >> README.md',
+  'for t in hooks/test-*.sh; do out=$(bash "$t" 2>&1) > README.md; done',
+  'for t in hooks/test-*.sh; do out=$(bash "$t" 2>&1 > README.md); done',
   'tee README.md < file.txt',
   'cp @SANDBOX@/tmp/scratch/target.txt file.txt',
   "sed -i '' 's/a/b/' file.txt",

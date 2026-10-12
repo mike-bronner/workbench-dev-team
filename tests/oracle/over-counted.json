@@ -2096,6 +2096,14 @@
       ]
     },
     {
+      "line": "cat > tests/zz-probe.test.ts <<'EOF'\nimport { describe, expect, test } from 'claude-code/testing'\nconst VAULT = `${HOME}/Documents/Claude/Memory`\nconst cases = [\n  'gh pr merge -m \"$PR\"',\n  'gh pr merge --merge \"$PR\"',\n  'gh pr merge -m 12 --delete-branch',\n]\nfor (const c of cases) test(c, async ($) => { await $.tool.call({ tool: 'Bash', command: c }) })\nEOF",
+      "lanes": [
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
       "line": "cat git${IFS}push { -c\n--mirror esac\n2>&1\npush;-exec a",
       "lanes": [
         "main",
@@ -3732,6 +3740,10 @@
     },
     {
       "line": "find '$1 > 2'x=1",
+      "cwd": "@SANDBOX@/repo"
+    },
+    {
+      "line": "for t in hooks/test-*.sh; do out=$(bash \"$t\" 2>&1); rc=$?; if [ $rc -ne 0 ]; then echo \"FAIL $t\"; echo \"$out\" | tail -5; fi; done",
       "cwd": "@SANDBOX@/repo"
     },
     {
