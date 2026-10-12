@@ -50,7 +50,7 @@ Dispatch **four** read-only lens reviewers in a **single message** (multiple `Ag
 The four lenses:
 
 1. **AC conformance lens** — for *each* AC checkbox, return one of: **met** (the implementation satisfies the criterion's *intent* — including when it does so by a different mechanism than the literal wording anticipated, as long as it drops nothing the criterion cared about and the result is equal or better) / **not met** (the intent is missing, weakened, or traded away) / **the AC item itself looks defective** (wrong, imprecise, impossible, or contradicted by the codebase), each with file:line evidence. When a criterion is met by a *divergence* from its wording, say so explicitly and cite the divergence — so the parent can confirm it's a genuine improvement and not a quietly dropped requirement. It does not decide the verdict — it reports per-criterion status for you to apply in §4d.
-2. **Correctness lens** — real bugs, logic errors, and breaks to existing behaviour. Not style, not preference.
+2. **Correctness lens** — real bugs, logic errors, and breaks to existing behaviour. Not style, not preference. One exception: report as a `note` each code comment the diff adds that the project's linter or config does not require, and each code comment the change made wrong and left in place. The fix for either deletes the comment, never rewrites it.
 3. **Security lens** — hardcoded secrets, missing validation at a boundary, OWASP-class risks (injection, XSS, SSRF, …).
 4. **Test-honesty lens** — do the tests *meaningfully* cover the AC and the change, or do they merely compile / assert trivia? Reads the test files in the checkout directly, and judges whether each test really proves what it claims and whether the tests cover the routes and the edge cases. A suspected hole that no test covers is a `blocker` finding that names the missing test: what it sets up, and what it asserts.
 
@@ -71,7 +71,9 @@ Acceptance criteria (verbatim — never amend or reinterpret):
 <AC text pasted verbatim>
 
 The repo's existing conventions win over your personal preferences. Do not flag
-style that matches the repo's patterns.
+style that matches the repo's patterns. Code comments are the exception: a new
+comment the project's linter or config does not require is a finding even when
+the repo's code is full of comments.
 
 Reading discipline (these bound the review's cost — follow them):
 - Grep before you read: find lines with `grep -n` or `gh pr diff <PR_NUM>`, then
@@ -227,4 +229,4 @@ Skip this phase entirely on a clean review — no surviving findings and no ❌ 
 
 #### §4-fallback — inline review (no fan-out)
 
-When the `Agent` tool is unavailable in the runtime, `fanout` is `false`, or every dispatch path errors, **you review the checkout yourself, inline**, exactly as a single reviewer: read each changed file in context against the AC and the repo's patterns (the AC-conformance check), look for correctness / security / test defects, and read the test files for meaningfulness, validating as `agents/holmes.md` "Validation" says. There is no adversarial verification step in the fallback — you are the single head. **Phase D still runs** — it's independent of the fan-out — and so does the check against Mike's `feedback/` rules from §4a.5. Feed your findings into the **same** §4d/§4e verdict logic. The fan-out is an enhancement layered over this path; this path is always complete on its own.
+When the `Agent` tool is unavailable in the runtime, `fanout` is `false`, or every dispatch path errors, **you review the checkout yourself, inline**, exactly as a single reviewer: read each changed file in context against the AC and the repo's patterns (the AC-conformance check), look for correctness / security / test defects and for code comments the correctness lens would report, and read the test files for meaningfulness, validating as `agents/holmes.md` "Validation" says. There is no adversarial verification step in the fallback — you are the single head. **Phase D still runs** — it's independent of the fan-out — and so does the check against Mike's `feedback/` rules from §4a.5. Feed your findings into the **same** §4d/§4e verdict logic. The fan-out is an enhancement layered over this path; this path is always complete on its own.

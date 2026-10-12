@@ -5,9 +5,7 @@ description: Apply universal development standards when implementing code change
 
 # Development Workflow
 
-Universal standards for any code implementation work. The goal isn't compliance —
-it's predictably high-quality changes that future-you (or anyone else) can read,
-trust, and extend.
+Universal standards for any code implementation work.
 
 ## Your lane decides what finishing looks like
 
@@ -179,10 +177,11 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
 - **Don't add dependencies casually.** Check the project's existing deps first,
   prefer well-maintained, widely-used packages, and copy a few lines rather
   than add a tiny dependency.
-- **Keep docs and comments in sync with the code.** Update any comment, README
-  section, docstring parameter, or type signature your change makes wrong, in
-  the same commit. Flag external docs that need updating even if you can't
-  change them yourself.
+- **No comments in code** unless the project's linter or config requires them.
+  Names, structure, and tests describe the code. Leave comments in untouched
+  code, and delete one your change makes wrong rather than rewrite it.
+- **Keep docs in sync.** Update any README or type signature your change makes
+  wrong, in the same commit, and flag external docs you can't change.
 - **No WebFetch.** Reason from the repo. If you can't, planning missed
   something — go back to step 2.
 
@@ -220,15 +219,15 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
 - **Grep the tree for every symbol or documented claim your diff changed**
   (doc-drift). Renamed a symbol, changed a documented behavior, altered a
   contract or type signature? `grep`/`rg` for every reference — code, comments,
-  README, docs — and update each in the same change. A stale reference the tests
+  README, docs — and fix each in the same change. A stale reference the tests
   won't catch is a silent regression for the next reader.
 - **Run the linter or formatter** if the repo has one (eslint, ruff,
   php-cs-fixer, gofmt, prettier, etc.). Fix violations rather than disabling
   rules.
 - **Self-review the diff before you hand it on.** Read the whole diff you are
   about to commit or report, as a reviewer would: debug output, commented-out
-  code, forgotten TODOs, leftover scaffolding, a mutation you did not revert, and
-  anything that smells like a credential.
+  code, an unrequired comment, forgotten TODOs, leftover scaffolding, a
+  mutation you did not revert, and anything that smells like a credential.
 
 ## 5. Commit
 

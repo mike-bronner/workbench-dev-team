@@ -43,11 +43,23 @@ the same rule.
   deps first — chances are something close already exists. Prefer well-maintained,
   widely-used packages over niche ones. And for tiny utility functions (a few
   lines), a little copying is better than a little dependency.
-- **Keep docs and comments in sync with the code.** If your change makes an
-  existing comment, README section, JSDoc/docstring parameter, or type signature
-  wrong, update it in the same commit. Stale docs and comments actively mislead
-  — they're worse than missing ones, because the next reader trusts them. For
-  external docs (Notion, Confluence, design specs), flag what needs updating
-  even if you can't change them yourself.
+- **Write no comments in code** unless the project's linter or config requires
+  them, such as a PHPCS rule that demands a docblock on every method. Code
+  describes itself through names, structure, and tests. A comment is a second
+  copy of what the code says, so every change to the code forces a change to the
+  comment, and that churn buys nothing. This holds in every project, AI-maintained
+  plugin code included. It covers inline comments, block comments, and
+  docstrings or JSDoc alike. Functional lines that only look like comments stay:
+  a shebang, or a directive a tool reads, such as `phpcs:ignore`.
+- **Leave comments in untouched code alone, and delete the ones you make
+  wrong.** Do not strip comments from code your change does not touch, because a
+  sweep makes the diff noisy. When your change makes an existing comment wrong,
+  delete it rather than rewrite it. A wrong comment misleads, because the next
+  reader trusts it. If the linter then requires a comment there, write only what
+  it requires.
+- **Keep docs in sync with the code.** If your change makes a README section or
+  a type signature wrong, update it in the same commit. Stale docs actively
+  mislead. For external docs (Notion, Confluence, design specs), flag what
+  needs updating even if you can't change them yourself.
 - **No WebFetch.** Reason from the repo. If you can't, planning missed
   something — go back to §2 of `SKILL.md`.
