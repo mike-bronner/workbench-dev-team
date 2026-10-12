@@ -175,7 +175,8 @@ expect_eq "its output goes to the tick log" "$(h first)/.claude-workbench/dev-te
 JOBPATH=$(field first 'p["EnvironmentVariables"]["PATH"]')
 expect_has "its PATH keeps this session's folders" ":/opt/fake-tools:" ":$JOBPATH:"
 case ":$JOBPATH:" in *"/.claude/plugins/cache/"*) bad "a plugin-cache folder is on the job's PATH: $JOBPATH" ;; *) ok "no plugin-cache folder is on the job's PATH" ;; esac
-expect_has "its PATH ends with the system folders" "/usr/bin:/bin:/usr/sbin:/sbin" "$JOBPATH"
+holds_system_folders() { local d; for d in /usr/bin /bin /usr/sbin /sbin; do expect_has "$1 holds $d" ":$d:" ":$2:"; done; }
+holds_system_folders "its PATH" "$JOBPATH"
 case ":$JOBPATH:" in *:/tmp/*|*:/private/tmp/*|*:/var/folders/*) bad "a temporary folder is on the job's PATH: $JOBPATH" ;; *) ok "no temporary folder is on the job's PATH" ;; esac
 expect_eq "each PATH folder appears once" "$(printf '%s\n' "$JOBPATH" | tr ':' '\n' | wc -l | tr -d ' ')" "$(printf '%s\n' "$JOBPATH" | tr ':' '\n' | sort -u | wc -l | tr -d ' ')"
 expect_eq "launchctl: the old job out, the new one in, then checked" \
@@ -184,6 +185,10 @@ bootstrap gui/$(id -u) $(plist first)
 print gui/$(id -u)/$LABEL" "$(cat "$WORK/launchctl.calls")"
 out=$(install_run dupes "$(fake_src v1)" "" "/opt/fake-tools:$STUB:/opt/fake-tools:/usr/bin:$PATH")
 expect_eq "a folder named twice on this session's PATH appears once" 1 "$(field dupes 'p["EnvironmentVariables"]["PATH"]' | tr ':' '\n' | grep -cx /opt/fake-tools)"
+out=$(install_run ubuntu "$(fake_src v1)" "" "$STUB:$NOCLAUDE:/usr/sbin:/usr/bin:/sbin:/bin")
+holds_system_folders "with Ubuntu's order on this session's PATH, its PATH" "$(field ubuntu 'p["EnvironmentVariables"]["PATH"]')"
+out=$(install_run macos "$(fake_src v1)" "" "$STUB:$NOCLAUDE:/usr/bin:/bin:/usr/sbin:/sbin")
+holds_system_folders "with the Mac's order on this session's PATH, its PATH" "$(field macos 'p["EnvironmentVariables"]["PATH"]')"
 out=$(install_run amp "$(fake_src v1)" "" "/opt/a&b<c>d:$STUB:$PATH")
 expect_has "a PATH folder with &, < and > is kept intact" ":/opt/a&b<c>d:" ":$(field amp 'p["EnvironmentVariables"]["PATH"]'):"
 out=$(install_run tmp "$(fake_src v1)" "" "/private/tmp/claude-1/x:/tmp/y:/var/folders/z/bin:$STUB:$PATH")
