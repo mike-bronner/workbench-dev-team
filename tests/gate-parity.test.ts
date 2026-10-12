@@ -1,7 +1,7 @@
-// The dispatch gate held to workbench-core's bash gate, case for case, over
-// every prompt case of its test (tests/gate-cases.ts). Core retires the bash
-// gate once this module reaches parity, and its own case file records no hint
-// verdicts, so the hint has no other check than this one.
+// The dispatch gate held to the verdicts workbench-core's gate gave, case for
+// case, over every prompt case of its former suite (tests/gate-cases.ts). Core's
+// own case file records no hint verdicts, so the hint has no other check than
+// this one.
 
 import { describe, expect, test } from 'claude-code/testing'
 
@@ -17,7 +17,7 @@ describe('the fixture — a deny is exactly a brief core finds incomplete', () =
   })
 })
 
-describe('hintOf — a hint exactly where the bash gate gave one', () => {
+describe("hintOf — a hint exactly where core's gate gave one", () => {
   for (const c of GATE_CASES.filter(c => c.verdict !== 'deny')) {
     test(`${c.verdict}: ${c.name}`, () => {
       expect(hintOf(c.check, c.prompt) !== undefined).toBe(c.verdict === 'hint')

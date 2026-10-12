@@ -347,7 +347,7 @@ fi
 # carries the absolute path AND the branch or worktree the human agreed to, so a
 # workspace decision is recorded where the sub-agent reads it — no slot of its
 # own, because a new slot needs a release of both plugins together: the
-# workbench-core gate reads its slot list from its own brief-template.sh, and
+# workbench-core gate reads its slot list from its own hooks/mods/brief.ts, and
 # every agent refuses a brief missing one.
 #
 # Template lines only (`Workdir: <…>`), which is where the slot is *defined*. The

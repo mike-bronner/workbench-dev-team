@@ -274,8 +274,8 @@ describe('the dispatch gate — a main-session brief missing a slot is refused',
     expect(w.spawned).toHaveLength(1)
   })
 
-  // A plugin's own $.agent.spawn is its implementation, not a handoff, and the
-  // bash gate never saw one.
+  // A plugin's own $.agent.spawn is its implementation, not a handoff, and
+  // core's gate never sees one.
   const SPAWNER: Plugin = {
     name: 'spawner',
     register: on => {

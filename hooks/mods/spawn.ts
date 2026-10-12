@@ -228,7 +228,7 @@ export function branchUnreadDeny(path: string): string {
 }
 
 // Whether the dispatch gate judges a dispatch: a main-session dispatch while
-// orchestrator mode is on, as hooks/agent-dispatch-gate.sh decides it. A
+// orchestrator mode is on, as workbench-core's gate decides it. A
 // sub-agent's dispatch and a top-level `--agent` run's are exempt.
 export const isGated = (lane: CallerLane, isOn: boolean): boolean => lane === 'main' && isOn
 
@@ -263,8 +263,8 @@ export function uncheckedDeny(): string {
 
 // The advisory note on a complete brief that dictates method: a fenced block, a
 // shell command on its own line, or three or more numbered steps. It never
-// blocks. Each pattern is the bash gate's, line by line, over its five ASCII
-// whitespace characters.
+// blocks. Each pattern is the one core's gate used before it moved into core's
+// hooks module, line by line, over its five ASCII whitespace characters.
 const WS = ' \\t\\r\\v\\f'
 const FENCE = new RegExp(`^[${WS}]*\`\`\``)
 const COMMAND = new RegExp(

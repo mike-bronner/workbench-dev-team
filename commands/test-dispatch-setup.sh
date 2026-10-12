@@ -190,6 +190,12 @@ out=$(install_run tmp "$(fake_src v1)" "" "/private/tmp/claude-1/x:/tmp/y:/var/f
 case ":$(field tmp 'p["EnvironmentVariables"]["PATH"]'):" in *:/tmp/*|*:/private/tmp/*|*:/var/folders/*) bad "temporary folders reached the job's PATH" ;; *) ok "temporary folders on this session's PATH are left out" ;; esac
 out=$(install_run thirty "$(fake_src v1)" "$(cadence 30)")
 expect_eq "a cadence of 30 is 1800 seconds" 1800 "$(field thirty 'p["StartInterval"]')"
+# A cadence with a leading zero is read as decimal, as the range check reads
+# it. Bash's $(( )) once read "010" as octal (480) and could not read "08".
+out=$(install_run leadzero "$(fake_src v1)" "$(cadence '"010"')")
+expect_eq "a cadence of \"010\" is 600 seconds" 600 "$(field leadzero 'p["StartInterval"]')"
+out=$(install_run eight "$(fake_src v1)" "$(cadence '"08"')")
+expect_eq "a cadence of \"08\" is 480 seconds" 480 "$(field eight 'p["StartInterval"]')"
 
 # ── dispatch-install: every check runs first, and changes nothing ───────────
 echo "Testing that every check runs before anything is replaced:"

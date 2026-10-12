@@ -425,6 +425,7 @@ STUB
   out=$(migrate lost "$OLD" "$LOST"); rc=$?
   [ "$rc" -eq 1 ] && ok "values that do not land in the settings file exit 1" || bad "lost: rc $rc / $out"
   [[ $out == *"where dispatch-agent.sh reads them"* ]] && ok "and say where they were looked for" || bad "lost message: $out"
+  [[ $out == *'under pluginConfigs["workbench-dev-team@claude-workbench"], where'* ]] && ok "and name the settings key they were looked for under" || bad "lost key: $out"
   [ -e "$(old_file lost)" ] && ok "and the old file stays, so the move can run again" || bad "lost: the old file was renamed"
 
   out=$(migrate refused "$OLD" "$WORK/refuse"); rc=$?

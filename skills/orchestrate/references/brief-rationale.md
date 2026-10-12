@@ -45,12 +45,11 @@ one Watson runs in each.
 
 **Why the answer is recorded in `Workdir:`** rather than in a `Constraints:`
 bullet or a slot of its own: a new slot costs a release of both plugins
-together. The workbench-core gate reads its slot list from
-`hooks/lib/brief-template.sh`, and every agent in `agents/` refuses a brief
-missing a slot, so a slot added on one side alone breaks enforcement or every
-receiver. The gate greps line-anchored headers and never slot content, and its
-own suite asserts that the README documents each header, never any wording
-inside one. Widening what `Workdir:` *means* therefore costs nothing at the
+together. The workbench-core gate reads its slot list from the one definition
+behind `checkBrief`, in its `hooks/mods/brief.ts`, and every agent in `agents/`
+refuses a brief missing a slot, so a slot added on one side alone breaks
+enforcement or every receiver. The gate matches line-anchored headers and never
+slot content. Widening what `Workdir:` *means* therefore costs nothing at the
 enforcement layer, while a `Constraints:` bullet would have buried a workspace
 fact among hard limits. `Acceptance:` later paid the cost of a new slot, for the
 reason in its own section below: no existing slot could carry it.

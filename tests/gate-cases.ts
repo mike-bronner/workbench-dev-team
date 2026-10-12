@@ -1,8 +1,9 @@
-// GENERATED from workbench-core 6131575: every prompt case of
-// hooks/test-agent-dispatch-gate.sh, with the verdict the bash gate gave it on a
+// GENERATED from workbench-core 6131575: every prompt case of core's dispatch
+// gate suite at that commit, with the verdict that gate gave it on a
 // main-session dispatch (deny, hint, or silent) and the answer core's
-// $.workbench.briefCheck gives the same prompt. Core retires the bash gate once
-// this module reaches parity, so this file is the record of what it decided.
+// $.workbench.briefCheck gives the same prompt. Core has since moved its gate
+// into its hooks module (4a71f18) and removed that suite, so this file is the
+// record of what the gate decided.
 // tests/gate-parity.test.ts holds the module to it. Do not edit by hand.
 
 export type GateCase = {

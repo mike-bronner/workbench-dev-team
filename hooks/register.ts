@@ -3,9 +3,9 @@
 //
 //   agent.spawn    one dispatch of an agent, in order:
 //                  1. the dispatch gate: a main-session dispatch whose brief
-//                     lacks a slot is refused, as hooks/agent-dispatch-gate.sh
-//                     in workbench-core refuses it, and so is one whose brief
-//                     cannot be checked
+//                     lacks a slot is refused, as workbench-core's own gate
+//                     (its hooks/mods/dispatch.ts, through checkBrief) refuses
+//                     it, and so is one whose brief cannot be checked
 //                  2. the helper rule: a spawn Holmes makes, in any mode, runs
 //                     on holmes-lens whatever type it named, and a fork or a
 //                     teammate of his is refused
@@ -518,7 +518,7 @@ export const register: Register = (on, options) => {
   // dispatch goes on unchanged, unrouted and on the agent file's own model,
   // which is how the public type runs without this module.
   on('agent.spawn', async ($, e, next) => {
-    // Only the model's own Agent calls are judged, the ones the bash gate sees.
+    // Only the model's own Agent calls are judged, the ones core's gate sees.
     // A plugin's $.agent.spawn is the plugin's implementation, not a handoff.
     const isModel = next.origin.plugin === 'engine'
     const isGatedCall = isModel && (await gated($, e.parentAgentId))

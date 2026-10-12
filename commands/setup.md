@@ -333,7 +333,7 @@ else
     case "$PIN_TYPE" in
       object|null) ;;
       *) echo "PIN_MALFORMED $PIN_AGENT type=${PIN_TYPE:-unreadable}"
-         PIN_BAD=$((PIN_BAD + 1))
+         PIN_BAD=$(expr "$PIN_BAD" + 1)
          continue ;;
     esac
     # A non-string value is shown as JSON, so `false` or `5` is never "(none)".
@@ -344,7 +344,7 @@ else
     if [ "$PIN_CUR_MODEL" != "$PIN_MODEL" ] \
        || [ "$(printf '%s' "$PIN_CUR_EFFORT" | tr '[:upper:]' '[:lower:]')" != "$PIN_EFFORT" ]; then
       echo "PIN_DIFFERS $PIN_AGENT model=${PIN_CUR_MODEL:-(none)} effort=${PIN_CUR_EFFORT:-(none)}"
-      PIN_COUNT=$((PIN_COUNT + 1))
+      PIN_COUNT=$(expr "$PIN_COUNT" + 1)
     fi
   done < <(printf '%s\n' "$PIN_AGENTS" | tr ' ' '\n')
   if [ "$PIN_BAD" -gt 0 ]; then
@@ -570,7 +570,8 @@ else
         | select(($o[.key] | tostring) != .value and ($o[.key] | type != "number" or $o[.key] != (.value | tonumber? // null)))
         | .key' "$MIG_SETTINGS" 2>/dev/null) || MIG_MISSING="(the settings file could not be read)"
     if [ -n "$MIG_MISSING" ]; then
-      echo "❌ These values are not in $MIG_SETTINGS under pluginConfigs[\"$MIG_KEY\"], where dispatch-agent.sh reads them: $(printf '%s' "$MIG_MISSING" | tr '\n' ' ')"
+      MIG_WHERE=$(printf 'pluginConfigs["%s"]' "$MIG_KEY")
+      echo "❌ These values are not in $MIG_SETTINGS under $MIG_WHERE, where dispatch-agent.sh reads them: $(printf '%s' "$MIG_MISSING" | tr '\n' ' ')"
       echo "   $MIG_CFG is left as it is. Set the values in /config, then check the file."
       exit 1
     fi
@@ -1282,7 +1283,8 @@ LD_PATH=$(printf '%s:/usr/bin:/bin:/usr/sbin:/sbin' "$PATH" | tr ':' '\n' \
 
 # The job file, with each value XML-escaped and put in by plain string
 # replacement, so no character in a path can be read as a pattern.
-LD_NEW=$(LD_INTERVAL=$((LD_CADENCE * 60)) LD_TICK="$LD_TICK" LD_PATH="$LD_PATH" LD_LOG="$LD_LOG" awk '
+LD_INTERVAL=$(expr "$LD_CADENCE" '*' 60)
+LD_NEW=$(LD_INTERVAL="$LD_INTERVAL" LD_TICK="$LD_TICK" LD_PATH="$LD_PATH" LD_LOG="$LD_LOG" awk '
   function xml(s) { gsub(/&/, "\\&amp;", s); gsub(/</, "\\&lt;", s); gsub(/>/, "\\&gt;", s); return s }
   function put(line, name, value,   at) {
     while ((at = index(line, name)) > 0) line = substr(line, 1, at - 1) value substr(line, at + length(name))
@@ -1314,7 +1316,7 @@ fi
 # one means a restore could not be complete, so nothing is replaced.
 LD_PROVEN_COUNT=0
 for LD_P in "$DR_PROVEN/dispatch-agent.sh" "$DR_PROVEN/dispatch-tick.sh" "$DR_PROVEN/escalation-comment.md" "$DR_PROVEN_JOB"; do
-  [ -f "$LD_P" ] && LD_PROVEN_COUNT=$((LD_PROVEN_COUNT + 1))
+  [ -f "$LD_P" ] && LD_PROVEN_COUNT=$(expr "$LD_PROVEN_COUNT" + 1)
 done
 case "$LD_PROVEN_COUNT" in
   4) LD_RERUN=1 ;;
@@ -1585,8 +1587,8 @@ LP_NEW=
 LP_OK=0
 LP_TRY=0
 while [ "$LP_TRY" -lt "$LP_TRIES" ]; do
-  LP_TRY=$((LP_TRY + 1))
-  [ -f "$LP_LOG" ] && LP_NEW=$(tail -c "+$((LP_FROM + 1))" "$LP_LOG")
+  LP_TRY=$(expr "$LP_TRY" + 1)
+  [ -f "$LP_LOG" ] && LP_NEW=$(tail -c "+$(expr "$LP_FROM" + 1)" "$LP_LOG")
   if printf '%s\n' "$LP_NEW" | grep -Eq '^tick ok [0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9:]{8}Z$'; then
     LP_OK=1
     break

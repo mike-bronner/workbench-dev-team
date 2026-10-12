@@ -4,8 +4,8 @@
 // the module passes on, and record what reached them.
 //
 // The stand-in briefCheck reads the six headers and the two token shapes only. The
-// real check is workbench-core's, held to its bash gate case for case in that
-// repository. What these tests prove is how this module weighs the answer.
+// real check is workbench-core's checkBrief, held to its recorded gate verdicts
+// case for case in that repository. What these tests prove is how this module weighs the answer.
 //
 // parseShell is workbench-core's own reader, copied unchanged into tests/core/
 // (tests/test-core-copies.sh holds the copy to core's main branch), so the
