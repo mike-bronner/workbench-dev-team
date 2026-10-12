@@ -56,7 +56,7 @@ export const COMMIT_PASSES: readonly string[] = [
   // names its program by the last path part, as workbench-core's reader has
   // read it since 4e83554 (batch C1).
   '"$HOME/bin/x" a',
-  '"${CLAUDE_PLUGIN_ROOT}/scripts/x.sh" a',
+  '"${CLAUDE_PLUGIN_ROOT}/bin/dispatch-tick.sh" a',
   '"$HOME"/bin/x a',
 ]
 

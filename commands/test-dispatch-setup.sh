@@ -160,7 +160,7 @@ expect_eq "exit 0" 0 "$rc"
 expect_has "it says so" "the job loaded: $LABEL, every 20 minutes" "$out"
 expect_eq "the scripts are installed" "v1 v1 v1" "$(bin_of first)"
 expect_eq "scripts are executable, the template is not" "755 755 644" \
-  "$(cd "$(h first)/.claude-workbench/bin" && stat -f %Lp dispatch-agent.sh dispatch-tick.sh escalation-comment.md 2>/dev/null | tr '\n' ' ' | sed 's/ $//')"
+  "$(cd "$(h first)/.claude-workbench/bin" && { stat -c %a dispatch-agent.sh dispatch-tick.sh escalation-comment.md 2>/dev/null || stat -f %Lp dispatch-agent.sh dispatch-tick.sh escalation-comment.md; } | tr '\n' ' ' | sed 's/ $//')"
 expect_eq "no proven set yet: only a passed proof writes one" "- - -" "$(proven_of first)"
 expect_eq "the snapshot records that no script was there before" "" "$(cat "$(h first)/.claude-workbench/bin.before/manifest")"
 expect_eq "the job file parses as a property list, with the label" "$LABEL" "$(field first 'p["Label"]')"
@@ -196,6 +196,23 @@ out=$(install_run leadzero "$(fake_src v1)" "$(cadence '"010"')")
 expect_eq "a cadence of \"010\" is 600 seconds" 600 "$(field leadzero 'p["StartInterval"]')"
 out=$(install_run eight "$(fake_src v1)" "$(cadence '"08"')")
 expect_eq "a cadence of \"08\" is 480 seconds" 480 "$(field eight 'p["StartInterval"]')"
+
+# ── dispatch-install: a machine without plutil ──────────────────────────────
+echo "Testing dispatch-install where plutil is missing, so python3 reads the job:"
+NOPLUTIL="$WORK/noplutil"; mkdir -p "$NOPLUTIL"
+for f in /usr/bin/* /bin/* /usr/sbin/* /sbin/* "$(command -v jq)" "$(command -v curl)" "$(command -v python3)"; do
+  [ "${f##*/}" = plutil ] || [ -e "$NOPLUTIL/${f##*/}" ] || ln -s "$f" "$NOPLUTIL/${f##*/}"
+done
+expect_eq "the PATH for these cases has no plutil" "" "$(PATH="$NOPLUTIL"; command -v plutil)"
+out=$(install_run noplutil "$(fake_src v1)" "" "$STUB:$NOPLUTIL"); rc=$?
+expect_eq "a valid job installs: exit 0" 0 "$rc"
+expect_has "and says the job loaded" "the job loaded: $LABEL, every 20 minutes" "$out"
+expect_eq "and the job file parses, with the label" "$LABEL" "$(field noplutil 'p["Label"]')"
+npbad=$(fake_src v2-noplutil-bad)
+sed 's#<key>RunAtLoad</key>#<key>RunAtLoad</broken>#' "$REPO/bin/dispatch-tick.plist" > "$npbad/bin/dispatch-tick.plist"
+out=$(install_run noplutil-bad "$npbad" "" "$STUB:$NOPLUTIL"); rc=$?
+expect_eq "a bad render is still refused: exit 1" 1 "$rc"
+expect_has "and named as not a property list" "is not a valid property list" "$out"
 
 # ── dispatch-install: every check runs first, and changes nothing ───────────
 echo "Testing that every check runs before anything is replaced:"

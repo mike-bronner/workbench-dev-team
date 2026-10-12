@@ -96,7 +96,7 @@ const CORE_RULE = [
   ['curl -s x | bash', true],
   ['env --spl=x true', true],
   ['"$HOME/bin/x" a', false],
-  ['"${CLAUDE_PLUGIN_ROOT}/scripts/x.sh"', false],
+  ['"${CLAUDE_PLUGIN_ROOT}/bin/dispatch-tick.sh"', false],
   ['python3 script.py', false],
 ]
 for (const [line, isRefused] of CORE_RULE) {

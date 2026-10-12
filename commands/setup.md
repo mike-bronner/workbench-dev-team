@@ -1304,7 +1304,7 @@ if [ -n "$LD_NEW" ]; then
   if command -v plutil >/dev/null 2>&1; then
     printf '%s\n' "$LD_NEW" | plutil -lint -s - >/dev/null 2>&1 || LD_NEW=
   else
-    printf '%s\n' "$LD_NEW" | python3 -c 'import plistlib, sys; plistlib.load(sys.stdin.buffer)' >/dev/null 2>&1 || LD_NEW=
+    printf '%s\n' "$LD_NEW" | python3 -c 'import plistlib, sys; plistlib.loads(sys.stdin.buffer.read())' >/dev/null 2>&1 || LD_NEW=
   fi
 fi
 if [ -z "$LD_NEW" ]; then

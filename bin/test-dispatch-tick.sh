@@ -397,7 +397,7 @@ expect_eq "the mint is a client_credentials grant for the Keychain client" \
 expect_eq "the secret reaches The Index intact" "$SECRET" "$(jq -r 'select(.form) | .form.client_secret' "$LOG")"
 expect_eq "the minted token is the one sent" "Bearer tok-1" "$(jq -r 'select(.body) | .auth' "$LOG" | sort -u)"
 expect_eq "the cache holds the token" "tok-1" "$(jq -r .access_token "$CACHE")"
-expect_eq "the cache is readable by the user alone" "600" "$(stat -f %Lp "$CACHE" 2>/dev/null || stat -c %a "$CACHE")"
+expect_eq "the cache is readable by the user alone" "600" "$(stat -c %a "$CACHE" 2>/dev/null || stat -f %Lp "$CACHE")"
 LEFT=$(( $(jq -r .expires_at "$CACHE") - $(date +%s) ))
 [ "$LEFT" -gt 31535000 ] && [ "$LEFT" -le 31536000 ] && ok "the expiry is expires_in from now" || bad "the expiry is $LEFT seconds away"
 : > "$LOG"
