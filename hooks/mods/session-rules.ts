@@ -82,12 +82,27 @@ export const isRulesLane = (skipWarmup: string | undefined): boolean => skipWarm
 // not fix between two plugins of the same tier. When this plugin's hook wraps
 // core's, core's sections are already in the list and ours follows them. When
 // core's wraps this one, core adds its sections at the shared/session cut
-// after ours, so ours comes before them. Either way it is one shared section
-// whose bytes do not change.
+// after ours, so ours comes before them. Either way it is one shared section.
+//
+// The engine joins the sections of one side with a blank line, but sends the
+// two sides as they are. So the last shared section of the final prompt ends
+// in a blank line when a session section follows it, or its last sentence runs
+// into the next text. Ours is that section only when this hook wraps core's:
+// core's sections are in the list, and ours goes after them, before the first
+// session section. Then ours ends in a blank line, and the prompt reads
+// `RULES`, one blank line, the first session section. When core's hook wraps
+// this one, no core section is in the list yet. Core then puts its sections
+// after ours and ends its own last one in a blank line (its withShared), so
+// ours stays the bare rules, and the engine's join puts one blank line between
+// ours and core's first. Core is a declared dependency of this plugin, so a
+// list with no core section means core's hook is the outer one. Each nesting
+// gives the section the same bytes in every session of a lane, and RULES
+// itself never changes.
 export function withRules(sections: readonly PromptComposeSection[]): PromptComposeSection[] {
   const theirs = sections.filter(section => section.id !== RULES_ID)
   const core = theirs.findLastIndex(section => section.scope === 'shared' && section.id.startsWith(CORE_PREFIX))
   const cut = theirs.findIndex(section => section.scope === 'session')
   const at = core !== -1 ? core + 1 : cut === -1 ? theirs.length : cut
-  return [...theirs.slice(0, at), SECTION, ...theirs.slice(at)]
+  const placed = core !== -1 && theirs[at]?.scope === 'session' ? { ...SECTION, text: `${RULES}\n\n` } : SECTION
+  return [...theirs.slice(0, at), placed, ...theirs.slice(at)]
 }
