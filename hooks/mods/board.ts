@@ -1,13 +1,5 @@
 // The board pane's logic, as pure functions. hooks/register.ts holds the hooks;
 // hooks/mods/panes.tsx draws the lanes.
-//
-// The pane reaches The Index only through `bin/dispatch-tick.sh --board`, run
-// from this plugin's own folder. That mode uses the tick's cached token only
-// (it never mints, never reads the Keychain, and writes nothing), calls the
-// three list tools and nothing else, and prints the lanes as JSON. So no token
-// or secret ever reaches this module. The pane runs
-// it when it opens and then once per dispatch cadence at most, counting every
-// attempt, a failed one included.
 
 // The view types live in the type contract, types/index.d.ts.
 import type { Board, BoardItem, BoardLane, BoardView } from '../../types'
@@ -19,8 +11,6 @@ export const EMPTY_BOARD: BoardView = { attemptedAt: 0, escalated: [] }
 // The dispatch cadence's default, as in .claude-plugin/plugin.json.
 export const DEFAULT_CADENCE_MINUTES = 20
 
-// How long a board fetch may take: three list calls of up to 120 s each in the
-// tick's own client.
 export const BOARD_TIMEOUT_MS = 400_000
 
 // The cadence in milliseconds, from the /config row. A value that is not a

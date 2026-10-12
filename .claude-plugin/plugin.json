@@ -1,6 +1,6 @@
 {
   "name": "workbench-dev-team",
-  "description": "The Index-driven development pipeline: Inspector Lestrade (triage), Dr. Watson (dev work), and Sherlock Holmes (code review). A launchd job called Dispatch polls The Index every 20 to 30 minutes, with no model, and fires the right agent for each pending item.",
+  "description": "The Index-driven development pipeline: Inspector Lestrade (triage), Dr. Watson (dev work), and Sherlock Holmes (code review). A Claude scheduled task called Dispatch polls The Index on its own schedule and fires the right agent for each pending item.",
   "version": "0.53.0",
   "author": {
     "name": "Mike Bronner",
@@ -14,7 +14,7 @@
     "dispatchCadenceMinutes": {
       "type": "number",
       "title": "Dispatch cadence (minutes)",
-      "description": "How often the Dispatch job polls The Index. Re-run /workbench-dev-team:setup after a change, so the job picks it up.",
+      "description": "How often, at most, the /dev-team-board pane fetches The Index. Match it to the Dispatch scheduled task's schedule, which setup never changes.",
       "default": 20
     },
     "lestradeModel": {

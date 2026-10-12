@@ -6,7 +6,7 @@ reply) and POST /oauth/token as Passport's client_credentials grant does.
 Usage: fake-index.py <scenario.json> <log.jsonl> <port file>
 
 It binds 127.0.0.1 on a free port and writes the port to <port file>. It reads
-the scenario on every request, so a test rewrites it between ticks. Every
+the scenario on every request. Every
 request is appended to the log as one JSON line: its path, its Authorization
 header, and its body (the JSON-RPC request, or the form fields).
 

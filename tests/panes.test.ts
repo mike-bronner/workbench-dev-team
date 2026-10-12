@@ -200,7 +200,7 @@ describe('runs — log names', () => {
     })
   })
 
-  test('the tick log, locks, markers and strangers are no runs', () => {
+  test('an old dispatch-tick.log, locks, markers and strangers are no runs', () => {
     for (const name of ['dispatch-tick.log', 'watson-42.lock', 'watson-42.escalated', 'claude-42-20261008-101500.log', 'watson-x-20261008-101500.log', 'watson-42-20261008-1015.log', 'watson-42-20261008-101500.log.bak']) {
       expect(runLogOf(name)).toBeUndefined()
     }
@@ -491,7 +491,7 @@ describe('board — the client\u2019s output', () => {
     expect(boardOutcome(undefined)).toEqual({ error: 'the board client could not run' })
   })
 
-  test('the client is the tick script in board mode, from the plugin folder', () => {
+  test('the client is bin/dispatch-tick.sh --board, from the plugin folder', () => {
     expect(boardArgv('/p')).toEqual(['bash', '/p/bin/dispatch-tick.sh', '--board'])
   })
 })
@@ -529,7 +529,7 @@ describe('board — the cadence', () => {
 const boardRuns = (h: Host) => h.runs.filter(argv => argv[2] === '--board')
 
 describe('the board pane', () => {
-  test('/dev-team-board fetches once through the tick\u2019s board mode, and draws the three lanes', async ($, on) => {
+  test('/dev-team-board fetches once through bin/dispatch-tick.sh --board, and draws the three lanes', async ($, on) => {
     const { h, clock } = host(on, { other: ['watson-42.escalated'] })
     const result = await open($, 'dev-team-board', clock)
     expect(result.text).toBe('The Index board pane opened.')
@@ -588,11 +588,11 @@ describe('the board pane', () => {
   })
 
   for (const reason of [
-    'There is no valid cached Index token yet. The next Dispatch tick mints one.',
-    'The Index refused the cached token (HTTP 401). The next Dispatch tick drops it and mints a new one.',
+    'The Keychain has no the-index-mcp client-id or client-secret, so no Index token could be minted. Run /workbench-dev-team:setup.',
+    'The Index refused a newly minted token (HTTP 401). Check the the-index-mcp client in the Keychain.',
     'The Index could not be reached.',
     'jq is not on PATH, so the board cannot be fetched.',
-    'The Index answered list_unrefined_items with HTTP 404. This router posts a bare tools/call with no initialize and no session, and expects a plain JSON reply.',
+    'The Index answered list_unrefined_items with HTTP 404. The board client posts a bare tools/call with no initialize and no session, and expects a plain JSON reply.',
   ]) {
     test(`the pane shows the client's reason: ${reason.slice(0, 40)}`, async ($, on) => {
       const { clock } = host(on, { board: () => ({ exitCode: 1, stdout: '', stderr: `curl: a notice before it\n${reason}\n` }) })

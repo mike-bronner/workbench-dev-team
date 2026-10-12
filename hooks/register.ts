@@ -366,10 +366,6 @@ async function guard($: EngineInterface, e: GuardInput): Promise<string | undefi
 
 // ── The panes ────────────────────────────────────────────────────────────────
 
-// Both panes only read. The runs pane lists the log folder and runs awk and
-// ps. The board pane runs the tick's board mode, which uses the cached token
-// only: it never mints, never reads the Keychain, and writes nothing.
-
 const RUNS_COMMAND = 'dev-team-runs'
 const BOARD_COMMAND = 'dev-team-board'
 const PANE_TITLE = { [RUNS_PANE]: 'Dev-team runs', [BOARD_PANE]: 'The Index board' } as const

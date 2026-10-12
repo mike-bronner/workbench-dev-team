@@ -12,7 +12,7 @@ This plugin runs a team of agents on a local 20-minute clock that move items thr
 - **Dr. Watson** (`claude-opus-5-5[1m]` at medium effort, $10/run cap) — development. Has two modes: **Direct mode**, the default (invocable as a sub-agent from Claude Code or Cowork for ad-hoc dev work — no The Index calls, just runs the `/develop` skill in a sub-agent context, and hands its work back as an uncommitted working tree for the dispatching session to commit) and **The Index mode**, entered only on an explicit `Item ID: <n>` token (Dispatch-driven, picks the top `Ready`/`In Progress` item, clones the repo, writes code and tests against AC, opens a PR, moves to `In Review`). Ambiguous prose resolves to Direct mode, never to the board. Both modes follow the `/develop` skill for the actual coding.
 - **Sherlock Holmes** (`claude-opus-5-5[1m]` parent at medium effort, Sonnet lenses, $10/run cap) — code review. Has two modes, the same way Watson does: **Local mode**, the default (invocable as a sub-agent on a six-slot prose brief — reviews the *uncommitted working tree* in the given workdir, tracked changes and untracked files, against the brief's `Acceptance:` list as the rubric it never amends, and returns the verdict as prose) and **The Index mode**, entered only on an explicit `Item ID: <n>` token (Dispatch-driven, reviews the board item's PR and posts an App-signed verdict). Ambiguous prose resolves to Local mode, never to the board. Local mode makes **no The Index call and no GitHub write at all** — no review, no comment, no issue — so it is safe on any repo, and it closes the loop on Watson's Direct mode, whose output is exactly an uncommitted tree with no review path otherwise. It replaces the board-coupled steps rather than skipping them: the brief is the rubric, the workdir is the evidence room (never cloned, never written to — a harness-level guard enforces that, see **Review guard** below), and the repo's own suite is run locally in place of reading CI, because the toolchain objection that keeps Index mode off local test runs does not hold when the agent is already in the repo's directory on your machine. It records a vault note per local verdict but deliberately never touches the `top-lessons.md` digest, since local reviews are a separate population whose counts would skew a frequency ranking. Everything in between — the lens fan-out, adversarial verification, the memory pass, the finding-routing matrix — runs unchanged. The rest of this entry describes The Index mode: reviews open PRs, approves or requests changes. Escalates to you after 3 change rounds — but your input resets that count: comment, review, or weigh in on the PR and the window restarts from your last word, so an escalated PR you've decided on gets a fresh review instead of bouncing straight back. Reviews fan out across blind, read-only lens sub-agents (AC conformance, correctness, security, test honesty), with every blocker adversarially verified before it lands — a 3-agent red-team/blue-team/auditor pipeline handles security-lens findings every round and hard defects on the PR's first review, and a single skeptic handles the rest, soft observations included (the fullest check lands where a wrong verdict costs a round, not on a naming nit). After verification, Holmes (and only Holmes — no sub-agent touches the vault) checks each surviving finding against the memory vault for relevant context — a documented decision that reframes it, a past incident that reinforces it — always re-verified against the current tree before it's trusted, never used to waive a real defect or mark an AC item met. Only the parent writes, so there's still exactly one App-signed verdict. Falls back to a single inline pass when the fan-out is unavailable. Findings route by the **coherent unit of work** — *what the issue is really about* — then coupling and locality: a finding that **belongs to the unit blocks and is fixed in this PR**, even in untouched code the diff never caused, because a half-delivered unit is itself the defect. On top of that, anything actionable in the code a PR touched blocks (request changes, however minor), a hard correctness/security/test defect blocks wherever it lives, and — coupling beating locality — untouched code the diff made stale, inconsistent, or wrong blocks too. The self-test: *block and fix here if EITHER the diff caused it OR it belongs to the coherent unit* — a follow-up only when both are false. The precise routing rule lives in Holmes's canonical review contract (`agents/holmes.md`, §4e/§5). The **non-blocking follow-up tier is then gated by materiality, default-deny**: it holds only findings *unrelated* to the unit, and most of those — one-off cosmetics (naming, small duplication, style) — are **noted in the verdict, not tracked**. Only an unrelated **latent hazard** (security/data-integrity/correctness not live enough to block) or **systemic/substantial debt** (a schedulable chunk with its own testable "done") earns **one tracked issue**, tagged `Tracked under:`, capped at one new anchor per PR — the materiality bar that stops the follow-up flood. When Holmes does track, he **expands the earliest related open issue** in place (a comment Lestrade folds into its acceptance criteria) rather than opening a near-duplicate, and opens a new anchor via `create_issue` (App-signed as Holmes, board-added and `PBI`-typed) only when nothing related exists. A class of sites violating one *invariant* (a containment guard, a null-check, a helper every caller owes) is swept whole: if the class belongs to the unit it's folded into the PR; if it's an unrelated anti-pattern agents will replicate it becomes **one umbrella issue with a checkbox per site** — either way closing the class at once rather than minting a fresh single-site issue every review, the treadmill that otherwise turns one finding into an endless `#A → #B → #C` chain. A finding gets the **same disposition regardless of verdict**, so a clean PR never generates more tracked work than a messy one: on a change request, unit-belonging findings are blockers Watson folds into the **same PR**, unrelated cosmetics are optional (fix if cheap, else skip), and the unrelated hazard/debt tier is tracked exactly as on approval.
 
-A fourth component — **Dispatch** — is a local launchd job that polls the board every 20 minutes and fires the right agent for each pending item. It is a shell script with no model in it, so a tick with nothing to do costs no tokens. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
+A fourth component — **Dispatch** — is the Claude scheduled task `workbench-dev-team-dispatch`. It polls the board on its schedule and fires the right agent for each pending item. Dispatch is the only thing that's scheduled; the three agents run as dispatched subprocesses.
 
 ### The feedback loop
 
@@ -27,7 +27,7 @@ Lestrade, Watson, and Holmes used to have no memory of their own reviews: nothin
 /plugin install workbench-dev-team@claude-workbench
 ```
 
-That installs the agents, the Dispatch scripts, and the bundled skills (see below). Nothing is scheduled yet.
+That installs the agents, the dispatcher script, and the bundled skills (see below). Nothing is scheduled yet.
 
 ## Bundled skills
 
@@ -145,7 +145,7 @@ Anything else stays silent, and the run denies it. The pipeline's own templates 
 3. From that folder, run `claude -p --no-session-persistence --settings <file> --permission-mode auto --permission-prompts none --output-format stream-json --verbose` with a prompt that runs `echo probe-ask allow` and then `echo probe-ask silent`.
 4. Confirm the first command printed its text and the second was refused. If the first was refused, the run denied the prompt, and the pipeline is broken on this version. Then delete the folder.
 
-**Why the run starts in an empty folder.** A caller of the dispatcher can sit in a repository: the old model-run Dispatch ran in `~/Developer/workbench-dev-team`. A run started there would take the live plugin repo as its project folder, and workbench-core's destructive-scope guard lets a delete or `git reset --hard` inside the project folder run with no prompt. So `bin/dispatch-agent.sh` starts every run in a fresh folder, `~/Developer/scratchpad/dispatch-<agent>.XXXXXX`, and unsets `CLAUDE_PROJECT_DIR`. If the folder cannot be made, or lands inside a git repository, nothing is dispatched. The wrapper that starts the agent deletes the folder when the agent exits, whether the run succeeded or failed. The accepted cost: a run loads no project `CLAUDE.md` and no project settings. Your user settings, deny rules included, still apply. The 24 tool deny rules runs used to take from this repo's `.claude/settings.local.json` (`Workflow`, `SendMessage`, the `Cron*` and `Task*` tools, `EnterWorktree`, `NotebookEdit`, and the rest) are passed with `--disallowedTools` instead. The list is `DENIED_TOOLS` in `bin/dispatch-agent.sh`, because the installed copy runs from `~/.claude-workbench/bin` and that settings file is personal and untracked. `bin/test-dispatch-agent.sh` pins every name. To change the list, edit both, then re-run setup to install the new wrapper.
+**Why the run starts in an empty folder.** A caller of the dispatcher can sit in a repository: the Dispatch task can run in `~/Developer/workbench-dev-team`. A run started there would take the live plugin repo as its project folder, and workbench-core's destructive-scope guard lets a delete or `git reset --hard` inside the project folder run with no prompt. So `bin/dispatch-agent.sh` starts every run in a fresh folder, `~/Developer/scratchpad/dispatch-<agent>.XXXXXX`, and unsets `CLAUDE_PROJECT_DIR`. If the folder cannot be made, or lands inside a git repository, nothing is dispatched. The wrapper that starts the agent deletes the folder when the agent exits, whether the run succeeded or failed. The accepted cost: a run loads no project `CLAUDE.md` and no project settings. Your user settings, deny rules included, still apply. The 24 tool deny rules runs used to take from this repo's `.claude/settings.local.json` (`Workflow`, `SendMessage`, the `Cron*` and `Task*` tools, `EnterWorktree`, `NotebookEdit`, and the rest) are passed with `--disallowedTools` instead. The list is `DENIED_TOOLS` in `bin/dispatch-agent.sh`, because the installed copy runs from `~/.claude-workbench/bin` and that settings file is personal and untracked. `bin/test-dispatch-agent.sh` pins every name. To change the list, edit both, then re-run setup to install the new wrapper.
 
 **Why auto mode, and what it costs.** Runs used to start with `--dangerously-skip-permissions`. The auto-mode classifier's own default rules name that flag as an unsafe way to start an agent loop, and Mike's sessions run in auto mode. Now the classifier judges every call that no rule decides. Two consequences:
 
@@ -196,7 +196,7 @@ Every knob is a row of the plugin's settings, declared under `userConfig` in `.c
 
 | Row | Default | What it sets |
 |---|---|---|
-| `dispatchCadenceMinutes` | `20` | How often the Dispatch job runs a tick. Re-run setup after a change. |
+| `dispatchCadenceMinutes` | `20` | How often, at most, the `/dev-team-board` pane fetches The Index. Match it to the Dispatch task's schedule, which setup never changes. |
 | `lestradeModel`, `holmesModel`, `watsonModel` | `claude-opus-5-5[1m]` | The model of every run, scheduled and interactive |
 | `lestradeEffort`, `holmesEffort`, `watsonEffort` | `medium` | The effort of every run |
 | `lestradeFallback`, `holmesFallback`, `watsonFallback` | `haiku`, `sonnet`, `sonnet,haiku` | Models a scheduled run falls back to (`--fallback-model`) |
@@ -226,15 +226,15 @@ After `/plugin install`, run this in any Claude Code session:
 /workbench-dev-team:setup
 ```
 
-It walks you through Keychain seeding for any missing credentials, The Index MCP registration, the move of an old config file into `/config`, and the Dispatch launchd job. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or apply a new cadence.
+It walks you through Keychain seeding for any missing credentials, The Index MCP registration, the move of an old config file into `/config`, and the dispatcher install. It reads the Dispatch scheduled task and never changes it. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or install a new dispatcher.
 
-Prerequisites on your machine: `gh` (authenticated), `jq`, `security` (built into macOS), `git`, `curl`, and `python3`. The Dispatch tick talks to The Index with `curl` and `jq`, and its test suite, which setup runs before it installs anything, runs a local fake Index on `python3`. The pipeline's permission hook reads its payload with `jq`. The commit guard and the review guard run in the plugin's hooks module, on workbench-core's `$.workbench` noun.
+Prerequisites on your machine: `gh` (authenticated), `jq`, `security` (built into macOS), `git`, and `curl`. Setup fetches its OAuth token with `curl`, and the `/dev-team-board` pane talks to The Index with `curl` and `jq`. The pipeline's permission hook reads its payload with `jq`. The commit guard and the review guard run in the plugin's hooks module, on workbench-core's `$.workbench` noun.
 
 You'll be prompted in chat for any of these Keychain entries that aren't already present:
 
 | Entry | Purpose |
 |---|---|
-| `the-index-mcp / client-id` | The Index OAuth client ID. Setup and the Dispatch tick mint bearer tokens with it. |
+| `the-index-mcp / client-id` | The Index OAuth client ID. Setup and the `/dev-team-board` pane mint bearer tokens with it. |
 | `the-index-mcp / client-secret` | The Index OAuth client secret |
 | `github-cli / token` | GitHub token for dispatched agents (auto-extracted from your existing `gh auth login` Keychain entry when present) |
 | `claude-code / oauth-token` | Claude Code OAuth token for the headless `claude -p` runs Dispatch starts. Get one with `claude setup-token` |
@@ -243,28 +243,27 @@ You'll be prompted in chat for any of these Keychain entries that aren't already
 
 The numbers are the setup command's own step numbers.
 
-1. **Asks whether to install the Dispatch job now.**
-2. **Verifies prerequisites** (`gh`, `jq`, `security`, `git`, `curl`, `python3`).
+1. **Reads the Dispatch scheduled task**, `workbench-dev-team-dispatch`, with `mcp__scheduled-tasks__list_scheduled_tasks`. It never creates, updates, disables, or deletes the task. This plugin ships no Dispatch prompt, so the task's prompt and schedule are edited in the Scheduled panel. When no such task exists, setup says that no Index item is dispatched.
+2. **Verifies prerequisites** (`gh`, `jq`, `security`, `git`, `curl`).
 3. **Seeds Keychain credentials**; prompts for anything missing.
 4. **Fetches an OAuth bearer token** from The Index (client_credentials grant, 1-year lifetime).
 5. **Registers The Index MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__the-index__*` tools available to every future Claude Code session, including the dispatched agents.
 6. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/`, and **moves an old `dev-team-config.json` into `/config`**, after the pin question above. Step 6.5 sets commit attribution.
 7. **Step 6.6 installs the ten commit, push, and merge `permissions.ask` rules** (`git commit *`, `git push *`, `git * commit *`, `git * push *`, `git * commit`, `git * push`, `gh pr merge:*`, `gh * pr merge *`, `gh * pr merge`, `gh api *pulls/*/merge*`) and removes what the old approval gate installed. See [Commit approval](#commit-approval). Without this step a foreground commit, push, or merge runs with no prompt, and the pipeline's commits and pushes are not scope-checked.
 8. **Step 7a resolves the plugin source** from `~/.claude/plugins/installed_plugins.json`, never the running `${CLAUDE_PLUGIN_ROOT}`, which can be a frozen per-session snapshot, and warns when the two versions differ.
-9. **Step 7b installs the Dispatch scripts and the launchd job, as one transaction.** Setup runs it, and 7c, with a ten-minute Bash timeout. A setup that was killed partway leaves `~/.claude-workbench/dispatch-install.state` marked, and the next run restores what ran before it rather than snapshotting unproven scripts. Every check runs first and changes nothing: the three suites (the dispatcher's, the circuit breaker's, and the tick's), the cadence, `jq`, `curl` and `claude` on PATH, the job file's render and lint, the folders it writes, and the copy a rollback would restore. Then it replaces `dispatch-tick.sh`, `dispatch-agent.sh` and the escalation comment template in `~/.claude-workbench/bin/`, writes `dev.workbench.dev-team-dispatch` from `bin/dispatch-tick.plist` to `~/Library/LaunchAgents` (every `dispatchCadenceMinutes` minutes, with this session's PATH, less temporary and plugin-cache folders), and loads it. Every write is staged and renamed into place. The job is unloaded before the first replace. Any failure after the first replace, or an INT, TERM or HUP, runs one restore, all or nothing, which stages every file before it renames any: a re-run gets the **proven set** back (the scripts and job file in `~/.claude-workbench/bin.proven/`, which only a passed proof writes), and a first install gets its scripts back from a snapshot taken just before the replace, with the new job unloaded and its file moved out of LaunchAgents. The job sets `AbandonProcessGroup`, because launchd otherwise kills every process left in a finished job's process group, and the agents a tick starts are in it.
-10. **Step 7c proves one tick works.** It tells you first, then runs one real tick with `launchctl kickstart`, and waits for that tick's last line, `tick ok <start time>`, which a tick prints only when every list call returned an items list. A tick that stops early (The Index unreachable, a refused token, a protocol error) never prints it, even after an idle line, and neither does one with a lane that could not list. A pass records the scripts and job file as the proven set: all four are staged in `bin.proven.next`, the set they replace is copied to the one `bin.proven.replaced` slot, and then they are renamed into `bin.proven`. A failure runs the same restore as Step 7b.
-11. **Step 7d retires the model-run router**, only once that tick is proven: it deletes the `workbench-dev-team-dispatch` scheduled task, and removes the two `permissions.allow` rules that let it call `dispatch-agent.sh`.
+9. **Step 7b installs the dispatcher.** It runs `bin/test-dispatch-agent.sh` and `bin/test-circuit-breaker.sh` first, and changes nothing when either fails. Then it copies `bin/dispatch-agent.sh` to `~/.claude-workbench/bin/`, through a staged copy renamed into place.
+10. **Step 7c keeps the dispatcher's two `permissions.allow` rules**, the `$HOME` form the task's prompt writes and its absolute expansion, so the auto-mode classifier never judges the task's spawns. It adds a rule that is absent, and never removes one.
 
-Re-run setup after a change to `dispatchCadenceMinutes`, since launchd reads the interval from the job file. **Also re-run it after a plugin update that changes `bin/dispatch-tick.sh`, `bin/dispatch-agent.sh`, or the escalation template**: the job runs the copies installed at a stable path, which a plugin update does not refresh. Agent definitions, skills and the mod are read live per dispatch, so those need no re-run.
+Re-run setup after a plugin update that changes `bin/dispatch-agent.sh`: the Dispatch task and the dev-team mod run the copy installed at a stable path, which a plugin update does not refresh. Agent definitions, skills and the mod are read live per dispatch, so those need no re-run.
 
 ## How it works
 
 ```
 GitHub webhook ──► The Index (MCP server, OAuth 2.1)
                               ▲
-                              │ JSON-RPC tools/call over HTTPS (curl)
+                              │ MCP list tools
                               │
-       Dispatch launchd job (every 20 min, local, no model)
+       Dispatch scheduled task (Claude Code, local, on its schedule)
                               │
                               ▼ dispatch-agent.sh → nohup claude -p --agent ... &
                   ┌───────────┬───────────┬───────────┐
@@ -277,25 +276,22 @@ GitHub webhook ──► The Index (MCP server, OAuth 2.1)
                         review-learnings notes) ────┘
 ```
 
-Every 20 minutes, the launchd job `dev.workbench.dev-team-dispatch` runs `bin/dispatch-tick.sh`, a shell script with no model in it, which:
+On each run, the Dispatch scheduled task polls The Index's three lanes through its MCP tools, and runs `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh" <agent> <target>` for each item:
 
-1. Calls `list_unrefined_items` → fires Lestrade for each item returned, plus one blocker sweep (`Repo sweep: <owner/repo>`) per distinct repo among those items.
-2. Calls `list_review_items` → fires Holmes for each item returned.
-3. Calls `list_development_items` with `include_claimed` and `limit=25`, and releases the board claim of each claimed item whose run is no longer alive (`dispatch-agent.sh --check watson <id>` prints anything but `SKIP`). A Watson killed outright never reaches its own cleanup, so its claim would hide the item for good.
-4. Calls `list_development_items(limit=1)` → fires Watson on the top item (if any). One Watson per tick.
-5. Prints one line per action and a counts line to `~/.claude-workbench/dev-team-logs/dispatch-tick.log`, or `idle — nothing to dispatch`, then `tick ok <start time>`, a line only a tick in which every list call returned an items list reaches. A tick with a lane that could not list ends with `tick incomplete` instead.
+1. `list_unrefined_items` → Lestrade for each item returned, plus one blocker sweep (`Repo sweep: <owner/repo>`) per distinct repo among those items.
+2. `list_review_items` → Holmes for each item returned.
+3. `list_development_items` with `include_claimed` → `release_item` on each claimed item whose run is no longer alive (`dispatch-agent.sh --check watson <id>` prints anything but `SKIP`). A Watson killed outright never reaches its own cleanup, so its claim would hide the item for good.
+4. `list_development_items(limit=1)` → Watson on the top item (if any). One Watson per tick.
 
-**No MCP client, and no tokens on an idle tick.** The Index has no REST API, but its `POST /mcp` endpoint is stateless: it answers a bare JSON-RPC `tools/call`, with no `initialize` and no session, as a plain JSON body. So the tick makes one `curl` per list, reads the tool's own JSON from `.result.content[0].text`, and treats `.result.isError` as a tool failure. Every filter and sort still runs on The Index. The script depends on that statelessness, so any reply that is not a JSON-RPC result (a JSON-RPC error, a 4xx other than 401, a streamed body) stops the tick with a message naming the stateless call as the likely cause.
-
-**The token.** The tick mints its own bearer token with the client_credentials grant, from the client id and secret in the Keychain, and caches it with its expiry in `~/.claude-workbench/the-index-token.json`, readable by you alone. It mints only when that cache is missing or within an hour of expiry, because each mint adds a token row to The Index. A 401 drops the cache, so the next tick mints once. No secret is printed or put on a command line: `curl` reads the client secret and the bearer header from a config on its standard input.
-
-**Failures.** A list that fails skips its lane, and the other lanes run. A dispatcher that exits non-zero is logged with its lane, and the next item goes on. An Index that cannot be reached (no answer, or a 5xx) prints `the-index unreachable — skipping this tick`. launchd never starts a second copy of the job while one runs, so ticks cannot overlap.
+The task's prompt lives in the task, and this plugin does not ship it. Setup reads the task and never writes it.
 
 Each dispatch is fire-and-forget via `nohup claude -p --agent workbench-dev-team:<mode> ... &; disown`, where `<mode>` is the mode agent the token picks: `watson-index`, `holmes-index`, `lestrade-item`, or `lestrade-sweep`. Watson alone can run for hours; Dispatch never blocks.
 
 Because an agent only writes its status change at the *end* of its run, an item stays lane-eligible for as long as the run takes — so a run that outlives the tick interval would otherwise be dispatched a second time, and the two would race each other's board writes. Every dispatch therefore drops a per-item lock (`<agent>-<id>.lock`, holding the run's PID) next to the logs, and the circuit-breaker pre-flight inside `bin/dispatch-agent.sh` skips any item whose lock PID is still alive. The same pre-flight escalates a wedged item (a content-filter kill, repeated identical fatals, or a budget wall) and grants one raised-budget reprieve when you move an escalated item back, consuming its marker itself. As a second line of defence, Holmes re-reads his item immediately before writing a verdict and writes nothing if it is no longer `In Review`.
 
-**An escalation**, when the dispatcher's first line is `ESCALATE`, moves the item to `Escalated`, posts the comment in `bin/escalation-comment.md` as the agent the breaker stopped, runs `--mark-escalated` so a later move back reads as a reprieve, and releases the claim. The comment and the mark follow only a move that succeeded, since the comment says the item was moved. The template is the one piece of prose the old model-run router wrote itself. A comment posted over `curl` passes no Claude-side prose check, so `bin/test-dispatch-tick.sh` holds every rendered comment to comms-style with `tests/comms-check.py`: no em dash or semicolon in prose, no file path, no contraction, no sentence over 25 words. The breaker's reason is quoted in a fenced block, since it is the dispatcher's own text.
+**An escalation**, when the dispatcher's first line is `ESCALATE`, moves the item to `Escalated`, posts a comment that quotes the breaker's reason, runs `--mark-escalated` so a later move back reads as a reprieve, and releases the claim. The mark follows only a move that succeeded.
+
+**`bin/dispatch-tick.sh --board`** is the `/dev-team-board` pane's client, and the script has no other mode. It routes nothing and dispatches nothing. Run without `--board`, it prints its usage and exits 2.
 
 ### The Index does the filtering
 
@@ -311,7 +307,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 
 | Scenario | Tokens |
 |---|---|
-| Idle Dispatch tick (no work in any lane) | None. Four `curl` calls to The Index, and no model |
+| Idle Dispatch tick (no work in any lane) | The task's prompt and four list calls, on the task's model. Each dispatched item adds one `dispatch-agent.sh` call |
 | Lestrade triage | 5–8K `claude-opus-5-5[1m]` tokens at medium effort + four blind Sonnet lens sub-agents verifying the draft AC |
 | Lestrade blocker sweep | `claude-opus-5-5[1m]` tokens scaling with open-issue count (reads every open title + body in the repo); fires only on ticks that triaged new items |
 | Holmes review | `claude-opus-5-5[1m]` parent at medium effort + four blind Sonnet lens sub-agents + adversarial verification per blocker (a 3-agent red/blue/auditor panel for security findings every round and for hard defects on the PR's first review; one skeptic for everything else; at most 10 verifications per Index-mode review, and no cap in Local mode); capped at $10 per run |
@@ -321,8 +317,8 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 
 Two ways to invoke the same agents, same definitions:
 
-1. **Unattended (default).** The Dispatch launchd job polls The Index every 20 minutes and dispatches via `claude -p --agent`. This is what `/workbench-dev-team:setup` installs.
-2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:lestrade", ...)`. For multi-agent delegation with config-driven models, background execution, and roster tracking, use the `orchestrate` skill — it wraps this path with the full protocol. Useful for manual triage, one-off runs, ad-hoc dev work (Watson Direct mode), or debugging without waiting for the next tick. **An Index item you want built now** goes the same way, `Item ID: <n>` to Watson: the dev-team mod runs the dispatcher the job uses in place of the spawn, immediately, and returns its first line.
+1. **Unattended (default).** The Dispatch scheduled task polls The Index on its schedule and dispatches via `claude -p --agent`. `/workbench-dev-team:setup` installs the dispatcher it calls, and never changes the task.
+2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:lestrade", ...)`. For multi-agent delegation with config-driven models, background execution, and roster tracking, use the `orchestrate` skill — it wraps this path with the full protocol. Useful for manual triage, one-off runs, ad-hoc dev work (Watson Direct mode), or debugging without waiting for the next tick. **An Index item you want built now** goes the same way, `Item ID: <n>` to Watson: the dev-team mod runs the dispatcher the Dispatch task uses in place of the spawn, immediately, and returns its first line.
 
 ## The dev-team mod
 
@@ -334,7 +330,7 @@ Two ways to invoke the same agents, same definitions:
 - **The workspace check.** A gated Watson Direct-mode brief whose `Workdir:` is a bare path, on a repo whose branch is `main`, `master`, or `trunk`, is refused, and the refusal tells the orchestrator to ask you for a branch. A `Workdir:` that records a branch or a worktree beside the path passes, `(branch: main, Mike chose to work on main)` included, because you decided. A path git finds no branch at passes, and git that cannot run refuses.
 - **Index-mode Watson through the dispatcher, and the background.** A main-session Agent call of Watson with `Item ID: <n>` runs the dispatcher in its place (above, under the commit guard). Every other main-session dev-team dispatch runs in the background unless the call set `run_in_background: false`.
 - **Holmes's helpers** run as `holmes-lens` (above, under the review guard), and **the fan-out knobs** reach Holmes and Lestrade as a `Dev-team config:` line ("Configuration").
-- **Two read-only panes.** `/dev-team-runs` opens a pane of the newest eight dispatched runs, read from `~/.claude-workbench/dev-team-logs/` every 15 seconds while it is open: each run's agent, its item or sweep, its start, its state (running, done, failed, refused by the content filter, budget-killed, or escalated by the breaker), its refused tool calls, and its log path. It reads only the newest logs, with one `awk -f bin/scan-run-logs.awk` over the logs that changed and one `ps` for the live dispatchers. `/dev-team-board` opens a pane of The Index's unrefined, review and development lanes: each lane's count and top three items, the claimed development items, and the items the breaker escalated. It fetches through `bin/dispatch-tick.sh --board`, which uses the tick's cached token only, and calls the three list tools and nothing else. It never mints a token, never reads the Keychain, and writes nothing: with no valid cached token, or on a 401, the pane says so, and the next tick mints. The pane fetches when it opens and then at most once per `dispatchCadenceMinutes`, a failed fetch included. Neither pane writes a log, lock or state file, and no token reaches the module.
+- **Two read-only panes.** `/dev-team-runs` opens a pane of the newest eight dispatched runs, read from `~/.claude-workbench/dev-team-logs/` every 15 seconds while it is open: each run's agent, its item or sweep, its start, its state (running, done, failed, refused by the content filter, budget-killed, or escalated by the breaker), its refused tool calls, and its log path. It reads only the newest logs, with one `awk -f bin/scan-run-logs.awk` over the logs that changed and one `ps` for the live dispatchers. `/dev-team-board` opens a pane of The Index's unrefined, review and development lanes: each lane's count and top three items, the claimed development items, and the items the breaker escalated. It fetches through `bin/dispatch-tick.sh --board`, which calls the three list tools and nothing else. It uses the cached Index token in `~/.claude-workbench/the-index-token.json` while that token is valid. With no valid cached token, it mints one from the Keychain client and caches it. On a 401 it mints once and retries that call once. It mints at most once per fetch, so a fetch with a valid token adds no token row to The Index, and a refused fresh token ends the fetch with its reason in the pane. The token cache is the only file it writes. The pane fetches when it opens and then at most once per `dispatchCadenceMinutes`, a failed fetch included. Neither pane writes a log, lock or state file, and no token reaches the module.
 - **Scratch and the context budget, per run.** A dev-team agent's bare `mktemp` lands in a folder of its own, deleted once a turn of that agent ends with no live child, and at the session's end in any case (above). Every model request of a dev-team run is measured, input tokens cached or not, and the first one past 250k raises one toast and one transcript line for you. Nothing is stopped, since `maxBudgetUsd` reaches only the scheduled path and the Agent tool has no budget parameter.
 
 **The mode agents are files.** `agents/watson-direct.md`, `watson-index.md`, `holmes-local.md`, `holmes-index.md`, `lestrade-item.md`, and `lestrade-sweep.md` each carry one mode of a public agent, so a dispatch never loads the mode it does not run. `bin/compose-agents.sh` builds each from its public agent file and a recipe in `references/agent-modes/`, and the output is a pure function of those two files, so a mode prompt is byte-stable for the prompt cache. Edit the public file and the recipe, never a mode file, then run the script. A section a recipe neither copies nor skips stops it. They are files and not types the mod registers because `claude -p --agent <type>` resolves its type before any hooks module loads, so the scheduled path can start only a file-defined type. The public files stay whole, and they run wherever the mod does not, such as Cowork.
@@ -345,7 +341,7 @@ Two ways to invoke the same agents, same definitions:
 
 - **Agent logs.** `~/.claude-workbench/dev-team-logs/<agent>-<item>-<timestamp>.log` — full agent output per dispatch.
 - **Review-learnings notes.** `dev-team/review-learnings/<repo>-pr<n>-<date>.md` (one note per bounce/escalation, written by Holmes at re-review) and `dev-team/top-lessons.md` (the frequency-ranked digest Watson and Lestrade read) in your memory vault. Nothing there yet means no PR has bounced or been AC-disputed since this shipped.
-- **Dispatch log.** `~/.claude-workbench/dev-team-logs/dispatch-tick.log` — one block per tick: a timestamp, one line per action, and the counts line, or `idle — nothing to dispatch`.
+- **Scheduled task panel.** Claude Code's scheduled-tasks panel shows the Dispatch task's run history and next-run time.
 - **The panes.** `/dev-team-runs` shows the live and recent runs from those logs, and `/dev-team-board` shows the board's lanes, inside Claude Code ("The dev-team mod" above).
 - **Project board.** Items flow Inbox → Backlog → Ready → In Progress → In Review → Approved / Escalated. Status drift (items stuck in a column) is your canary.
 
@@ -359,10 +355,10 @@ The two groups are named apart on purpose:
 - **`test-*.sh`** — fifteen scripts that execute shipped logic and assert on
   its behaviour. Six run a shipped script as a subprocess, among them
   `bin/test-compose-agents.sh`, which holds every committed mode agent to what
-  the composer builds now, and `bin/test-dispatch-tick.sh`, which runs the
-  Dispatch tick against `tests/fake-index.py`, a local fake of The Index's MCP
-  and token endpoints, with the Keychain, the dispatcher and `claude` stubbed,
-  its board mode included, and `bin/test-scan-run-logs.sh`, which runs the runs
+  the composer builds now, and `bin/test-dispatch-tick.sh`, which runs
+  `bin/dispatch-tick.sh --board` against `tests/fake-index.py`, a local fake of
+  The Index's MCP and token endpoints, with the Keychain and `claude` stubbed,
+  and `bin/test-scan-run-logs.sh`, which runs the runs
   pane's log reader on fixture logs.
   Four extract the real bash from between sentinel
   markers in a Markdown prompt and run it against fixtures, so the test cannot
@@ -396,13 +392,14 @@ The two groups are named apart on purpose:
 The hooks module has its own tests, `tests/*.test.ts`, which run with
 `claude plugin test .`. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
-- **`lint-*.sh`** — eleven scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — twelve scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
   `agents/lint-brief-contract.sh`, `agents/lint-gate-refusal.sh`,
   `agents/lint-holmes-local-mode.sh`, `agents/lint-holmes-validation.sh`,
   `agents/lint-scratch-cleanup.sh`,
   `agents/lint-vault-note-paths.sh`,
+  `commands/lint-setup-dispatch.sh`,
   `skills/orchestrate/lint-compaction.sh`,
   `skills/orchestrate/lint-decision-format.sh`,
   `skills/orchestrate/lint-rationale-split.sh`, and
@@ -425,31 +422,20 @@ machine once left `main` red for four releases while every local run read clean.
 | Problem | Fix |
 |---|---|
 | `claude mcp list` shows the-index as Failed to connect | Your OAuth token has probably expired or been revoked. Re-run `/workbench-dev-team:setup` to fetch a fresh token and re-register. |
-| Dispatch logs `the-index unreachable` | `curl https://the-index.mikebronner.dev/mcp` to check the endpoint. If 500, The Index has a middleware bug (should be 401). |
-| Dispatch logs a JSON-RPC error, or a reply that is not JSON-RPC, naming "no initialize and no session" | The Index's MCP server no longer answers a stateless `tools/call`. `bin/dispatch-tick.sh` must learn the new protocol before Dispatch runs again. |
-| Dispatch logs that the Keychain has no client id or secret | Re-run `/workbench-dev-team:setup`, which seeds `the-index-mcp / client-id` and `client-secret`. |
+| Dispatch reports `the-index unreachable` | `curl https://the-index.mikebronner.dev/mcp` to check the endpoint. If 500, The Index has a middleware bug (should be 401). |
+| The board pane reports a JSON-RPC error, or a reply that is not JSON-RPC, naming "no initialize and no session" | The Index's MCP server no longer answers a stateless `tools/call`. `bin/dispatch-tick.sh` must learn the new protocol before the pane works again. |
 | Watson stuck (process hung, item never re-offered) | The run died holding its board claim. `mcp__the-index__release_item(<item-id>)`, or move the item out of the lane and back. Next tick will resume. |
 | Agent not found | `claude agents` should list `workbench-dev-team:lestrade`, `:watson`, `:holmes`. If not, reinstall the plugin. |
 | Item stuck in `In Review` with no PR | Holmes couldn't find a PR for the issue. He looks for the PR linked through `Fixes #<issue>`, then for Watson's branch pattern. Check `gh issue view <issue> -R <repo> --json closedByPullRequestsReferences`. |
-| Dispatch isn't firing | `launchctl print gui/$(id -u)/dev.workbench.dev-team-dispatch` shows the job and its last exit. `tail ~/.claude-workbench/dev-team-logs/dispatch-tick.log` shows each tick. The Mac must be awake and logged in (the job runs in your GUI session, where the Keychain is open). Re-run setup to reinstall it. |
+| Dispatch isn't firing | Check Claude Code's scheduled-tasks panel for `workbench-dev-team-dispatch`. The Mac must be awake (this is a local scheduler). Setup's summary says whether it found the task. |
 
 ## Risks and limitations
 
 - **Local execution.** Dispatch runs on your Mac. If the host is off, no work moves. Fine for home/dev setups; move Dispatch to an always-on box if you need 24/7 coverage.
 - **Budget caps.** `--max-budget-usd 10.00` limits Watson's per-run spend, and Holmes's too (`10` as each row's default, and as the dispatcher's fallback when the settings file is missing), since its lens fan-out is the only uncapped, multi-agent lane — measured over 50 fan-out reviews, a review's mean cost is ~$7.33 with a long tail past $17 when Phase C verification fires, so a cap at $7 sat below the median and killed roughly a quarter of runs mid-review. Complex work may hit the ceiling and leave the item in `In Progress`; the next tick resumes. (The $10 figure was originally sized for Fable's 2× Opus pricing; on Opus it now buys roughly twice the tokens per run.)
-- **The Index must be reachable.** If the MCP server is down, Dispatch logs `the-index unreachable` and exits cleanly. The next tick retries.
-- **The Index must stay stateless.** The tick posts a bare JSON-RPC `tools/call` with no `initialize` and no session, which laravel/mcp answers today. If The Index's MCP server starts to require a session, every tick stops with a message saying so, and the script needs a change.
+- **The Index must be reachable.** If the MCP server is down, the list tools fail and Dispatch dispatches nothing. The next tick retries.
+- **The board pane needs a stateless Index.** `bin/dispatch-tick.sh --board` posts a bare JSON-RPC `tools/call` with no `initialize` and no session, which laravel/mcp answers today. If The Index's MCP server starts to require a session, the pane says so, and the script needs a change.
 - **OAuth token lifetime.** The Index issues 1-year tokens via client_credentials. Re-run `/workbench-dev-team:setup` annually (or whenever you rotate the OAuth client secret).
-
-## Manual job install (fallback)
-
-If `/workbench-dev-team:setup` fails at Step 7c, the launchd job install, read the message it printed, fix the cause, and re-run setup. To load a job file setup already wrote:
-
-```
-launchctl bootstrap gui/$(id -u) ~/Library/LaunchAgents/dev.workbench.dev-team-dispatch.plist
-```
-
-To stop Dispatch, unload it the same way with `launchctl bootout gui/$(id -u)/dev.workbench.dev-team-dispatch`.
 
 ## Why not cloud routines
 

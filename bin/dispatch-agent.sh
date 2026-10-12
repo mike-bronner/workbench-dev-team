@@ -1,20 +1,6 @@
 #!/usr/bin/env bash
 # Dispatch one dev-team agent as a detached subprocess, behind the circuit breaker.
 #
-# Two callers run it. bin/dispatch-tick.sh, the scheduled Dispatch router that a
-# launchd job runs with no model, calls it once per item. The dev-team mod
-# (hooks/mods/dispatch.ts) runs it in place of an interactive Watson Index-mode
-# Agent call, because only this script gives the run its pipeline flag.
-#
-# It started as one stable command for a model-run router, so a single
-# `permissions.allow` rule could cover the spawn and the auto-mode classifier
-# never judged it. The circuit-breaker pre-flight and its marker moved in at the
-# same time. They had been a ~115-line block that router re-typed for every item
-# on every tick, and its reprieve step consumed the marker with an `rm` outside
-# every scratch root, which workbench-core's destructive-scope guard always
-# denies. Neither caller needs that rule now, and the breaker stays here, beside
-# the spawn it guards.
-#
 # Usage:
 #   dispatch-agent.sh lestrade <item-id>        # triage one item
 #   dispatch-agent.sh lestrade <owner/repo>     # blocker sweep for one repo (no pre-flight)
@@ -354,8 +340,7 @@ if [ "${DISPATCH_DRY_RUN:-0}" = 1 ]; then
 fi
 
 # The run starts in a fresh, empty folder, never in the caller's cwd. A caller
-# can sit in a repository (the old model-run router ran in
-# ~/Developer/workbench-dev-team), and a child started there would take that
+# can sit in a repository, and a child started there would take that
 # repository as its project folder. workbench-core's
 # destructive-scope guard treats the project folder as in scope, so a pipeline
 # `git reset --hard` or `rm -rf` there would run unprompted. The cost, accepted:
@@ -385,10 +370,6 @@ unset CLAUDE_PROJECT_DIR
 
 mkdir -p "$LOGDIR"
 
-# The Claude Code OAuth token for the headless run, from the Keychain. A
-# Keychain read feeding a detached subprocess was the one step the old
-# model-run router's classifier reliably flagged, which is why it lives in this
-# script. A missing token is not fatal — `claude` falls back to its own auth.
 CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 export CLAUDE_CODE_OAUTH_TOKEN
 
