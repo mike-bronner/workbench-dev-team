@@ -187,9 +187,15 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
 
 ## 4. Test
 
+The tier, mutation, and doc-drift rules in full: `references/testing.md`.
+
 - **Every change gets a test.** Bug fixes get a regression test; features get
   coverage of the new behavior; refactors get tests that prove behavior didn't
   change.
+- **Write each test at the lowest tier that can prove the behavior:** unit
+  before feature before integration. A feature or integration test names the
+  boundary a lower tier cannot reach. This wins over upstream guidance that
+  says otherwise, such as Laravel Boost's, and you state the departure.
 - **Every new branch, field, error-path, and edge gets a discriminating test** —
   not just the happy path. A test only counts if it *fails when that specific
   behavior regresses*: cover each new conditional branch, each new field, each
@@ -197,14 +203,10 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
   that demos.
 - **Mutation-test your own tests.** For every test guarding a behavior, delete or
   invert the guarded code and confirm the test **goes red**. A test that stays
-  green when its target breaks is theater — it asserts trivia or the wrong thing.
-  Rewrite it until it discriminates. This is the single cheapest defense against
-  the most common review rejection: tests that don't actually test.
+  green when its target breaks is theater: rewrite it until it discriminates.
   **Never restore a mutation with `git checkout`, `git restore`, or
-  `git stash`:** each one reverts the whole file or tree to the last commit, and
-  in an uncommitted change that erases your own work along with the mutation.
-  Before you hand the work back, read your final diff and confirm no mutation is
-  left in it.
+  `git stash`:** each reverts the whole file to the last commit, erasing your
+  uncommitted work too. Confirm your final diff holds no mutation.
 - **Fail closed by default.** For every error, absent-field, or unexpected-input
   path, state the behavior explicitly and default to **fail-closed** — reject,
   throw, or refuse — never fail-open (silently proceed, swallow the error, or
@@ -217,10 +219,7 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
   (§2): confirm it fails the same way without your change, then report it
   rather than fold a fix in.
 - **Grep the tree for every symbol or documented claim your diff changed**
-  (doc-drift). Renamed a symbol, changed a documented behavior, altered a
-  contract or type signature? `grep`/`rg` for every reference — code, comments,
-  README, docs — and fix each in the same change. A stale reference the tests
-  won't catch is a silent regression for the next reader.
+  (doc-drift) — code, comments, README, docs — and fix each in the same change.
 - **Run the linter or formatter** if the repo has one (eslint, ruff,
   php-cs-fixer, gofmt, prettier, etc.). Fix violations rather than disabling
   rules.
