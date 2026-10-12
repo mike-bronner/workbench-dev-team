@@ -65,7 +65,7 @@
 //                  shared system-prompt section, in every lane but
 //                  WORKBENCH_SKIP_WARMUP=1: after workbench-core's sections
 //                  when this hook wraps core's, before them when core's wraps
-//                  this one (withRules says why)
+//                  this one
 //   classic.SubagentStart
 //                  the same rules as context at a sub-agent's start, as
 //                  workbench-core gives its own, unless the agent is a fork,

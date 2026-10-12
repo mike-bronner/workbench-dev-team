@@ -387,6 +387,11 @@ The two groups are named apart on purpose:
   type lists to the git-commit skill's references, both ways.
   `tests/test-core-copies.sh` holds the workbench-core files copied into
   `tests/core/` to core's main branch.
+  `tests/test-omit-claude-md.sh` holds `OMITS_CLAUDE_MD` in
+  `hooks/mods/session-rules.ts` to the agents defined with `omitClaudeMd`: the
+  built-ins of the `claude` binary on `PATH`, read by workbench-core's own
+  check (copied into `tests/core/`), and the agents of core and dev-team. It
+  skips, and says why, when no binary or no core checkout is reachable.
 
 The hooks module has its own tests, `tests/*.test.ts`, which run with
 `claude plugin test .`. `tsc -p .` type-checks the module once a session has

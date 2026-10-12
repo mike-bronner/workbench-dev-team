@@ -293,6 +293,54 @@ describe('the dispatch gate — a main-session brief missing a slot is refused',
   })
 })
 
+describe("the dispatch gate on workbench-core 469497a's orchestrator check (C3n)", () => {
+  const CORE: Plugin = {
+    name: 'workbench-core',
+    register: on => {
+      let mode: boolean | undefined
+      on('command.run', async ($, e, next) => {
+        if (e.command !== 'orchestrator') return next(e)
+        mode = e.args.trim() !== 'off'
+        return { text: '' }
+      })
+      on('workbench.orchestratorIsOn', async $ => {
+        if ((await $.env.get('WORKBENCH_ORCHESTRATOR')) === '0') return { value: false }
+        if (mode !== undefined) return { value: mode }
+        const id = await $.session.id()
+        const home = await $.env.get('HOME')
+        const dir = (await $.env.get('WORKBENCH_ORCHESTRATOR_STATE_DIR')) || (home ? `${home}/.claude-workbench/orchestrator-mode` : undefined)
+        const file = dir && /^[A-Za-z0-9_-][A-Za-z0-9._-]*$/.test(id) ? `${dir}/${id}` : undefined
+        return { value: !(file !== undefined && (await $.fs.exists(file))) }
+      })
+    },
+  }
+  const off = { command: 'orchestrator', args: 'off', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never
+
+  const SETUPS: [string, string, Parameters<typeof world>[1]][] = [
+    ['the session id cannot name a file', '../escape', {}],
+    ['HOME is unset and there is no state dir', 's-1', { isHomeUnset: true }],
+  ]
+  for (const [name, id, options] of SETUPS) {
+    test(`${name}: an incomplete brief is refused, and /orchestrator off stands the gate down`, { plugins: [CORE] }, async ($, on) => {
+      const w = world(on, options)
+      on('session.id', () => ({ value: id }))
+      const refused = await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
+      expect((refused as { deny?: string }).deny).toContain('Missing: Workdir:')
+      expect(w.spawned).toEqual([])
+      await $.command.run(off)
+      await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
+      expect(w.spawned.map(s => s.prompt)).toEqual(['fix it'])
+    })
+  }
+
+  test('a legacy file the session id names stands the gate down', { plugins: [CORE] }, async ($, on) => {
+    const w = world(on, { disk: { '/Users/tester/.claude-workbench/orchestrator-mode/s-1': 'file' } })
+    on('session.id', () => ({ value: 's-1' }))
+    await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
+    expect(w.spawned).toHaveLength(1)
+  })
+})
+
 describe('the advisory hint — a complete brief that dictates method', () => {
   const agentCall = (prompt: string, agentId?: string) =>
     ({ tool: 'Agent', tool_use_id: 'toolu_1', description: 'a task', prompt, subagent_type: 'general-purpose', agentId }) as never

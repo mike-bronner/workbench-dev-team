@@ -35,7 +35,11 @@ has_core() { git -C "$CORE" rev-parse --verify --quiet main >/dev/null 2>&1; }
 
 if [ "${1:-}" = --update ]; then
   has_core || { echo "no workbench-core checkout at $CORE (set WORKBENCH_CORE_DIR)"; exit 1; }
-  paths=$(sed -n 's/^[0-9a-f]\{64\} //p' "$SOURCE")
+  shift
+  paths=$( { sed -n 's/^[0-9a-f]\{64\} //p' "$SOURCE"; printf '%s\n' "$@"; } | awk 'NF && !seen[$0]++')
+  for path in $paths; do
+    git -C "$CORE" cat-file -e "main:$path" 2>/dev/null || { echo "$path is not on core main"; exit 1; }
+  done
   commit=$(git -C "$CORE" rev-parse --short main)
   {
     sed -n '/^#/p' "$SOURCE"

@@ -83,7 +83,7 @@ export type Entry = 'dir' | 'file' | { link: string }
 
 // What the guard tests set in the world beneath the module.
 export type GuardOptions = {
-  // The environment $.env.get answers (HOME is always set).
+  // The environment $.env.get answers.
   env?: Record<string, string>
   // What isUnattended answers. An Error rejects.
   unattended?: boolean | Error
@@ -145,7 +145,7 @@ function standInCheck(prompt: string) {
 
 export function world(
   on: On,
-  options: Partial<Pick<World, 'lane' | 'isOn' | 'checkFails' | 'check'>> & { config?: string; envFails?: boolean } & GuardOptions = {},
+  options: Partial<Pick<World, 'lane' | 'isOn' | 'checkFails' | 'check'>> & { config?: string; envFails?: boolean; isHomeUnset?: boolean } & GuardOptions = {},
 ): World {
   const w: World = {
     lane: options.lane ?? (agentId => (agentId === undefined ? 'main' : 'sub-agent')),
@@ -172,7 +172,7 @@ export function world(
       throw new Error('env unreadable')
     })
   } else {
-    mock.env(on, { HOME, ...(options.env ?? {}) })
+    mock.env(on, { ...(options.isHomeUnset ? {} : { HOME }), ...(options.env ?? {}) })
   }
 
   on('engine.create', async ($, e, next) => {

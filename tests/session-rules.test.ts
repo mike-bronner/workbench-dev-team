@@ -9,6 +9,7 @@ import type { MockClock } from 'claude-code/testing'
 import type { On, PromptComposeSection } from 'claude-code'
 
 import { OMITS_CLAUDE_MD, RULES, RULES_ID, SECTION, isRulesLane, withRules } from '../hooks/mods/session-rules'
+import { withShared } from './core/hooks/mods/prompt-rules'
 
 const HOME = '/Users/tester'
 const NOTICES = `${HOME}/.claude-workbench/warmup-notices.md`
@@ -45,15 +46,15 @@ function engine(on: On, options: { env?: Record<string, string>; isCoreLoaded?: 
     if (text === undefined) throw new Error(`ENOENT: ${e.path}`)
     return { value: text }
   })
-  on('prompt.compose', () => ({
-    sections: [
-      { id: 'intro', text: 'You are Claude Code.', scope: 'shared' as const },
-      { id: 'tools', text: 'Use the tools.', scope: 'shared' as const },
-      ...(options.isCoreLoaded === false ? [] : CORE_SECTIONS),
-      { id: 'env_info_simple', text: `Today's date is ${new Date(g.clock.now()).toISOString().slice(0, 10)}.`, scope: 'session' as const },
-      { id: 'context_management', text: 'Context is managed.', scope: 'session' as const },
-    ],
-  }))
+  on('prompt.compose', () => {
+    const sections: PromptComposeSection[] = [
+      { id: 'intro', text: 'You are Claude Code.', scope: 'shared' },
+      { id: 'tools', text: 'Use the tools.', scope: 'shared' },
+      { id: 'env_info_simple', text: `Today's date is ${new Date(g.clock.now()).toISOString().slice(0, 10)}.`, scope: 'session' },
+      { id: 'context_management', text: 'Context is managed.', scope: 'session' },
+    ]
+    return { sections: options.isCoreLoaded === false ? sections : withShared(sections, CORE_SECTIONS) }
+  })
   on('classic.SubagentStart', () => ({ additionalContext: ['BENEATH'] }))
   return g
 }
@@ -75,19 +76,7 @@ const fingerprint = (text: string) => {
   return hash.toString(16).padStart(8, '0')
 }
 
-// Core's own placement at 2fcf5e5 (workbench-core hooks/mods/prompt-rules.ts,
-// withShared), for when core's hook wraps this one: its sections, minus any
-// already there, at the first session section, the last of them ending in a
-// blank line when a session section follows. Applied to what this module
-// answered.
-const coreWithShared = (sections: readonly PromptComposeSection[]): PromptComposeSection[] => {
-  const theirs = sections.filter(section => !section.id.startsWith('workbench-core:'))
-  const cut = theirs.findIndex(section => section.scope === 'session')
-  const at = cut === -1 ? theirs.length : cut
-  const last = CORE_SECTIONS[CORE_SECTIONS.length - 1]!
-  const placed = cut === -1 ? CORE_SECTIONS : [...CORE_SECTIONS.slice(0, -1), { ...last, text: `${last.text}\n\n` }]
-  return [...theirs.slice(0, at), ...placed, ...theirs.slice(at)]
-}
+const coreWithShared = (sections: readonly PromptComposeSection[]): PromptComposeSection[] => withShared(sections, CORE_SECTIONS)
 
 const shared = (sections: readonly PromptComposeSection[]) => sections.filter(section => section.scope === 'shared')
 const ids = (sections: readonly PromptComposeSection[]) => sections.map(section => section.id)
@@ -153,13 +142,13 @@ describe("where the section sits beside workbench-core's sections, by hook order
     expect(withRules(list)).toEqual([list[0], SECTION])
   })
 
-  test('a shared section after it gets no blank line, since the engine joins one side with one', () => {
+  test('it goes after the last shared section, whichever plugin sent it', () => {
     const list: PromptComposeSection[] = [
       { id: 'workbench-core:rules', text: 'Workbench gates.', scope: 'shared' },
       { id: 'other:rules', text: 'Other rules.', scope: 'shared' },
       { id: 'env_info_simple', text: 'd', scope: 'session' },
     ]
-    expect(ours(withRules(list))).toEqual([SECTION])
+    expect(ids(withRules(list))).toEqual(['workbench-core:rules', 'other:rules', RULES_ID, 'env_info_simple'])
   })
 
   test('a workbench-core section on the session side does not pull it past the boundary', () => {
@@ -189,33 +178,47 @@ describe("where the section sits beside workbench-core's sections, by hook order
 })
 
 describe('the rules never run into the next text, under either hook nesting', () => {
-  test("when this hook wraps core's, exactly one blank line parts the rules from the first session section", async ($, on) => {
+  test("when this hook wraps core's, core's pad comes off, and one blank line parts core, the rules and the first session section", async ($, on) => {
     engine(on)
     const sections = (await $.prompt.compose(COMPOSE)).sections
     expect(ids(sections).slice(-3)).toEqual([RULES_ID, 'env_info_simple', 'context_management'])
     expect(ours(sections)).toEqual([PLACED])
-    const text = render(sections)
-    expect(text).toContain(`Memory routing.\n\n${RULES}\n\nToday's date is`)
-    expect(text).not.toContain(`${RULES}\n\n\n`)
+    expect(sections.find(section => section.id === 'workbench-core:memory')?.text).toBe('Memory routing.')
+    expect(render(sections)).toBe(`You are Claude Code.\n\nUse the tools.\n\nWorkbench gates.\n\nMemory routing.\n\n${RULES}\n\nToday's date is 2026-10-09.\n\nContext is managed.`)
   })
 
-  test("when core's hook wraps this one, exactly one blank line parts the rules from core's sections", async ($, on) => {
+  test("when core's hook wraps this one, the rules' pad comes off, and one blank line parts the rules, core and the first session section", async ($, on) => {
     engine(on, { isCoreLoaded: false })
     const sections = coreWithShared((await $.prompt.compose(COMPOSE)).sections)
     expect(ids(sections)).toEqual(['intro', 'tools', RULES_ID, 'workbench-core:rules', 'workbench-core:memory', 'env_info_simple', 'context_management'])
     expect(ours(sections)).toEqual([SECTION])
-    const text = render(sections)
-    expect(text).toContain(`Use the tools.\n\n${RULES}\n\nWorkbench gates.`)
-    expect(text).not.toContain(`${RULES}\n\n\n`)
-    expect(text).toContain("Memory routing.\n\nToday's date is")
+    expect(render(sections)).toBe(`You are Claude Code.\n\nUse the tools.\n\n${RULES}\n\nWorkbench gates.\n\nMemory routing.\n\nToday's date is 2026-10-09.\n\nContext is managed.`)
   })
 
-  test('with no workbench-core section beneath it, it is the bare rules, since core pads its own last section', () => {
-    const list: PromptComposeSection[] = [
-      { id: 'intro', text: 'a', scope: 'shared' },
-      { id: 'env_info_simple', text: 'd', scope: 'session' },
+  test('with no session section, neither nesting pads anything, and the prompt ends in the last shared text', () => {
+    const list: PromptComposeSection[] = [{ id: 'intro', text: 'Intro.', scope: 'shared' }]
+    expect(render(withRules(withShared(list, CORE_SECTIONS)))).toBe(`Intro.\n\nWorkbench gates.\n\nMemory routing.\n\n${RULES}`)
+    expect(render(withShared(withRules(list), CORE_SECTIONS))).toBe(`Intro.\n\n${RULES}\n\nWorkbench gates.\n\nMemory routing.`)
+  })
+
+  test('a padded section before it loses its pad, and one ending in a single newline keeps it', () => {
+    const env: PromptComposeSection = { id: 'env_info_simple', text: 'd', scope: 'session' }
+    expect(withRules([{ id: 'intro', text: 'a\n\n', scope: 'shared' }, env])).toEqual([{ id: 'intro', text: 'a', scope: 'shared' }, PLACED, env])
+    expect(withRules([{ id: 'intro', text: 'a\n', scope: 'shared' }, env])).toEqual([{ id: 'intro', text: 'a\n', scope: 'shared' }, PLACED, env])
+  })
+
+  test("it places and pads the section as core's withShared does", () => {
+    const lists: PromptComposeSection[][] = [
+      [],
+      [{ id: 'intro', text: 'a', scope: 'shared' }],
+      [{ id: 'intro', text: 'a\n\n', scope: 'shared' }],
+      [{ id: 'intro', text: 'a\n \n', scope: 'shared' }, { id: 'env', text: 'd', scope: 'session' }],
+      [{ id: 'env', text: 'd', scope: 'session' }],
+      withShared([{ id: 'intro', text: 'a', scope: 'shared' }, { id: 'env', text: 'd', scope: 'session' }], CORE_SECTIONS),
+      [{ id: 'intro', text: 'a', scope: 'shared' }, SECTION, { id: 'other:rules', text: 'b\n\n', scope: 'shared' }, { id: 'env', text: 'd', scope: 'session' }],
+      [{ id: 'intro', text: 'a', scope: 'shared' }, { id: 'env', text: 'd', scope: 'session' }, { id: 'workbench-core:status', text: 's\n\n', scope: 'session' }],
     ]
-    expect(withRules(list)).toEqual([list[0], SECTION, list[1]])
+    for (const list of lists) expect(withRules(list)).toEqual(withShared(list, [SECTION]))
   })
 
   test('the section carries the same bytes from one compose to the next', async ($, on) => {
