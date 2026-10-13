@@ -394,7 +394,7 @@ The two groups are named apart on purpose:
 The hooks module has its own tests, `tests/*.test.ts`, which run with
 `claude plugin test .`. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
-- **`lint-*.sh`** — twelve scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — thirteen scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
   `agents/lint-brief-contract.sh`, `agents/lint-gate-refusal.sh`,
@@ -402,6 +402,7 @@ loaded the plugin, which lays the types into `.claude-plugin/types/`.
   `agents/lint-scratch-cleanup.sh`,
   `agents/lint-vault-note-paths.sh`,
   `commands/lint-setup-dispatch.sh`,
+  `skills/develop/lint-no-reviewer-request.sh`,
   `skills/orchestrate/lint-compaction.sh`,
   `skills/orchestrate/lint-decision-format.sh`,
   `skills/orchestrate/lint-rationale-split.sh`, and

@@ -4,6 +4,13 @@ On-demand detail for `skills/develop/SKILL.md`, §6. Read it as soon as you star
 work on a tracked issue. A sub-agent opens no pull request, so it never needs
 this file.
 
+**Never request a reviewer on any PR, tracked issue or not.** Mike requests
+every review himself. The rule covers all four routes:
+- a reviewer named when the PR is created (`gh pr create --reviewer`)
+- a reviewer added to an existing PR (`gh pr edit --add-reviewer`)
+- the requested-reviewers API (`.../pulls/<n>/requested_reviewers`)
+- a comment that asks a bot or a person to review, such as `@coderabbitai review`
+
 When the work is for a tracked issue:
 
 - **Create the PR as a draft early** — before implementation is complete.

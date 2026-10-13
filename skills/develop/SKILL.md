@@ -301,6 +301,9 @@ as you start on it, and follow it. It holds the draft-early rule, template
 discovery, the body rules (a body stands on its own), and why CI green is the
 real "done" line.
 
+**Never request a reviewer.** Mike requests every review himself.
+`references/pull-requests.md` lists the four routes.
+
 ## 7. When stuck
 
 - **Tests fail and you can't fix them?** In the pipeline, leave the branch clean

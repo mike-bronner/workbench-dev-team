@@ -429,6 +429,15 @@ PR_NUM=$(gh pr list -R <repo> --head "$BRANCH" --json number --jq '.[0].number')
 The `Fixes #<issue_number>` keyword in the body handles the issue↔PR link on
 merge — no separate linking step needed.
 
+**Never request a reviewer, here or at any later step.** Mike requests every
+review himself. The rule covers all four routes:
+- a reviewer named when the PR is created (`gh pr create --reviewer`)
+- a reviewer added to an existing PR (`gh pr edit --add-reviewer`)
+- the requested-reviewers API (`.../pulls/<n>/requested_reviewers`)
+- a comment that asks a bot or a person to review, such as `@coderabbitai review`
+Holmes's review is not a reviewer request. Step 9 moves the item to In Review,
+and the dispatch hands it to him from there.
+
 On a resume: clone fresh into a new scratch folder, as above. A prior
 run's clone is never reused: every run pushes its work before it exits and
 removes its clone in step 10, so the branch on the remote is the whole state.
@@ -591,7 +600,8 @@ waiting for the bounce.
 ### 7. Mark the PR ready and update the body
 
 Resolve `$PR_NUM` if you don't already have it, then set the final body and flip
-the draft to ready — **locally via `gh`, as you** (you own the PR).
+the draft to ready — **locally via `gh`, as you** (you own the PR). Request
+no reviewer when you mark it ready: step 5's rule holds here too.
 
 **Check for a PR template first** — `gh` does not apply templates when `--body`
 is passed, so you must:
