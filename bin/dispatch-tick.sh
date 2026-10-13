@@ -63,7 +63,7 @@ cached_token() {
 post() {
   local url="$1" reply
   shift
-  reply=$(curl -sS -K - -w '\n%{http_code}' "$@" "$url" 2>/dev/null) || { STATUS=000; BODY=; return; }
+  reply=$(curl -q -sS -K - -w '\n%{http_code}' "$@" "$url" 2>/dev/null) || { STATUS=000; BODY=; return; }
   STATUS=${reply##*$'\n'}
   BODY=${reply%$'\n'*}
 }

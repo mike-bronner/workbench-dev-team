@@ -269,6 +269,16 @@ board "http://127.0.0.1:9"
 expect_eq "an unreachable token endpoint: exit 1" 1 "$RC"
 expect_eq "the reason says The Index could not be reached" "The Index could not be reached." "$BREASON"
 
+echo "— board mode reads no ~/.curlrc"
+printf 'trace-ascii = "%s"\nproxy = "http://127.0.0.1:9"\n' "$WORK/curl-trace.txt" > "$HOME/.curlrc"
+rm -f "$CACHE"
+reset "$BOARD_SCENARIO"
+board
+rm -f "$HOME/.curlrc"
+expect_eq "a curlrc that traces and breaks every request: exit 0" 0 "$RC"
+expect_eq "the mint and the three lists still go out" 4 "$(jq -s length "$LOG")"
+expect_eq "no trace file is written" no "$([ -e "$WORK/curl-trace.txt" ] && echo yes || echo no)"
+
 echo "— board mode never prints a token or a secret, or puts one on a command line"
 expect_lacks "no token on stderr" "tok-1" "$(cat "$WORK/board-all.err")"
 expect_lacks "no secret on stderr" "s3cret" "$(cat "$WORK/board-all.err")"
