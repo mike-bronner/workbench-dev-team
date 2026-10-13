@@ -196,7 +196,7 @@ Every knob is a row of the plugin's settings, declared under `userConfig` in `.c
 
 | Row | Default | What it sets |
 |---|---|---|
-| `dispatchCadenceMinutes` | `20` | How often, at most, the `/dev-team-board` pane fetches The Index. Match it to the Dispatch task's schedule, which setup never changes. |
+| `dispatchCadenceMinutes` | `20` | How often the Dispatch task runs: 5, 6, 10, 12, 15, 20, 30 or 60 minutes. Setup turns it into the task's schedule, so re-run setup after a change. The `/dev-team-board` pane also fetches at most this often. |
 | `lestradeModel`, `holmesModel`, `watsonModel` | `claude-opus-5-5[1m]` | The model of every run, scheduled and interactive |
 | `lestradeEffort`, `holmesEffort`, `watsonEffort` | `medium` | The effort of every run |
 | `lestradeFallback`, `holmesFallback`, `watsonFallback` | `haiku`, `sonnet`, `sonnet,haiku` | Models a scheduled run falls back to (`--fallback-model`) |
@@ -226,26 +226,26 @@ After `/plugin install`, run this in any Claude Code session:
 /workbench-dev-team:setup
 ```
 
-It walks you through Keychain seeding for any missing credentials, The Index MCP registration, the move of an old config file into `/config`, and the dispatcher install. It reads the Dispatch scheduled task and never changes it. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, or install a new dispatcher.
+It checks the Keychain credentials, registers The Index MCP, moves an old config file into `/config`, installs the dispatcher, and installs the Dispatch prompt into the `workbench-dev-team-dispatch` scheduled task. Idempotent — re-run any time to refresh the OAuth token, re-register the MCP, install a new dispatcher, or refresh the task's prompt and schedule.
 
 Prerequisites on your machine: `gh` (authenticated), `jq`, `security` (built into macOS), `git`, and `curl`. Setup fetches its OAuth token with `curl`, and the `/dev-team-board` pane talks to The Index with `curl` and `jq`. The pipeline's permission hook reads its payload with `jq`. The commit guard and the review guard run in the plugin's hooks module, on workbench-core's `$.workbench` noun.
 
-You'll be prompted in chat for any of these Keychain entries that aren't already present:
+Setup checks for these Keychain entries. It never stores a secret itself. For each missing entry it gives you a `! security add-generic-password …` command to run, which asks for the secret at a hidden prompt:
 
 | Entry | Purpose |
 |---|---|
 | `the-index-mcp / client-id` | The Index OAuth client ID. Setup and the `/dev-team-board` pane mint bearer tokens with it. |
 | `the-index-mcp / client-secret` | The Index OAuth client secret |
-| `github-cli / token` | GitHub token for dispatched agents (auto-extracted from your existing `gh auth login` Keychain entry when present) |
+| `github-cli / token` | GitHub token for dispatched agents. Its command reads the token from `gh auth token`, so run `gh auth login` first |
 | `claude-code / oauth-token` | Claude Code OAuth token for the headless `claude -p` runs Dispatch starts. Get one with `claude setup-token` |
 
 ### What `/workbench-dev-team:setup` does, in order
 
 The numbers are the setup command's own step numbers.
 
-1. **Reads the Dispatch scheduled task**, `workbench-dev-team-dispatch`, with `mcp__scheduled-tasks__list_scheduled_tasks`. It never creates, updates, disables, or deletes the task. This plugin ships no Dispatch prompt, so the task's prompt and schedule are edited in the Scheduled panel. When no such task exists, setup says that no Index item is dispatched.
+1. **Reads the Dispatch scheduled task**, `workbench-dev-team-dispatch`, with `mcp__scheduled-tasks__list_scheduled_tasks`, so Step 7e knows whether to create or update it. Setup never deletes or disables the task.
 2. **Verifies prerequisites** (`gh`, `jq`, `security`, `git`, `curl`).
-3. **Seeds Keychain credentials**; prompts for anything missing.
+3. **Checks Keychain credentials**, each service spelled out, and gives you a `!` command for anything missing.
 4. **Fetches an OAuth bearer token** from The Index (client_credentials grant, 1-year lifetime).
 5. **Registers The Index MCP** with Claude Code at user scope, passing the bearer via `--header`. This makes `mcp__the-index__*` tools available to every future Claude Code session, including the dispatched agents.
 6. **Creates the log directory** at `~/.claude-workbench/dev-team-logs/`, and **moves an old `dev-team-config.json` into `/config`**, after the pin question above. Step 6.5 sets commit attribution.
@@ -253,8 +253,10 @@ The numbers are the setup command's own step numbers.
 8. **Step 7a resolves the plugin source** from `~/.claude/plugins/installed_plugins.json`, never the running `${CLAUDE_PLUGIN_ROOT}`, which can be a frozen per-session snapshot, and warns when the two versions differ.
 9. **Step 7b installs the dispatcher.** It runs `bin/test-dispatch-agent.sh` and `bin/test-circuit-breaker.sh` first, and changes nothing when either fails. Then it copies `bin/dispatch-agent.sh` to `~/.claude-workbench/bin/`, through a staged copy renamed into place.
 10. **Step 7c keeps the dispatcher's two `permissions.allow` rules**, the `$HOME` form the task's prompt writes and its absolute expansion, so the auto-mode classifier never judges the task's spawns. It adds a rule that is absent, and never removes one.
+11. **Step 7d prepares the prompt and the schedule.** It strips the frontmatter from `scheduled-tasks/orchestrator.md`, checks that the body dispatches all three lanes and keeps the `--check` and `--mark-escalated` calls, and turns `dispatchCadenceMinutes` into a cron schedule. A check that fails leaves the task as it was.
+12. **Step 7e creates or updates the Dispatch task** with that prompt and schedule: it creates the task when it is missing, and updates it when it exists. It never deletes or disables it, and a task you disabled stays disabled.
 
-Re-run setup after a plugin update that changes `bin/dispatch-agent.sh`: the Dispatch task and the dev-team mod run the copy installed at a stable path, which a plugin update does not refresh. Agent definitions, skills and the mod are read live per dispatch, so those need no re-run.
+Re-run setup after a plugin update that changes `bin/dispatch-agent.sh` or `scheduled-tasks/orchestrator.md`: the Dispatch task and the dev-team mod run the dispatcher installed at a stable path, and the task runs the prompt setup last installed, and a plugin update refreshes neither. Agent definitions, skills and the mod are read live per dispatch, so those need no re-run.
 
 ## How it works
 
@@ -283,7 +285,7 @@ On each run, the Dispatch scheduled task polls The Index's three lanes through i
 3. `list_development_items` with `include_claimed` → `release_item` on each claimed item whose run is no longer alive (`dispatch-agent.sh --check watson <id>` prints anything but `SKIP`). A Watson killed outright never reaches its own cleanup, so its claim would hide the item for good.
 4. `list_development_items(limit=1)` → Watson on the top item (if any). One Watson per tick.
 
-The task's prompt lives in the task, and this plugin does not ship it. Setup reads the task and never writes it.
+The task's prompt is `scheduled-tasks/orchestrator.md`, which setup installs into the task.
 
 Each dispatch is fire-and-forget via `nohup claude -p --agent workbench-dev-team:<mode> ... &; disown`, where `<mode>` is the mode agent the token picks: `watson-index`, `holmes-index`, `lestrade-item`, or `lestrade-sweep`. Watson alone can run for hours; Dispatch never blocks.
 
@@ -317,7 +319,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 
 Two ways to invoke the same agents, same definitions:
 
-1. **Unattended (default).** The Dispatch scheduled task polls The Index on its schedule and dispatches via `claude -p --agent`. `/workbench-dev-team:setup` installs the dispatcher it calls, and never changes the task.
+1. **Unattended (default).** The Dispatch scheduled task polls The Index on its schedule and dispatches via `claude -p --agent`. `/workbench-dev-team:setup` installs the dispatcher it calls, and the task's prompt and schedule.
 2. **Interactive.** Any Claude Code session can dispatch an agent directly via the Agent tool, e.g., `Agent(subagent_type: "workbench-dev-team:lestrade", ...)`. For multi-agent delegation with config-driven models, background execution, and roster tracking, use the `orchestrate` skill — it wraps this path with the full protocol. Useful for manual triage, one-off runs, ad-hoc dev work (Watson Direct mode), or debugging without waiting for the next tick. **An Index item you want built now** goes the same way, `Item ID: <n>` to Watson: the dev-team mod runs the dispatcher the Dispatch task uses in place of the spawn, immediately, and returns its first line.
 
 ## The dev-team mod

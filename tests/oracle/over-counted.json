@@ -2512,6 +2512,15 @@
       ]
     },
     {
+      "line": "gh pr comment 5 --body \"Run git commit -m x, then git push --force-with-lease.\"",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
       "line": "gh pr create --title \"git push fix\"",
       "lanes": [
         "sub-agent"
@@ -2886,6 +2895,15 @@
       ]
     },
     {
+      "line": "perl -i -pe 's/\"Bash\\(git push --force:\\*\\)\", //' assets/permissions/rails.json",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
       "line": "pr )) --force-with-lease -f\"git push\" -f",
       "lanes": [
         "main",
@@ -3027,6 +3045,24 @@
       "line": "rg\nrepos/o/r/pulls/5/merge in 'git push'find-c-c\n-C",
       "lanes": [
         "sub-agent"
+      ]
+    },
+    {
+      "line": "sed 's/git commit/git push/g; y/ab/ba/' notes.md > out.md",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
+      ]
+    },
+    {
+      "line": "sed -i '' -e 's/git push --force//' notes.md",
+      "lanes": [
+        "main",
+        "sub-agent",
+        "pipeline",
+        "pipeline sub-agent"
       ]
     },
     {

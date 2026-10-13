@@ -14,7 +14,7 @@ bad() { echo "  FAIL — $1"; fail=$((fail+1)); }
 expect_eq()  { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected [$2] got [$3]"; fi; }
 expect_has() { case "$3" in *"$2"*) ok "$1" ;; *) bad "$1: expected to contain [$2] in [$3]" ;; esac; }
 
-for block in dispatcher-install dispatcher-allow; do
+for block in dispatcher-install dispatcher-allow dispatch-prompt dispatch-schedule; do
   awk "/# >>> $block >>>/{f=1;next} /# <<< $block <<</{f=0} f" "$SRC" > "$WORK/$block.sh"
   [ -s "$WORK/$block.sh" ] || { echo "FAIL: could not extract the $block block from $SRC"; exit 1; }
 done
@@ -146,6 +146,101 @@ for sh in $SHELLS; do
   out=$(allow_run "$sh" "$home" "$cfg"); rc=$?
   expect_eq "an allow list that is not an array exits 1" 1 "$rc"
   expect_eq "and is left untouched" '{"permissions": {"allow": "Read"}}' "$(cat "$cfg")"
+done
+
+prompt_run() { ( HOME="$2" SRC_ROOT="$3" "$1" "$WORK/dispatch-prompt.sh" 2>&1 ); }
+prompt_src() {
+  local root="$WORK/psrc-$1"
+  mkdir -p "$root/scheduled-tasks"
+  printf '%s' "$2" > "$root/scheduled-tasks/orchestrator.md"
+  printf '%s' "$root"
+}
+schedule_run() { ( HOME="$2" SRC_ROOT="$REPO" WORKBENCH_SETTINGS_FILE="$3" "$1" "$WORK/dispatch-schedule.sh" 2>&1 ); }
+cadence() { jq -nc --argjson c "$1" '{pluginConfigs: {"workbench-dev-team@claude-workbench": {options: {dispatchCadenceMinutes: $c}}}}'; }
+
+for sh in $SHELLS; do
+  echo "Testing setup's dispatch-prompt, under $sh:"
+  home="$WORK/home-prompt-$sh"; mkdir -p "$home"
+  out=$(prompt_run "$sh" "$home" "$REPO"); rc=$?
+  expect_eq "the shipped prompt passes" 0 "$rc"
+  expect_has "and names the file it wrote" "Dispatch prompt: $home/.claude-workbench/dispatch-prompt.md" "$out"
+  body="$home/.claude-workbench/dispatch-prompt.md"
+  expect_eq "the body starts after the frontmatter" "# Dispatch — The Orchestrator" "$(head -1 "$body")"
+  expect_eq "the body is the source less its frontmatter" \
+    "$(awk 'NR==1 && $0=="---" {fm=1; next} fm==1 && $0=="---" {fm=2; next} fm==2 && !s && /^[[:space:]]*$/ {next} fm==2 {s=1; print}' "$REPO/scheduled-tasks/orchestrator.md")" "$(cat "$body")"
+  expect_has "the body keeps the escalation record" 'dispatch-agent.sh" --mark-escalated' "$(cat "$body")"
+
+  before=$(cat "$body")
+  for bad in \
+    "missing||is missing" \
+    "empty|---
+name: dispatch-orchestrator
+---
+|its body is empty" \
+    "unclosed|---
+name: dispatch-orchestrator
+body|its body is empty" \
+    "two lanes|# D
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" lestrade 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" holmes 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" --check watson 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" --mark-escalated watson 1|dispatches 2 lanes" \
+    "no mark|# D
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" lestrade 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" holmes 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" watson 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" --check watson 1|--mark-escalated" \
+    "no check|# D
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" lestrade 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" holmes 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" watson 1
+bash \"\$HOME/.claude-workbench/bin/dispatch-agent.sh\" --mark-escalated watson 1|--check call"
+  do
+    label=${bad%%|*}; rest=${bad#*|}; text=${rest%|*}; why=${rest##*|}
+    if [ "$label" = missing ]; then src="$WORK/psrc-none"; mkdir -p "$src"; else src=$(prompt_src "$label-$sh" "$text"); fi
+    out=$(prompt_run "$sh" "$home" "$src"); rc=$?
+    expect_eq "$label: exit 1" 1 "$rc"
+    expect_has "$label: names why" "$why" "$out"
+    expect_has "$label: says the task was not changed" "The Dispatch task was not changed" "$out"
+    expect_eq "$label: the last good body stays" "$before" "$(cat "$body")"
+  done
+
+  src="$WORK/psrc-crlf-$sh"; mkdir -p "$src/scheduled-tasks"
+  awk '{ printf "%s\r\n", $0 }' "$REPO/scheduled-tasks/orchestrator.md" > "$src/scheduled-tasks/orchestrator.md"
+  out=$(prompt_run "$sh" "$home" "$src"); rc=$?
+  expect_eq "crlf: exit 1" 1 "$rc"
+  expect_has "crlf: names why" "its frontmatter survived the strip" "$out"
+  expect_eq "crlf: the last good body stays" "$before" "$(cat "$body")"
+
+  src="$WORK/psrc-stacked-$sh"; mkdir -p "$src/scheduled-tasks"
+  { printf -- '---\nname: first\n---\n\n'; cat "$REPO/scheduled-tasks/orchestrator.md"; } > "$src/scheduled-tasks/orchestrator.md"
+  out=$(prompt_run "$sh" "$home" "$src"); rc=$?
+  expect_eq "stacked frontmatter: exit 1" 1 "$rc"
+  expect_has "stacked frontmatter: names why" "its body still opens with a frontmatter fence" "$out"
+  expect_eq "stacked frontmatter: the last good body stays" "$before" "$(cat "$body")"
+
+  echo "Testing setup's dispatch-schedule, under $sh:"
+  home="$WORK/home-schedule-$sh"; mkdir -p "$home"
+  out=$(schedule_run "$sh" "$home" "$WORK/no-settings.json"); rc=$?
+  expect_eq "no row set: exit 0" 0 "$rc"
+  expect_has "no row set: the row's default, every 20 minutes" "Dispatch schedule: */20 * * * * (every 20 min)" "$out"
+  printf '{}' > "$WORK/empty-settings-$sh.json"
+  out=$(schedule_run "$sh" "$home" "$WORK/empty-settings-$sh.json"); rc=$?
+  expect_eq "settings without the row: exit 0" 0 "$rc"
+  expect_has "settings without the row: the row's default" "Dispatch schedule: */20 * * * * (every 20 min)" "$out"
+  for pair in "5|*/5 * * * *" "15|*/15 * * * *" "30|*/30 * * * *" "60|0 * * * *"; do
+    min=${pair%%|*}; cron=${pair#*|}
+    cadence "$min" > "$WORK/cadence-$sh.json"
+    out=$(schedule_run "$sh" "$home" "$WORK/cadence-$sh.json"); rc=$?
+    expect_eq "$min minutes: exit 0" 0 "$rc"
+    expect_has "$min minutes: $cron" "Dispatch schedule: $cron (every $min min)" "$out"
+  done
+  for bad in 0 4 7 25 45 61 120 20.5 '"twenty"'; do
+    cadence "$bad" > "$WORK/cadence-$sh.json"
+    out=$(schedule_run "$sh" "$home" "$WORK/cadence-$sh.json"); rc=$?
+    expect_eq "$bad minutes: exit 1" 1 "$rc"
+    expect_has "$bad minutes: says the task was not changed" "The Dispatch task was not changed" "$out"
+  done
 done
 
 echo

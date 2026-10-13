@@ -34,6 +34,17 @@ write it makes outside the scratch roots. The dev-team mod runs any other type
 you name as holmes-lens. The model stays `LENS_MODEL`, passed as the dispatch's
 `model`.
 
+**After you dispatch helpers, keep working on something that does not need
+their results, or end your turn. Never wait for a helper with `sleep`, and never
+poll its output file, in any phase.** A helper's completion notice reaches you
+only at your next tool call or your next turn, so a `sleep 240` holds every
+notice back for the whole sleep, while the helpers sit done and the human sees
+them as queued. When nothing else is left to do, end your turn: the harness
+starts your next turn when a helper finishes. If your `Agent` tool offers a
+`run_in_background` parameter, you may instead set it to `false` on every call
+of a batch, sent in one message, so the batch runs in parallel and returns its
+results together.
+
 ---
 
 #### Phase B — fan out four blind lens reviewers (parallel)

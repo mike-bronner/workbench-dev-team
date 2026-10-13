@@ -1,5 +1,5 @@
 ---
-description: Configure the workbench-dev-team plugin — verify prerequisites, seed Keychain credentials, register The Index MCP, move an old agent config into /config, install the dispatcher, and check the workbench-dev-team-dispatch scheduled task. Re-run after a plugin update, or to refresh the OAuth bearer token (annual).
+description: Configure the workbench-dev-team plugin — verify prerequisites, check Keychain credentials, register The Index MCP, move an old agent config into /config, install the dispatcher, and install the Dispatch prompt into the workbench-dev-team-dispatch scheduled task. Re-run after a plugin update, after a cadence change, or to refresh the OAuth bearer token (annual).
 disable-model-invocation: true
 ---
 
@@ -7,19 +7,21 @@ The user has invoked `/workbench-dev-team:setup`. Walk them through the one-time
 (or annual-refresh) configuration of the plugin.
 
 This command is fully idempotent — re-running is safe at any time. It will skip
-already-satisfied steps, refresh the OAuth bearer token (1-year lifetime), and
-replace the installed dispatcher with the current one.
+already-satisfied steps, refresh the OAuth bearer token (1-year lifetime),
+replace the installed dispatcher with the current one, and refresh the Dispatch
+task's prompt and schedule.
 
 Dispatch is the Claude scheduled task `workbench-dev-team-dispatch`. On every
-tick it polls The Index and runs `~/.claude-workbench/bin/dispatch-agent.sh`
-once per item. Setup installs that dispatcher and keeps the task's two allow
-rules. It only reads the task: it never creates, updates, disables, or deletes
-it, and it never removes its allow rules.
+run it polls The Index and runs `~/.claude-workbench/bin/dispatch-agent.sh`
+once per item. Its prompt ships as `scheduled-tasks/orchestrator.md`. Setup
+installs the dispatcher, keeps the task's two allow rules, and creates the task
+when it is missing or updates its prompt and schedule when it exists. It never
+deletes or disables the task, and it never removes its allow rules.
 
-Every plain setting (models, efforts, budgets, fan-out, the board's fetch
-interval) is a row in `/config`, not a question here. This command keeps only
-the steps that need a model: Keychain secrets the user pastes, the questions it
-asks, and the scheduled-tasks tool that reads the Dispatch task.
+Every plain setting (models, efforts, budgets, fan-out, the Dispatch cadence)
+is a row in `/config`, not a question here. This command keeps only the steps
+that need a model: Keychain secrets the user stores, the questions it asks, and
+the scheduled-tasks tools that install the Dispatch task.
 
 ## Constants
 
@@ -31,21 +33,22 @@ Settings:              /config rows, kept in ~/.claude/settings.json
                        under pluginConfigs["workbench-dev-team@claude-workbench"]
 Old agent config:      ~/.claude-workbench/dev-team-config.json (moved by Step 6b)
 Dispatcher:            ~/.claude-workbench/bin/dispatch-agent.sh
-Dispatch task:         workbench-dev-team-dispatch (a Claude scheduled task, read only)
+Dispatch task:         workbench-dev-team-dispatch (a Claude scheduled task)
+Dispatch prompt:       <resolved plugin root>/scheduled-tasks/orchestrator.md
 Plugin registry:       ~/.claude/plugins/installed_plugins.json
 ```
 
-The dispatcher's source is **resolved at run time in Step 7a**, not hard-coded
-off `${CLAUDE_PLUGIN_ROOT}` — the running root can be a frozen session
-snapshot. See Step 7a for the resolution order.
+The dispatcher's and the prompt's source is **resolved at run time in Step
+7a**, not hard-coded off `${CLAUDE_PLUGIN_ROOT}` — the running root can be a
+frozen session snapshot. See Step 7a for the resolution order.
 
 ## Step 1 — Check the Dispatch scheduled task
 
-Read what runs Dispatch before anything changes. The tool is deferred, so load
-it first:
+Read what runs Dispatch before anything changes. The tools are deferred, so
+load them first:
 
 ```
-ToolSearch  query: select:mcp__scheduled-tasks__list_scheduled_tasks
+ToolSearch  query: select:mcp__scheduled-tasks__list_scheduled_tasks,mcp__scheduled-tasks__create_scheduled_task,mcp__scheduled-tasks__update_scheduled_task
 ```
 
 Then call `mcp__scheduled-tasks__list_scheduled_tasks`, and look for the task
@@ -54,16 +57,14 @@ whose `taskId` is `workbench-dev-team-dispatch`. Save the result as
 
 - `found`, with the task's schedule and whether it is enabled.
 - `missing`, when the list has no such task.
-- `unknown`, when the tool does not load or the call fails.
+- `unknown`, when the tools do not load or the call fails.
 
-**Call no other scheduled-tasks tool. Never create, update, or delete this
-task, and never disable it.** This plugin
-ships no Dispatch prompt, so setup has nothing to write into the task. Its
-prompt and schedule are edited in Claude Code's Scheduled panel. If
-`DISPATCH_TASK` is `missing`, tell the human that no scheduled task runs
-Dispatch, so no Index item is dispatched until they create one. If it is
-`unknown`, ask them to check the Scheduled panel. Either way, go on with the
-other steps, and repeat it in the Step 8 summary.
+Step 7e creates the task when it is `missing`, and updates it when it is
+`found`. **Setup never deletes this task and never disables it.** When the task
+is `found` but disabled, leave it disabled, and say so in the Step 8 summary:
+the human disabled it, and only the human turns it back on. If `DISPATCH_TASK`
+is `unknown`, Step 7e writes nothing. Ask the human to check the Scheduled
+panel, and repeat it in the Step 8 summary.
 
 ## Step 2 — Verify prerequisites
 
@@ -101,94 +102,51 @@ If any prerequisite is missing, stop and tell the user how to install it
 macOS; `git` comes with the Xcode Command Line Tools,
 `xcode-select --install`).
 
-## Step 3 — Seed Keychain credentials
+## Step 3 — Check Keychain credentials
 
-Four entries are required. For each, check existence first; only prompt the
-user for missing ones.
-
-### Helper functions (run once at the top of the step)
-
-```bash
-keychain_exists() {
-  security find-generic-password -s "$1" -a "$2" >/dev/null 2>&1
-}
-keychain_set() {
-  security add-generic-password -s "$1" -a "$2" -w "$3" -U 2>/dev/null
-}
-```
-
-### 3a. `the-index-mcp / client-id`
+Four entries are required. Check each one with its service spelled out, as
+below. workbench-core's credential guard lets a Keychain read run only for the
+literal services `the-index-mcp`, `github-cli` and `claude-code`, and it
+refuses every Keychain write from a session. So setup never stores a secret
+itself. For each missing entry, give the human the `!` command to run, then
+run the check again.
 
 ```bash
-if keychain_exists "the-index-mcp" "client-id"; then
-  echo "✅ the-index-mcp / client-id (already in Keychain)"
-else
-  echo "⚠  the-index-mcp / client-id is missing"
-fi
+missing=""
+security find-generic-password -s the-index-mcp -a client-id >/dev/null 2>&1 \
+  && echo "✅ the-index-mcp / client-id" || missing="$missing the-index-mcp/client-id"
+security find-generic-password -s the-index-mcp -a client-secret >/dev/null 2>&1 \
+  && echo "✅ the-index-mcp / client-secret" || missing="$missing the-index-mcp/client-secret"
+security find-generic-password -s github-cli -a token >/dev/null 2>&1 \
+  && echo "✅ github-cli / token" || missing="$missing github-cli/token"
+security find-generic-password -s claude-code -a oauth-token >/dev/null 2>&1 \
+  && echo "✅ claude-code / oauth-token" || missing="$missing claude-code/oauth-token"
+[ -z "$missing" ] && echo "✅ All four Keychain entries are present" || echo "⚠  Missing:$missing"
 ```
 
-If missing, ask the user in chat: **"Paste your The Index OAuth client ID. I'll
-store it in the macOS Keychain under `the-index-mcp / client-id`."** Wait for
-the next user message, then:
+For each missing entry, show the human its command below, and ask them to run
+it in this session with the `!` prefix. Each `-w` comes last with no value, so
+`security` asks for the secret at a hidden prompt, and the secret never reaches
+the conversation or the shell history. The one exception is the gh entry: its
+`-w "$(gh auth token)"` puts the token on that command line while `security`
+runs, where another process on the machine could briefly see it.
 
-```bash
-keychain_set "the-index-mcp" "client-id" "<value>"
-echo "✅ Stored"
-```
+- `the-index-mcp / client-id`, The Index OAuth client ID:
+  `! security add-generic-password -s the-index-mcp -a client-id -U -w`
+- `the-index-mcp / client-secret`, The Index OAuth client secret:
+  `! security add-generic-password -s the-index-mcp -a client-secret -U -w`
+- `github-cli / token`, the GitHub token for dispatched agents. `gh` must be
+  logged in first (`gh auth login`). This one reads the token from `gh`, so
+  there is no prompt:
+  `! security add-generic-password -s github-cli -a token -U -w "$(gh auth token)"`
+- `claude-code / oauth-token`, the Claude Code OAuth token for the headless
+  `claude -p` runs Dispatch starts. The human gets one by running
+  `claude setup-token` in a separate terminal (it starts with
+  `sk-ant-oat01-`), then pastes it at the prompt of:
+  `! security add-generic-password -s claude-code -a oauth-token -U -w`
 
-### 3b. `the-index-mcp / client-secret`
-
-Same pattern as 3a. Prompt: **"Paste your The Index OAuth client secret."**
-
-### 3c. `github-cli / token`
-
-This one has a fast path — try to extract the token from the existing `gh` CLI
-Keychain entry before asking the user:
-
-```bash
-if keychain_exists "github-cli" "token"; then
-  echo "✅ github-cli / token (already in Keychain)"
-else
-  echo "⚠  github-cli / token is missing — trying to extract from gh CLI"
-  GH_RAW=$(security find-generic-password -s "gh:github.com" -w 2>/dev/null || true)
-  if [ -n "$GH_RAW" ]; then
-    GH_TOK=$(echo "$GH_RAW" | sed 's/^go-keyring-base64://' | base64 -d 2>/dev/null || true)
-    if [ -n "$GH_TOK" ]; then
-      keychain_set "github-cli" "token" "$GH_TOK"
-      echo "✅ Extracted from gh CLI Keychain entry"
-    fi
-  fi
-  if ! keychain_exists "github-cli" "token"; then
-    echo "❌ Could not auto-extract. Run 'gh auth login' first, then re-run /workbench-dev-team:setup."
-    exit 1
-  fi
-fi
-```
-
-If extraction fails, stop and tell the user to run `gh auth login` first.
-
-### 3d. `claude-code / oauth-token`
-
-```bash
-if keychain_exists "claude-code" "oauth-token"; then
-  echo "✅ claude-code / oauth-token (already in Keychain)"
-fi
-```
-
-If missing, tell the user: **"Dispatch needs a Claude Code
-OAuth token to invoke `claude -p` headlessly. Open a separate terminal and run:**
-
-```
-claude setup-token
-```
-
-**Then paste the token here (it starts with `sk-ant-oat01-`)."** Wait for the
-next message, then store:
-
-```bash
-keychain_set "claude-code" "oauth-token" "<value>"
-echo "✅ Stored"
-```
+When the human says they ran them, run the check block again. If an entry is
+still missing, stop, and say which one.
 
 ## Step 4 — Fetch OAuth bearer token
 
@@ -255,7 +213,7 @@ no config file to write. The rows, with their defaults:
 
 | Row | Default | What it sets |
 |---|---|---|
-| `dispatchCadenceMinutes` | `20` | How often, at most, the `/dev-team-board` pane fetches The Index. Match it to the Dispatch task's schedule. Setup never changes that schedule. |
+| `dispatchCadenceMinutes` | `20` | How often the Dispatch task runs. Step 7d turns it into the task's schedule, so re-run setup after a change. The `/dev-team-board` pane also fetches at most this often. |
 | `lestradeModel`, `holmesModel`, `watsonModel` | `claude-opus-5-5[1m]` | The model of every run, scheduled and interactive. |
 | `lestradeEffort`, `holmesEffort`, `watsonEffort` | `medium` | The effort of every run. |
 | `lestradeFallback`, `holmesFallback`, `watsonFallback` | `haiku`, `sonnet`, `sonnet,haiku` | The models a scheduled run falls back to. |
@@ -267,7 +225,7 @@ no config file to write. The rows, with their defaults:
 Claude Code keeps a value the user sets in `~/.claude/settings.json`, under
 `pluginConfigs["workbench-dev-team@claude-workbench"].options`, and keeps no
 default there. Both paths read it on the next dispatch, and nothing has to be
-re-run:
+re-run, except for the cadence:
 
 - The scheduled path. `bin/dispatch-agent.sh` reads each row from that file.
   A row the user never set falls back to a default that matches the row's own,
@@ -901,7 +859,7 @@ its commits and pushes raise no prompt, so the scope hook never judges them. The
 guard still refuses its merges and force pushes, and workbench-core's
 destructive-scope guard still holds its deletes to scope.
 
-## Step 7 — Install the dispatcher
+## Step 7 — Install the dispatcher and the Dispatch task
 
 The Dispatch task runs `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh"`
 once per item, and the dev-team mod runs the same file in place of an
@@ -910,8 +868,8 @@ breaker, the budgets, the reprieve, and the spawn. It lives at that stable
 path, not in the plugin cache, whose path carries the version and moves on
 every update. A plugin update does not refresh it, so this step does.
 
-This step never touches the scheduled task itself. Step 1 read it, and that is
-all setup does with it.
+Then 7d and 7e install the task's prompt, `scheduled-tasks/orchestrator.md`,
+and its schedule into the scheduled task.
 
 ### 7a. Resolve the plugin source
 
@@ -1008,7 +966,7 @@ echo "Dispatcher source: $SRC_ROOT (v${SRC_VERSION:-unknown})"
 
 Carry `SRC_ROOT`, `SRC_VERSION` and `STALE_ROOT_WARNING` (empty when the
 running root is current) into the steps below and the Step 8 summary. If this
-block exits non-zero, stop Step 7 entirely.
+block exits non-zero, stop Step 7 entirely, so the task is not written either.
 
 ### 7b. Install the dispatcher, after its suites pass
 
@@ -1042,9 +1000,10 @@ The two suites cover the per-item in-flight lock, the budget cap and its
 reprieve multiple, the defaults that apply when a `/config` row is unset, and
 the circuit-breaker pre-flight with its one-shot reprieve marker.
 
-**If this block exits non-zero, read its last line to the human, and go on to
-7c.** The Dispatch task keeps running the dispatcher that was installed before,
-and the allow rules serve that one too.
+**If this block exits non-zero, read its last line to the human, go on to 7c,
+and skip 7e.** The Dispatch task keeps running the dispatcher and the prompt it
+had, and the allow rules serve that dispatcher too. The prompt is not
+installed beside a dispatcher that failed its suites.
 
 ### 7c. Keep the dispatcher's allow rules
 
@@ -1090,6 +1049,88 @@ A failure here is a **warning, not a stop**. Dispatch still runs, but the
 classifier judges its spawns until the rules are in place. Say so in the
 Step 8 summary.
 
+### 7d. Prepare the prompt and the schedule
+
+The first block strips the frontmatter from the shipped prompt, checks what is
+left, and writes the body to `~/.claude-workbench/dispatch-prompt.md`. The
+second turns `dispatchCadenceMinutes` into the task's cron schedule.
+
+```bash
+# >>> dispatch-prompt >>>  (markers used by commands/test-dispatch-setup.sh — keep them)
+DP_SRC="${SRC_ROOT:-}/scheduled-tasks/orchestrator.md"
+DP_OUT="$HOME/.claude-workbench/dispatch-prompt.md"
+if [ ! -f "$DP_SRC" ]; then
+  echo "❌ $DP_SRC is missing. The Dispatch task was not changed."
+  exit 1
+fi
+DP_BODY=$(awk 'NR==1 && $0=="---" {fm=1; next}
+     fm==1 && $0=="---" {fm=2; next}
+     fm==2 {if (!started && $0 ~ /^[[:space:]]*$/) next; started=1; print; next}
+     fm!=1 {print}' "$DP_SRC")
+DP_WHY=""
+[ -n "$DP_BODY" ] || DP_WHY="its body is empty"
+[ -z "$DP_WHY" ] && printf '%s\n' "$DP_BODY" | head -1 | grep -qx -- '---' && DP_WHY="its body still opens with a frontmatter fence"
+[ -z "$DP_WHY" ] && printf '%s\n' "$DP_BODY" | grep -qF -- 'name: dispatch-orchestrator' && DP_WHY="its frontmatter survived the strip"
+DP_LANES=$(printf '%s\n' "$DP_BODY" | grep -oE -- 'dispatch-agent\.sh" +[a-z][a-z-]*' | sort -u | wc -l | tr -d ' ')
+[ -z "$DP_WHY" ] && [ "$DP_LANES" -lt 3 ] && DP_WHY="it dispatches $DP_LANES lanes, not 3"
+[ -z "$DP_WHY" ] && ! printf '%s\n' "$DP_BODY" | grep -qF -- 'dispatch-agent.sh" --mark-escalated' && DP_WHY="it lacks the --mark-escalated call"
+[ -z "$DP_WHY" ] && ! printf '%s\n' "$DP_BODY" | grep -qF -- 'dispatch-agent.sh" --check' && DP_WHY="it lacks the --check call"
+if [ -n "$DP_WHY" ]; then
+  echo "❌ $DP_SRC failed its check: $DP_WHY. The Dispatch task was not changed. Update or re-install the plugin, then re-run setup."
+  exit 1
+fi
+if ! { mkdir -p "$(dirname "$DP_OUT")" && printf '%s\n' "$DP_BODY" > "$DP_OUT"; }; then
+  echo "❌ Could not write $DP_OUT. The Dispatch task was not changed."
+  exit 1
+fi
+echo "✅ Dispatch prompt checked: $DP_LANES lanes"
+echo "Dispatch prompt: $DP_OUT"
+# <<< dispatch-prompt <<<
+```
+
+```bash
+# >>> dispatch-schedule >>>  (markers used by commands/test-dispatch-setup.sh — keep them)
+DS_SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
+DS_MIN=$(jq -r '.pluginConfigs["workbench-dev-team@claude-workbench"].options.dispatchCadenceMinutes // empty | tostring' "$DS_SETTINGS" 2>/dev/null)
+[ -n "$DS_MIN" ] || DS_MIN=$(jq -r '.userConfig.dispatchCadenceMinutes.default // empty | tostring' "${SRC_ROOT:-}/.claude-plugin/plugin.json" 2>/dev/null)
+case "$DS_MIN" in
+  5|6|10|12|15|20|30) DS_CRON="*/$DS_MIN * * * *" ;;
+  60) DS_CRON="0 * * * *" ;;
+  *)
+    echo "❌ dispatchCadenceMinutes is '$DS_MIN'. Set it in /config to 5, 6, 10, 12, 15, 20, 30 or 60, so each run starts at the same minutes of every hour, then re-run setup. The Dispatch task was not changed."
+    exit 1
+    ;;
+esac
+echo "Dispatch schedule: $DS_CRON (every $DS_MIN min)"
+# <<< dispatch-schedule <<<
+```
+
+**If either block exits non-zero, skip 7e**, and read its last line to the
+human.
+
+### 7e. Create or update the Dispatch task
+
+Skip this step when `DISPATCH_TASK` from Step 1 is `unknown`, or when 7b or 7d
+exited non-zero. Say why in the Step 8 summary.
+
+Otherwise use the `Read` tool on the **absolute path** 7d printed as
+`Dispatch prompt:`. That file is already stripped, so pass its contents
+verbatim. Never strip the source file by hand. The description is
+`"Dispatch — poll The Index every {MINUTES} min and fire workbench-dev-team agents on pending items."`,
+with the minutes 7d printed.
+
+- **When `DISPATCH_TASK` is `found`**, call
+  `mcp__scheduled-tasks__update_scheduled_task` with `taskId:
+  "workbench-dev-team-dispatch"`, `cronExpression` (the schedule 7d printed),
+  `prompt` (the file's contents), and `description`. Pass nothing else, so a
+  task the human disabled stays disabled.
+- **When `DISPATCH_TASK` is `missing`**, call
+  `mcp__scheduled-tasks__create_scheduled_task` with the same four arguments.
+
+Then call `mcp__scheduled-tasks__list_scheduled_tasks` once more, and confirm
+that the task is there with the new schedule. Tell the human which action ran,
+`created` or `updated`.
+
 ## Step 8 — Final summary
 
 Print a clean summary block:
@@ -1108,7 +1149,8 @@ Print a clean summary block:
   Commit prompts:   10 commit, push, and merge ask rules in ~/.claude/settings.json
                     (or: ⚠ not installed — foreground commits and merges are not prompted)
                     {LEGACY_COMMANDS}
-  Dispatch task:    workbench-dev-team-dispatch, {TASK_STATE}
+  Dispatch task:    workbench-dev-team-dispatch {TASK_ACTION}, {TASK_STATE}
+                    prompt from {SRC_ROOT}/scheduled-tasks/orchestrator.md
                     (or: ⚠ {TASK_PROBLEM})
   Dispatcher:       ~/.claude-workbench/bin/dispatch-agent.sh, self-tested
                     from {SRC_ROOT}/bin (v{SRC_VERSION})
@@ -1131,12 +1173,14 @@ Fill each slot from the step that produced it:
   config.
 - `{ATTR_RESULT}`: the user's Step 6.5 choice, `suppressed` or
   `default (visible)`.
-- `{TASK_STATE}`: from Step 1 when `DISPATCH_TASK` is `found`, its schedule and
-  whether it is enabled, such as `*/20 * * * *, enabled`.
-- `{TASK_PROBLEM}`: from Step 1 otherwise. For `missing`, write "no scheduled
-  task runs Dispatch, so no Index item is dispatched. Create it in the
-  Scheduled panel." For `unknown`, write "could not read the scheduled tasks.
-  Check the Scheduled panel."
+- `{TASK_ACTION}`: Step 7e's action, `created` or `updated`.
+- `{TASK_STATE}`: the schedule 7d printed, and whether the task is enabled,
+  such as `*/20 * * * *, enabled`. For a task the human disabled, write
+  `disabled — turn it on in the Scheduled panel`.
+- `{TASK_PROBLEM}`: why Step 7e wrote nothing, when it did not run. For
+  `unknown`, write "could not read the scheduled tasks. Check the Scheduled
+  panel, then re-run setup." When 7b or 7d failed, name that step and its last
+  line, and say the task keeps the prompt and schedule it had.
 - `{SRC_ROOT}`, `{SRC_VERSION}`: Step 7a.
 
 `{LEGACY_COMMANDS}` is the `! rm` command for each `LEGACY_LEFT` line Step 6.6
@@ -1153,7 +1197,8 @@ failure this summary exists to surface.
 - **Idempotency.** All four keychain checks, the MCP registration (`remove ||
   true` then `add`), the `mkdir -p`, the dispatcher install (a staged copy
   renamed over the old one), and the allow rules (added only when absent) are
-  safe to re-run. Step 1 only reads the scheduled task. Step 6b renames the old
+  safe to re-run. Step 7e updates the task it finds rather than creating a
+  second one. Step 6b renames the old
   config once it has moved, so a re-run never moves it over a later `/config`
   edit. Step 4 always fetches a fresh token, which is exactly the desired
   behavior on re-run (annual refresh is the dominant use case).
@@ -1194,15 +1239,18 @@ failure this summary exists to surface.
   `bin/dispatch-tick.sh`, and its setup deleted the task and its allow rules.
   Mike decided on 2026-10-12 that Dispatch stays the Claude scheduled task
   `workbench-dev-team-dispatch`, so setup installs no job of its own. The
-  task's prompt shipped as `scheduled-tasks/orchestrator.md` before 0.53.0. It
-  is not restored, because parts of it no longer match the code, such as where
-  the agents' settings live. So setup cannot write the task, and only reads it.
+  task's prompt, `scheduled-tasks/orchestrator.md`, ships again, corrected for
+  the `/config` rows, and Step 7e installs it, so a re-run after a plugin update
+  refreshes the live task. Setup still never deletes or disables the task.
   `bin/dispatch-tick.sh` stays in the plugin, because the `/dev-team-board`
   pane fetches The Index through `bin/dispatch-tick.sh --board`.
-- **Tests.** `commands/test-dispatch-setup.sh` runs the `dispatcher-install`
-  and `dispatcher-allow` blocks, extracted from between this file's sentinels,
-  against a throwaway `HOME`, so nothing is installed. `commands/test-config-pin.sh`
-  runs Step 6's pin check, pin replacement and move the same way, with `claude`
-  stubbed. `commands/lint-setup-dispatch.sh` fails when a step of this file
-  names a launchd job, or names a scheduled-tasks tool other than the list
-  tool. The `dispatcher-allow` tests show that setup removes no allow rule.
+- **Tests.** `commands/test-dispatch-setup.sh` runs the `dispatcher-install`,
+  `dispatcher-allow`, `dispatch-prompt` and `dispatch-schedule` blocks,
+  extracted from between this file's sentinels, against a throwaway `HOME`, so
+  nothing is installed. The prompt case runs on the shipped
+  `scheduled-tasks/orchestrator.md`. `commands/test-config-pin.sh` runs Step 6's
+  pin check, pin replacement and move the same way, with `claude` stubbed.
+  `commands/lint-setup-dispatch.sh` fails when a step of this file names a
+  launchd job, or a scheduled-tasks tool other than the list, create and update
+  tools, or passes `enabled`. The `dispatcher-allow` tests show that setup
+  removes no allow rule.

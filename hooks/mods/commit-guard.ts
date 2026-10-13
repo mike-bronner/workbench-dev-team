@@ -280,6 +280,85 @@ const MERGE_MUTATION = /mergePullRequest|enablePullRequestAutoMerge/i
 // Whether a push's own words force or delete.
 const isForceArg = (arg: string): boolean => /^--(?:forc|m|de|pru)/i.test(arg) || /^-[A-Za-z0-9]*[fd]/.test(arg) || /^[+:]\S/.test(arg)
 
+const SED_FLAGS = /^[gIipM0-9]*$/
+const PERL_FLAGS = /^[gimsxonrcadlu]*$/
+const PERL_RUNS_CODE = /\(\?\??\{|\(\*\{|`/
+const PERL_SAFE_REPLACEMENT = /^(?:[^$@]|\$(?:\d+|&))*$/
+const PERL_PATTERN_VARIABLE = /[$@][A-Za-z_{:#$[]/
+const unescaped = (text: string): string => text.replace(/\\[\s\S]/g, '')
+
+function substitutionsOnly(script: string, program: 'sed' | 'perl'): boolean {
+  let i = 0
+  let count = 0
+  const skip = () => {
+    while (i < script.length && /[\s;]/.test(script[i] ?? '')) i++
+  }
+  const part = (delimiter: string): string | undefined => {
+    let text = ''
+    while (i < script.length) {
+      const c = script[i] ?? ''
+      if (c === '\\') {
+        text += c + (script[i + 1] ?? '')
+        i += 2
+        continue
+      }
+      i++
+      if (c === delimiter) return text
+      text += c
+    }
+    return undefined
+  }
+  skip()
+  while (i < script.length) {
+    const command = program === 'perl' && script.startsWith('tr', i) ? 'tr' : (script[i] ?? '')
+    if (command !== 's' && command !== 'y' && command !== 'tr') return false
+    i += command.length
+    const delimiter = script[i] ?? ''
+    if (delimiter === '' || /[A-Za-z0-9\s\\(){}[\]<>]/.test(delimiter)) return false
+    i++
+    const pattern = part(delimiter)
+    const replacement = pattern === undefined ? undefined : part(delimiter)
+    if (pattern === undefined || replacement === undefined) return false
+    const flags = /^[A-Za-z]*/.exec(script.slice(i))?.[0] ?? ''
+    i += flags.length
+    if (!(program === 'sed' ? SED_FLAGS : PERL_FLAGS).test(flags)) return false
+    if (program === 'perl' && command === 's' && PERL_RUNS_CODE.test(pattern + replacement)) return false
+    if (program === 'perl' && command === 's' && !PERL_SAFE_REPLACEMENT.test(unescaped(replacement))) return false
+    if (program === 'perl' && command === 's' && PERL_PATTERN_VARIABLE.test(unescaped(pattern))) return false
+    count++
+    skip()
+  }
+  return count > 0
+}
+
+const SED_OPTION = /^(?:-[EnrsuzI]+|-i.*|--in-place(?:=.*)?|--regexp-extended|--quiet|--silent|--)$/
+const PERL_OPTION = /^(?:-[pinlaw0-9]*[eE]?|-i[^-]*|--)$/
+
+function isEditOnly(s: Statement): boolean {
+  if (s.name !== 'sed' && s.name !== 'perl') return false
+  const program = s.name
+  const scripts: string[] = []
+  let pending = false
+  for (let i = 0; i < s.args.length; i++) {
+    const arg = s.args[i] ?? ''
+    if (pending) {
+      scripts.push(arg)
+      pending = false
+      continue
+    }
+    if (program === 'sed' && (arg === '-e' || arg === '--expression')) pending = true
+    else if (program === 'sed' && arg.startsWith('--expression=')) scripts.push(arg.slice('--expression='.length))
+    else if (program === 'sed' && arg === '-i' && s.args[i + 1] === '') i++
+    else if (arg.startsWith('-')) {
+      if (!(program === 'sed' ? SED_OPTION : PERL_OPTION).test(arg)) return false
+      if (program === 'perl' && /[eE]$/.test(arg)) pending = true
+    } else if (program === 'sed' && scripts.length === 0 && !s.args.slice(0, i).some(a => a === '-e' || a.startsWith('--expression'))) {
+      scripts.push(arg)
+    }
+  }
+  return !pending && scripts.length > 0 && scripts.every(script => substitutionsOnly(script, program))
+}
+
 // What one git or gh statement runs, read from its words.
 type Read = { ops: Op[]; isForce: boolean; isHidden: boolean; code: string[]; isUnread: boolean }
 
@@ -417,7 +496,7 @@ export function findOps(parse: ShellParse, line: string): Found {
       if (LOOSE.test(s.words.join(' '))) add(all.filter(op => new RegExp(op, 'i').test(s.words.join(' '))), true)
       continue
     }
-    const isReader = READERS.has(s.name) && !(s.name === 'rg' && s.args.some(arg => arg.startsWith('--pre')))
+    const isReader = (READERS.has(s.name) && !(s.name === 'rg' && s.args.some(arg => arg.startsWith('--pre')))) || isEditOnly(s)
     if (isReader) {
       readerText.push(...s.args, ...s.assignments, ...heredocs)
     } else {

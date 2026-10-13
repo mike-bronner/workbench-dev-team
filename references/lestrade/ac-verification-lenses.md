@@ -40,6 +40,8 @@ Return ONLY structured findings, one per line:
 If you find nothing, return "no findings".
 ```
 
+**After you dispatch the lenses, keep working on something that does not need their findings, or end your turn. Never wait for a lens with `sleep`, and never poll its output file.** A lens reports only at your next tool call or your next turn, so a `sleep` holds its findings back for the whole sleep. When nothing else is left to do, end your turn: the harness starts your next turn when a lens finishes. If your `Agent` tool offers a `run_in_background` parameter, you may instead set it to `false` on each of the four calls in that one message, so they run in parallel and return their findings together.
+
 If a lens dispatch errors, the `Agent` tool is unavailable, or `fanout` is `false`, **skip the fan-out and self-check inline** instead: read your own draft AC back against the same four questions (malicious compliance, testability, completeness, edge cases) before moving on. Never let an unavailable fan-out silently skip the check.
 
 **Apply real gaps once, then move on — no re-verification loop.** Collect every lens's findings, dedup overlapping gaps, and rewrite the AC through `set_acceptance_criteria` (same call as step 4) to close every gap you judge real — you dedup and decide, same as Holmes does with his lenses' findings; a lens reports, it doesn't get the final word. This is a single bounded tightening pass: don't re-dispatch the lenses against the tightened version, trust it and continue. If every lens returns "no findings," the AC stands as written and you move on unchanged.
