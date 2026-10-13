@@ -105,13 +105,11 @@ macOS; `git` comes with the Xcode Command Line Tools,
 ## Step 3 — Check Keychain credentials
 
 Four entries are required. Check each one with its service spelled out, as
-below. workbench-core's credential guard lets a Keychain read run only for the
-literal services `the-index-mcp`, `github-cli` and `claude-code`. It lets a
-Keychain write run only in the form
-`security add-generic-password -s <service> -a <account> -w "$X" -U`, for those
-same services. Setup still never stores a secret itself, because the secret
-would first have to pass through the conversation. For each missing entry,
-give the human the `!` command to run, then run the check again.
+below. The standing rule every session carries applies here: read only the
+Keychain entries setup's own processes use, store a secret only in the
+Keychain, and never show one. Setup still never stores a secret itself,
+because the secret would first have to pass through the conversation. For each
+missing entry, give the human the `!` command to run, then run the check again.
 
 ```bash
 missing=""
