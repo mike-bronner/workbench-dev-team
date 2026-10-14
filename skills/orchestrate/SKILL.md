@@ -144,9 +144,12 @@ human says their review is done. A typed "commit it" in chat does not count.
 Offer the commit through `AskUserQuestion` after they say their review is done,
 asked alone and never bundled with other questions or work. Do not offer the
 commit before then. If an offer does reach the human early, "Not yet" leads.
-The question carries the branch and the proposed message. Until the human has
-said their review is done, the recommended first option is "Not yet" or
-"Review with Holmes first" (below), and "Commit it" goes last. Its description
+One commit takes the whole tree, in every lane, not only the agent's change.
+The question carries the branch, the message, and every file the commit takes.
+If the tree changes after it, ask it again, and drop no file. Leave out only
+what must never ship, and tell the human in one sentence. Until the
+human has said their review is done, the recommended first option is "Not yet"
+or "Review with Holmes first" (below), and "Commit it" goes last. Its description
 reads: "Picking this confirms you have reviewed the whole tree." Then attempt
 the commit and the push yourself. Claude Code's permission prompt is the
 mechanical backstop, not the approval. The full rule, and the plain form the
@@ -214,8 +217,8 @@ reasoning behind it, and the limits on reaching it. It does not describe how the
 work is done.
 
 Every handoff uses it, read-only research included. Three shapes are exempt:
-the two machine-built tokens, and a specialist's own fan-out, which stays inside
-the orchestrator boundary. The full rule: Dispatch protocol, step 3.
+the two machine-built tokens, and a specialist's own fan-out, inside the
+orchestrator boundary. The full rule: Dispatch protocol, step 3.
 
 Fill these six slots, in this order, under the names given, and send nothing
 else. No mode marker: see "The team's modes" (below).
@@ -234,9 +237,8 @@ Acceptance:
 Done when: <the observable condition that ends the task>
 ```
 
-Beyond the template's own notes, in short. Each slot's full rule, and what a
-brief must carry: `references/brief-detail.md`. Worked briefs, one task
-written both ways included: `references/brief-examples.md`.
+Each slot's full rule, and what a brief must carry:
+`references/brief-detail.md`. Worked briefs: `references/brief-examples.md`.
 
 - **`Workdir:`** — written as the workspace check (above) records it.
 - **`Goal:`** — the one bounded slot: concise, measurable, achievable.
@@ -286,13 +288,12 @@ answers from you.
   two readings was meant, a decision settled in a conversation it never saw, a
   target that does not exist in the repo.
 
-Expect the second one, and read it as the contract working rather than as an
-agent stalling. Answer what the conversation already settles, relay to the human
+Expect the second one: it is the contract working, not an agent stalling.
+Answer what the conversation already settles, relay to the human
 what only the human can settle, then **re-dispatch the updated brief** —
 SendMessage the answers to the agent that is waiting, or send it a corrected
 brief. Never start a fresh agent on the old brief. The brief was what was wrong,
-so a new agent walks into the same wall a few minutes later, at full cost, and
-this time you have two of them waiting.
+so a new agent hits the same wall at full cost, and two of them wait.
 
 ### The companion gate
 
@@ -369,9 +370,13 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   Local mode returns a rubric dispute the same way. A brief can come back with
   questions only the human can settle, and a finished Direct-mode tree comes
   back as a commit offer. Put each one to the human through `AskUserQuestion`,
-  never as prose. Put the recommended option first, and keep the agent's
-  options and grades unchanged. Each option's description carries its grade
-  and any warning, so the question stands on its own. A commit offer is asked
+  never as prose. The human never sees a hand-back, so the agent's options
+  table, with its grades and recommendation, is context the call needs: show it
+  in the reply, just above the call. It is the one part of a hand-back you show
+  in full. Never ask with a label for options the reply does not show, such as
+  "Option B" or "Watson's option 2". Put the recommended option first, and keep
+  the agent's options and grades unchanged. Each option's description carries
+  its grade and any warning, so the question stands on its own. A commit offer is asked
   alone, and follows the timing rule under "Direct-mode work comes back
   uncommitted": "Commit it" never leads before the human says their review is
   done. A question with no fixed choices still goes through the tool, because

@@ -59,8 +59,8 @@ criteria, written by Lestrade at triage.
 - Obvious one-line fixes with no real alternative
 
 **Three distinct angles, checked before you grade.** Three settings of one
-approach are one option. Run intake's distinctness check on the three, and
-replace any option that turns out to be a variant of another.
+approach are one option. Run intake's distinctness check, and replace any
+variant.
 
 **Grade all three against every criterion** as met, partly met, or not met,
 with a short reason for anything short of met. The recommendation is the best
@@ -85,22 +85,23 @@ the table.
 I recommend A (all met), because <the one reason it beats the others>.
 ```
 
-**A decision for the human goes through `AskUserQuestion`.** Put the
-recommended option first. Each option's description carries its grade and any
-warning the human needs, so the question stands on its own after the table has
-scrolled away. Ask every other question the same way, never in prose. A
-question with no fixed choices still fits, because the dialog always offers
-Other. Ask each one right after the context it depends on first appears, with
-that context in prose just above the call, not at the end of the reply.
+**A decision for the human goes through `AskUserQuestion`.** Show the table in
+the reply first, even a sub-agent's, whose hand-back the human never sees.
+Never name an option the reply does not show. Put the recommended option
+first. Each option's description carries its grade and any warning, so the
+question stands on its own after the table has scrolled away. Ask every other
+question the same way, never in prose. A question with no fixed choices still
+fits, because the dialog always offers Other. Ask each one right after the
+context it depends on first appears, with that context in prose just above the
+call, not at the end of the reply.
 
 **What happens next depends on your lane.**
 
 - **Foreground session:** intake's step 8 decides whether the fork goes to the
   human. If it does, ask through `AskUserQuestion` and wait for the pick.
-  Don't half-commit by starting on the recommended option while waiting —
-  that's the same as deciding unilaterally, just with extra steps. If it does
-  not, proceed on the top-graded option and say so in one line that names its
-  grade on each criterion.
+  Don't start on the recommended option while waiting: that is deciding
+  unilaterally. If it does not, proceed on the top-graded option and say so
+  in one line that names its grade on each criterion.
 - **Sub-agent:** you never interview, because the brief is your intake, and
   nobody can answer you mid-task. So the bar is **blocking uncertainty**. Below
   it — a fork where any of the options would satisfy the brief and the choice
@@ -111,8 +112,8 @@ that context in prose just above the call, not at the end of the reply.
 - **Scheduled pipeline:** route the fork as Watson's pipeline describes (step 6,
   "If a fork blocks you").
 
-If you genuinely can't think of three viable options, say so rather than pad a
-third: `references/decision-protocol.md`.
+If you can't find three viable options, say so rather than pad a third:
+`references/decision-protocol.md`.
 
 ## 1. Orient before writing
 
@@ -172,8 +173,8 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
   collections over raw arrays, Eloquent over hand-built queries.
 - **Match the existing style.** Imports, naming, formatting, error handling —
   copy what's already there.
-- **One logical change at a time.** If a refactor enables the actual fix, commit
-  the refactor separately, before the fix.
+- **One logical change at a time.** If a refactor enables the actual fix, do
+  the refactor first.
 - **Don't add dependencies casually.** Check the project's existing deps first,
   prefer well-maintained, widely-used packages, and copy a few lines rather
   than add a tiny dependency.
@@ -212,8 +213,7 @@ The tier, mutation, and doc-drift rules in full: `references/testing.md`.
   throw, or refuse — never fail-open (silently proceed, swallow the error, or
   return a default that masks the problem). Then test the closed path, not just
   the open one.
-- **Use the repo's existing framework.** Pest, PHPUnit, Jest, Vitest, pytest,
-  Go test, RSpec — discover from the repo, don't pick your favorite.
+- **Use the repo's existing test framework**, never your favorite.
 - **Run the full suite, and get it green for your change.** Fix every failure
   your change caused. A failure your change did not cause is out of scope
   (§2): confirm it fails the same way without your change, then report it
@@ -281,12 +281,15 @@ Never set that variable yourself, and never edit the guard.
 Use the `/workbench-dev-team:git-commit` skill for message format —
 Conventional Commits + Gitmoji. Beyond format:
 
-- **Don't commit secrets.** Scan your diff for credentials, tokens, API keys,
-  PII. Verify `.env`-shaped files are in `.gitignore`. If anything smells like
-  a credential, stop and remove it before staging.
+- **Don't commit secrets.** Scan the diff and read every untracked file for
+  credentials, tokens, API keys, and PII. Verify `.env`-shaped files are in
+  `.gitignore`. Hold back a file with a secret, and tell the human.
 - **Confirm you're on a feature branch** (not `main`/`master`/`trunk`) before
   pushing.
-- **Atomic commits.** One logical change each. Don't bundle.
+- **One commit takes the whole tree, in every lane.** Never split it unasked or
+  ask which files go in. The commit question lists every file. If the tree
+  changes after it, ask again, and drop no file. Leave out only what must never
+  ship, and tell the human in one sentence.
 - **Never force-push** to a shared branch.
 - **Never amend** an already-pushed commit. If you need to change something,
   add a new commit.
@@ -297,9 +300,7 @@ A sub-agent opens no PR: it has nothing committed to open one from. Its report
 is the handoff, and the session that commits the tree decides about the PR.
 
 When the work is for a tracked issue, read `references/pull-requests.md` as soon
-as you start on it, and follow it. It holds the draft-early rule, template
-discovery, the body rules (a body stands on its own), and why CI green is the
-real "done" line.
+as you start on it, and follow it.
 
 **Never request a reviewer.** Mike requests every review himself.
 `references/pull-requests.md` lists the four routes.

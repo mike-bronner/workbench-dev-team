@@ -44,7 +44,7 @@ Plugin configuration lives in a slash command (`/workbench-dev-team:setup`), not
 
 ### `develop`
 
-Universal dev workflow + standards: orient before writing (the repo's `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `.ai/` rules, and review wiki), plan before coding (including a required `feedback/` vault search), atomic commits, every change gets a test, no committed secrets, lint before pushing. Triggers whenever code is being implemented, fixed, refactored, or tested — manual or agent-driven.
+Universal dev workflow + standards: orient before writing (the repo's `CLAUDE.md`, `AGENTS.md`, `CONTRIBUTING.md`, `.ai/` rules, and review wiki), plan before coding (including a required `feedback/` vault search), one commit that takes the whole tree, every change gets a test, no committed secrets, lint before pushing. Triggers whenever code is being implemented, fixed, refactored, or tested — manual or agent-driven.
 
 It names three lanes (foreground, sub-agent, scheduled pipeline) and ends each step the way that lane can: a sub-agent finishes with an uncommitted tree and a report, never a commit or a PR. Includes a **decision protocol** that presents three options in one table (Option, Pros, Cons, and a Grade against every acceptance criterion), then a one- or two-sentence recommendation, for a meaningful fork the human has not already decided — implementation approach, library choice, scope decisions, a public interface. A fork they already decided is not asked again. In the foreground the human decides through `AskUserQuestion`, with each option's grade and any warning in its description; a sub-agent picks and records the assumption below the blocking-uncertainty bar and stops with the options above it. Trivial choices (mechanical translation, following existing repo conventions, naming, one-line obvious fixes) are exempt.
 
@@ -84,7 +84,7 @@ The skill also **routes GitHub actions to the right executor**. Two rules: (1) *
 
 ## Commit approval
 
-**A sub-agent does not commit, merge, or push, and never asks to. In the foreground session, the agent commits only after a "Commit it" pick in `AskUserQuestion`, once the human says their review is done. That is the approval.** A typed "commit it" in chat does not count. The orchestrator asks the commit question alone, and recommends "Not yet" until your review is done. Claude Code's permission prompt on each `git commit`, `git push`, and `gh pr merge` is the mechanical backstop, because a prompt that appears mid-flow gets answered without a review. After a commit you approved, the agent attempts the push itself and lets the prompt ask you. The scheduled pipeline commits and pushes unattended, inside its own clone and the scratch roots, and never merges.
+**A sub-agent does not commit, merge, or push, and never asks to. In the foreground session, the agent commits only after a "Commit it" pick in `AskUserQuestion`, once the human says their review is done. That is the approval.** A typed "commit it" in chat does not count. The orchestrator asks the commit question alone, and recommends "Not yet" until your review is done. A commit takes every uncommitted file in the tree in one commit, your own edits and untracked files included, and the commit question lists each file it will take. Claude Code's permission prompt on each `git commit`, `git push`, and `gh pr merge` is the mechanical backstop, because a prompt that appears mid-flow gets answered without a review. After a commit you approved, the agent attempts the push itself and lets the prompt ask you. The scheduled pipeline commits and pushes unattended, inside its own clone and the scratch roots, and never merges.
 
 **No agent disguises a command to get past a gate.** Watson, Holmes, and Lestrade each carry a `## When a gate or guard refuses you` section: never reword, split, encode, or rebuild a command to get past a gate or guard, and report the refusal instead. It exists because Holmes once got past the installed commit gate by building the words "commit" and "push" from pieces at run time. `agents/lint-gate-refusal.sh` pins the section in every agent file.
 
@@ -394,15 +394,17 @@ The two groups are named apart on purpose:
 The hooks module has its own tests, `tests/*.test.ts`, which run with
 `claude plugin test .`. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
-- **`lint-*.sh`** — thirteen scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — fifteen scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
   `agents/lint-brief-contract.sh`, `agents/lint-gate-refusal.sh`,
+  `agents/lint-helper-wait.sh`,
   `agents/lint-holmes-local-mode.sh`, `agents/lint-holmes-validation.sh`,
   `agents/lint-scratch-cleanup.sh`,
   `agents/lint-vault-note-paths.sh`,
   `commands/lint-setup-dispatch.sh`,
   `skills/develop/lint-no-reviewer-request.sh`,
+  `skills/git-commit/lint-commit-scope.sh`,
   `skills/orchestrate/lint-compaction.sh`,
   `skills/orchestrate/lint-decision-format.sh`,
   `skills/orchestrate/lint-rationale-split.sh`, and

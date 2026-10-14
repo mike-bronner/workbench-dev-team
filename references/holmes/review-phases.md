@@ -34,16 +34,19 @@ write it makes outside the scratch roots. The dev-team mod runs any other type
 you name as holmes-lens. The model stays `LENS_MODEL`, passed as the dispatch's
 `model`.
 
-**After you dispatch helpers, keep working on something that does not need
-their results, or end your turn. Never wait for a helper with `sleep`, and never
-poll its output file, in any phase.** A helper's completion notice reaches you
-only at your next tool call or your next turn, so a `sleep 240` holds every
-notice back for the whole sleep, while the helpers sit done and the human sees
-them as queued. When nothing else is left to do, end your turn: the harness
-starts your next turn when a helper finishes. If your `Agent` tool offers a
-`run_in_background` parameter, you may instead set it to `false` on every call
-of a batch, sent in one message, so the batch runs in parallel and returns its
-results together.
+**After you dispatch helpers, collect every helper's report before you move
+on, in any phase. Never end your turn while a helper has not reported.** A
+sub-agent receives a helper's notice only during its own tool calls, and
+nothing wakes it after it ends its turn. First do any work that does not need
+the helpers' results. Then keep making short tool calls until every helper has
+reported. A short wait such as `sleep 20` is fine, because each call delivers
+the notices that are waiting. Never wait with a long `sleep`, and never poll a
+helper's output file. A `sleep 240` holds every notice back for the whole
+sleep, while the helpers sit done and the human sees them as queued. If your
+`Agent` tool honors `run_in_background: false`, you may also set it on every
+call of a batch, sent in one message, so the batch returns its results
+together. A helper can still run in the background, so keep the short calls
+going until each one has reported.
 
 ---
 

@@ -36,8 +36,10 @@ the same rule.
   shorter; the raw-primitive version is more code doing the same job worse.
 - **Match the existing style.** Imports, naming, formatting, error handling —
   copy what's already there.
-- **One logical change at a time.** If a refactor enables the actual fix, commit
-  the refactor separately, before the fix.
+- **One logical change at a time.** If a refactor enables the actual fix, make
+  the refactor first, and test it before the fix. That is an order of work, not
+  a commit boundary. The commit still takes the whole tree in one commit, in
+  every lane, as the `/workbench-dev-team:git-commit` skill says.
 - **Don't add dependencies casually.** Each one is a maintenance and supply-chain
   surface that outlives the immediate convenience. Check the project's existing
   deps first — chances are something close already exists. Prefer well-maintained,

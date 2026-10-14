@@ -130,12 +130,17 @@ fi
 section skills/develop/SKILL.md '**Format when presenting options.**' '**What happens next depends on your lane.**' develop
 if [ -n "$s" ]; then
   check "$s" 'After the table, one or two sentences name the recommendation, its grade, and its reason' "develop puts the recommendation after the table" "develop — the format lost the recommendation after the table"
+  check "$s" 'Show the table in the reply first, even a sub-agent'"'"'s, whose hand-back the human never sees' "develop shows a relayed table in the reply first" "develop — a relayed table no longer goes in the reply before the question"
+  check "$s" 'Never name an option the reply does not show' "develop bans a label for options the reply does not show" "develop — lost 'Never name an option the reply does not show'"
 fi
 
 # 6. Orchestrate brings every returned decision home through AskUserQuestion.
 section skills/orchestrate/SKILL.md '**Decisions come home through' '- **You never do the work' orchestrate
 if [ -n "$s" ]; then
   check "$s" 'Put each one to the human through `AskUserQuestion`' "orchestrate puts each decision through AskUserQuestion" "orchestrate — the decisions bullet no longer routes them through AskUserQuestion"
+  check "$s" 'show it in the reply, just above the call' "orchestrate shows the agent's table in the reply before the call" "orchestrate — the agent's options table no longer goes in the reply before the call"
+  check "$s" 'with its grades and recommendation' "orchestrate shows the table with its grades and recommendation" "orchestrate — the shown table lost its grades and recommendation"
+  check "$s" 'Never ask with a label for options the reply does not show' "orchestrate bans a label for options the reply does not show" "orchestrate — lost 'Never ask with a label for options the reply does not show'"
   for kind in 'fork' 'rubric dispute' 'questions only the human can settle' 'commit offer' 'never as prose' 'grade' 'warning' 'recommended option first'; do
     check "$s" "$kind" "orchestrate decisions bullet names: $kind" "orchestrate — the decisions bullet lost: $kind"
   done

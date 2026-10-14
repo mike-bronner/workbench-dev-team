@@ -56,6 +56,19 @@ Fixes: #790
 This section is the canonical statement of the foreground mechanics. Other
 files state the lane rule and point here.
 
+**A commit takes the whole tree, in one commit.** This holds in every lane, the
+scheduled pipeline and Index mode included. Every uncommitted file in the
+tree goes in, under one message that covers the whole set. That holds for
+tracked changes and untracked files alike. It covers a sub-agent's changes, the
+human's own edits, and files that appeared during the session, such as files a
+tool or a plugin wrote. Never leave a file out because a sub-agent did not make
+it, or because it looks unrelated. Never split the work into several commits,
+and never ask which files to include. The human asks for several commits when
+they want several. The one exception is content that must never ship, such as a
+secret or a stray build artifact. Leave it out, and tell the human about it in
+one sentence. Never leave a file out silently. This rule sets what a commit
+contains. It does not change who approves a commit or when.
+
 **A sub-agent does not commit or push, and never asks to.** It leaves the tree
 uncommitted and hands the diff summary and this message back in its report. The
 report does not invite a commit: prompting the human is the orchestrator's job.
@@ -67,16 +80,21 @@ Everything below is for the foreground session.
 **Commit only after the human says to.** The approval is a "Commit it" pick in
 `AskUserQuestion`, once the human says their review is done. Nothing else
 counts: not a typed "commit it" in chat, not general approval of the task, not
-"looks good" about the code, not an answer about how to split the commits, and
-not approval of a previous commit.
+"looks good" about the code, not an answer to another question, and not
+approval of a previous commit.
 
 **Offer the commit through `AskUserQuestion`, and ask it alone.** Ask it after
 the human says their review is done. Do not offer the commit before then. If an
 offer does reach the human early, "Not yet" leads. Never bundle the commit
 question with another question or with follow-up work, and never put "commit"
-into an option about other work. The question carries the branch and the
-proposed message. Its options are "Not yet", "Review with Holmes first" when a
-review is available, and "Commit it". Until the human has said their review is
+into an option about other work. The question carries the branch, the
+proposed message, and every file the commit will take, as
+`git status --short --untracked-files=all` lists them. Name each file, so the
+human can see that their own edits are in the commit. If a file stays out
+because it must never ship, the question names it too. The message covers
+every file on the list, not only a sub-agent's change. Its options are
+"Not yet", "Review with Holmes first" when a review is available, and
+"Commit it". Until the human has said their review is
 done, the recommended first option is "Not yet" or "Review with Holmes first",
 and "Commit it" goes last. Only after they say their review is done may
 "Commit it" go first. The "Commit it" description always reads:
@@ -91,8 +109,20 @@ rules. Six are for commits and pushes: `git commit *`, `git push *`,
 pull request merges: `gh pr merge:*`, `gh * pr merge *`, `gh * pr merge`, and
 `gh api *pulls/*/merge*`. So the harness raises its own prompt for each commit,
 each push, and each merge. That prompt is the mechanical backstop, not the
-approval: a prompt that appears mid-flow gets answered without a review. Before you run the commit, re-read the staged diff
-and confirm it is the tree the human approved.
+approval: a prompt that appears mid-flow gets answered without a review.
+
+**Check the tree again right before you stage it.** Run
+`git status --short --untracked-files=all`, and compare it with the file list
+the question showed. The tree can change after that question, through the
+human's own edits, a tool, or a plugin. Read each untracked file on the list
+for a secret first, because the diff does not show an untracked file. If the
+lists match, stage the whole tree with `git add -A`, and commit. A file that
+must never ship is the only path you hold back, and an exclude pathspec on the
+same line keeps it out: `git -C <repo> add -A -- . ':(exclude)<path>'`. Run
+`git status --short` after it to confirm the file is still unstaged. If the
+lists differ, do not commit, and
+do not drop a file to make the commit match the list. Show the human the new
+or changed files, and ask the commit question again.
 
 **After an approved commit, attempt the push in the same turn.** Show the
 branch, the remote, and the commits it sends, then run it and let the prompt
