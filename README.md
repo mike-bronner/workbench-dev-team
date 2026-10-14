@@ -387,9 +387,12 @@ The two groups are named apart on purpose:
   `tests/core/` to core's main branch.
   `tests/test-omit-claude-md.sh` holds `OMITS_CLAUDE_MD` in
   `hooks/mods/session-rules.ts` to the agents defined with `omitClaudeMd`: the
-  built-ins of the `claude` binary on `PATH`, read by workbench-core's own
+  built-ins of the `claude` binary on `PATH`, read with workbench-core's own
   check (copied into `tests/core/`), and the agents of core and dev-team. It
-  skips, and says why, when no binary or no core checkout is reachable.
+  resolves a minified agent name only inside the bundle chunk that uses it,
+  because one name can hold different strings in different chunks. It skips
+  the binary checks, and says why, when no binary or no core checkout is
+  reachable.
 
 The hooks module has its own tests, `tests/*.test.ts`, which run with
 `claude plugin test .`. `tsc -p .` type-checks the module once a session has

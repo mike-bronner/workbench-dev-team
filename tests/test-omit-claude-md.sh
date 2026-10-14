@@ -9,16 +9,54 @@ PASS=0
 FAIL=0
 ok()  { PASS=$((PASS + 1)); echo "  ✅ $1"; }
 bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
+finish() { echo "$PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]; exit; }
+
+read_built_ins() {
+  python3 -I - "$CHECK" "$1" <<'PY'
+import importlib.util, sys
+spec = importlib.util.spec_from_file_location('check', sys.argv[1])
+check = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(check)
+try:
+    print(' '.join(sorted(check.built_in_omitters(sys.argv[2].encode()))))
+except check.core.Unreadable:
+    print('unreadable')
+PY
+}
+ANCHOR='{agentType:"general-purpose",source:"built-in",getSystemPrompt'
+WEB='{agentType:aT,source:"built-in",omitClaudeMd:!0,getSystemPrompt'
+
+echo "── built-in agent names, read chunk by chunk ───────────────────────────"
+got="$(read_built_ins "// @bun
+var aT=\"flag\";
+// @bun
+var aT=\"web-fetch\";$ANCHOR$WEB")"
+[ "$got" = "web-fetch" ] && ok "a name declared in two chunks resolves in the chunk that uses it" || bad "a name declared in two chunks read as '$got', not 'web-fetch'"
+
+got="$(read_built_ins "// @bun
+var aT=\"web-fetch\";
+// @bun
+$ANCHOR$WEB")"
+[ "$got" = "unreadable" ] && ok "a name declared only in another chunk cannot be read" || bad "a name declared only in another chunk read as '$got'"
+
+got="$(read_built_ins "// @bun
+var aT=\"flag\";var aT=\"web-fetch\";$ANCHOR$WEB")"
+[ "$got" = "unreadable" ] && ok "a name declared twice in one chunk cannot be read" || bad "a name declared twice in one chunk read as '$got'"
+
+got="$(read_built_ins "// @bun
+var aT=\"web-fetch\";$WEB")"
+[ "$got" = "unreadable" ] && ok "a binary with no general-purpose built-in cannot be read" || bad "a binary with no general-purpose built-in read as '$got'"
+echo
 
 echo "── OMITS_CLAUDE_MD against the claude binary ───────────────────────────"
 found="${CLAUDE_BINARY:-$(command -v claude 2>/dev/null)}"
 if [ -z "$found" ]; then
   echo "  ⏭️  skipped: no claude binary on PATH (set CLAUDE_BINARY to one)"
-  exit 0
+  finish
 fi
 if [ ! -d "$CORE/agents" ]; then
   echo "  ⏭️  skipped: no workbench-core checkout at $CORE (set WORKBENCH_CORE_DIR to one)"
-  exit 0
+  finish
 fi
 binary="$(readlink -f "$found")"
 
@@ -38,5 +76,4 @@ python3 -I "$CHECK" "$binary" "$CORE" /dev/stdin < /dev/null >/dev/null 2>&1
 [ $? -eq 2 ] && ok "a file with no OMITS_CLAUDE_MD cannot be read" || bad "a file with no OMITS_CLAUDE_MD is not refused"
 
 echo
-echo "$PASS passed, $FAIL failed"
-[ "$FAIL" -eq 0 ]
+finish
