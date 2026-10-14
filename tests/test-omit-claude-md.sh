@@ -4,6 +4,7 @@ HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
 CORE="${WORKBENCH_CORE_DIR:-$ROOT/../workbench-core}"
 CHECK="$HERE/omit-claude-md-check.py"
+CORE_CHECK="$HERE/core/scripts/omit-claude-md-check.py"
 RULES="$ROOT/hooks/mods/session-rules.ts"
 PASS=0
 FAIL=0
@@ -12,14 +13,14 @@ bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
 finish() { echo "$PASS passed, $FAIL failed"; [ "$FAIL" -eq 0 ]; exit; }
 
 read_built_ins() {
-  python3 -I - "$CHECK" "$1" <<'PY'
+  python3 -I - "$CORE_CHECK" "$1" <<'PY'
 import importlib.util, sys
-spec = importlib.util.spec_from_file_location('check', sys.argv[1])
-check = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(check)
+spec = importlib.util.spec_from_file_location('core_check', sys.argv[1])
+core = importlib.util.module_from_spec(spec)
+spec.loader.exec_module(core)
 try:
-    print(' '.join(sorted(check.built_in_omitters(sys.argv[2].encode()))))
-except check.core.Unreadable:
+    print(' '.join(sorted(core.built_in_omitters(sys.argv[2].encode()))))
+except core.Unreadable:
     print('unreadable')
 PY
 }

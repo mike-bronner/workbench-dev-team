@@ -1,5 +1,4 @@
 #!/usr/bin/env python3
-import bisect
 import importlib.util
 import re
 import sys
@@ -12,25 +11,6 @@ ROOT = HERE.parent
 spec = importlib.util.spec_from_file_location('core_check', HERE / 'core' / 'scripts' / 'omit-claude-md-check.py')
 core = importlib.util.module_from_spec(spec)
 spec.loader.exec_module(core)
-CHUNK = b'// @bun'
-
-
-def built_in_omitters(binary: bytes) -> set[str]:
-    starts = [0] + [m.start() for m in re.finditer(re.escape(CHUNK), binary)] + [len(binary)]
-    found: set[str] = set()
-    seen_anchor = False
-    for m in core.DEFINITION.finditer(binary):
-        end = core.END.search(binary, m.end())
-        body = binary[m.end():end.start() if end else len(binary)]
-        if core.BUILT_IN not in body:
-            continue
-        seen_anchor = seen_anchor or m.group(1) == f'"{core.ANCHOR}"'.encode()
-        if core.OMITS.search(body):
-            i = bisect.bisect_right(starts, m.start())
-            found.add(core.resolve(binary[starts[i - 1]:starts[i]], m.group(1)))
-    if not seen_anchor:
-        raise core.Unreadable(f'no {core.ANCHOR!r} built-in agent found: the CLI binary layout is not one this check can read')
-    return found
 
 
 def listed(rules: Path) -> set[str]:
@@ -47,7 +27,7 @@ def main(argv: list[str]) -> int:
     rules = Path(argv[3]) if len(argv) == 4 else ROOT / 'hooks' / 'mods' / 'session-rules.ts'
     try:
         actual = listed(rules)
-        expected = built_in_omitters(Path(argv[1]).read_bytes()) | core.plugin_omitters(Path(argv[2])) | core.plugin_omitters(ROOT)
+        expected = core.built_in_omitters(Path(argv[1]).read_bytes()) | core.plugin_omitters(Path(argv[2])) | core.plugin_omitters(ROOT)
     except (OSError, ValueError, KeyError, core.Unreadable) as err:
         print(f'omit-claude-md-check: cannot read a source: {err}', file=sys.stderr)
         return 2
