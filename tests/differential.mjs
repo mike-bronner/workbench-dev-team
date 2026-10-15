@@ -8,7 +8,7 @@
 // hooks/scripts/local-review-guard.sh, which are frozen unchanged in
 // tests/oracle/ (tests/oracle/SOURCE holds their hashes). This test runs each
 // port and its oracle on the same lines:
-//   - workbench-core's commit corpus and parser cases (tests/core/),
+//   - workbench-core's commit corpus and parser cases,
 //   - dev-team's own cases (tests/guard-corpus.ts, tests/guard-cases.ts),
 //   - seeded random lines over the shell's syntax and the guarded words.
 // The commit guard is compared in four lanes (main, sub-agent, the pipeline's
@@ -38,11 +38,13 @@ import { fileURLToPath } from 'node:url'
 
 import { commitVerdict } from '../hooks/mods/commit-guard.ts'
 import { judgeWrites, reviewBash } from '../hooks/mods/review-guard.ts'
-import { parseShell } from './core/hooks/mods/shell.ts'
-import { CAUGHT, LET_THROUGH, OVER_COUNTED } from './core/tests/commit-corpus.ts'
-import { PARSER_CASES } from './core/tests/shell-cases.ts'
+import { fromCore } from './core-root.mjs'
 import { COMMIT_MAIN_PASSES, COMMIT_PASSES, COMMIT_REFUSALS, REVIEW_PASSES, REVIEW_REFUSALS } from './guard-cases.ts'
 import { COMMIT_SUITE, HOSTILE, REVIEW_SUITE, REVIEW_TREE } from './guard-corpus.ts'
+
+const { parseShell } = await fromCore('hooks/mods/shell.ts')
+const { CAUGHT, LET_THROUGH, OVER_COUNTED } = await fromCore('tests/commit-corpus.ts')
+const { PARSER_CASES } = await fromCore('tests/shell-cases.ts')
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
 const ORACLE = path.join(HERE, 'oracle')

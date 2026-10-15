@@ -21,7 +21,7 @@
 // hooks/mods/guards.ts, since 4e83554): a command word with an expansion in
 // it, a wrapper it cannot place, or a script piped or fed into a shell. So
 // every shell block in agents/, references/, skills/ and commands/, git or
-// not, is also held to that rule, read through the same copy of core's reader.
+// not, is also held to that rule.
 //
 // The commit guard's fifth rule also refuses, in those two lanes, a line
 // with any unknown in its HIDES_NAME list, which holds every unknown the
@@ -36,7 +36,9 @@ import { fileURLToPath } from 'node:url'
 
 import { HIDES_NAME, SUBAGENT_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard.ts'
 import { subjectVerdict } from '../hooks/mods/commit-subject.ts'
-import { parseShell } from './core/hooks/mods/shell.ts'
+import { fromCore } from './core-root.mjs'
+
+const { parseShell } = await fromCore('hooks/mods/shell.ts')
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 

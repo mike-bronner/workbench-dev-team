@@ -9,15 +9,16 @@
 // it. A line is read as documentation: with no scratch root and no working
 // directory, every file write is refused, redirects are not judged, and what
 // the shell reader cannot read in prose (an apostrophe, a stray quote) is
-// passed over. It reads lines through workbench-core's shell reader, copied
-// into tests/core/.
+// passed over.
 //
 // Needs node 22.18 or later (type stripping).
 
 import fs from 'node:fs'
 
 import { reviewBash } from '../hooks/mods/review-guard.ts'
-import { parseShell } from './core/hooks/mods/shell.ts'
+import { fromCore } from './core-root.mjs'
+
+const { parseShell } = await fromCore('hooks/mods/shell.ts')
 
 let refused = 0
 for (const line of fs.readFileSync(0, 'utf8').split('\n')) {

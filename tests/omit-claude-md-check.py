@@ -8,9 +8,14 @@ USAGE = 'Usage: omit-claude-md-check.py <claude binary> <workbench-core root> [s
 HERE = Path(__file__).resolve().parent
 ROOT = HERE.parent
 
-spec = importlib.util.spec_from_file_location('core_check', HERE / 'core' / 'scripts' / 'omit-claude-md-check.py')
-core = importlib.util.module_from_spec(spec)
-spec.loader.exec_module(core)
+core = None
+
+
+def load_core(root: Path) -> None:
+    global core
+    spec = importlib.util.spec_from_file_location('core_check', root / 'scripts' / 'omit-claude-md-check.py')
+    core = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(core)
 
 
 def listed(rules: Path) -> set[str]:
@@ -25,6 +30,11 @@ def main(argv: list[str]) -> int:
         print(USAGE, file=sys.stderr)
         return 2
     rules = Path(argv[3]) if len(argv) == 4 else ROOT / 'hooks' / 'mods' / 'session-rules.ts'
+    try:
+        load_core(Path(argv[2]))
+    except (OSError, AttributeError) as err:
+        print(f'omit-claude-md-check: cannot load core\'s check from {argv[2]}: {err}', file=sys.stderr)
+        return 2
     try:
         actual = listed(rules)
         expected = core.built_in_omitters(Path(argv[1]).read_bytes()) | core.plugin_omitters(Path(argv[2])) | core.plugin_omitters(ROOT)

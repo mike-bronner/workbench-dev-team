@@ -3,8 +3,6 @@
 // call, in every lane. It refuses what the permissions.ask rules cannot cover,
 // and is silent on everything else.
 //
-// The approval is a "Commit it" pick in `AskUserQuestion`, once the human says
-// their review is done. Claude Code's own prompt is the mechanical backstop.
 // /workbench-dev-team:setup installs the ask rules git commit *, git push *,
 // git * commit *, git * push *, git * commit, git * push, gh * pr merge *,
 // gh * pr merge, and gh api *pulls/*/merge*, beside workbench-core's own
@@ -162,6 +160,36 @@ const ASK_STRIPPED: ReadonlySet<string> = new Set(['timeout', 'time', 'nice', 'n
 // A command name the shell builds at run time: a brace (`{git,}`), a glob, or
 // zsh's `=name` path expansion. Which program runs is not written.
 const BUILT_NAME = /[{}*?[\]]|^=/
+
+const SEARCHERS: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'rg'])
+const TEXT_TOOLS: ReadonlySet<string> = new Set(['grep', 'egrep', 'fgrep', 'cut', 'head', 'tail', 'wc', 'tr', 'cat'])
+const SORT_ARG = /^(?:[^-].*|-|--|-[bcCdfghiMnrRsuVz]*(?:[kt].+)?)$/
+const UNIQ_ARG = /^-[cdDiuz]+$/
+const RG_ARG = /^(?:[^-].*|-|--|-[nioFwcHlLsSvxINU]+)$/
+
+const isQuietTool = (s: Statement): boolean =>
+  TEXT_TOOLS.has(s.name) ||
+  (s.name === 'sort' && s.args.every(arg => SORT_ARG.test(arg))) ||
+  (s.name === 'uniq' && s.args.every(arg => UNIQ_ARG.test(arg))) ||
+  (s.name === 'rg' && s.args.every(arg => RG_ARG.test(arg)))
+const SED_RANGE = /^(?:[0-9]+|\$)(?:,(?:[0-9]+|\$))?p$/
+const AWK_PRINT = /^\{\s*print(?:\s+\$[0-9]+(?:\s*,\s*\$[0-9]+)*)?\s*;?\s*\}$/
+
+const runsOrWrites = (s: Statement): boolean =>
+  (s.name === 'rg' && s.args.some(arg => arg.startsWith('--pre') || arg.startsWith('--hostname-bin'))) ||
+  (s.name === 'sort' && !s.args.every(arg => SORT_ARG.test(arg))) ||
+  (s.name === 'uniq' && s.args.filter(arg => !/^-./.test(arg)).length > 1)
+
+const isReader = (s: Statement): boolean => (READERS.has(s.name) && !runsOrWrites(s)) || isEditOnly(s)
+
+const runsNothing = (s: Statement): boolean =>
+  s.nameAt >= 0 &&
+  s.wrappers.length === 0 &&
+  s.assignments.length === 0 &&
+  s.isPlaced &&
+  ((isQuietTool(s) && isReader(s)) ||
+    (s.name === 'sed' && s.args.length === 2 && s.args[0] === '-n' && SED_RANGE.test(s.args[1] ?? '')) ||
+    (s.name === 'awk' && s.args.length === 1 && AWK_PRINT.test(s.args[0] ?? '')))
 
 // Whole-line comments, dropped before text is matched.
 const withoutComments = (text: string): string =>
@@ -466,6 +494,7 @@ export function findOps(parse: ShellParse, line: string): Found {
   // Text a reader handles, and whether anything on the line could run it.
   const readerText: string[] = []
   let hasRunner = false
+  const isSearchOnly = parse.statements.every(runsNothing)
   for (const s of parse.statements) {
     const heredocs = s.heredocs.filter(h => !h.feedsShell).map(h => h.body)
     const code = (texts: readonly string[]) => {
@@ -496,9 +525,8 @@ export function findOps(parse: ShellParse, line: string): Found {
       if (LOOSE.test(s.words.join(' '))) add(all.filter(op => new RegExp(op, 'i').test(s.words.join(' '))), true)
       continue
     }
-    const isReader = (READERS.has(s.name) && !(s.name === 'rg' && s.args.some(arg => arg.startsWith('--pre')))) || isEditOnly(s)
-    if (isReader) {
-      readerText.push(...s.args, ...s.assignments, ...heredocs)
+    if (isReader(s)) {
+      readerText.push(...(SEARCHERS.has(s.name) && isSearchOnly ? [] : s.args), ...s.assignments, ...heredocs)
     } else {
       hasRunner = true
       code([...s.args, ...heredocs])

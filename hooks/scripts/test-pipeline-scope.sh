@@ -282,6 +282,12 @@ for flag in "" 0 true " 1"; do
   [ "$got" = silent ] && ok "flag '$flag' → silent" || bad "flag '$flag' → $got"
 done
 
+echo "Without the flag, a line the human's typed prompt approved is left to workbench-core"
+for c in "git commit -m x" "git push origin main" "git -C $CLONE push origin feature/12-x" \
+         "git -C $OUT commit -m x" "gh release create 0.55.0" "gh pr merge 5"; do
+  expect silent "$OUT" "$c" ""
+done
+
 echo "With no usable root, nothing is allowed"
 p=$(jq -cn --arg c "rm -rf $CLONE" '{session_id: "x", cwd: "/", tool_input: {command: $c}}')
 out=$(printf '%s' "$p" | env -i PATH="$PATH" HOME="$SANDBOX/nohome" WORKBENCH_DEV_TEAM_PIPELINE=1 bash "$HOOK")

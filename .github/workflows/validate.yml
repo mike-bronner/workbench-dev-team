@@ -8,8 +8,21 @@ on:
 jobs:
   validate:
     runs-on: ubuntu-latest
+    env:
+      WORKBENCH_CORE_DIR: ${{ github.workspace }}/workbench-core
+    defaults:
+      run:
+        working-directory: workbench-dev-team
     steps:
       - uses: actions/checkout@v6
+        with:
+          path: workbench-dev-team
+
+      - uses: actions/checkout@v6
+        with:
+          repository: mike-bronner/workbench-core
+          ref: main
+          path: workbench-core
 
       - name: plugin.json — valid JSON, required fields, semver version
         run: |

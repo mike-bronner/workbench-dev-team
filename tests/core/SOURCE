@@ -1,8 +1,0 @@
-# workbench-core files copied unchanged into tests/core/, for the guard tests.
-# Re-export them with tests/test-core-copies.sh --update when core moves on.
-commit 8c524f1
-10ecbf7aea067717689571fe6f16d02de23baa3aebb7a1a0ba72563cf6cf8521 hooks/mods/shell.ts
-680cb2875e73dbaefef4a5504e71df1890d57ad83f5df0db3c6209f28f0f8616 tests/commit-corpus.ts
-6dca1c865641516e79ab1de406511c4f94278dfeecc55fc9d9b6d138e3a52ee6 tests/shell-cases.ts
-f881285acdf18ce2fc9ce0ff4e330840211aa9fcb41ff6e10ce220dfb300fe04 hooks/mods/prompt-rules.ts
-106d0e4036bd24d92470a5b05b16d53e81189402adc9651dfbaf0a7f5de4419d scripts/omit-claude-md-check.py

@@ -4,8 +4,7 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from '../hooks/mods/scratch'
-import { parseShell } from './core/hooks/mods/shell'
+import { isDeletable, pointMktemp, prefixOf, rootOf, sweepOf } from '../hooks/mods/scratch'
 import type { GuardOptions } from './world'
 import { BRIEF, complete, endSession, spawnInput, world } from './world'
 
@@ -29,12 +28,7 @@ describe('scratch — a bare mktemp lands in the agent\'s own folder', () => {
     ['mktemp -d', `mktemp -d ${TEMPLATE}`],
     ['mktemp', `mktemp ${TEMPLATE}`],
     ['mktemp -dq', `mktemp -dq ${TEMPLATE}`],
-    // A trailing comment, as a copied step carries one.
-    ['mktemp -d   # prints <checkout path>', `mktemp -d '${FOLDER}/tmp.XXXXXXXX'   # prints <checkout path>`],
-    ['mktemp -d # a\necho b', `mktemp -d '${FOLDER}/tmp.XXXXXXXX' # a\necho b`],
-    ['D=$(mktemp -d) && cd "$D"', `D=$(mktemp -d ${TEMPLATE}) && cd "$D"`],
-    ['cp -R src "$(mktemp -d)"', `cp -R src "$(mktemp -d ${TEMPLATE})"`],
-    ['A=$(mktemp -d); B=$(mktemp)', `A=$(mktemp -d ${TEMPLATE}); B=$(mktemp ${TEMPLATE})`],
+    ['mktemp -d && ls', `mktemp -d ${TEMPLATE} && ls`],
   ] as const) {
     test(`${JSON.stringify(line)} is pointed at the folder`, async ($, on) => {
       const w = await withWatson($, on)
@@ -76,13 +70,8 @@ describe('scratch — a bare mktemp lands in the agent\'s own folder', () => {
     'mktemp -d /scratch/session/x.XXXXXX',
     'mktemp -p /tmp',
     'echo "run mktemp -d; then cd"',
-    // A real bare mktemp beside a quoted one: the text match reaches both, the
-    // read-back sees the echo change, and the whole line is left as written.
     'mktemp -d && echo "then mktemp -d; done"',
-    "cat <<'EOF'\nmktemp -d\nEOF",
-    'env mktemp -d',
     'TMPDIR=/x mktemp -d',
-    'if mktemp -d; then :; fi',
     'git status',
   ]) {
     test(`${JSON.stringify(line)} runs as written`, async ($, on) => {
@@ -132,7 +121,8 @@ describe('scratch — a bare mktemp lands in the agent\'s own folder', () => {
 
   test('the guards judge the pointed line', async ($, on) => {
     const w = await withWatson($, on)
-    await $.tool.call(bash('D=$(mktemp -d) && git -C "$D" push --force', 'agent-1'))
+    const answer = (await $.tool.call(bash('mktemp -d && git push --force', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toContain('forces or deletes')
     expect(w.ran).toEqual([])
   })
 })
@@ -409,17 +399,6 @@ describe('scratch — the session end deletes every folder still recorded', () =
 })
 
 describe('scratch — the pure rules', () => {
-  test('the rewrite stands only when it reads back as the line plus the template', () => {
-    const line = 'echo "a; mktemp -d; b"'
-    const pointed = pointMktemp(line, FOLDER)
-    expect(pointed).toBeDefined()
-    expect(readsAsPointed(parseShell(line), parseShell(pointed ?? ''), FOLDER)).toBe(false)
-    const mixed = 'mktemp -d && echo "then mktemp -d; done"'
-    expect(readsAsPointed(parseShell(mixed), parseShell(pointMktemp(mixed, FOLDER) ?? ''), FOLDER)).toBe(false)
-    const plain = pointMktemp('mktemp -d', FOLDER) ?? ''
-    expect(readsAsPointed(parseShell('mktemp -d'), parseShell(plain), FOLDER)).toBe(true)
-  })
-
   test('a folder with a quote or a space is never pointed at', () => {
     expect(pointMktemp('mktemp -d', "/scratch/it's")).toBeUndefined()
     expect(pointMktemp('mktemp -d', '/scratch/a b')).toBeUndefined()

@@ -34,7 +34,7 @@
 #      the review is done, "Commit it" last, and its description confirms the
 #      review. No shipped text lists "Commit it" ahead of another option.
 #   8. Every commit-approval line uses one wording: a "Commit it" pick in
-#      AskUserQuestion, and never a typed message in chat. The boundary holds:
+#      AskUserQuestion. The boundary holds:
 #      a sub-agent never commits or pushes, and the prompt is the backstop.
 #  8a. A sub-agent never asks to commit, and no report template invites one.
 #  8b. Index-mode development never asks, offers, or waits for approval to
@@ -51,6 +51,9 @@ has() { [[ $1 == *"$2"* ]]; }
 check() { if has "$1" "$2"; then ok "$3"; else bad "$4"; fi; }
 TABLE='| Option | Pros | Cons | Grade |'
 APPROVAL='a "Commit it" pick in `AskUserQuestion`, once the human says their review is done'
+TYPED='approves exactly those actions, for the turn that prompt opened'
+NEGATED='A negated, deferred, or question-form prompt approves nothing'
+OWN='own typed prompts count'
 
 # The text from the line holding $2 up to the line holding $3, joined into one
 # line with comment leaders and runs of spaces collapsed, because prose wraps.
@@ -179,32 +182,123 @@ early="$(shipped '*.md' '*.sh' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
 if [ -z "$early" ]; then ok "no shipped text lists Commit it ahead of another option"; else bad "Commit it listed first in: $early"; fi
 
 # 8. One approval wording, and the boundary it must not move.
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md agents/watson.md README.md commands/setup.md hooks/mods/commit-guard.ts; do
+for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md agents/watson.md README.md commands/setup.md; do
   joined="$(sed -E 's/^[[:space:]]*(#|\/\/) ?//' "$ROOT/$f" | tr '\n' ' ' | tr -s ' ')"
   check "$joined" "$APPROVAL" "$f uses the shared approval wording" "$f — no line carries: $APPROVAL"
 done
 check "$RULES_TEXT" "$APPROVAL" "the session rules use the shared approval wording" "session rules — no line carries: $APPROVAL"
-# A sentence that pairs a commit approval with chat lets a typed message stand
-# as approval, unless the sentence is the one saying it does not count.
-# The same sentence check runs on the session rules, which live in a .ts file.
 STALE_PL='
   next if $ARGV =~ m{lint-decision-format\.sh$|/testdata/};
-  (my $t = $_) =~ s/\n\s*#?\s*/ /g;
+  (my $t = $_) =~ s/\n\s*(?:#|\/\/)?\s*/ /g;
   for my $sentence (split /(?<=[.!?])\s+/, $t) {
-    next unless $sentence =~ /\bin chat\b/i;
-    next unless $sentence =~ /commit it|approv\w* (?:a |the )?commit|commit approval/i;
-    next if $sentence =~ /does not count|not a typed/i;
+    next unless $sentence =~ /\btyped\b|\bin chat\b/i;
+    next unless $sentence =~ /commit/i;
+    next unless $sentence =~ /(?:does|do) not count|doesn.t count|not a typed/i;
     print "$ARGV: $sentence\n";
   }
   close ARGV'
-stale="$(shipped '*.md' '*.sh' '*.json' | (cd "$ROOT" && xargs -0 perl -0777 -ne "$STALE_PL"))"
+stale="$(shipped '*.md' '*.sh' '*.json' '*.ts' | (cd "$ROOT" && xargs -0 perl -0777 -ne "$STALE_PL"))"
 stale="$stale$(printf '%s' "$RULES_TEXT" | perl -0777 -ne "$STALE_PL" | sed 's|^-: |session rules: |')"
-if [ -z "$stale" ]; then ok "no text lets a chat message stand as commit approval"; else bad "chat counts as commit approval in: $stale"; fi
+if [ -z "$stale" ]; then ok "no text says a typed request for a commit does not count"; else bad "a typed request still does not count in: $stale"; fi
 for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md README.md; do
   joined="$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')"
-  check "$joined" 'typed "commit it" in chat' "$f says a typed message does not count" "$f — no longer says a typed \"commit it\" in chat does not count"
+  check "$joined" "$TYPED" "$f scopes a typed request to its turn" "$f — no line carries: $TYPED"
+  check "$joined" "$NEGATED" "$f says a negated or question prompt approves nothing" "$f — no line carries: $NEGATED"
+  check "$joined" "$OWN" "$f counts only the human's own typed prompts" "$f — no line carries: $OWN"
 done
-check "$RULES_TEXT" 'typed "commit it" in chat' "the session rules say a typed message does not count" "session rules — no longer say a typed \"commit it\" in chat does not count"
+for want in "$TYPED" "$NEGATED" "$OWN"; do
+  check "$RULES_TEXT" "$want" "the session rules carry: $want" "session rules — no line carries: $want"
+done
+for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md README.md; do
+  check "$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')" 'a peer session, a channel' "$f: a peer, channel, or schedule turn approves nothing" "$f — no longer says a peer, channel, or schedule turn approves nothing"
+done
+
+for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md README.md; do
+  check "$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')" 'never from a sub-agent' "$f builds the file list from git status, not a report" "$f — no longer says the file list never comes from a sub-agent's report"
+done
+check "$RULES_TEXT" "rather than from a sub-agent's report" "the session rules list files from git status, not a report" "session rules — no longer list files from git status rather than a report"
+for f in agents/watson.md agents/watson-direct.md; do
+  joined="$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')"
+  check "$joined" 'the full `git status --short --untracked-files=all` output of the tree' "$f hands back the whole status list" "$f — the hand-back no longer carries the full git status list"
+  check "$joined" 'never from your own file list' "$f says the orchestrator never commits from its file list" "$f — no longer says the commit question never comes from its own file list"
+done
+[ -n "$oc" ] && check "$oc" 'never with the report'"'"'s paths' "orchestrate stages the tree, not the report's paths" "orchestrate — no longer forbids staging the report's paths"
+
+for pair in "git-commit:$gc" "orchestrate:$oc" "develop:$(tr '\n' ' ' < "$ROOT/skills/develop/SKILL.md" | tr -s ' ')" "session rules:$RULES_TEXT"; do
+  name="${pair%%:*}"; t="${pair#*:}"
+  for want in 'A pick never approves a release' \
+              'Stage with `git add -A` on' 'its own line' 'run a commit that names no path' \
+              'A never-ship file stays out only when your reply above the commit call names its path'; do
+    check "$t" "$want" "$name carries: $want" "$name — no line carries: $want"
+  done
+done
+for pair in "orchestrate:$oc" "develop:$(tr '\n' ' ' < "$ROOT/skills/develop/SKILL.md" | tr -s ' ')" "session rules:$RULES_TEXT"; do
+  check "${pair#*:}" 'Typed requests skip the prompt only in the shapes git-commit lists' "${pair%%:*} limits the skipped prompt to git-commit's shapes" "${pair%%:*} — lost 'Typed requests skip the prompt only in the shapes git-commit lists'"
+  check "${pair#*:}" 'A pick is the only prompt for its commit and push, in those shapes' "${pair%%:*} makes the pick the only prompt for its commit and push" "${pair%%:*} — lost 'A pick is the only prompt for its commit and push, in those shapes'"
+done
+for want in 'Under a typed request or an unused "Commit it" pick, workbench-core'"'"'s permission hook answers that prompt only for these shapes' \
+            'The pick is the only prompt for the commit it approved and that commit'"'"'s push, in the plain shapes above' \
+            '`gh release create` for this repository, under a typed request only' \
+            'A commit as a plain `git commit`, or as `git -C <path> commit` with the path inside the project or one of its worktrees' \
+            'A push as a plain `git push`, or as a push of the current branch to its own remote, plus the release tag' \
+            '`gh release create` for this repository' \
+            'Every other shape still gets the prompt, and that is the backstop working' \
+            '`-c` or `--exec-path`, and a commit with `--amend` or `--no-verify`' \
+            'a push to another host, another branch or refspec, and `--tags`' \
+            '`-R` or `--repo` naming another repository' \
+            'A commit never shares its line with `git reset`, `git restore --staged`, or `git rm --cached`'; do
+  check "$(tr '\n' ' ' < "$ROOT/skills/git-commit/SKILL.md" | sed 's/^ *- //' | tr -s ' ')" "$want" "git-commit carries: ${want:0:60}" "git-commit — no line carries: $want"
+done
+over="$(shipped '*.md' '*.ts' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
+  next if $ARGV =~ m{lint-decision-format\.sh$};
+  (my $t = $_) =~ s/\s+/ /g;
+  print "$ARGV: $&\n" while $t =~ /No permission prompt appears for an action the typed request named|pick-approved commit still meets|push prompt asks the human|lets the prompt ask you|pick does not reach that hook/g;
+  close ARGV'))"
+if [ -z "$over" ]; then ok "no text says every typed action skips the prompt, or that a pick meets a second prompt"; else bad "a text overstates the typed skip or puts a second prompt after a pick: $over"; fi
+[ -n "$gc" ] && check "$gc" 'a peer session, a channel, a schedule, the SDK, or a plugin' "git-commit names every turn that does not count" "git-commit — the list of turns that do not count changed"
+[ -n "$oc" ] && check "$oc" 'a peer session, a channel, a schedule, the SDK, a plugin, or the agent'"'"'s completion' "orchestrate names the same turns as git-commit" "orchestrate — the list of turns that do not count no longer matches git-commit"
+GC_ALL="$(tr '\n' ' ' < "$ROOT/skills/git-commit/SKILL.md" | tr -s ' ')"
+check "$GC_ALL" 'A push that forces or deletes remote refs (`--force`, `-f`, a `+` refspec, `--mirror`, `--delete`, `-d`, a `:branch` refspec, `--prune`) is refused outright.' "git-commit keeps force push blocked in every lane" "git-commit — lost the rule that a push that forces or deletes is refused outright"
+check "$(tr '\n' ' ' < "$ROOT/skills/git-commit/SKILL.md" | tr -s ' ')" 'Run one commit, push, or release per line' "git-commit runs one commit, push, or release per line" "git-commit — lost 'Run one commit, push, or release per line'"
+NOPATH_PL='
+  my $t = $_;
+  my @cmds;
+  push @cmds, $1 while $t =~ /`([^`\n]+)`/g;
+  push @cmds, split /\n/, $1 while $t =~ /^[ \t]*```[^\n]*\n(.*?)^[ \t]*```/msg;
+  for my $c (@cmds) {
+    for my $seg (split /\s*(?:&&|\|\||;|\|)\s*/, $c) {
+      next unless $seg =~ /^\s*git((?:\s+-[Cc]\s+\S+|\s+--?[\w-]+(?:=\S+)?)*)\s+commit(?=\s|$)(.*)$/;
+      my @w = $2 =~ /(<[A-Za-z][^<>]*>|"(?:[^"\\]|\\.)*"|\x27[^\x27]*\x27|\S+)/g;
+      my $bad = "";
+      for (my $i = 0; $i < @w && !$bad; $i++) {
+        my $a = $w[$i];
+        next if $a eq "*" || $a =~ /^\d*[<>]/ && $a !~ /^<[A-Za-z]/;
+        if ($a eq "--" || $a =~ /^--(?:only|include|patch|pathspec-from-file)(?:=|$)/) { $bad = $a; last }
+        if ($a =~ /^--(?:message|file|reuse-message|reedit-message|author|date|cleanup|fixup|squash|trailer|template)$/) { $i++; next }
+        next if $a =~ /^--/;
+        if ($a =~ /^-(\w+)$/) {
+          my @l = split //, $1;
+          for my $k (0 .. $#l) {
+            if ($l[$k] =~ /[poi]/) { $bad = $a; last }
+            if ($l[$k] =~ /[mFCct]/) { $i++ if $k == $#l; last }
+          }
+          next;
+        }
+        $bad = $a;
+      }
+      print "$ARGV: $seg\n" if $bad ne "";
+    }
+  }
+  close ARGV'
+for fixture in 'Run `git commit -m x src/a.ts`.' 'Run `git -C /r commit -- a.txt`.' 'Run `git commit -p`.' 'Run `git commit --only -m x a`.' "Run \`git commit -m 'x' ':(exclude)a'\`."; do
+  [ -n "$(printf '%s' "$fixture" | perl -0777 -ne "$NOPATH_PL")" ] && ok "the no-path check flags: $fixture" || bad "the no-path check misses: $fixture"
+done
+for fixture in 'Run `git commit -m "fix: x."`.' 'Run `git -C <repo> commit -F <absolute path>`.' 'Run `git -c user.name=x commit -am x`.' 'Rule `git commit *`.'; do
+  [ -z "$(printf '%s' "$fixture" | perl -0777 -ne "$NOPATH_PL")" ] && ok "the no-path check passes: $fixture" || bad "the no-path check flags a clean line: $fixture"
+done
+pathy="$(shipped '*.md' | (cd "$ROOT" && xargs -0 perl -0777 -ne "$NOPATH_PL"))"
+pathy="$pathy$(printf '%s' "$RULES_TEXT" | perl -0777 -ne "$NOPATH_PL" | sed 's|^-: |session rules: |')"
+if [ -z "$pathy" ]; then ok "no git commit command in shipped Markdown or the session rules names a path or picks hunks"; else bad "a git commit command names paths or picks hunks: $pathy"; fi
 [ -n "$gc" ] && check "$gc" 'A sub-agent does not commit or push, and never asks to.' "git-commit still bars a sub-agent from committing or asking to" "git-commit — lost 'A sub-agent does not commit or push, and never asks to.'"
 
 # 8a. A sub-agent never asks to commit, and no report template invites one.

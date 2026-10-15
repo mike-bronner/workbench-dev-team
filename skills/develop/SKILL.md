@@ -13,8 +13,7 @@ Three lanes run this skill, and several steps below end differently in each.
 Know which one you are in before you start.
 
 - **Foreground session** — a human is in the conversation. You can ask and wait,
-  and you commit only after a "Commit it" pick in `AskUserQuestion`, once the
-  human says their review is done (§5).
+  and you commit only on an approval §5 names.
 - **Sub-agent** — dispatched through the Agent tool, Watson's Direct mode
   included. No human is reachable, the commit guard refuses every commit and
   push, and you do not merge. You finish with an **uncommitted working tree and a report**:
@@ -232,7 +231,7 @@ The tier, mutation, and doc-drift rules in full: `references/testing.md`.
 
 **Which lane you are in decides what you may do at all.** Claude Code
 `permissions.ask` rules, installed by `/workbench-dev-team:setup`, prompt the
-human for every `git commit`, `git push`, and pull request merge. The commit
+human for each commit, push, and merge no typed request covers. The commit
 guard (`hooks/mods/commit-guard.ts`) refuses what those rules cannot cover. It
 is a mistake-catcher, not a security boundary.
 
@@ -243,33 +242,33 @@ your final report:
 
 1. Leave the working tree **uncommitted**, exactly as your change left it.
 2. Summarize the diff — files touched and what changed in each.
-3. Give the **proposed commit message**, formatted via the
+3. Give the full `git status --short --untracked-files=all` output.
+4. Give the **proposed commit message**, formatted via the
    `/workbench-dev-team:git-commit` skill.
-4. Say plainly that the work is uncommitted. A report that reads as finished,
+5. Say plainly that the work is uncommitted. A report that reads as finished,
    on a tree that is not, is how a change gets lost.
 
 The report never asks to commit and never invites a commit: prompting the
-human is the orchestrator's job. The session that dispatched you commits it
-after a "Commit it" pick in `AskUserQuestion`, once the human says their review
-is done. An Index-mode run that finds its commits refused was dispatched
+human is the orchestrator's job, and so is the commit. An Index-mode run that finds its commits refused was dispatched
 without the pipeline flag: report that to the session that dispatched you, and
 stop.
 
-**Foreground session → commit after a "Commit it" pick in `AskUserQuestion`,
-once the human says their review is done.** That is the approval, and a typed
-"commit it" in chat does not count. Ask the commit question alone, and never
-lead with "Commit it" before their review is done.
-Then attempt the commit yourself, and after it attempt the push, and let Claude
-Code ask. The harness's prompt is the mechanical backstop, not the approval,
-because a prompt that appears mid-flow gets answered without a review. The
-plain form the rules match is canonical in the `/workbench-dev-team:git-commit`
-skill ("Committing and pushing"). Read it before your first commit.
+**Foreground session → commit on a typed request, or after a "Commit it" pick
+in `AskUserQuestion`, once the human says their review is done.** A prompt the
+human types that names commit, push, or release approves exactly those actions,
+for the turn that prompt opened. A negated, deferred, or question-form prompt
+approves nothing, and only the human's own typed prompts count. Ask the commit
+question alone, and never lead with "Commit it" before their review is done.
+Typed requests skip the prompt only in the shapes git-commit lists. A
+pick is the only prompt for its commit and push, in those shapes. A pick never
+approves a release. Stage with `git add -A` on its own line, then run a commit
+that names no path. A never-ship file stays out only when your reply above the
+commit call names its path. Read `/workbench-dev-team:git-commit` first.
 
 **Scheduled pipeline → commit and push unattended.** The pipeline never asks
 about committing or pushing, and never waits for approval: board dispatch is
-the approval. The hooks recognize the
-pipeline by `WORKBENCH_DEV_TEAM_PIPELINE=1`, which `bin/dispatch-agent.sh`
-exports onto the process it spawns. `hooks/scripts/pipeline-scope.sh` answers
+the approval. `bin/dispatch-agent.sh` marks the pipeline with
+`WORKBENCH_DEV_TEAM_PIPELINE=1`. `hooks/scripts/pipeline-scope.sh` answers
 the prompt for one plain `git -C <clone>`, rm, or rmdir line whose every path is
 absolute and stays inside the roots, and nothing else. The roots are all of
 `$TMPDIR`, so another run's clone is in scope too, and the scratch roots. The

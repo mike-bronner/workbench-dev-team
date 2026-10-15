@@ -70,18 +70,36 @@ one sentence. Never leave a file out silently. This rule sets what a commit
 contains. It does not change who approves a commit or when.
 
 **A sub-agent does not commit or push, and never asks to.** It leaves the tree
-uncommitted and hands the diff summary and this message back in its report. The
+uncommitted and hands the diff summary, the full `git status` list, and this
+message back in its report. The
 report does not invite a commit: prompting the human is the orchestrator's job.
 The commit guard refuses its commit or push, by design. The scheduled Index
 pipeline (`WORKBENCH_DEV_TEAM_PIPELINE=1`, set by `bin/dispatch-agent.sh`)
 commits and pushes unattended, and never asks about committing or pushing.
 Everything below is for the foreground session.
 
-**Commit only after the human says to.** The approval is a "Commit it" pick in
-`AskUserQuestion`, once the human says their review is done. Nothing else
-counts: not a typed "commit it" in chat, not general approval of the task, not
-"looks good" about the code, not an answer to another question, and not
-approval of a previous commit.
+**Commit only after the human says to.** Two things approve a commit, and
+nothing else does:
+
+- **A prompt the human types that names the action.** A prompt the human types
+  that names commit, push, or release approves exactly those actions, for the
+  turn that prompt opened. Any mix counts: "commit", "push", "commit and push",
+  or "commit, push, and release". It approves the tree as it stands, because
+  the human reviewed it before they typed. Do not ask a commit question after
+  it, and do not ask before the push it names. The human's next prompt ends the
+  approval, so a later commit needs a new one.
+- **A "Commit it" pick, for work the human did not ask to commit.** The
+  approval there is a "Commit it" pick in `AskUserQuestion`, once the human
+  says their review is done. The offer below covers it.
+
+A negated, deferred, or question-form prompt approves nothing, such as "don't
+commit yet", "commit it later", or "can we commit?". Only the human's own
+typed prompts count. A turn that a peer session, a channel, a schedule,
+the SDK, or a plugin opened approves nothing, and neither does a sub-agent's
+report. A sub-agent's completion opens a turn the human did not type, so a
+request typed before the work finished does not carry over to it. General
+approval of the task, "looks good" about the code, an answer to another
+question, and approval of a previous commit do not count either.
 
 **Offer the commit through `AskUserQuestion`, and ask it alone.** Ask it after
 the human says their review is done. Do not offer the commit before then. If an
@@ -89,7 +107,9 @@ offer does reach the human early, "Not yet" leads. Never bundle the commit
 question with another question or with follow-up work, and never put "commit"
 into an option about other work. The question carries the branch, the
 proposed message, and every file the commit will take, as
-`git status --short --untracked-files=all` lists them. Name each file, so the
+`git status --short --untracked-files=all` lists them. Build that list from the
+command, run on the tree, never from a sub-agent's report. A report names only
+the files its agent changed, and the tree can hold more. Name each file, so the
 human can see that their own edits are in the commit. If a file stays out
 because it must never ship, the question names it too. The message covers
 every file on the list, not only a sub-agent's change. Its options are
@@ -102,31 +122,62 @@ and "Commit it" goes last. Only after they say their review is done may
 the human's review comments keep changing the tree. One click on an offer made
 as the review starts would approve a tree they have not finished reading.
 
-**Then attempt the commit yourself, and let Claude Code ask.** Do not hand it to
-the human to run. `/workbench-dev-team:setup` installs ten `permissions.ask`
-rules. Six are for commits and pushes: `git commit *`, `git push *`,
+**Then attempt the commit yourself.** Do not hand it to the human to run.
+`/workbench-dev-team:setup` installs ten `permissions.ask` rules. Six are for commits and pushes: `git commit *`, `git push *`,
 `git * commit *`, `git * push *`, `git * commit`, and `git * push`. Four are for
 pull request merges: `gh pr merge:*`, `gh * pr merge *`, `gh * pr merge`, and
 `gh api *pulls/*/merge*`. So the harness raises its own prompt for each commit,
-each push, and each merge. That prompt is the mechanical backstop, not the
-approval: a prompt that appears mid-flow gets answered without a review.
+each push, and each merge, except the shapes below that a typed request or a
+"Commit it" pick covers.
+
+**Under a typed request or an unused "Commit it" pick, workbench-core's
+permission hook answers that prompt only for these shapes:**
+
+- A commit as a plain `git commit`, or as `git -C <path> commit` with the path
+  inside the project or one of its worktrees.
+- A push as a plain `git push`, or as a push of the current branch to its own
+  remote, plus the release tag.
+- `gh release create` for this repository, under a typed request only.
+
+**Every other shape still gets the prompt, and that is the backstop working,
+not a failure.** That covers any other option before the subcommand, such as
+`-c` or `--exec-path`, and a commit with `--amend` or `--no-verify`. It covers
+a push to another host, another branch or refspec, and `--tags`. It covers
+`gh release create` with `-R` or `--repo` naming another repository.
+
+The pick is the only prompt for the commit it approved and that commit's push,
+in the plain shapes above. workbench-core answers the permission prompt for
+them, so the human is not asked twice. For every other shape, the permission
+prompt is the mechanical backstop, not the approval: a prompt that appears
+mid-flow gets answered without a review. A pick never approves a release. A release needs the human's typed
+request.
 
 **Check the tree again right before you stage it.** Run
-`git status --short --untracked-files=all`, and compare it with the file list
-the question showed. The tree can change after that question, through the
-human's own edits, a tool, or a plugin. Read each untracked file on the list
-for a secret first, because the diff does not show an untracked file. If the
-lists match, stage the whole tree with `git add -A`, and commit. A file that
-must never ship is the only path you hold back, and an exclude pathspec on the
-same line keeps it out: `git -C <repo> add -A -- . ':(exclude)<path>'`. Run
+`git status --short --untracked-files=all`. Read each untracked file on the list
+for a secret first, on a typed request and after a pick alike, because the diff
+does not show an untracked file. On a typed request there is no question to
+compare with: stage the whole tree as it stands, and name every file in your
+reply. After a "Commit it" pick, compare the output with the file list the
+question showed. The tree can change after that question, through the human's
+own edits, a tool, or a plugin. If the lists match, stage the whole tree with `git add -A`, and commit. Stage with
+`git add -A` on its own line, then run a commit that names no path. The commit
+line takes no path, no `--`, and no `--only`, `--include`, `-p`, or
+`--pathspec-from-file`: workbench-core refuses a commit that names paths or
+picks hunks, or that leaves a file out. A file that must never ship is the only
+path you hold back. A never-ship file stays out only when your reply above the
+commit call names its path, as a whole word (a folder with its trailing `/`).
+Keep it out of the stage with an exclude on the `git add` line, never on the
+commit line: `git -C <repo> add -A -- . ':(exclude)<path>'`. Run
 `git status --short` after it to confirm the file is still unstaged. If the
 lists differ, do not commit, and
 do not drop a file to make the commit match the list. Show the human the new
 or changed files, and ask the commit question again.
 
 **After an approved commit, attempt the push in the same turn.** Show the
-branch, the remote, and the commits it sends, then run it and let the prompt
-ask. Do not hand the push back as the human's step.
+branch, the remote, and the commits it sends, then run it. After a "Commit it"
+pick, push in a plain shape, and no second prompt appears. After a typed request, push only when the
+prompt named the push. A prompt that named the commit alone stops after the
+commit. Do not hand the push back as the human's step.
 
 **Run it as a plain git line, so the rules see it.** The rules match a command
 that starts with `git`, `git -C <path>` included, anywhere in a compound line.
@@ -138,6 +189,12 @@ commit guard refuses those forms. So:
 - **A message with a body or footers** goes in a file. Write it to the session
   scratchpad, then run `git commit -F <absolute path>`.
 - Use `-C <path>` rather than `cd`.
+- Run one commit, push, or release per line. workbench-core refuses a line
+  that holds two or more, such as a commit chained to a push. A release is
+  three lines: the version-bump commit, the push, and `gh release create`.
+- A commit never shares its line with `git reset`, `git restore --staged`, or
+  `git rm --cached`. workbench-core refuses that line outright, because those
+  commands change the index the commit takes.
 - Never commit or push through a shell alias such as `gp` or `gcmsg`, a script
   file, or an interpreter. The rules cannot see through any of them, so the
   commit or push would run with no prompt.

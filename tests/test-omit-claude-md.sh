@@ -2,9 +2,9 @@
 set -u
 HERE="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$HERE/.." && pwd)"
-CORE="${WORKBENCH_CORE_DIR:-$ROOT/../workbench-core}"
+CORE="$(node "$HERE/core-root.mjs")" || exit 1
 CHECK="$HERE/omit-claude-md-check.py"
-CORE_CHECK="$HERE/core/scripts/omit-claude-md-check.py"
+CORE_CHECK="$CORE/scripts/omit-claude-md-check.py"
 RULES="$ROOT/hooks/mods/session-rules.ts"
 PASS=0
 FAIL=0
@@ -53,10 +53,6 @@ echo "── OMITS_CLAUDE_MD against the claude binary ────────�
 found="${CLAUDE_BINARY:-$(command -v claude 2>/dev/null)}"
 if [ -z "$found" ]; then
   echo "  ⏭️  skipped: no claude binary on PATH (set CLAUDE_BINARY to one)"
-  finish
-fi
-if [ ! -d "$CORE/agents" ]; then
-  echo "  ⏭️  skipped: no workbench-core checkout at $CORE (set WORKBENCH_CORE_DIR to one)"
   finish
 fi
 binary="$(readlink -f "$found")"

@@ -48,7 +48,7 @@ Universal dev workflow + standards: orient before writing (the repo's `CLAUDE.md
 
 It names three lanes (foreground, sub-agent, scheduled pipeline) and ends each step the way that lane can: a sub-agent finishes with an uncommitted tree and a report, never a commit or a PR. Includes a **decision protocol** that presents three options in one table (Option, Pros, Cons, and a Grade against every acceptance criterion), then a one- or two-sentence recommendation, for a meaningful fork the human has not already decided — implementation approach, library choice, scope decisions, a public interface. A fork they already decided is not asked again. In the foreground the human decides through `AskUserQuestion`, with each option's grade and any warning in its description; a sub-agent picks and records the assumption below the blocking-uncertainty bar and stops with the options above it. Trivial choices (mechanical translation, following existing repo conventions, naming, one-line obvious fixes) are exempt.
 
-Also defines the **commit approval** lanes (see [Commit approval](#commit-approval) below): a sub-agent commits, merges, and pushes nothing, a foreground commit waits for a "Commit it" pick in `AskUserQuestion`, once the human says their review is done, Index-mode development never asks about committing or pushing, with Claude Code's permission prompt on every `git commit` and `git push` as the backstop, and a push that forces or deletes remote refs is refused outright.
+Also defines the **commit approval** lanes (see [Commit approval](#commit-approval) below): a sub-agent commits, merges, and pushes nothing, a foreground commit waits for the human's own typed prompt asking for it, or for a "Commit it" pick in `AskUserQuestion`, once the human says their review is done, Index-mode development never asks about committing or pushing, with Claude Code's permission prompt as the backstop on every `git commit` and `git push` outside the plain shapes a typed request or a "Commit it" pick covers, and a push that forces or deletes remote refs is refused outright.
 
 Used by Watson internally in both operating modes. Also invocable directly in any plugin-aware Claude session.
 
@@ -84,7 +84,7 @@ The skill also **routes GitHub actions to the right executor**. Two rules: (1) *
 
 ## Commit approval
 
-**A sub-agent does not commit, merge, or push, and never asks to. In the foreground session, the agent commits only after a "Commit it" pick in `AskUserQuestion`, once the human says their review is done. That is the approval.** A typed "commit it" in chat does not count. The orchestrator asks the commit question alone, and recommends "Not yet" until your review is done. A commit takes every uncommitted file in the tree in one commit, your own edits and untracked files included, and the commit question lists each file it will take. Claude Code's permission prompt on each `git commit`, `git push`, and `gh pr merge` is the mechanical backstop, because a prompt that appears mid-flow gets answered without a review. After a commit you approved, the agent attempts the push itself and lets the prompt ask you. The scheduled pipeline commits and pushes unattended, inside its own clone and the scratch roots, and never merges.
+**A sub-agent does not commit, merge, or push, and never asks to. In the foreground session, two things approve a commit.** A prompt you type that names commit, push, or release approves exactly those actions, for the turn that prompt opened, with no further question. Your next prompt ends it. A negated, deferred, or question-form prompt approves nothing, such as "don't commit yet" or "can we commit?". Only your own typed prompts count: a turn a peer session, a channel, a schedule, the SDK, a plugin, or a sub-agent opened gets nothing. For work you did not ask to commit, the agent commits only after a "Commit it" pick in `AskUserQuestion`, once the human says their review is done. The orchestrator asks that question alone, and recommends "Not yet" until your review is done. A commit takes every uncommitted file in the tree in one commit, your own edits and untracked files included, and the commit question lists each file it will take, from `git status` and never from a sub-agent's report. Claude Code's permission prompt on each `git commit`, `git push`, and `gh pr merge` is the mechanical backstop, because a prompt that appears mid-flow gets answered without a review. For an action your typed prompt approved, workbench-core's permission hook answers that prompt, but only for the plain command shapes the `git-commit` skill lists, and neither the commit guard nor the pipeline scope hook stands in its way. Any other shape still gets the prompt. A "Commit it" pick is the only prompt for its commit and that commit's push, in the same plain shapes, and a pick never approves a release. Staging runs as its own `git add -A` line, and the commit line names no path. A file that must never ship stays out only when the agent's reply above the commit names its path. After a "Commit it" pick, the agent attempts the push itself, and a plain push draws no second prompt. After a typed request, it pushes only when your prompt named the push. The scheduled pipeline commits and pushes unattended, inside its own clone and the scratch roots, and never merges.
 
 **No agent disguises a command to get past a gate.** Watson, Holmes, and Lestrade each carry a `## When a gate or guard refuses you` section: never reword, split, encode, or rebuild a command to get past a gate or guard, and report the refusal instead. It exists because Holmes once got past the installed commit gate by building the words "commit" and "push" from pieces at run time. `agents/lint-gate-refusal.sh` pins the section in every agent file.
 
@@ -162,9 +162,9 @@ The pipeline signal is per-process. It reaches the dispatched agent and its chil
 
 **What it replaced.** The commit approval gate kept approval records in `~/.claude-workbench/commit-approvals/`, granted by `approve` (`bin/approve-commit.sh`), and parsed command text to decide what could be approved. Any process you run could write a record, the text parser could never be complete, and a caller check could be faked. Setup now removes its three `approve` ask rules. It prints the commands that remove the installed script and the records, for you to run with the `!` prefix, because workbench-core's destructive-scope guard refuses a removal outside the project.
 
-Tests: `tests/guards.test.ts` (`claude plugin test`) runs both guards through the hooks module, reading lines with workbench-core's own shell reader, copied unchanged into `tests/core/`: every bypass spelling review rounds found, refused in the lanes it should be; every false positive reviewers hit, let through; and the answers the nouns cannot give, read on the refusing side. `tests/differential.mjs` (run by `tests/test-guard-differential.sh`) holds both guards to the bash guards they replaced, frozen unchanged in `tests/oracle/`, over core's commit corpus, dev-team's own cases, and 7,500 seeded random lines, in four lanes for the commit guard. Where a guard refuses less than its oracle, the line runs in bash and in zsh under `sandbox-exec`, with recording shims for git and gh, and the test fails if the guarded command runs. The lines the oracles over-counted are recorded in `tests/oracle/over-counted.json`. `tests/test-core-copies.sh` fails when core's copied files have moved on from the commit they were copied at. `hooks/scripts/test-pipeline-scope.sh` feeds `PermissionRequest` payloads against real sandbox roots: one plain git or `rm` line allowed inside the clone and each scratch root; relative, `cd`, and compound lines never allowed; nothing allowed outside the roots through `git -C`, a repository above a root, a path argument, a symlink, or `..`; a planted symlink at either named scratchpad never made a root; a root itself never removed; git's own options refused spaced or attached; every bare, implicit, forcing, or deleting push refused, and a push to the clone's real default branch refused, with a clone whose default is `develop`; a push whose source is a real local tag, a remote-tracking ref, a commit id, an ambiguous name, or a missing ref refused; merges never allowed; deny-listed commands never allowed, with `git log` and `git diff` deny rules that show the rules are read; every shape the grammar cannot read; the exact-match flag; no roots; no `jq`; the pipeline doc's own commit, push, and cleanup lines; and the wiring. `commands/test-commit-ask-rules-setup.sh` runs the setup block for real against a sandbox `HOME`: the ten rules added, existing settings kept, a re-run idempotent, the old approval rules removed, the old script and records reported but left in place, no temporary file left behind, and an unreadable settings file left alone.
+Tests: `tests/guards.mjs` (run by `tests/test-guards.sh`) runs both guards' pure functions on workbench-core's real shell reader: every bypass spelling review rounds found, refused in the lanes it should be; every false positive reviewers hit, let through; the review guard's writes judged on a map disk; the commit subject format; and the scratch rewrite. `tests/guards.test.ts` (`claude plugin test`) runs the guards through the hooks module on plain lines, read by a stand-in reader in `tests/world.ts` that throws on any line it does not model: the lane and line the hook passes, who the review guard holds, the disk, roots and working directory the hook reads, and the answers the nouns cannot give, read on the refusing side. `tests/differential.mjs` (run by `tests/test-guard-differential.sh`) holds both guards to the bash guards they replaced, frozen unchanged in `tests/oracle/`, over core's commit corpus, dev-team's own cases, and 7,500 seeded random lines, in four lanes for the commit guard. Where a guard refuses less than its oracle, the line runs in bash and in zsh under `sandbox-exec`, with recording shims for git and gh, and the test fails if the guarded command runs. The lines the oracles over-counted are recorded in `tests/oracle/over-counted.json`. `hooks/scripts/test-pipeline-scope.sh` feeds `PermissionRequest` payloads against real sandbox roots: one plain git or `rm` line allowed inside the clone and each scratch root; relative, `cd`, and compound lines never allowed; nothing allowed outside the roots through `git -C`, a repository above a root, a path argument, a symlink, or `..`; a planted symlink at either named scratchpad never made a root; a root itself never removed; git's own options refused spaced or attached; every bare, implicit, forcing, or deleting push refused, and a push to the clone's real default branch refused, with a clone whose default is `develop`; a push whose source is a real local tag, a remote-tracking ref, a commit id, an ambiguous name, or a missing ref refused; merges never allowed; deny-listed commands never allowed, with `git log` and `git diff` deny rules that show the rules are read; every shape the grammar cannot read; the exact-match flag; no roots; no `jq`; the pipeline doc's own commit, push, and cleanup lines; and the wiring. `commands/test-commit-ask-rules-setup.sh` runs the setup block for real against a sandbox `HOME`: the ten rules added, existing settings kept, a re-run idempotent, the old approval rules removed, the old script and records reported but left in place, no temporary file left behind, and an unreadable settings file left alone.
 
-**Every setup block passes workbench-core's destructive-scope guard.** That guard refuses a whole Bash call that removes a path it cannot resolve, such as `rm -f "$tmp"`, so a setup step written that way never ran from a session. Every block now holds its new file in a variable, checks it, and writes it in place, with no temporary file and no `rm`. When state outside the roots must go, setup prints `! rm` lines for you to run. `commands/test-setup-scope-guard.sh` checks every shell block in `commands/setup.md`: it greps each one for the guard's verbs, which runs in CI, and also runs the real guard on it when a workbench-core checkout is found.
+**Every setup block passes workbench-core's destructive-scope guard.** That guard refuses a whole Bash call that removes a path it cannot resolve, such as `rm -f "$tmp"`, so a setup step written that way never ran from a session. Every block now holds its new file in a variable, checks it, and writes it in place, with no temporary file and no `rm`. When state outside the roots must go, setup prints `! rm` lines for you to run. `commands/test-setup-scope-guard.sh` checks every shell block in `commands/setup.md` twice: it greps each one for the guard's verbs, and it runs core's real `scopeVerdict` (`hooks/mods/destructive-scope.ts`) on it through `tests/scope-verdict.mjs`, which must not answer deny. A canary block, `x=$(mktemp); rm -f "$x"`, must meet both checks. Core is found through `tests/core-root.mjs`, as for the other tests, and the test fails when core is missing. The setup blocks write `test …` rather than `[ … ]`, because core's guard reads the `[` builtin as a glob when the block also names a scope subject.
 
 ## Review guard
 
@@ -188,7 +188,7 @@ The review guard ([hooks/mods/review-guard.ts](hooks/mods/review-guard.ts)) runs
 
 Its refusal reads ``🛑 Blocked: `chmod`. A Holmes reviewer writes only in scratch.``, with its own action word per rule — `git restore`, `sed -i`, `prettier` with a rewrite flag, `a redirect` — followed by the reason, the scratch roots, and the allowed alternatives.
 
-Tests: `tests/guards.test.ts` and `tests/differential.mjs`, described under the commit guard, cover this guard too: who is held (Holmes, his two mode agents, the helper, anything they spawn, and a pipeline run of Holmes, while Watson, a generic type, and the main session are untouched), the scratch roots, links into and out of them, the editing tools, every false positive reviewers hit, and every bypass spelling review rounds found. `agents/lint-holmes-local-mode.sh` feeds the reference's fenced blocks to the guard's own classifier (`tests/review-classify.mjs`), so the shipped documentation and the shipped enforcement cannot drift apart.
+Tests: `tests/guards.mjs`, `tests/guards.test.ts` and `tests/differential.mjs`, described under the commit guard, cover this guard too: who is held (Holmes, his two mode agents, the helper, anything they spawn, and a pipeline run of Holmes, while Watson, a generic type, and the main session are untouched), the scratch roots, links into and out of them, the editing tools, every false positive reviewers hit, and every bypass spelling review rounds found. `agents/lint-holmes-local-mode.sh` feeds the reference's fenced blocks to the guard's own classifier (`tests/review-classify.mjs`), so the shipped documentation and the shipped enforcement cannot drift apart.
 
 ## Configuration — models, effort, fallback, budget
 
@@ -354,7 +354,7 @@ anything fails. Pass `tests` or `lints` to run one group.
 
 The two groups are named apart on purpose:
 
-- **`test-*.sh`** — fifteen scripts that execute shipped logic and assert on
+- **`test-*.sh`** — seventeen scripts that execute shipped logic and assert on
   its behaviour. Six run a shipped script as a subprocess, among them
   `bin/test-compose-agents.sh`, which holds every committed mode agent to what
   the composer builds now, and `bin/test-dispatch-tick.sh`, which runs
@@ -383,20 +383,38 @@ The two groups are named apart on purpose:
   and compares the unknowns it covers with `HIDES_NAME` as sets.
   `tests/test-commit-subject-lists.sh` holds the subject check's gitmoji and
   type lists to the git-commit skill's references, both ways.
-  `tests/test-core-copies.sh` holds the workbench-core files copied into
-  `tests/core/` to core's main branch.
+  `tests/test-guards.sh` runs every parse-dependent guard case against
+  workbench-core's real shell reader. `tests/test-core-parity.sh` holds
+  dev-team's `withRules`, and the stand-in placement the `*.test.ts` files use,
+  to core's real `withShared`.
   `tests/test-omit-claude-md.sh` holds `OMITS_CLAUDE_MD` in
   `hooks/mods/session-rules.ts` to the agents defined with `omitClaudeMd`: the
   built-ins of the `claude` binary on `PATH`, read with workbench-core's own
-  check (copied into `tests/core/`), and the agents of core and dev-team.
+  check, and the agents of core and dev-team.
   Core's check resolves a minified agent name only inside the bundle chunk
   that uses it, because one name can hold different strings in different
   chunks. Four fixture checks pin that reading and need no binary. The test
-  skips the binary checks, and says why, when no binary or no core checkout is
-  reachable.
+  skips the binary checks, and says why, when no binary is reachable.
+
+**The tests run workbench-core's real code, never a copy.** The node scripts
+(`tests/guards.mjs`, `tests/differential.mjs`, `tests/shipped-lines.mjs`,
+`tests/review-classify.mjs`, `tests/core-parity.mjs`, `tests/scope-verdict.mjs`),
+`tests/test-omit-claude-md.sh` and `commands/test-setup-scope-guard.sh` find
+core through `tests/core-root.mjs`, which
+takes the first of: `WORKBENCH_CORE_DIR`, a `workbench-core` checkout beside
+this repository, or the newest workbench-core version in
+`~/.claude/plugins/cache`. With none of them, each fails and names
+`WORKBENCH_CORE_DIR`. Point the tests at a core checkout with
+`WORKBENCH_CORE_DIR=/path/to/workbench-core bash run-tests.sh`. CI checks out
+core's `main` beside this repository and sets the variable to it. A change on
+core's main can therefore turn this suite red, which is how a drift between
+the two shows up.
 
 The hooks module has its own tests, `tests/*.test.ts`, which run with
-`claude plugin test .`. `tsc -p .` type-checks the module once a session has
+`claude plugin test .`. The test runner lets a test import only files inside
+this plugin, so these tests cannot read core, and use stand-ins: a plain-line
+shell reader in `tests/world.ts`, and a shared-section placement in
+`tests/placement.ts` that `tests/core-parity.mjs` holds to core. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
 - **`lint-*.sh`** — fifteen scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not

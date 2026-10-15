@@ -9,7 +9,7 @@ import type { MockClock } from 'claude-code/testing'
 import type { On, PromptComposeSection } from 'claude-code'
 
 import { OMITS_CLAUDE_MD, RULES, RULES_ID, SECTION, isRulesLane, withRules } from '../hooks/mods/session-rules'
-import { withShared } from './core/hooks/mods/prompt-rules'
+import { placeShared as withShared } from './placement'
 
 const HOME = '/Users/tester'
 const NOTICES = `${HOME}/.claude-workbench/warmup-notices.md`
@@ -115,11 +115,10 @@ describe('AC2: the dev-team section is byte-identical across a reload, a notices
     expect(RULES).toBe(RULES.trim())
   })
 
-  test('the rules are byte-identical to the retired session-warmup.md, less its final newline', () => {
-    // Taken from `git show 183e9bc^:session-warmup.md`: 1,447 characters before
-    // the file's final newline, with this FNV-1a fingerprint.
-    expect(RULES.length).toBe(1447)
-    expect(fingerprint(RULES)).toBe('0dac820f')
+  test('the rules keep their pinned bytes, with the turn-scoped commit approval of 2026-10-15', () => {
+    expect(RULES.length).toBe(2131)
+    expect(fingerprint(RULES)).toBe('5a463d5e')
+    expect(RULES).toContain('approves exactly those actions, for the turn that prompt opened')
   })
 })
 
@@ -207,7 +206,7 @@ describe('the rules never run into the next text, under either hook nesting', ()
     expect(withRules([{ id: 'intro', text: 'a\n', scope: 'shared' }, env])).toEqual([{ id: 'intro', text: 'a\n', scope: 'shared' }, PLACED, env])
   })
 
-  test("it places and pads the section as core's withShared does", () => {
+  test('it places and pads the section as the shared placement does', () => {
     const lists: PromptComposeSection[][] = [
       [],
       [{ id: 'intro', text: 'a', scope: 'shared' }],

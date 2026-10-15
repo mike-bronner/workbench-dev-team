@@ -7,15 +7,106 @@
 // real check is workbench-core's checkBrief, held to its recorded gate verdicts
 // case for case in that repository. What these tests prove is how this module weighs the answer.
 //
-// parseShell is workbench-core's own reader, copied unchanged into tests/core/
-// (tests/test-core-copies.sh holds the copy to core's main branch), so the
-// guard tests read every line as the installed noun does. The disk the guards
-// stat is a map of paths, links included.
+// The disk the guards stat is a map of paths, links included.
 
 import { mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import { parseShell } from './core/hooks/mods/shell'
+import type { ShellParse, Statement } from '../hooks/mods/commit-guard'
+
+const UNPLAIN = /[$`\\(){}<\n#*?!]|(?<!&)&(?!&)|^\s*(?:if|then|for|while|until|case|do|function)\b/
+const UNPLACED = new Set(['env', 'sudo', 'doas', 'nice', 'nohup', 'timeout', 'time', 'command', 'builtin', 'exec', 'xargs', 'stdbuf', 'caffeinate', 'noglob', 'bash', 'sh', 'zsh', 'eval', 'source', '.'])
+const ASSIGNMENT = /^[A-Za-z_][A-Za-z0-9_]*=/
+const VALUED: Record<string, ReadonlySet<string>> = {
+  git: new Set(['-C', '-c', '--git-dir', '--work-tree', '--namespace']),
+  gh: new Set(['-R', '--repo']),
+}
+
+function subcommandOf(name: string, args: readonly string[]): number {
+  const valued = VALUED[name]
+  if (valued === undefined) return -1
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? ''
+    if (valued.has(arg)) i++
+    else if (!arg.startsWith('-')) return i
+  }
+  return -1
+}
+
+function statementOf(tokens: readonly string[], isCertain: boolean): Statement {
+  const words: string[] = []
+  const redirects: { op: string; fd: string; target: string; isReal: boolean }[] = []
+  for (let i = 0; i < tokens.length; i++) {
+    const redirect = /^([0-9]*)(>>?)$/.exec(tokens[i] ?? '')
+    if (redirect === null) words.push(tokens[i] ?? '')
+    else redirects.push({ op: redirect[2] ?? '>', fd: redirect[1] ?? '', target: tokens[++i] ?? '', isReal: true })
+  }
+  const nameAt = words.findIndex(word => !ASSIGNMENT.test(word))
+  const name = nameAt < 0 ? '' : (words[nameAt]?.split('/').pop() ?? '').toLowerCase()
+  if (UNPLACED.has(name)) throw new Error(`the stand-in reader does not place ${name}: test this line in tests/guards.mjs`)
+  const args = nameAt < 0 ? [] : words.slice(nameAt + 1)
+  return {
+    words,
+    nameAt,
+    name,
+    args,
+    assignments: nameAt < 0 ? words : words.slice(0, nameAt),
+    wrappers: [],
+    subcommandAt: subcommandOf(name, args),
+    isPlaced: true,
+    escaped: [],
+    isCertain,
+    redirects,
+    heredocs: [],
+    source: 'line',
+    depth: 0,
+  } as Statement
+}
+
+export function readPlain(line: string): ShellParse {
+  if (UNPLAIN.test(line)) throw new Error(`the stand-in reader reads plain lines only: test ${JSON.stringify(line)} in tests/guards.mjs`)
+  const statements: Statement[] = []
+  let tokens: string[] = []
+  let word: string | undefined
+  let isCertain = true
+  const endWord = () => {
+    if (word !== undefined) tokens.push(word)
+    word = undefined
+  }
+  const endStatement = () => {
+    endWord()
+    if (tokens.length > 0) statements.push(statementOf(tokens, isCertain))
+    tokens = []
+  }
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i] ?? ''
+    if (c === "'" || c === '"') {
+      const close = line.indexOf(c, i + 1)
+      if (close < 0) throw new Error(`the stand-in reader found an open quote in ${JSON.stringify(line)}`)
+      word = (word ?? '') + line.slice(i + 1, close)
+      i = close
+    } else if (c === ' ' || c === '\t') {
+      endWord()
+    } else if (c === ';' || c === '|' || c === '&') {
+      endStatement()
+      if (c !== ';' && line[i + 1] === c) {
+        isCertain = false
+        i++
+      }
+    } else if (c === '>') {
+      const fd = word !== undefined && /^[0-9]+$/.test(word) ? word : ''
+      if (fd === '') endWord()
+      word = undefined
+      const op = line[i + 1] === '>' ? '>>' : '>'
+      i += op.length - 1
+      tokens.push(`${fd}${op}`)
+    } else {
+      word = (word ?? '') + c
+    }
+  }
+  endStatement()
+  return { statements, unknowns: [] } as ShellParse
+}
 
 export const HOME = '/Users/tester'
 export const CONFIG_PATH = `${HOME}/.claude-workbench/dev-team-config.json`
@@ -191,7 +282,7 @@ export function world(
         orchestratorIsOn: async () => answer(w.isOn),
         isUnattended: async () => answer(options.unattended ?? false),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
-        parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : parseShell(line)),
+        parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : readPlain(line)),
       },
     } as never
   })

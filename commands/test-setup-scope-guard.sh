@@ -12,8 +12,7 @@
 #      a whole word, after quotes and backslashes are dropped. The guard's
 #      prefilter is silent on such a block, so the guard can never refuse it.
 #      The verb list is the guard's own (SCOPE_VERBS in its prefilter).
-#   2. When a workbench-core checkout is found, the real guard runs on the block
-#      and must not answer "deny".
+#   2. workbench-core's real guard runs on the block and must not answer "deny".
 # The comment of a block counts too: the prefilter reads raw text.
 
 set -u
@@ -43,32 +42,23 @@ fi
 echo "${#BLOCKS[@]} shell blocks in commands/setup.md"
 
 SCOPE_VERBS='(^|[^[:alnum:]])(rm|rmdir|reset|clean|stash|delete)([^[:alnum:]]|$)'
-SCOPE_GUARD=""
-for g in "${WORKBENCH_CORE_ROOT:-}/hooks/destructive-scope-guard.sh" "$HOME/Developer/workbench-core/hooks/destructive-scope-guard.sh"; do
-  [ -f "$g" ] && { SCOPE_GUARD="$g"; break; }
-done
+printf 'x=$(mktemp)\nrm -f "$x"\n' > "$SANDBOX/canary.sh"
+VERDICTS="$(node "$REPO/tests/scope-verdict.mjs" "$REPO" "${BLOCKS[@]}" "$SANDBOX/canary.sh")" || { echo "❌ workbench-core's destructive-scope guard could not run"; exit 1; }
+verdict_of() { printf '%s\n' "$VERDICTS" | awk -F '\t' -v f="$1" '$1 == f { print $2 "\t" $3 }'; }
 
 for b in "${BLOCKS[@]}"; do
   name="setup.md line $((10#$(basename "$b" .sh | tr -dc 0-9)))"
   HITS=$(tr -d "'\"\\\\" < "$b" | grep -inE "$SCOPE_VERBS")
   [ -z "$HITS" ] && ok "$name names none of the guard's verbs" || bad "$name — the guard would read: $HITS"
-  if [ -n "$SCOPE_GUARD" ]; then
-    VERDICT=$(jq -cn --rawfile c "$b" --arg cwd "$REPO" \
-      '{tool_name: "Bash", tool_input: {command: $c}, cwd: $cwd, session_id: "s"}' | bash "$SCOPE_GUARD")
-    case "$VERDICT" in *'"deny"'*) bad "$name — the destructive-scope guard refuses it: $VERDICT" ;;
-      *) ok "$name passes the destructive-scope guard" ;; esac
-  fi
+  VERDICT="$(verdict_of "$b")"
+  case "$VERDICT" in deny*) bad "$name — the destructive-scope guard refuses it: $VERDICT" ;;
+    "") bad "$name — the destructive-scope guard gave no verdict" ;;
+    *) ok "$name passes the destructive-scope guard" ;; esac
 done
-[ -n "$SCOPE_GUARD" ] || echo "  ⏭  workbench-core not found, so its guard was not run (set WORKBENCH_CORE_ROOT to run it)"
 
 echo "The check can fail"
-printf 'x=$(mktemp)\nrm -f "$x"\n' > "$SANDBOX/canary.sh"
 tr -d "'\"\\\\" < "$SANDBOX/canary.sh" | grep -qiE "$SCOPE_VERBS" && ok "a block with rm -f \"\$tmp\" is caught" || bad "the verb check missed rm -f"
-if [ -n "$SCOPE_GUARD" ]; then
-  VERDICT=$(jq -cn --rawfile c "$SANDBOX/canary.sh" --arg cwd "$REPO" \
-    '{tool_name: "Bash", tool_input: {command: $c}, cwd: $cwd, session_id: "s"}' | bash "$SCOPE_GUARD")
-  case "$VERDICT" in *'"deny"'*) ok "...and the real guard refuses it" ;; *) bad "the real guard let rm -f \"\$x\" through: $VERDICT" ;; esac
-fi
+case "$(verdict_of "$SANDBOX/canary.sh")" in deny*) ok "...and the real guard refuses it" ;; *) bad "the real guard let rm -f \"\$x\" through" ;; esac
 
 echo
 echo "$PASS passed, $FAIL failed"

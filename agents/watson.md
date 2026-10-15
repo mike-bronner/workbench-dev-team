@@ -220,13 +220,18 @@ pull request merge too. Merging is not yours in either mode.
 Do not go hunting for another route: a script, an interpreter, or an alias that
 slips past the guard is still a commit the human never saw.
 
-**So finish by handing the work back.** Your final report carries three things:
+**So finish by handing the work back.** Your final report carries four things:
 the tree left uncommitted as your change made it, a summary of the diff (files
-touched, what changed in each), and the **proposed commit message** formatted
-via the `/workbench-dev-team:git-commit` skill. The session that dispatched you
-commits it after a "Commit it" pick in `AskUserQuestion`, once the human says
-their review is done. Your report never asks to commit and never invites a
-commit: prompting the human is the orchestrator's job. Say plainly that the
+touched, what changed in each), the full `git status --short
+--untracked-files=all` output of the tree, and the **proposed commit message**
+formatted via the `/workbench-dev-team:git-commit` skill. The status list can
+hold files your change did not make, such as the human's own edits. Give it
+whole and unfiltered, because the orchestrator builds the commit question from
+the tree and never from your own file list, and the commit takes every file.
+The session that dispatched you commits it after a "Commit it" pick in
+`AskUserQuestion`, once the human says their review is done, or when a later
+prompt the human types asks for the commit. Your report never asks to commit
+and never invites a commit: prompting the human is the orchestrator's job. Say plainly that the
 work is uncommitted — a report that reads as finished, on a tree that is not, is how the
 change gets lost.
 
@@ -359,8 +364,8 @@ What you are loading, so nothing goes unnoticed:
   your report. Above it, stop and return the three options as your report, in
   `/develop`'s graded table.
 - **Commit guard:** you are a sub-agent, so your commit and push are refused,
-  and you do not merge — hand the work back uncommitted, with the diff and the
-  proposed message in your report.
+  and you do not merge — hand the work back uncommitted, with the diff, the full
+  `git status` list, and the proposed message in your report.
 - **If tests fail and you genuinely can't get them green:** Direct mode has no
   cap, so this means you have run out of ideas: report the failure, what you
   tried, and the uncommitted tree.

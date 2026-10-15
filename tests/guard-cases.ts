@@ -1,9 +1,3 @@
-// The guards' named cases: the false positives reviewers hit with the bash
-// guards, which the ports must let through, and the bypass spellings earlier
-// review rounds found, which the ports must keep refusing. tests/guards.test.ts
-// runs each one through the hooks module, and tests/differential.mjs runs each
-// one beside the frozen bash guards in tests/oracle/.
-//
 // @SANDBOX@ stands for the review sandbox (tests/guard-corpus.ts, REVIEW_TREE):
 // @SANDBOX@/repo is the tree under review and the working directory, and
 // @SANDBOX@/tmp is a scratch root.
@@ -65,23 +59,72 @@ export const COMMIT_PASSES: readonly string[] = [
   'gh pr comment 5 --body "Run git commit -m x, then git push --force-with-lease."',
 ]
 
-// Lines the commit guard lets through in the main lane: a plain commit, push
-// or merge is left to the ask rules and core's commit approval gate. Each -m
-// message keeps the git-commit format, which the subject check holds a main
-// or pipeline commit to (tests/commit-subject.test.ts).
+export const GREP_READS: readonly string[] = [
+  'grep -n "git push" tests/commit-request.test.ts | sed -n 1,20p',
+  'grep -n "git commit" t.ts | awk \'{print $1}\'',
+  'grep -nE "git (push|commit)" t.ts | cut -c1-200',
+  'rg -n "git push" tests | sed -n 1,5p',
+  'rg -n "git push" tests | awk \'{print $1}\' | sort | uniq -c',
+  'rg -n "git push" tests | sort -k1,1 -t: | uniq -c | sed -n 1,5p',
+  'grep -c "git push" t.ts | sort -rn | head -5 | tr -d x | sed -n 1p',
+]
+
+export const GREP_WRITES: readonly string[] = [
+  "grep --label='git push' -H x - < f > s.sh; bash s.sh",
+  "echo x | grep --la='git push' -l x > s.sh; bash s.sh",
+  "echo x | grep --lab='git push' -l x > s.sh; bash s.sh",
+  "echo x | grep --labe='git push' -l x > s.sh; bash s.sh",
+  "echo x | grep --label='git push' -l x > s.sh; bash s.sh",
+  "echo x | grep --label 'git push' -l x > s.sh; bash s.sh",
+  "grep -oh 'git push' f | python3 -c 'import os,sys;os.system(sys.stdin.read())'",
+  "grep -oh 'git push' f | xargs -I{} sh -c {}",
+  "grep 'git push' f | sh",
+  "grep -oh 'git push' f | while read l; do $l; done",
+  'grep -n "git push" t.ts | while read l; do echo "$l"; done',
+  "grep -ohF 'a[$(git push)]' f | while read l; do [[ $l -eq 0 ]]; done",
+  "grep -ohF 'a[$(git push)]' f | while read l; do (( l )); done",
+  "a[$(grep -ohF 'x[$(git push)]' f)]=1",
+  "grep -oh 'git push' f | sort -S 1 --compress-program=sh",
+  "grep -oh 'git push' f | sort -S 1 --compress-prog=sh",
+  "grep -oh 'git push' f | sort -S 1 --compr=sh",
+  "grep -oh 'git push' f | sort -S 1 --compress-program sh",
+  "grep -oh 'git push' f | sort -o s.sh",
+  "grep -oh 'git push' f | sort -uo s.sh",
+  "grep -oh 'git push' f | sort --output=s.sh",
+  "grep -oh 'git push' f | uniq - s.sh",
+  "grep -oh 'git push' f | uniq -c - s.sh",
+  "grep -oh 'git push' f | rg --hostname-bin=sh x",
+  "grep -oh 'git push' f | rg --pre=sh x",
+  "grep -oh 'git push' f | sort -S 1 --compress-program=sh | sed -n 1p",
+  "grep -oh 'git push' f | uniq -c - s.sh | awk '{print $1}'",
+  "grep -n 'git push' f | column -t | sed -n 1p",
+  "grep -n 'git push' f | nl | sed -n 1p",
+  "rg -nz 'git push' f | sed -n 1p",
+  "grep -oh 'git push' f | uniq -f1 | sed -n 1p",
+  "grep -oh 'git push' f | awk '{system($0)}'",
+  "grep -oh 'git push' f | sed e",
+  "grep -l x 'git push' | python3 -c 'import os,sys;os.system(sys.stdin.read())'",
+  "grep -H x 'git push' | python3 -c 'import os,sys;os.system(sys.stdin.read())'",
+  "rg -o 'git push' f | python3 -c 'import os,sys;os.system(sys.stdin.read())'",
+  "rg -r 'git push' x f > s.sh; bash s.sh",
+  "rg --replace='git push' x f > s.sh; bash s.sh",
+]
+
 export const COMMIT_MAIN_PASSES: readonly string[] = [
   'git commit -m "fix: 🐛 Fix x."',
   'git push',
   'git push -u origin feat/add-d',
   'git -C /repo push origin main',
   'git -c user.name=x commit -F msg.txt',
-  'git commit -m "fix: 🐛 Fix x." && git push',
   // A word such as env in the message, which the bash guard read as a wrapper.
   'git commit -m "feat: ✨ Load env vars." && git push',
   'git commit -m "refactor: ♻️ Use bash -c and eval less." && git push',
   'bash run-tests.sh && git push',
   'cd /repo && git push',
   'gh pr merge 5 --squash',
+  'git commit -m "chore: 🔖 Bump version to 0.55.0."',
+  'git push origin 0.55.0',
+  'gh release create 0.55.0 --notes-file notes.md',
   'git commit -F - <<\'EOF\'\nfeat: x\n\nMentions git push --force in the body.\nEOF',
   // A value built at run time decides no subcommand.
   'git -C "$(pwd)" push',
@@ -127,6 +170,7 @@ export const COMMIT_REFUSALS: readonly (readonly [string, readonly CommitLane[]]
   // git-commit format, which the subject check holds them to.
   ['git commit -m "fix: 🐛 Fix x."', ['sub-agent']],
   ['git push', ['sub-agent']],
+  ['git push origin 0.55.0', ['sub-agent']],
   ['g\\it push', ['sub-agent']],
   ['"git" push', ['sub-agent']],
   ["'git' commit -m 'fix: 🐛 Fix x.'", ['sub-agent']],

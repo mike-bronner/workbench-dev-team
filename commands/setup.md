@@ -77,7 +77,7 @@ for cmd in gh jq security git curl; do
     missing="$missing $cmd"
   fi
 done
-if [ -n "$missing" ]; then
+if test -n "$missing"; then
   echo "❌ Missing prerequisites:$missing"
   echo "   Install the missing tools and re-run /workbench-dev-team:setup."
   exit 1
@@ -718,10 +718,14 @@ summary.
 
 ## Step 6.6 — Install the commit, push, and merge ask rules
 
-The approval is a "Commit it" pick in `AskUserQuestion`, once the human says
-their review is done. Claude Code's
+The approval is the human's own typed prompt that names the action, or a
+"Commit it" pick in `AskUserQuestion`, once the human says their review is
+done. Claude Code's
 own permission prompt is the mechanical backstop on every commit, push, and
-pull request merge. This step adds ten `permissions.ask` rules to
+pull request merge, except the plain shapes a typed request or a "Commit it"
+pick covers, which
+workbench-core's permission hook answers (the `git-commit` skill lists them).
+This step adds ten `permissions.ask` rules to
 `~/.claude/settings.json`:
 
 - `Bash(git commit *)`
@@ -801,7 +805,7 @@ Run it from anywhere:
 set -u
 SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
 mkdir -p "$(dirname "$SETTINGS")"
-[ -f "$SETTINGS" ] || echo '{}' > "$SETTINGS"
+test -f "$SETTINGS" || echo '{}' > "$SETTINGS"
 cp "$SETTINGS" "$SETTINGS.bak-commit-rules-$(date +%Y%m%d-%H%M%S)"
 
 # Additive for everything this step does not own: every other rule and key is
@@ -826,11 +830,11 @@ NEW=$(jq --arg legacy_abs "Bash(bash $HOME/.claude-workbench/bin/approve-commit.
 # do nothing now. The human removes them.
 for LEGACY in "$HOME/.claude-workbench/bin/approve-commit.sh" "$HOME/.claude-workbench/commit-approvals" \
     "$HOME/.claude-workbench/local-reviews"; do
-  [ -e "$LEGACY" ] && echo "LEGACY_LEFT $LEGACY"
+  test -e "$LEGACY" && echo "LEGACY_LEFT $LEGACY"
 done
 
 MISSING=$(jq -r --argjson rules "$RULES" '$rules - (.permissions.ask // []) | .[]' "$SETTINGS")
-if [ -n "$MISSING" ]; then
+if test -n "$MISSING"; then
   echo "❌ These ask rules are not in $SETTINGS: $MISSING"
   exit 1
 fi

@@ -132,30 +132,31 @@ slot: `references/brief-rationale.md`.
 
 ### Direct-mode work comes back uncommitted
 
-**Watson's Direct mode ends in a working tree, not a commit.** The commit guard
-refuses a sub-agent every commit and push, and a sub-agent does not merge. So
-its report carries a diff summary and a proposed commit message instead, and the
-tree is left as the change made it.
+**Watson's Direct mode ends in an uncommitted tree, a diff summary, and a
+proposed message.** Committing it is yours, and so is the push.
 
-**Committing it is yours, and so is the push.** Prompting the human is yours
-too: the sub-agent never asks. Tell the human the tree is ready for their
-review. Commit only after a "Commit it" pick in `AskUserQuestion`, once the
-human says their review is done. A typed "commit it" in chat does not count.
-Offer the commit through `AskUserQuestion` after they say their review is done,
-asked alone and never bundled with other questions or work. Do not offer the
-commit before then. If an offer does reach the human early, "Not yet" leads.
-One commit takes the whole tree, in every lane, not only the agent's change.
-The question carries the branch, the message, and every file the commit takes.
-If the tree changes after it, ask it again, and drop no file. Leave out only
-what must never ship, and tell the human in one sentence. Until the
-human has said their review is done, the recommended first option is "Not yet"
-or "Review with Holmes first" (below), and "Commit it" goes last. Its description
-reads: "Picking this confirms you have reviewed the whole tree." Then attempt
-the commit and the push yourself. Claude Code's permission prompt is the
-mechanical backstop, not the approval. The full rule, and the plain form the
-ask rules match, are canonical in the `/workbench-dev-team:git-commit` skill
-("Committing and pushing"). Never send the agent back to commit: only a
-foreground session reaches the human's prompt.
+A prompt the human types that names commit, push, or release approves exactly
+those actions, for the turn that prompt opened. Typed requests skip the prompt
+only in the shapes git-commit lists. A negated, deferred, or question-form
+prompt approves nothing. Only the human's own typed prompts count, not a peer
+session, a channel, a schedule, the SDK, a plugin, or the agent's completion.
+Otherwise, commit
+after a "Commit it" pick in `AskUserQuestion`, once the human says their
+review is done. A pick is the only prompt for its commit and push, in those shapes.
+A pick never approves a release. Offer the commit through `AskUserQuestion`
+alone. Do not offer the commit before then. If an offer does reach the
+human early, "Not yet" leads. Until the review is done, the recommended first
+option is "Not yet" or "Review with Holmes first", and "Commit it" goes last.
+Its description reads: "Picking this confirms you have reviewed the whole
+tree." One commit takes the whole tree, in every lane, not only the agent's
+change. The question carries the branch, the message, and every file the
+commit takes, from `git status`, never from a sub-agent's report. If the tree
+changes after it, ask it again, and drop no file. Stage with `git add -A` on
+its own line, never with the report's paths, then run a commit that names no
+path. Leave out only what must never ship, and tell the human in one sentence.
+A never-ship file stays out only when your reply above the commit call names
+its path. Never send the agent back to commit: only a foreground session
+reaches the human's prompt.
 
 ## Action routing — Index MCP or gh CLI?
 
