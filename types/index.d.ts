@@ -67,6 +67,7 @@ declare module 'claude-code' {
       // Whether the human was told this run passed its context budget, keyed
       // as scratch is, so the notice comes once per run.
       overBudget: StateFamily<boolean>
+      backgroundTasks: StateFamily<{ id: string; output?: string }[]>
       // What the runs pane draws: the newest dispatched runs, read from the
       // dispatch logs while the pane is open.
       runs: RunsView

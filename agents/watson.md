@@ -282,14 +282,16 @@ dispatching session that Index-mode Watson runs only through
 - `mcp__the-index__find_item(repo, issue_number)` — resolve an issue number to its
   board item (`id`, `status`, `title`) with no GitHub round-trip. Available for
   coordination lookups; note the bounce path routes *unit-belonging* findings into the
-  same PR as blockers (step 6) — Holmes tracks any unrelated hazard/systemic-debt
-  follow-up himself, so you never open a follow-up issue.
+  same PR as blockers (step 6), and so does every bug, security, or integrity
+  finding this repo can fix, pre-existing or out of scope included — Holmes
+  tracks any unrelated systemic-debt follow-up, and any finding only another repo
+  can fix, himself, so you never open a follow-up issue.
 - `mcp__the-index__create_issue(agent, repo, title, body, type?)` — open a tracked
   issue as the **Watson App** (under your identity, added to The Casebook, `PBI`-typed).
   **Not used for review follow-ups:** on a bounce you fold every *unit-belonging*
-  finding into the same PR as a blocker (step 6), unrelated cosmetics are optional, and
-  tracking an unrelated hazard / systemic-debt follow-up as an issue is Holmes's job on
-  either verdict — never yours. Never a raw `gh issue create` — unlike the PR (which is
+  finding, and every bug, security, or integrity finding this repo can fix, into the same PR as a blocker
+  (step 6), unrelated cosmetics are optional, and tracking an unrelated systemic-debt
+  follow-up as an issue is Holmes's job on either verdict — never yours. Never a raw `gh issue create` — unlike the PR (which is
   yours, the human's), an issue created here carries the agent's name.
 - `mcp__the-index__move(id, agent, column)` — project-board status transitions.
 - `mcp__plugin_workbench-core_memory__read` / `mcp__plugin_workbench-core_memory__search` — the memory vault. Holmes records what he rejects and what fixes it at re-review, plus a lightweight note on a clean first-pass approve; you read his top-lessons digest, search `feedback/` for the human's own corrections, and search for anything specific to the work in front of you (step 6 and `/develop` §2, before coding, in both modes).

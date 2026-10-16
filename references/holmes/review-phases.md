@@ -107,7 +107,7 @@ Your lens: <one lens's task, from the list above>.
 Return ONLY structured findings, one per line:
 - claim: <what you found>
   location: <file:line>
-  severity: <blocker (correctness/security/test defect) | note (anything softer)>
+  severity: <blocker (a bug, security, integrity or test defect, latent or live, wherever it lives in this repo, or in code only another repo can fix, which Holmes routes to its owner) | note (anything softer: style, debt, docs)>
   scope: <in-pr if file:line is a line this PR added or modified, else general — check `gh pr diff <PR_NUM>`>
   evidence: <why this is true, grounded in the tree>
 If you find nothing, return "no findings".

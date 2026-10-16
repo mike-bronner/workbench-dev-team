@@ -41,7 +41,7 @@ section: #### 4d. Check conformance against the acceptance criteria — the cont
 section: #### 4e. Defects and observations beyond the AC — route by the coherent unit of work, then coupling and locality
 skip: ### 5. Submit your verdict — three outcomes, and only three
 skip: #### 🕰️ Before you write anything — re-read the item
-skip: #### ✅ APPROVE — every AC item met, no hard defect anywhere, and the PR's own code **plus everything belonging to the coherent unit** carry no actionable finding
+skip: #### ✅ APPROVE — every AC item met, no hard defect this repo can fix, and the PR's own code **plus everything belonging to the coherent unit** carry no actionable finding
 skip: #### 🔄 REQUEST CHANGES — an AC item is unmet (impl wrong/incomplete), a hard defect surfaced, or the PR's own code **or anything belonging to the coherent unit** carries an actionable finding
 skip: #### 🛑 ESCALATE — the **AC itself** looks wrong/imprecise/impossible/contradicted, **or** the impl diverges from an AC item in a way you can't confidently call a strict, nothing-dropped improvement
 skip: ### 5.5. Record review learnings — on every verdict

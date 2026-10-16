@@ -504,7 +504,8 @@ don't re-ask.
 #### Holmes's non-blocking follow-ups (on a review-requested resume)
 
 If Holmes requested changes, his review already lists every unit-belonging
-finding as a blocker under *Issues Found* — fix all of it in this same PR
+finding, and every bug, security, or integrity finding this repo can fix, as a
+blocker under *Issues Found* — fix all of it in this same PR
 (routing logic is canonical in `agents/holmes.md` §4e/§5; don't re-derive it
 here). The `## 📋 Non-blocking follow-ups` section holds only what's unrelated
 to the unit:

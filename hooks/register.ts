@@ -96,6 +96,8 @@ import { commitVerdict } from './mods/commit-guard'
 import type { ShellParse } from './mods/commit-guard'
 import { subjectVerdict } from './mods/commit-subject'
 import { DISPATCH_CONTEXT, dispatchDeny, dispatcherArgv, dispatchOutcome, dispatchResult, indexDispatchOf, isForcedBackground } from './mods/dispatch'
+import { outputOf, stopBlockOf, withStarted } from './mods/helper-wait'
+import type { Activity, Watch } from './mods/helper-wait'
 import type { Disk } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
 import { BOARD_PANE, RUNS_PANE, boardTree, runsTree } from './mods/panes'
@@ -249,6 +251,37 @@ async function endRun($: EngineInterface, agentId: string | undefined): Promise<
   }
   const { value: told } = await $.state.get({ plugin: 'workbench-dev-team', key: 'overBudget', id: key })
   if (told) await $.state.set({ plugin: 'workbench-dev-team', key: 'overBudget', id: key }, false)
+}
+
+async function recordStarted($: EngineInterface, agentId: string | undefined, result: { result?: unknown; text?: unknown }): Promise<void> {
+  const id = (result.result as { backgroundTaskId?: unknown } | undefined)?.backgroundTaskId
+  if (agentId === undefined || typeof id !== 'string' || id === '') return
+  const key = { plugin: 'workbench-dev-team', key: 'backgroundTasks', id: agentId } as const
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const { value = [], version } = await $.state.get(key)
+    const output = outputOf(id, result.text)
+    if ((await $.state.set(key, withStarted(value, output === undefined ? { id } : { id, output }), { ifVersion: version })).isSet) return
+  }
+}
+
+async function stopBlock(
+  $: EngineInterface,
+  agentId: string,
+  inFlight: readonly { id: string; command?: string; description: string }[],
+  activity: ReadonlyMap<string, Activity>,
+  watches: Map<string, Watch>,
+): Promise<string | undefined> {
+  const { value: type } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId })
+  if (!isDevTeamType(type)) return undefined
+  const { value: started = [] } = await $.state.get({ plugin: 'workbench-dev-team', key: 'backgroundTasks', id: agentId })
+  const agents = await $.agent.list().catch(() => [])
+  const sizes = new Map<string, number>()
+  for (const entry of started) {
+    if (entry.output === undefined || !inFlight.some(task => task.id === entry.id)) continue
+    const size = await $.fs.stat(entry.output).then(stat => stat.size, () => undefined)
+    if (size !== undefined) sizes.set(entry.output, size)
+  }
+  return stopBlockOf(agentId, agents, started, inFlight, { helper: id => activity.get(id), outputSize: path => sizes.get(path) }, watches)
 }
 
 // ── The context budget ───────────────────────────────────────────────────────
@@ -482,6 +515,19 @@ export const register: Register = (on, options) => {
   const cadenceMs = cadenceMsOf(options.dispatchCadenceMinutes)
   const memory: PaneMemory = { ends: new Map(), isRunsBusy: false, isBoardBusy: false }
 
+  const activity = new Map<string, Activity>()
+  const watches = new Map<string, Watch>()
+  const begin = (agentId: string | undefined): (() => void) => {
+    if (agentId === undefined) return () => undefined
+    const seen = activity.get(agentId) ?? { ticks: 0, inFlight: 0 }
+    activity.set(agentId, seen)
+    seen.ticks++
+    seen.inFlight++
+    return () => {
+      seen.inFlight--
+    }
+  }
+
   on('session.start', async ($, e, next) => {
     await $.command.register({ name: RUNS_COMMAND, description: 'Show live and recent dev-team runs from the dispatch logs', immediate: true }).catch(() => undefined)
     await $.command.register({ name: BOARD_COMMAND, description: "Show The Index board's lanes, fetched once per dispatch cadence at most", immediate: true }).catch(() => undefined)
@@ -611,14 +657,26 @@ export const register: Register = (on, options) => {
   })
 
   on('turn.step', async function* ($, e, next) {
-    let input = e
-    if (e.agentId !== undefined) {
-      const { value: effort } = await $.state.get({ plugin: 'workbench-dev-team', key: 'effort', id: e.agentId })
-      if (effort !== undefined) input = { ...e, effort }
+    const done = begin(e.agentId)
+    try {
+      let input = e
+      if (e.agentId !== undefined) {
+        const { value: effort } = await $.state.get({ plugin: 'workbench-dev-team', key: 'effort', id: e.agentId })
+        if (effort !== undefined) input = { ...e, effort }
+      }
+      const result = yield* next(input)
+      await measure($, e.agentId, result.usage).catch(() => undefined)
+      return result
+    } finally {
+      done()
     }
-    const result = yield* next(input)
-    await measure($, e.agentId, result.usage).catch(() => undefined)
-    return result
+  })
+
+  on('classic.SubagentStop', async ($, e, next) => {
+    const result = await next(e)
+    if (result.block !== undefined) return result
+    const block = await stopBlock($, e.agent_id, e.background_tasks ?? [], activity, watches)
+    return block === undefined ? result : { ...result, block }
   })
 
   on('turn.complete', async ($, e, next) => {
@@ -638,30 +696,38 @@ export const register: Register = (on, options) => {
   // throws refuses the call (fail closed), a scratch rewrite that fails leaves
   // the line as written, and the hint's failure leaves the call as it ran.
   on('tool.call', async ($, e, next) => {
-    if (e.tool === 'Bash' || e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
-      const call = e.tool === 'Bash' && typeof e.command === 'string' ? { ...e, command: await withScratch($, e.agentId, e.command) } : e
-      const deny = await guard($, call)
-      return deny === undefined ? next(call) : { deny }
-    }
-    if (e.tool !== 'Agent') return next(e)
-    const isModel = next.origin.plugin === 'engine'
-    let call = e
-    if (isModel) {
-      // A set agentId is a sub-agent's call, whatever callerLane says, so a
-      // sub-agent never reaches the dispatcher. Only a call with no agentId
-      // asks the lane, and a lookup that fails there reads as the main session.
-      const isMain = e.agentId === undefined && (await $.workbench.callerLane({}).catch(() => 'main' as const)) === 'main'
-      if (isMain) {
-        const itemId = indexDispatchOf(e.subagent_type, e.prompt)
-        if (itemId !== undefined) return runDispatcher($, itemId, e.prompt)
-        if (isForcedBackground(e.subagent_type, e.run_in_background)) call = { ...e, run_in_background: true }
+    const done = begin(e.agentId)
+    try {
+      if (e.tool === 'Bash' || e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
+        const call = e.tool === 'Bash' && typeof e.command === 'string' ? { ...e, command: await withScratch($, e.agentId, e.command) } : e
+        const deny = await guard($, call)
+        if (deny !== undefined) return { deny }
+        const result = await next(call)
+        if (e.tool === 'Bash') await recordStarted($, e.agentId, result).catch(() => undefined)
+        return result
       }
+      if (e.tool !== 'Agent') return next(e)
+      const isModel = next.origin.plugin === 'engine'
+      let call = e
+      if (isModel) {
+        // A set agentId is a sub-agent's call, whatever callerLane says, so a
+        // sub-agent never reaches the dispatcher. Only a call with no agentId
+        // asks the lane, and a lookup that fails there reads as the main session.
+        const isMain = e.agentId === undefined && (await $.workbench.callerLane({}).catch(() => 'main' as const)) === 'main'
+        if (isMain) {
+          const itemId = indexDispatchOf(e.subagent_type, e.prompt)
+          if (itemId !== undefined) return runDispatcher($, itemId, e.prompt)
+          if (isForcedBackground(e.subagent_type, e.run_in_background)) call = { ...e, run_in_background: true }
+        }
+      }
+      const result = await next(call)
+      if (result.deny !== undefined || result.isError || !isModel) return result
+      if (typeof e.prompt !== 'string' || !(await gated($, e.agentId))) return result
+      const check = await $.workbench.briefCheck(e.prompt).catch(() => undefined)
+      const hint = check === undefined ? undefined : hintOf(check, e.prompt)
+      return hint === undefined ? result : { ...result, context: [...(result.context ?? []), hint] }
+    } finally {
+      done()
     }
-    const result = await next(call)
-    if (result.deny !== undefined || result.isError || !isModel) return result
-    if (typeof e.prompt !== 'string' || !(await gated($, e.agentId))) return result
-    const check = await $.workbench.briefCheck(e.prompt).catch(() => undefined)
-    const hint = check === undefined ? undefined : hintOf(check, e.prompt)
-    return hint === undefined ? result : { ...result, context: [...(result.context ?? []), hint] }
   }).catch(($, e, next) => (next.called || !GUARDED.has(e.tool) ? next(e) : { deny: GUARD_FAILED }))
 }

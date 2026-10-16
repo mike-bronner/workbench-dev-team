@@ -416,9 +416,12 @@ output and track the run: Dispatch protocol, step 4.
 When *you* ask for an issue in conversation, it's opened with `gh issue create`
 so **you** (the human) are the author — the user's voice, same as comments.
 Agent-authored follow-ups are the other case, and only Holmes opens them. On
-either verdict, an unrelated latent hazard or systemic debt that clears his
-materiality gate gets one, when no related open issue exists to expand. Watson
-never opens one. He folds unit-belonging findings into the same PR. Holmes
+either verdict, unrelated systemic debt that clears his materiality gate gets
+one, when no related open issue exists to expand. A bug, security, or integrity
+finding the PR's repo can fix never gets one: it blocks, with changes requested
+in the same PR, even when it predates the PR or sits outside its scope. One only
+another repo can fix goes to that repo as an issue, and does not hold the PR. Watson never opens one. He
+folds unit-belonging findings into the same PR. Holmes
 opens his via `mcp__the-index__create_issue(agent: …)`, so the issue carries the
 **agent's** GitHub App identity, lands on The Casebook, and gets the native `PBI`
 type. That path is internal to Holmes — not an orchestration call you make; it

@@ -329,7 +329,7 @@ fi
 # 9. The README names every lint script, with the right count.
 lints=()
 while IFS= read -r -d '' p; do lints+=("$p"); done < <(shipped '*lint-*.sh')
-words=(zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen)
+words=(zero one two three four five six seven eight nine ten eleven twelve thirteen fourteen fifteen sixteen)
 n=${#lints[@]}
 # Scoped to the lint bullet: other README paragraphs name some lints too, and
 # would hide a script dropped from the list.

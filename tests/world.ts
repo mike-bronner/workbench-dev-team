@@ -164,6 +164,8 @@ export type World = {
   shown: string[]
   // Each model request's usage, in order, as the stand-in engine reports it.
   usage: ({ input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number; model: string } | null)[]
+  background: string[]
+  sizes: Map<string, number>
 }
 
 // What a stand-in process.run answers.
@@ -256,6 +258,8 @@ export function world(
     rootsFail: false,
     shown: [],
     usage: [],
+    background: [],
+    sizes: new Map(),
   }
   const disk: Record<string, Entry> = { ...(options.disk ?? {}) }
   if (options.envFails) {
@@ -294,6 +298,8 @@ export function world(
   })
 
   on('fs.stat', async ($, e) => {
+    const size = w.sizes.get(e.path)
+    if (size !== undefined) return { value: { kind: 'file', size, mtimeMs: 0, isLink: false } } as never
     const landed = walk(disk, e.path)
     if (landed === undefined) throw new Error(`ENOENT: ${e.path}`)
     const own = disk[e.path.replace(/\/+$/, '')]
@@ -358,6 +364,9 @@ export function world(
     w.ran.push(`${input.tool}: ${String(input.command ?? input.file_path ?? input.notebook_path ?? '')}`)
     w.calls.push({ ...(e as Record<string, unknown>) })
     if (w.agentCall === 'error') return { isError: true, result: 'boom', text: 'boom' } as never
+    const backgroundTaskId = input.tool === 'Bash' ? w.background.shift() : undefined
+    const text = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: /tasks/${backgroundTaskId}.output. You will be notified when it completes.`
+    if (backgroundTaskId !== undefined) return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId }, text } as never
     return { result: { status: 'completed' } } as never
   })
 

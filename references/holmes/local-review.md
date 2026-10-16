@@ -272,7 +272,7 @@ mode.
 
 Three outcomes, and only three. None of them writes anywhere.
 
-**✅ Approved** — every rubric item met, no hard defect anywhere, and the change
+**✅ Approved** — every rubric item met, no hard defect this repo can fix, and the change
 plus everything belonging to the coherent unit carry no actionable finding.
 
 ```
@@ -285,11 +285,22 @@ plus everything belonging to the coherent unit carry no actionable finding.
 
 ## 📋 Non-blocking follow-ups
 - <observation — `file:line` — why — disposition; or `- None.`>
+
+## Findings for other projects
+- <bug, security, or integrity finding only another repo can fix — `file:line` — owning project; or `- None.`>
 ```
 
 **🔄 Changes requested** — a rubric item is unmet, a hard defect surfaced, or the
-change or its coherent unit carries an actionable finding. Same body as Index
-mode: `## Issues Found`, `## What's Good`, and `## 📋 Non-blocking follow-ups`.
+change or its coherent unit carries an actionable finding. A bug, a security
+problem, or an integrity problem that the workdir's repo can fix is a hard
+defect wherever it lives in that repo: in code the change never touched, in code
+that predates it, and outside the brief's scope. It goes under `## Issues Found`,
+and the verdict is changes requested. A finding that only another repo can fix
+does not hold the verdict. Name it, its location and its owning project in a
+`## Findings for other projects` section, so the orchestrator sends it to that
+project's session. Same body as Index
+mode: `## Issues Found`, `## What's Good`, `## 📋 Non-blocking follow-ups`, and
+`## Findings for other projects`.
 There is no `## Unverified Observations` section, because Local mode has no
 verification cap to overflow (§L3).
 
@@ -306,12 +317,14 @@ number and a few words. The session puts the dispute to the human through
 `AskUserQuestion`, so write each option so it stands without the table. The
 brief is the sender's to amend, not yours.
 
-**Follow-ups are reported, never tracked.** The materiality gate still sorts
-them — unrelated one-off cosmetic, unrelated latent hazard, unrelated
-systemic/substantial debt — but no issue is opened, because no GitHub write
-happens here. A finding that clears the hazard or debt gate is listed as
-**recommended for tracking**, with the reason, and the human decides whether it
-becomes an issue. The one-anchor cap is irrelevant when nothing is minted.
+**Follow-ups are reported, never tracked.** A bug, security, or integrity
+finding is never a follow-up, and never a note with nothing to track: it blocks,
+latent or live, pre-existing or out of scope, when this repo can fix it, and it
+goes to the owning project's session otherwise. The materiality gate sorts only
+the other findings — unrelated one-off cosmetic, unrelated systemic/substantial
+debt — and no issue is opened, because no GitHub write happens here. A finding
+that clears the debt gate is listed as **recommended for tracking**, with the
+reason, and the human decides whether it becomes an issue. The one-anchor cap is irrelevant when nothing is minted.
 
 There is no board item to re-read before writing, because nothing is written to a
 board. The Index-mode freshness check (§5) has no local counterpart.

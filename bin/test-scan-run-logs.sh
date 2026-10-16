@@ -15,6 +15,7 @@ pass=0; fail=0
 ok()  { echo "  ok   — $1"; pass=$((pass+1)); }
 bad() { echo "  FAIL — $1"; fail=$((fail+1)); }
 expect_eq() { if [ "$2" = "$3" ]; then ok "$1"; else bad "$1: expected [$2] got [$3]"; fi; }
+snapshot() { ls -lA "$WORK" | awk '$1 != "total" { print $1, $NF }' | LC_ALL=C sort; find "$WORK" -type f -exec cksum {} + | LC_ALL=C sort; }
 
 RS=$(printf '\036')
 
@@ -59,9 +60,9 @@ ${RS}1	$WORK/watson-5-20261008-110000.log
 done: the work is in review" "$OUT"
 
 echo "— it writes nothing"
-BEFORE=$(ls -la "$WORK")
+BEFORE=$(snapshot)
 awk -f "$AWK" "$WORK"/*.log >/dev/null
-expect_eq "the fixture folder is unchanged" "$BEFORE" "$(ls -la "$WORK")"
+expect_eq "the fixture folder holds the same names, modes and contents" "$BEFORE" "$(snapshot)"
 
 echo
 echo "scan-run-logs: $pass passed, $fail failed"
