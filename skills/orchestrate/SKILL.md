@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Run the dev team (Lestrade, Watson, Holmes) as background sub-agents. Holds the agent routing, the six-slot brief every handoff uses, the commit-approval rule, and GitHub action routing. Read it before picking any sub-agent.
+description: Run the dev team (Lestrade, Watson, Holmes) as background sub-agents. Holds the agent routing, the six-slot brief every handoff uses, and GitHub action routing. Read it before picking any sub-agent.
 when_to_use: Delegating development, triage, or review, or when the user asks to review a PR, comment on an issue, merge a PR, triage an item, or check where work stands. Triggers on "delegate this", "send Watson at", "have the team", "review this PR", "comment on", "merge", "orchestrate", or any multi-step dev task that should run in the background. Read-only research dispatches included, and whenever a dispatch gate refuses a handoff.
 ---
 
@@ -132,31 +132,12 @@ slot: `references/brief-rationale.md`.
 
 ### Direct-mode work comes back uncommitted
 
-**Watson's Direct mode ends in an uncommitted tree, a diff summary, and a
-proposed message.** Committing it is yours, and so is the push.
-
-A prompt the human types that names commit, push, or release approves exactly
-those actions, for the turn that prompt opened. Typed requests skip the prompt
-only in the shapes git-commit lists. A negated, deferred, or question-form
-prompt approves nothing. Only the human's own typed prompts count, not a peer
-session, a channel, a schedule, the SDK, a plugin, or the agent's completion.
-Otherwise, commit
-after a "Commit it" pick in `AskUserQuestion`, once the human says their
-review is done. A pick is the only prompt for its commit and push, in those shapes.
-A pick never approves a release. Offer the commit through `AskUserQuestion`
-alone. Do not offer the commit before then. If an offer does reach the
-human early, "Not yet" leads. Until the review is done, the recommended first
-option is "Not yet" or "Review with Holmes first", and "Commit it" goes last.
-Its description reads: "Picking this confirms you have reviewed the whole
-tree." One commit takes the whole tree, in every lane, not only the agent's
-change. The question carries the branch, the message, and every file the
-commit takes, from `git status`, never from a sub-agent's report. If the tree
-changes after it, ask it again, and drop no file. Stage with `git add -A` on
-its own line, never with the report's paths, then run a commit that names no
-path. Leave out only what must never ship, and tell the human in one sentence.
-A never-ship file stays out only when your reply above the commit call names
-its path. Never send the agent back to commit: only a foreground session
-reaches the human's prompt.
+**Watson's Direct mode ends in an uncommitted tree, a diff summary, the full
+`git status` list, and a proposed message.** You take the uncommitted tree from
+there. The status list can hold files Watson did not make, such as the human's
+own edits, so read the tree itself, never only the report's file list. Never
+send the agent back to commit: the commit guard refuses a sub-agent's commit
+and push.
 
 ## Action routing — Index MCP or gh CLI?
 
@@ -369,19 +350,16 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 - **Decisions come home through `AskUserQuestion`.** Watson's `/develop` skill
   returns a meaningful fork as a graded table and a recommendation. Holmes's
   Local mode returns a rubric dispute the same way. A brief can come back with
-  questions only the human can settle, and a finished Direct-mode tree comes
-  back as a commit offer. Put each one to the human through `AskUserQuestion`,
-  never as prose. The human never sees a hand-back, so the agent's options
-  table, with its grades and recommendation, is context the call needs: show it
-  in the reply, just above the call. It is the one part of a hand-back you show
-  in full. Never ask with a label for options the reply does not show, such as
-  "Option B" or "Watson's option 2". Put the recommended option first, and keep
-  the agent's options and grades unchanged. Each option's description carries
-  its grade and any warning, so the question stands on its own. A commit offer is asked
-  alone, and follows the timing rule under "Direct-mode work comes back
-  uncommitted": "Commit it" never leads before the human says their review is
-  done. A question with no fixed choices still goes through the tool, because
-  the dialog always offers Other. Ask each one right after the context it
+  questions only the human can settle. Put each one to the human through
+  `AskUserQuestion`, never as prose. The human never sees a hand-back, so the
+  agent's options table, with its grades and recommendation, is context the
+  call needs: show it in the reply, just above the call. It is the one part of
+  a hand-back you show in full. Never ask with a label for options the reply
+  does not show, such as "Option B" or "Watson's option 2". Put the recommended
+  option first, and keep the agent's options and grades unchanged. Each
+  option's description carries its grade and any warning, so the question
+  stands on its own. A question with no fixed choices still goes through the
+  tool, because the dialog always offers Other. Ask each one right after the context it
   depends on first appears, with that context in prose just above the call, not
   at the end of the reply. SendMessage the answer back, or re-dispatch
   on an updated brief. The human decides; the team executes.

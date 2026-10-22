@@ -12,8 +12,7 @@ Universal standards for any code implementation work.
 Three lanes run this skill, and several steps below end differently in each.
 Know which one you are in before you start.
 
-- **Foreground session** — a human is in the conversation. You can ask and wait,
-  and you commit only on an approval §5 names.
+- **Foreground session** — a human is in the conversation. You can ask and wait.
 - **Sub-agent** — dispatched through the Agent tool, Watson's Direct mode
   included. No human is reachable, the commit guard refuses every commit and
   push, and you do not merge. You finish with an **uncommitted working tree and a report**:
@@ -230,8 +229,8 @@ The tier, mutation, and doc-drift rules in full: `references/testing.md`.
 ## 5. Commit
 
 **Which lane you are in decides what you may do at all.** Claude Code
-`permissions.ask` rules, installed by `/workbench-dev-team:setup`, prompt the
-human for each commit, push, and merge no typed request covers. The commit
+`permissions.ask` rules, installed by `/workbench-dev-team:setup`, raise a
+permission prompt on each commit, push, and merge. The commit
 guard (`hooks/mods/commit-guard.ts`) refuses what those rules cannot cover. It
 is a mistake-catcher, not a security boundary.
 
@@ -248,26 +247,19 @@ your final report:
 5. Say plainly that the work is uncommitted. A report that reads as finished,
    on a tree that is not, is how a change gets lost.
 
-The report never asks to commit and never invites a commit: prompting the
-human is the orchestrator's job, and so is the commit. An Index-mode run that finds its commits refused was dispatched
+The report never asks to commit and never invites a commit. The orchestrator
+takes the uncommitted tree from there. An Index-mode run that finds its commits refused was dispatched
 without the pipeline flag: report that to the session that dispatched you, and
 stop.
 
-**Foreground session → commit on a typed request, or after a "Commit it" pick
-in `AskUserQuestion`, once the human says their review is done.** A prompt the
-human types that names commit, push, or release approves exactly those actions,
-for the turn that prompt opened. A negated, deferred, or question-form prompt
-approves nothing, and only the human's own typed prompts count. Ask the commit
-question alone, and never lead with "Commit it" before their review is done.
-Typed requests skip the prompt only in the shapes git-commit lists. A
-pick is the only prompt for its commit and push, in those shapes. A pick never
-approves a release. Stage with `git add -A` on its own line, then run a commit
-that names no path. A never-ship file stays out only when your reply above the
-commit call names its path. Read `/workbench-dev-team:git-commit` first.
+**Foreground session → read `/workbench-dev-team:git-commit` before you
+commit.** It holds the message format and the plain-line forms the ask rules
+and the commit guard read.
 
 **Scheduled pipeline → commit and push unattended.** The pipeline never asks
 about committing or pushing, and never waits for approval: board dispatch is
-the approval. `bin/dispatch-agent.sh` marks the pipeline with
+the approval. Split the work into commits as you judge best.
+`bin/dispatch-agent.sh` marks the pipeline with
 `WORKBENCH_DEV_TEAM_PIPELINE=1`. `hooks/scripts/pipeline-scope.sh` answers
 the prompt for one plain `git -C <clone>`, rm, or rmdir line whose every path is
 absolute and stays inside the roots, and nothing else. The roots are all of
@@ -285,10 +277,6 @@ Conventional Commits + Gitmoji. Beyond format:
   `.gitignore`. Hold back a file with a secret, and tell the human.
 - **Confirm you're on a feature branch** (not `main`/`master`/`trunk`) before
   pushing.
-- **One commit takes the whole tree, in every lane.** Never split it unasked or
-  ask which files go in. The commit question lists every file. If the tree
-  changes after it, ask again, and drop no file. Leave out only what must never
-  ship, and tell the human in one sentence.
 - **Never force-push** to a shared branch.
 - **Never amend** an already-pushed commit. If you need to change something,
   add a new commit.

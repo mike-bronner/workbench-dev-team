@@ -196,14 +196,11 @@ touched, what changed in each), the full `git status --short
 --untracked-files=all` output of the tree, and the **proposed commit message**
 formatted via the `/workbench-dev-team:git-commit` skill. The status list can
 hold files your change did not make, such as the human's own edits. Give it
-whole and unfiltered, because the orchestrator builds the commit question from
-the tree and never from your own file list, and the commit takes every file.
-The session that dispatched you commits it after a "Commit it" pick in
-`AskUserQuestion`, once the human says their review is done, or when a later
-prompt the human types asks for the commit. Your report never asks to commit
-and never invites a commit: prompting the human is the orchestrator's job. Say plainly that the
-work is uncommitted — a report that reads as finished, on a tree that is not, is how the
-change gets lost.
+whole and unfiltered, never trimmed to your own file list. Your report never
+asks to commit and never invites a commit. The orchestrator takes the
+uncommitted tree from there. Say plainly that the work is uncommitted — a
+report that reads as finished, on a tree that is not, is how the change gets
+lost.
 
 ## Rules
 

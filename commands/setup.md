@@ -718,15 +718,9 @@ summary.
 
 ## Step 6.6 — Install the commit, push, and merge ask rules
 
-The approval is the human's own typed prompt that names the action, or a
-"Commit it" pick in `AskUserQuestion`, once the human says their review is
-done. Claude Code's
-own permission prompt is the mechanical backstop on every commit, push, and
-pull request merge, except the plain shapes a typed request or a "Commit it"
-pick covers, which
-workbench-core's permission hook answers (the `git-commit` skill lists them).
-This step adds ten `permissions.ask` rules to
-`~/.claude/settings.json`:
+These rules raise Claude Code's own permission prompt on every commit, push,
+and pull request merge, as the mechanical backstop. This step adds ten
+`permissions.ask` rules to `~/.claude/settings.json`:
 
 - `Bash(git commit *)`
 - `Bash(git push *)`

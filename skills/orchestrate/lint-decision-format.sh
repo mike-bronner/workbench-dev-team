@@ -1,7 +1,4 @@
 #!/bin/bash
-# Every decision that reaches Mike is a graded table, every one that comes back
-# into a session reaches him through AskUserQuestion, and a commit offer never
-# leads with "Commit it" before his review is done.
 # Run directly: bash skills/orchestrate/lint-decision-format.sh
 #
 # A LINTER, not a test: it greps English prose in the shipped Markdown and runs
@@ -12,9 +9,7 @@
 # screen, and a decision relayed as prose left him to scroll back for it. The
 # Clear output style (workbench-core rules 4 and 6) asks for one table with the
 # columns Option, Pros, Cons, and Grade, and for AskUserQuestion on every
-# decision. A commit offer is the exception to "recommended first": a "Commit
-# it" click offered as review starts would approve a tree Mike has not finished
-# reading, so the vault rule that approval follows his review is pinned here.
+# decision.
 #
 # Checks:
 #   1. No shipped Markdown carries a per-option heading or a pros/cons list
@@ -27,15 +22,6 @@
 #      recommendation, and is written for AskUserQuestion.
 #   4. Watson's blocked-fork comment uses the table and a recommendation.
 #   5. The develop skill puts the recommendation after the table.
-#   6. The orchestrate skill brings every returned fork, rubric dispute,
-#      human-only question, and commit offer home through AskUserQuestion, and
-#      no longer relays them untouched.
-#   7. The commit offer: asked alone, "Not yet" or the Holmes review first until
-#      the review is done, "Commit it" last, and its description confirms the
-#      review. No shipped text lists "Commit it" ahead of another option.
-#   8. Every commit-approval line uses one wording: a "Commit it" pick in
-#      AskUserQuestion. The boundary holds:
-#      a sub-agent never commits or pushes, and the prompt is the backstop.
 #  8a. A sub-agent never asks to commit, and no report template invites one.
 #  8b. Index-mode development never asks, offers, or waits for approval to
 #      commit or push.
@@ -50,10 +36,6 @@ bad() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; }
 has() { [[ $1 == *"$2"* ]]; }
 check() { if has "$1" "$2"; then ok "$3"; else bad "$4"; fi; }
 TABLE='| Option | Pros | Cons | Grade |'
-APPROVAL='a "Commit it" pick in `AskUserQuestion`, once the human says their review is done'
-TYPED='approves exactly those actions, for the turn that prompt opened'
-NEGATED='A negated, deferred, or question-form prompt approves nothing'
-OWN='own typed prompts count'
 
 # The text from the line holding $2 up to the line holding $3, joined into one
 # line with comment leaders and runs of spaces collapsed, because prose wraps.
@@ -144,7 +126,7 @@ if [ -n "$s" ]; then
   check "$s" 'show it in the reply, just above the call' "orchestrate shows the agent's table in the reply before the call" "orchestrate — the agent's options table no longer goes in the reply before the call"
   check "$s" 'with its grades and recommendation' "orchestrate shows the table with its grades and recommendation" "orchestrate — the shown table lost its grades and recommendation"
   check "$s" 'Never ask with a label for options the reply does not show' "orchestrate bans a label for options the reply does not show" "orchestrate — lost 'Never ask with a label for options the reply does not show'"
-  for kind in 'fork' 'rubric dispute' 'questions only the human can settle' 'commit offer' 'never as prose' 'grade' 'warning' 'recommended option first'; do
+  for kind in 'fork' 'rubric dispute' 'questions only the human can settle' 'never as prose' 'grade' 'warning' 'recommended option first'; do
     check "$s" "$kind" "orchestrate decisions bullet names: $kind" "orchestrate — the decisions bullet lost: $kind"
   done
 fi
@@ -154,112 +136,38 @@ else
   ok "orchestrate no longer relays forks as prose"
 fi
 
-# 7. The commit offer's timing and ordering.
 section skills/git-commit/SKILL.md '## Committing and pushing' '**Run it as a plain git line' git-commit
 gc="$s"
 section skills/orchestrate/SKILL.md '### Direct-mode work comes back uncommitted' '## Action routing' orchestrate
 oc="$s"
-for pair in "git-commit:$gc" "orchestrate:$oc"; do
-  name="${pair%%:*}"; t="${pair#*:}"
-  [ -n "$t" ] || continue
-  check "$t" 'Offer the commit through `AskUserQuestion`' "$name offers the commit through AskUserQuestion" "$name — the commit offer no longer goes through AskUserQuestion"
-  check "$t" 'alone' "$name asks the commit question alone" "$name — the commit question is no longer asked alone"
-  check "$t" 'the recommended first option is "Not yet" or' "$name leads with Not yet until the review is done" "$name — the commit offer no longer leads with Not yet before the review is done"
-  check "$t" '"Commit it" goes last' "$name puts Commit it last before the review is done" "$name — Commit it is no longer last before the review is done"
-  check "$t" '"Picking this confirms you have reviewed the whole tree."' "$name's Commit it description confirms the review" "$name — the Commit it description no longer confirms the review"
-  check "$t" 'Do not offer the commit before then. If an offer does reach the human early, "Not yet" leads.' "$name forbids an early offer" "$name — lost 'Do not offer the commit before then'"
-done
-[ -n "$gc" ] && check "$gc" 'Never bundle' "git-commit forbids bundling the commit question" "git-commit — lost 'Never bundle' for the commit question"
-# "Commit it" ahead of "Not yet" in one sentence, or in one block of list items
-# (bullets, numbered items, or table rows), in any shipped Markdown or script.
-early="$(shipped '*.md' '*.sh' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
-  next if $ARGV =~ m{lint-decision-format\.sh$|/testdata/};
-  my $ahead = qr/\bCommit\s+it\b.*?\bNot\s+yet\b/s;
-  for my $block (/((?:^[ \t]*(?:[-*+]\s|\d+[.)]\s|\|)[^\n]*\n?)+)/mg) { print "$ARGV: list\n" if $block =~ $ahead }
+APPROVAL_PL='
+  next if $ARGV =~ m{/testdata/};
   (my $t = $_) =~ s/\s+/ /g;
-  for my $s (split /(?<=[.!?])\s+/, $t) { print "$ARGV: $s\n" if $s =~ $ahead }
-  close ARGV'))"
-if [ -z "$early" ]; then ok "no shipped text lists Commit it ahead of another option"; else bad "Commit it listed first in: $early"; fi
-
-# 8. One approval wording, and the boundary it must not move.
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md agents/watson.md README.md commands/setup.md; do
-  joined="$(sed -E 's/^[[:space:]]*(#|\/\/) ?//' "$ROOT/$f" | tr '\n' ' ' | tr -s ' ')"
-  check "$joined" "$APPROVAL" "$f uses the shared approval wording" "$f — no line carries: $APPROVAL"
-done
-check "$RULES_TEXT" "$APPROVAL" "the session rules use the shared approval wording" "session rules — no line carries: $APPROVAL"
-STALE_PL='
-  next if $ARGV =~ m{lint-decision-format\.sh$|/testdata/};
-  (my $t = $_) =~ s/\n\s*(?:#|\/\/)?\s*/ /g;
-  for my $sentence (split /(?<=[.!?])\s+/, $t) {
-    next unless $sentence =~ /\btyped\b|\bin chat\b/i;
-    next unless $sentence =~ /commit/i;
-    next unless $sentence =~ /(?:does|do) not count|doesn.t count|not a typed/i;
-    print "$ARGV: $sentence\n";
+  for my $s (split /(?<=[.!?])\s+/, $t) {
+    print "$ARGV: $s\n" if $s =~ /"Commit it"|\bCommit it\b.*\bpick\b|"Not yet"|approves exactly those actions|typed prompts? (?:count|approves?)|never approves a release|only prompt for its commit|commit question|\b(?:the|a) commit offer|\bapprov\w*\b[^.]*\b(?:covers?|includes?|extends? to)\b[^.]*\bpush|\b(?:typed|types|prompt)\b[^.]*\bapproves?\b|\bapproves? (?:(?:a|the|one|each|every|its|that) )?(?:commit|push|release)|\bpick\b[^.]*\b(?:approv|cover)\w*[^.]*\bpush|\bpush of (?:that|its|the) commit/i;
   }
   close ARGV'
-stale="$(shipped '*.md' '*.sh' '*.json' '*.ts' | (cd "$ROOT" && xargs -0 perl -0777 -ne "$STALE_PL"))"
-stale="$stale$(printf '%s' "$RULES_TEXT" | perl -0777 -ne "$STALE_PL" | sed 's|^-: |session rules: |')"
-if [ -z "$stale" ]; then ok "no text says a typed request for a commit does not count"; else bad "a typed request still does not count in: $stale"; fi
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md skills/develop/SKILL.md README.md; do
-  joined="$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')"
-  check "$joined" "$TYPED" "$f scopes a typed request to its turn" "$f — no line carries: $TYPED"
-  check "$joined" "$NEGATED" "$f says a negated or question prompt approves nothing" "$f — no line carries: $NEGATED"
-  check "$joined" "$OWN" "$f counts only the human's own typed prompts" "$f — no line carries: $OWN"
+for fixture in 'A "Commit it" pick approves one commit.' 'A pick approves the commit and the push of that commit.' 'A prompt the human types that names commit approves exactly those actions.' 'Ask the commit question alone.' 'Only the human'"'"'s own typed prompts count.' 'A pick never approves a release.' 'A commit approval also covers the push.' 'A typed request approves a release.' 'A prompt the human types approves a commit.'; do
+  [ -n "$(printf '%s' "$fixture" | perl -0777 -ne "$APPROVAL_PL")" ] && ok "the approval check flags: $fixture" || bad "the approval check misses: $fixture"
 done
-for want in "$TYPED" "$NEGATED" "$OWN"; do
-  check "$RULES_TEXT" "$want" "the session rules carry: $want" "session rules — no line carries: $want"
+for fixture in 'The orchestrator takes the uncommitted tree from there.' 'Index-mode development commits and pushes unattended.' 'The human picks them.' 'Holmes approves the PR when every criterion is met.' 'Pick a branch, then push it.' 'The pipeline never waits for approval: board dispatch is the approval.'; do
+  [ -z "$(printf '%s' "$fixture" | perl -0777 -ne "$APPROVAL_PL")" ] && ok "the approval check passes: $fixture" || bad "the approval check flags a clean line: $fixture"
 done
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md README.md; do
-  check "$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')" 'a peer session, a channel' "$f: a peer, channel, or schedule turn approves nothing" "$f — no longer says a peer, channel, or schedule turn approves nothing"
-done
+restated="$(shipped '*.md' '*.txt' | (cd "$ROOT" && xargs -0 perl -0777 -ne "$APPROVAL_PL"))"
+restated="$restated$(printf '%s' "$RULES_TEXT" | perl -0777 -ne "$APPROVAL_PL" | sed 's|^-: |session rules: |')"
+if [ -z "$restated" ]; then ok "no shipped text or session rule restates core's commit approval"; else bad "core's commit approval is restated in: $restated"; fi
 
-for f in skills/git-commit/SKILL.md skills/orchestrate/SKILL.md README.md; do
-  check "$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')" 'never from a sub-agent' "$f builds the file list from git status, not a report" "$f — no longer says the file list never comes from a sub-agent's report"
-done
-check "$RULES_TEXT" "rather than from a sub-agent's report" "the session rules list files from git status, not a report" "session rules — no longer list files from git status rather than a report"
 for f in agents/watson.md agents/watson-direct.md; do
   joined="$(tr '\n' ' ' < "$ROOT/$f" | tr -s ' ')"
   check "$joined" 'the full `git status --short --untracked-files=all` output of the tree' "$f hands back the whole status list" "$f — the hand-back no longer carries the full git status list"
-  check "$joined" 'never from your own file list' "$f says the orchestrator never commits from its file list" "$f — no longer says the commit question never comes from its own file list"
+  check "$joined" 'never trimmed to your own file list' "$f hands back the status list untrimmed" "$f — no longer says the status list is never trimmed to its own file list"
+  check "$joined" 'The orchestrator takes the uncommitted tree from there.' "$f leaves the tree to the orchestrator" "$f — no longer says the orchestrator takes the uncommitted tree"
 done
-[ -n "$oc" ] && check "$oc" 'never with the report'"'"'s paths' "orchestrate stages the tree, not the report's paths" "orchestrate — no longer forbids staging the report's paths"
+[ -n "$oc" ] && check "$oc" "read the tree itself, never only the report's file list" "orchestrate reads the tree, not the report's file list" "orchestrate — no longer reads the tree itself rather than the report's file list"
+check "$RULES_TEXT" 'The orchestrator takes the uncommitted tree from there.' "the session rules leave the tree to the orchestrator" "session rules — no longer say the orchestrator takes the uncommitted tree"
 
-for pair in "git-commit:$gc" "orchestrate:$oc" "develop:$(tr '\n' ' ' < "$ROOT/skills/develop/SKILL.md" | tr -s ' ')" "session rules:$RULES_TEXT"; do
-  name="${pair%%:*}"; t="${pair#*:}"
-  for want in 'A pick never approves a release' \
-              'Stage with `git add -A` on' 'its own line' 'run a commit that names no path' \
-              'A never-ship file stays out only when your reply above the commit call names its path'; do
-    check "$t" "$want" "$name carries: $want" "$name — no line carries: $want"
-  done
-done
-for pair in "orchestrate:$oc" "develop:$(tr '\n' ' ' < "$ROOT/skills/develop/SKILL.md" | tr -s ' ')" "session rules:$RULES_TEXT"; do
-  check "${pair#*:}" 'Typed requests skip the prompt only in the shapes git-commit lists' "${pair%%:*} limits the skipped prompt to git-commit's shapes" "${pair%%:*} — lost 'Typed requests skip the prompt only in the shapes git-commit lists'"
-  check "${pair#*:}" 'A pick is the only prompt for its commit and push, in those shapes' "${pair%%:*} makes the pick the only prompt for its commit and push" "${pair%%:*} — lost 'A pick is the only prompt for its commit and push, in those shapes'"
-done
-for want in 'Under a typed request or an unused "Commit it" pick, workbench-core'"'"'s permission hook answers that prompt only for these shapes' \
-            'The pick is the only prompt for the commit it approved and that commit'"'"'s push, in the plain shapes above' \
-            '`gh release create` for this repository, under a typed request only' \
-            'A commit as a plain `git commit`, or as `git -C <path> commit` with the path inside the project or one of its worktrees' \
-            'A push as a plain `git push`, or as a push of the current branch to its own remote, plus the release tag' \
-            '`gh release create` for this repository' \
-            'Every other shape still gets the prompt, and that is the backstop working' \
-            '`-c` or `--exec-path`, and a commit with `--amend` or `--no-verify`' \
-            'a push to another host, another branch or refspec, and `--tags`' \
-            '`-R` or `--repo` naming another repository' \
-            'A commit never shares its line with `git reset`, `git restore --staged`, or `git rm --cached`'; do
-  check "$(tr '\n' ' ' < "$ROOT/skills/git-commit/SKILL.md" | sed 's/^ *- //' | tr -s ' ')" "$want" "git-commit carries: ${want:0:60}" "git-commit — no line carries: $want"
-done
-over="$(shipped '*.md' '*.ts' | (cd "$ROOT" && xargs -0 perl -0777 -ne '
-  next if $ARGV =~ m{lint-decision-format\.sh$};
-  (my $t = $_) =~ s/\s+/ /g;
-  print "$ARGV: $&\n" while $t =~ /No permission prompt appears for an action the typed request named|pick-approved commit still meets|push prompt asks the human|lets the prompt ask you|pick does not reach that hook/g;
-  close ARGV'))"
-if [ -z "$over" ]; then ok "no text says every typed action skips the prompt, or that a pick meets a second prompt"; else bad "a text overstates the typed skip or puts a second prompt after a pick: $over"; fi
-[ -n "$gc" ] && check "$gc" 'a peer session, a channel, a schedule, the SDK, or a plugin' "git-commit names every turn that does not count" "git-commit — the list of turns that do not count changed"
-[ -n "$oc" ] && check "$oc" 'a peer session, a channel, a schedule, the SDK, a plugin, or the agent'"'"'s completion' "orchestrate names the same turns as git-commit" "orchestrate — the list of turns that do not count no longer matches git-commit"
 GC_ALL="$(tr '\n' ' ' < "$ROOT/skills/git-commit/SKILL.md" | tr -s ' ')"
 check "$GC_ALL" 'A push that forces or deletes remote refs (`--force`, `-f`, a `+` refspec, `--mirror`, `--delete`, `-d`, a `:branch` refspec, `--prune`) is refused outright.' "git-commit keeps force push blocked in every lane" "git-commit — lost the rule that a push that forces or deletes is refused outright"
-check "$(tr '\n' ' ' < "$ROOT/skills/git-commit/SKILL.md" | tr -s ' ')" 'Run one commit, push, or release per line' "git-commit runs one commit, push, or release per line" "git-commit — lost 'Run one commit, push, or release per line'"
 NOPATH_PL='
   my $t = $_;
   my @cmds;
@@ -323,7 +231,7 @@ if printf '%s' "$index_text" | grep -Eqi 'AskUserQuestion|Commit it|approval to 
 else
   ok "no Index-mode path asks, offers, or waits for commit or push approval"
 fi
-[ -n "$gc" ] && check "$gc" 'mechanical backstop, not the' "git-commit keeps the permission prompt as the backstop" "git-commit — the permission prompt is no longer the backstop"
+[ -n "$gc" ] && check "$gc" 'as the mechanical backstop' "git-commit keeps the permission prompt as the backstop" "git-commit — the permission prompt is no longer the backstop"
 [ -n "$oc" ] && check "$oc" 'Never send the agent back to commit' "orchestrate still keeps the commit away from the sub-agent" "orchestrate — lost 'Never send the agent back to commit'"
 
 # 9. The README names every lint script, with the right count.

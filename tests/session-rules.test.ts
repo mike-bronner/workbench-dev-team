@@ -115,10 +115,11 @@ describe('AC2: the dev-team section is byte-identical across a reload, a notices
     expect(RULES).toBe(RULES.trim())
   })
 
-  test('the rules keep their pinned bytes, with the turn-scoped commit approval of 2026-10-15', () => {
-    expect(RULES.length).toBe(2131)
-    expect(fingerprint(RULES)).toBe('5a463d5e')
-    expect(RULES).toContain('approves exactly those actions, for the turn that prompt opened')
+  test('the rules keep their pinned bytes, and leave commit approval to workbench-core as of 2026-10-22', () => {
+    expect(RULES.length).toBe(1141)
+    expect(fingerprint(RULES)).toBe('ae1f185c')
+    expect(RULES).toContain('The orchestrator takes the uncommitted tree from there.')
+    expect(RULES).not.toMatch(/Commit it|approv|\bpicks?\b|typed|AskUserQuestion|release|whole tree|one commit/i)
   })
 })
 
