@@ -6,7 +6,7 @@ import path from 'node:path'
 import { fileURLToPath, pathToFileURL } from 'node:url'
 
 const HERE = path.dirname(fileURLToPath(import.meta.url))
-const NEEDS = ['hooks/mods/shell.ts', 'hooks/mods/prompt-rules.ts', 'hooks/mods/destructive-scope.ts', 'tests/commit-corpus.ts', 'tests/shell-cases.ts', 'scripts/omit-claude-md-check.py']
+const NEEDS = ['hooks/mods/shell.ts', 'hooks/mods/prompt-rules.ts', 'hooks/mods/destructive-scope.ts', 'hooks/mods/commit-guard.ts', 'hooks/mods/commit-subject.ts', 'tests/commit-corpus.ts', 'scripts/omit-claude-md-check.py']
 
 const holdsCore = dir => NEEDS.every(file => fs.existsSync(path.join(dir, file)))
 

@@ -1,77 +1,6 @@
 // workbench-dev-team's hooks module, beside the command hooks in hooks.json.
 // It builds on workbench-core's $.workbench noun (dependencies in plugin.json).
 //
-//   agent.spawn    one dispatch of an agent, in order:
-//                  1. the dispatch gate: a main-session dispatch whose brief
-//                     lacks a slot is refused, as workbench-core's own gate
-//                     (its hooks/mods/dispatch.ts, through checkBrief) refuses
-//                     it, and so is one whose brief cannot be checked
-//                  2. the helper rule: a spawn Holmes makes, in any mode, runs
-//                     on holmes-lens whatever type it named, and a fork or a
-//                     teammate of his is refused
-//                  3. the workspace check: a gated Watson Direct-mode brief
-//                     whose Workdir: is a bare path, on a repo on main, master
-//                     or trunk, is refused with an ask-for-a-branch reason
-//                  4. routing: a dispatch of watson, holmes or lestrade runs the
-//                     mode agent its token picks (bin/compose-agents.sh builds
-//                     them), so the public names keep working
-//                  5. model and effort from the plugin's /config rows (its
-//                     options), and for holmes-local, holmes-index and
-//                     lestrade-item the config line (fanout, lensModel) added
-//                     to the prompt
-//                  Each dev-team agent's type is kept by its agentId.
-//   prompt.submit  the config line, as context, for the top-level loop of a
-//                  `claude -p --agent` run of those three modes: the run
-//                  bin/dispatch-agent.sh starts raises no agent.spawn
-//   turn.step      applies the effort step 5 recorded, to that sub-agent's
-//                  loop, and measures each dev-team request's working context
-//                  against the budget, notifying the human once per run
-//   turn.complete  deletes the run's scratch folder unless a child it spawned is
-//                  still live, and resets its budget notice
-//   session.end    deletes every scratch folder the mod still records, within
-//                  the end's short time budget: a run whose last turn ended
-//                  with a live child, and was never resumed, left one
-//   session.start  registers /dev-team-runs and /dev-team-board, and restarts
-//                  the panes' refresh timer when a reload finds a pane open
-//   command.run    those two commands open their pane (mods/panes.tsx)
-//   ui.render      draws the two panes, each read-only:
-//                  - runs: the newest dispatch logs (mods/runs.ts), read again
-//                    every 15 s while the pane is open
-//                  - board: The Index's three lanes from bin/dispatch-tick.sh
-//                    --board (mods/board.ts), fetched when the pane opens and
-//                    then once per dispatch cadence at most, and the items the
-//                    breaker escalated, from the log folder
-//   tool.call      on Bash, Edit, Write and NotebookEdit, before the call:
-//                  1. scratch: a dev-team agent's bare mktemp is pointed at a
-//                     folder of its own under a scratch root (mods/scratch.ts)
-//                  2. the commit guard (mods/commit-guard.ts), on every Bash
-//                     line in every lane: a forced or deleting push, a merge by
-//                     an agent or the pipeline, a sub-agent's commit or push,
-//                     and a commit, push or merge the ask rules cannot see
-//                  3. the commit subject check (mods/commit-subject.ts) on
-//                     every commit the guard lets through
-//                  4. the review guard (mods/review-guard.ts): a Holmes
-//                     reviewer, or anything he spawned, writes only in scratch
-//                  The guards read the line through $.workbench.parseShell,
-//                  take the lane from $.workbench.callerLane and isUnattended,
-//                  and refuse the call when they throw.
-//                  On Agent, from the main session (mods/dispatch.ts): a Watson
-//                  `Item ID: <n>` call runs bin/dispatch-agent.sh in its place
-//                  and answers with the dispatcher's first line, and a dev-team
-//                  call that did not ask for the foreground runs in the
-//                  background. After the call ran: the gate's advisory hint on
-//                  a complete brief that dictates method.
-//   prompt.compose the dev-team session rules (mods/session-rules.ts) as one
-//                  shared system-prompt section, in every lane but
-//                  WORKBENCH_SKIP_WARMUP=1: after workbench-core's sections
-//                  when this hook wraps core's, before them when core's wraps
-//                  this one
-//   classic.SubagentStart
-//                  the same rules as context at a sub-agent's start, as
-//                  workbench-core gives its own, unless the agent is a fork,
-//                  whose inherited prompt already holds the section, or its
-//                  type leaves CLAUDE.md out
-//
 // The logic is pure and lives in mods/. Every hook that touches `$` lives in
 // this file, because the engine follows `$` into no imported function, and a
 // plugin registers each event once.
@@ -92,13 +21,10 @@ import type { RunsView } from '../types'
 import { BOARD_TIMEOUT_MS, EMPTY_BOARD, afterFetch, boardArgv, boardOutcome, cadenceMsOf, escalatedOf, isDue } from './mods/board'
 
 import { budgetNotice, contextOf, isOverBudget } from './mods/budget'
-import { commitVerdict } from './mods/commit-guard'
-import type { ShellParse } from './mods/commit-guard'
-import { subjectVerdict } from './mods/commit-subject'
 import { DISPATCH_CONTEXT, dispatchDeny, dispatcherArgv, dispatchOutcome, dispatchResult, indexDispatchOf, isForcedBackground } from './mods/dispatch'
 import { outputOf, stopBlockOf, withStarted } from './mods/helper-wait'
 import type { Activity, Watch } from './mods/helper-wait'
-import type { Disk } from './mods/review-guard'
+import type { Disk, ShellParse } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
 import { BOARD_PANE, RUNS_PANE, boardTree, runsTree } from './mods/panes'
 import type { LogEnd } from './mods/runs'
@@ -113,24 +39,18 @@ import {
   branchUnreadDeny,
   configLineOf,
   configTextOf,
-  denyOf,
   familyOf,
-  hintOf,
   isDevTeamType,
   isGated,
   isHolmesMode,
   knobsOf,
   lensSpawnOf,
   modeTypeOf,
-  uncheckedDeny,
+  spawnFailedDeny,
   withConfigLine,
   workdirOf,
 } from './mods/spawn'
 
-// Whether the dispatch gate judges a call made in the loop `agentId` names.
-// The lane rejects while it is unknown; a gate then reads it as the main
-// session, so the brief is still checked. orchestratorIsOn already fails toward
-// on, and its .catch does the same.
 async function gated($: EngineInterface, agentId: string | undefined): Promise<boolean> {
   const lane = await $.workbench.callerLane(agentId === undefined ? {} : { agentId }).catch(() => 'main' as const)
   const isOn = await $.workbench.orchestratorIsOn().catch(() => true)
@@ -319,7 +239,7 @@ async function runDispatcher($: EngineInterface, itemId: string, prompt: string)
 const GUARDED: ReadonlySet<string> = new Set(['Bash', 'Edit', 'Write', 'NotebookEdit'])
 
 const GUARD_FAILED =
-  '🛑 Blocked: a call the guards could not judge.\n\nworkbench-dev-team. The commit guard or the review guard failed while reading this call, so it is refused rather than let an unread commit, push, merge, or write through. Report this to the human as a guard defect. Do not try another spelling.'
+  '🛑 Blocked: a call the review guard could not judge.\n\nworkbench-dev-team. The review guard failed while reading this call, so it is refused rather than let an unread write through. Report this to the human as a guard defect. Do not try another spelling.'
 
 // The input fields the guards read. The engine types them per tool; these are
 // read as unknown, so a field of the wrong type is judged as absent.
@@ -377,21 +297,11 @@ async function reviewDeny($: EngineInterface, e: GuardInput, parse: ShellParse |
   return finding === undefined ? undefined : refusalOf(finding, roots)
 }
 
-// The guards on one call: the commit guard and the subject check on a Bash line
-// in every lane, then the review guard when a reviewer makes the call, or when
-// who makes it cannot be told and the call writes outside scratch.
 async function guard($: EngineInterface, e: GuardInput): Promise<string | undefined> {
   const lane = await $.workbench.callerLane(e.agentId === undefined ? {} : { agentId: e.agentId }).catch(() => undefined)
-  let parse: ShellParse | undefined
-  if (e.tool === 'Bash') {
-    const line = typeof e.command === 'string' ? e.command : ''
-    parse = await $.workbench.parseShell(line)
-    const isUnattended = await $.workbench.isUnattended().catch(() => true)
-    const refused = commitVerdict(parse, line, { lane, isUnattended }) ?? subjectVerdict(parse)
-    if (refused !== undefined) return refused.deny
-  }
   const reviewer = await isReviewer($, e.agentId, lane)
   if (reviewer === false) return undefined
+  const parse = e.tool === 'Bash' ? await $.workbench.parseShell(typeof e.command === 'string' ? e.command : '') : undefined
   const deny = await reviewDeny($, e, parse)
   if (deny === undefined || reviewer) return deny
   return `${deny}\n\nThe guard could not tell which agent made this call, so it held the call to the reviewer's rule. Report this to the human as a guard defect.`
@@ -551,27 +461,11 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // The gate fails closed: a dispatch it judges whose brief cannot be checked
-  // is refused, and so is one whose gate throws before next is called.
-  // workbench-core is a declared dependency, so a check that rejects is a
-  // fault, and /orchestrator off is the way past it. The helper rule and the
-  // workspace check are refusals too, and each says how it fails below. What
-  // follows them (the config, the routing) is not a guard: when it fails, the
-  // dispatch goes on unchanged, unrouted and on the agent file's own model,
-  // which is how the public type runs without this module.
   on('agent.spawn', async ($, e, next) => {
     // Only the model's own Agent calls are judged, the ones core's gate sees.
     // A plugin's $.agent.spawn is the plugin's implementation, not a handoff.
     const isModel = next.origin.plugin === 'engine'
     const isGatedCall = isModel && (await gated($, e.parentAgentId))
-    if (isGatedCall) {
-      const check = await $.workbench.briefCheck(e.prompt).catch(() => undefined)
-      if (check === undefined) return { deny: uncheckedDeny() }
-      if (!check.isComplete) {
-        const slots = await $.workbench.briefSlots().catch(() => [])
-        return { deny: denyOf(check.missing, slots) }
-      }
-    }
 
     // The helper rule. A spawner the mod cannot name is let through: the
     // review guard still holds every write by anything Holmes spawned.
@@ -626,7 +520,7 @@ export const register: Register = (on, options) => {
       }
     }
     return result
-  }).catch(($, e, next) => (next.called ? next(e) : { deny: uncheckedDeny() }))
+  }).catch(($, e, next) => (next.called ? next(e) : { deny: spawnFailedDeny() }))
 
   // The dev-team session rules: a shared section in the main loop's system
   // prompt, and context at a sub-agent's start.
@@ -692,9 +586,6 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
-  // One tool.call hook, since a plugin registers each event once. A guard that
-  // throws refuses the call (fail closed), a scratch rewrite that fails leaves
-  // the line as written, and the hint's failure leaves the call as it ran.
   on('tool.call', async ($, e, next) => {
     const done = begin(e.agentId)
     try {
@@ -720,12 +611,7 @@ export const register: Register = (on, options) => {
           if (isForcedBackground(e.subagent_type, e.run_in_background)) call = { ...e, run_in_background: true }
         }
       }
-      const result = await next(call)
-      if (result.deny !== undefined || result.isError || !isModel) return result
-      if (typeof e.prompt !== 'string' || !(await gated($, e.agentId))) return result
-      const check = await $.workbench.briefCheck(e.prompt).catch(() => undefined)
-      const hint = check === undefined ? undefined : hintOf(check, e.prompt)
-      return hint === undefined ? result : { ...result, context: [...(result.context ?? []), hint] }
+      return await next(call)
     } finally {
       done()
     }

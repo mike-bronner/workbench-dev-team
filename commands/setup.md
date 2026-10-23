@@ -93,9 +93,8 @@ its own token and fetches The Index with `curl` and `jq`, through
 `jq` is also here because the pipeline's permission hook
 (`hooks/scripts/pipeline-scope.sh`) reads its payload with it, and without it
 the hook allows nothing, so a missing tool blocks the pipeline rather than
-letting it through unchecked. The commit guard and the review guard run in the
-plugin's hooks module, on workbench-core's `$.workbench` noun, and need no host
-tool.
+letting it through unchecked. The review guard runs in the plugin's hooks
+module, on workbench-core's `$.workbench` noun, and needs no host tool.
 
 If any prerequisite is missing, stop and tell the user how to install it
 (`brew install gh jq` for the common case; `security` and `curl` ship with
@@ -716,147 +715,6 @@ fi
 Carry `ATTR_RESULT` (`suppressed` or `default (visible)`) into the Step 8
 summary.
 
-## Step 6.6 — Install the commit, push, and merge ask rules
-
-These rules raise Claude Code's own permission prompt on every commit, push,
-and pull request merge, as the mechanical backstop. This step adds ten
-`permissions.ask` rules to `~/.claude/settings.json`:
-
-- `Bash(git commit *)`
-- `Bash(git push *)`
-- `Bash(git * commit *)`
-- `Bash(git * push *)`
-- `Bash(git * commit)`
-- `Bash(git * push)`
-- `Bash(gh pr merge:*)`
-- `Bash(gh * pr merge *)`
-- `Bash(gh * pr merge)`
-- `Bash(gh api *pulls/*/merge*)`
-
-The mid-rule `*` forms catch `git -C <dir> push`, `git -c <key>=<value>
-commit`, and `gh -R <owner/repo> pr merge <n>`. A trailing ` *` also matches
-the bare command only when it is the rule's only wildcard, so each mid-rule form
-has a twin with no trailing `*`. `git * push` catches a bare
-`git -C <dir> push`, `git * commit` a bare `git -C <dir> commit`, and
-`gh * pr merge` a bare `gh -R <owner/repo> pr merge`, which merges the current
-branch's pull request. `gh pr merge:*` is the rule
-workbench-core's setup also installs, so the two do not duplicate. The last rule
-catches a merge through the REST API. An ask rule applies to every subcommand of
-a compound command, including `$( … )`, subshells, and loop bodies. It is
-checked before auto mode and before `bypassPermissions`, and the harness strips
-`timeout`, `time`, `nice`, `nohup`, `stdbuf`, `command`, `builtin`, and
-`noglob` before it matches. Some reads prompt too: `git stash push`,
-`git log --grep commit`, and a `gh api` read of `pulls/<n>/merge`. The commit
-guard refuses the git ones outright for a sub-agent.
-
-The rules do not see a commit, push, or merge behind `bash -c`, `sh -c`, `env`,
-`eval`, a leading `NAME=value` such as `HUSKY=0`, or a program named by its
-path. The plugin's commit guard (`hooks/mods/commit-guard.ts`, in its hooks
-module) refuses those forms and asks for the plain line. It also refuses a
-sub-agent's commit or push, any merge by a sub-agent or by the pipeline, and any
-push that forces or deletes.
-
-**This is a mistake-catcher, not a security boundary.** A script file, an
-interpreter such as `python3 -c`, or a shell alias gets past the rules and the
-guard alike. The design stops an honest agent that moves too fast. It does not
-stop an agent that sets out to evade it.
-
-**The scheduled pipeline still commits unattended.** Each run starts with
-`--permission-mode auto --permission-prompts none`, so the auto-mode classifier
-judges what no rule decides, and a prompt nobody answers is denied. An ask rule
-is matched before the classifier, so a commit or push still prompts. The
-plugin's `PermissionRequest` hook (`hooks/scripts/pipeline-scope.sh`)
-answers a pipeline prompt with "allow", and only when
-`WORKBENCH_DEV_TEAM_PIPELINE=1` is in its own environment. It allows one plain
-`git -C <dir>`, `rm`, or `rmdir` command per call, and only when every path is
-absolute and stays inside the roots: all of `$TMPDIR`, where a bare `mktemp -d`
-folder lands, and the scratch roots, so another run's clone is in scope too.
-The git subcommand must be one the pipelines use: `add`, `checkout`, `commit`,
-`diff`, `log`, `merge`, or `push`. It never allows a pull request merge, a force
-push, a push to the default branch, or a command that one of your deny rules
-matches. `bin/dispatch-agent.sh` exports the flag,
-and starts each run in a fresh, empty folder in `~/Developer/scratchpad` rather
-than in this repo, and deletes that folder when the run ends. It writes every
-permission refusal to the run's log as a `Permission denied:` line. A sub-agent
-of an interactive session does not carry the flag unless the session itself
-does.
-
-**Do not set `WORKBENCH_DEV_TEAM_PIPELINE=1` with a shell `export` or in a
-settings `env` block.** Either one puts the flag on an interactive session. The
-hook then allows that session's in-scope commit and push prompts with no human
-asked, and the guard stops refusing a sub-agent's commit or push.
-
-The block also removes the old approval gate's three `approve` ask rules from
-the settings file. It does not remove the gate's files, because workbench-core's
-destructive-scope guard refuses a removal outside the project, and would refuse
-the whole block with it. Instead it prints one `LEGACY_LEFT <path>` line for
-each file that is still there.
-
-Run it from anywhere:
-
-```bash
-# >>> commit-ask-rules-install >>>
-set -u
-SETTINGS="${WORKBENCH_SETTINGS_FILE:-$HOME/.claude/settings.json}"
-mkdir -p "$(dirname "$SETTINGS")"
-test -f "$SETTINGS" || echo '{}' > "$SETTINGS"
-cp "$SETTINGS" "$SETTINGS.bak-commit-rules-$(date +%Y%m%d-%H%M%S)"
-
-# Additive for everything this step does not own: every other rule and key is
-# left exactly as it was. The three legacy approval rules are the only removals.
-# The new file is held in a variable and checked before it is written, so no
-# temporary file is left to tidy up. This block must name no file-removal verb:
-# workbench-core's destructive-scope guard refuses a whole command that removes
-# a path outside the project, and ~/.claude sits outside every project.
-RULES='["Bash(git commit *)", "Bash(git push *)", "Bash(git * commit *)", "Bash(git * push *)",
-        "Bash(git * commit)", "Bash(git * push)", "Bash(gh pr merge:*)", "Bash(gh * pr merge *)", "Bash(gh * pr merge)", "Bash(gh api *pulls/*/merge*)"]'
-NEW=$(jq --arg legacy_abs "Bash(bash $HOME/.claude-workbench/bin/approve-commit.sh:*)" \
-   --arg legacy_home 'Bash(bash "$HOME/.claude-workbench/bin/approve-commit.sh":*)' \
-   --argjson rules "$RULES" \
-   '.permissions.ask = (((.permissions.ask // [])
-       - [$legacy_abs, $legacy_home, "Bash(approve:*)"]) + $rules | unique)' \
-   "$SETTINGS") \
-  && printf '%s\n' "$NEW" | jq -e 'type == "object"' >/dev/null \
-  && printf '%s\n' "$NEW" > "$SETTINGS" \
-  || { echo "❌ Could not update $SETTINGS — commits, pushes, and merges are not prompted until the rules are there."; exit 1; }
-
-# The old gate's script and records, and the review guard's old hold records,
-# do nothing now. The human removes them.
-for LEGACY in "$HOME/.claude-workbench/bin/approve-commit.sh" "$HOME/.claude-workbench/commit-approvals" \
-    "$HOME/.claude-workbench/local-reviews"; do
-  test -e "$LEGACY" && echo "LEGACY_LEFT $LEGACY"
-done
-
-MISSING=$(jq -r --argjson rules "$RULES" '$rules - (.permissions.ask // []) | .[]' "$SETTINGS")
-if test -n "$MISSING"; then
-  echo "❌ These ask rules are not in $SETTINGS: $MISSING"
-  exit 1
-fi
-echo "✅ Commit, push, and merge ask rules installed in $SETTINGS"
-# <<< commit-ask-rules-install <<<
-```
-
-**If the block printed a `LEGACY_LEFT` line, give the human the removal
-commands to run.** Do not run them yourself. Show only the lines whose path was
-printed, exactly as written here, and repeat them in the Step 8 summary:
-
-```
-! rm -f ~/.claude-workbench/bin/approve-commit.sh
-! rm -rf ~/.claude-workbench/commit-approvals
-! rm -rf ~/.claude-workbench/local-reviews
-```
-
-All three are inert, so leaving them in place is safe. The last is the review
-guard's old hold records: the guard is static now and reads no state.
-
-**If this block exits non-zero, say so plainly in the Step 8 summary.** Until
-the rules are in place, a foreground commit, push, or merge runs with no prompt.
-The guard still refuses a sub-agent's commit, push, or merge, so the sub-agent
-lane is safe either way. The scheduled pipeline keeps running, but with no rule
-its commits and pushes raise no prompt, so the scope hook never judges them. The
-guard still refuses its merges and force pushes, and workbench-core's
-destructive-scope guard still holds its deletes to scope.
-
 ## Step 7 — Install the dispatcher and the Dispatch task
 
 The Dispatch task runs `bash "$HOME/.claude-workbench/bin/dispatch-agent.sh"`
@@ -1144,9 +1002,6 @@ Print a clean summary block:
                     {MIGRATION}
   Attribution:      {ATTR_RESULT} in ~/.claude/settings.json
                     (suppressed = no Co-Authored-By; default (visible) = trailer on)
-  Commit prompts:   10 commit, push, and merge ask rules in ~/.claude/settings.json
-                    (or: ⚠ not installed — foreground commits and merges are not prompted)
-                    {LEGACY_COMMANDS}
   Dispatch task:    workbench-dev-team-dispatch {TASK_ACTION}, {TASK_STATE}
                     prompt from {SRC_ROOT}/scheduled-tasks/orchestrator.md
                     (or: ⚠ {TASK_PROBLEM})
@@ -1180,9 +1035,6 @@ Fill each slot from the step that produced it:
   panel, then re-run setup." When 7b or 7d failed, name that step and its last
   line, and say the task keeps the prompt and schedule it had.
 - `{SRC_ROOT}`, `{SRC_VERSION}`: Step 7a.
-
-`{LEGACY_COMMANDS}` is the `! rm` command for each `LEGACY_LEFT` line Step 6.6
-printed, one per line. When Step 6.6 printed none, omit that line.
 
 `{STALE_ROOT_WARNING}` is Step 7a's one-liner. **When it is empty (the common
 case — the running root is current) omit that line and the blank line above it

@@ -1,10 +1,8 @@
 #!/usr/bin/env node
-import { BUILT_REFUSAL, PLAIN_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard.ts'
-import { subjectVerdict } from '../hooks/mods/commit-subject.ts'
 import { judgeWrites, refusalOf, reviewBash, reviewEdit } from '../hooks/mods/review-guard.ts'
 import { hasBareMktemp, pointMktemp, readsAsPointed } from '../hooks/mods/scratch.ts'
 import { coreRoot, fromCore } from './core-root.mjs'
-import { COMMIT_MAIN_PASSES, COMMIT_PASSES, COMMIT_REFUSALS, GREP_READS, GREP_WRITES, REVIEW_PASSES, REVIEW_REFUSALS } from './guard-cases.ts'
+import { REVIEW_PASSES, REVIEW_REFUSALS } from './guard-cases.ts'
 
 const { parseShell } = await fromCore('hooks/mods/shell.ts')
 
@@ -23,88 +21,21 @@ const close = () => console.log(`  ${passed} passed, ${failed} failed so far`)
 
 console.log(`workbench-core: ${coreRoot()}`)
 
-const CALLERS = {
-  main: { lane: 'main', isUnattended: false },
-  'sub-agent': { lane: 'sub-agent', isUnattended: false },
-  pipeline: { lane: 'top-level-agent', isUnattended: true },
-}
-const LANES = ['main', 'sub-agent', 'pipeline']
-const verdictOf = (line, caller) => {
-  const parse = parseShell(line)
-  return commitVerdict(parse, line, caller) ?? subjectVerdict(parse)
-}
-
-section('commit guard: the spellings review rounds found stay refused')
-for (const [line, lanes] of COMMIT_REFUSALS) {
-  for (const lane of LANES) {
-    const verdict = verdictOf(line, CALLERS[lane])
-    const want = lanes.includes(lane)
-    check(want ? verdict?.deny.includes('Commit guard (workbench-dev-team)') : verdict === undefined, `${want ? 'refused' : 'passes'} [${lane}]: ${show(line)}`)
-  }
-}
-close()
-
-section('commit guard: the false positives pass')
-for (const line of [...COMMIT_PASSES, ...GREP_READS]) {
-  for (const lane of LANES) check(verdictOf(line, CALLERS[lane]) === undefined, `passes [${lane}]: ${show(line)}`)
-}
-for (const line of COMMIT_MAIN_PASSES) check(verdictOf(line, CALLERS.main) === undefined, `passes [main]: ${show(line)}`)
-for (const line of GREP_WRITES) check(verdictOf(line, CALLERS['sub-agent']) !== undefined, `a search whose output can run is refused [sub-agent]: ${show(line)}`)
-close()
-
-section('commit guard: each refusal names its rule')
-for (const [line, lane, words] of [
-  ['git push --force', 'main', 'forces or deletes'],
-  ['gh pr merge 5', 'sub-agent', 'does not merge'],
-  ['gh pr merge 5', 'pipeline', 'does not merge'],
-  ['git commit -m x', 'sub-agent', 'a sub-agent does not commit or push'],
-  ['HUSKY=0 git commit -m x', 'main', 'as a plain line'],
-  ['"$PY" script.py', 'pipeline', 'a command name the guard cannot read'],
-]) {
-  check(verdictOf(line, CALLERS[lane])?.deny.includes(words), `${lane}: ${line} names "${words}"`)
-}
-check(verdictOf('"$PY" script.py', { lane: 'main', isUnattended: true })?.deny.includes('a command name the guard cannot read'), 'an unattended main loop refuses a built command name')
-check(verdictOf('"$PY" script.py', { lane: 'top-level-agent', isUnattended: false }) === undefined, 'an attended top-level run does not meet the built-name rule')
-check(verdictOf('"$PY" script.py', CALLERS.main) === undefined, 'an attended main loop does not meet the built-name rule')
-check(verdictOf('g$(echo it) com$(echo mit) -m x', CALLERS.main) === undefined, 'an attended main loop leaves a built git to core')
-check(verdictOf('git commit -m "fix: 🐛 Fix x."', { lane: 'main', isUnattended: true }) === undefined, 'an unattended main loop still commits plainly')
-close()
-
-section('both guards: a statement not placed is refused even with no unknown')
+section('review guard: a statement not placed is refused even with no unknown')
 const unplaced = line => {
   const parse = parseShell(line)
   return { ...parse, unknowns: [], statements: parse.statements.map(s => ({ ...s, isPlaced: false })) }
 }
 const REVIEW_CONTEXT = { cwd: '/SB/repo', home: '/SB/home' }
-check(JSON.stringify(commitVerdict(unplaced('sudo -s git push'), 'sudo -s git push', CALLERS.main)) === JSON.stringify(PLAIN_REFUSAL), 'the commit guard reads it as a hidden push')
 check('finding' in reviewBash(unplaced('sudo -s rm x'), REVIEW_CONTEXT), 'the review guard refuses it')
 close()
 
-section('both guards: an open array or case, and the other unknowns, are refused')
+section('review guard: an open array or case, and the other unknowns, are refused')
 const same = (a, b) => JSON.stringify(a) === JSON.stringify(b)
 for (const line of ['x=(a $(echo b)', 'case x in\n a) ls ;;']) {
   check(same(parseShell(line).unknowns, ['compound']), `the reader marks it: ${show(line)}`)
-  check(same(commitVerdict(parseShell(line), line, CALLERS['sub-agent']), BUILT_REFUSAL), `refused for a sub-agent: ${show(line)}`)
-  check(same(commitVerdict(parseShell(line), line, CALLERS.pipeline), BUILT_REFUSAL), `refused in the pipeline: ${show(line)}`)
-  check(commitVerdict(parseShell(line), line, CALLERS.main) === undefined, `left to core in the main loop: ${show(line)}`)
   const verdict = reviewBash(parseShell(line), REVIEW_CONTEXT)
   check('finding' in verdict && JSON.stringify(verdict.finding).includes('compound'), `the review guard refuses it: ${show(line)}`)
-}
-check(same(commitVerdict(parseShell('case x in\n a) git push ;;'), 'case x in\n a) git push ;;', CALLERS.main), PLAIN_REFUSAL), 'a push inside an open case is hidden, in every lane')
-const deep = "bash -c 'bash -c \"bash -c \\\"bash -c \\\\\\\"bash -c ls\\\\\\\"\\\"\"'"
-check(same(parseShell(deep).unknowns, ['depth']), 'scripts nested past four levels set depth')
-check(same(commitVerdict(parseShell(deep), deep, CALLERS['sub-agent']), BUILT_REFUSAL) && same(commitVerdict(parseShell(deep), deep, CALLERS.pipeline), BUILT_REFUSAL), 'rule 5 refuses depth where nobody watches')
-for (const [line, unknowns] of [
-  ['x=ech; y=o; echo $[ "1 ]; $x$y MARK', ['quote']],
-  ['echo $(( 1 + "1 )); $x$y MARK', ['quote', 'substitution']],
-  ["cat <<$'EOF'\nhi\nEOF\n$x$y MARK", ['expansion']],
-  ["cat <<$'E\\cAOF'\nhi\nEOF\n$x$y MARK", ['heredoc']],
-]) {
-  check(same(parseShell(line).unknowns, unknowns), `the reader marks ${unknowns.join(', ')}: ${show(line)}`)
-  check(same(commitVerdict(parseShell(line), line, CALLERS['sub-agent']), BUILT_REFUSAL) && same(commitVerdict(parseShell(line), line, CALLERS.pipeline), BUILT_REFUSAL), `refused where nobody watches: ${show(line)}`)
-}
-for (const line of ['x=(a b) ; ls', 'case x in\n a) ls ;;\nesac']) {
-  check(parseShell(line).unknowns.length === 0 && commitVerdict(parseShell(line), line, CALLERS['sub-agent']) === undefined, `a closed array or case is not refused: ${show(line)}`)
 }
 close()
 
@@ -163,8 +94,6 @@ async function reviewRefusal(call, options = {}) {
   let verdict
   if (call.tool === 'Bash') {
     const parse = parseShell(call.command)
-    const refused = commitVerdict(parse, call.command, CALLERS['sub-agent']) ?? subjectVerdict(parse)
-    if (refused !== undefined) return refused.deny
     verdict = reviewBash(parse, context)
   } else verdict = reviewEdit(call.tool, call.path ?? '', context)
   if ('finding' in verdict) return refusalOf(verdict.finding, roots)
@@ -175,7 +104,7 @@ const bash = command => ({ tool: 'Bash', command })
 
 for (const line of REVIEW_REFUSALS) {
   const refusal = await reviewRefusal(bash(fill(line)))
-  check(/A Holmes reviewer writes only in scratch|a command name the guard cannot read/.test(refusal ?? ''), `refused: ${show(line)}`)
+  check(/A Holmes reviewer writes only in scratch/.test(refusal ?? ''), `refused: ${show(line)}`)
 }
 for (const line of REVIEW_PASSES) check((await reviewRefusal(bash(fill(line)))) === undefined, `passes: ${show(line)}`)
 close()
@@ -215,77 +144,6 @@ check(named.includes('Validate by running the existing tests in place and readin
 check(!/runs on a copy|probe copy/.test(named), 'the refusal never offers a copy')
 close()
 
-section('commit subject: a subject that breaks the format is refused')
-for (const [line, why] of [
-  ['git commit -m x', 'does not start with a type and a colon'],
-  ['git commit -m "fix: x"', '"x" is not a gitmoji'],
-  ['git commit -m "fix: 🐛 Fix x"', 'does not end with a period'],
-  ['git commit -m "fix(api): 🐛 Fix x."', 'it has a scope, (api)'],
-  ['git commit -m "feature: ✨ Add x."', '"feature" is not a type'],
-  ['git commit -m "fix:🐛 Fix x."', 'not followed by exactly one space'],
-  ['git commit -m "fix:  🐛 Fix x."', 'not followed by exactly one space'],
-  ['git commit -m "fix: 🐛  Fix x."', 'one space and a description'],
-  ['git commit -m "fix: 🐛 ."', undefined],
-  ['git commit -m "fix: 🦄 Fix x."', '"🦄" is not a gitmoji'],
-  ['git commit -m "Fix: 🐛 Fix x."', '"Fix" is not a type'],
-  ['git commit -am "fix: Fix x."', 'is not a gitmoji'],
-  ['git commit --message "fix: 🐛 Fix x"', 'does not end with a period'],
-  ['git commit --message="fix: 🐛 Fix x"', 'does not end with a period'],
-  ['git commit -m"fix: 🐛 Fix x"', 'does not end with a period'],
-  ['git -C /repo commit -m "wip"', 'does not start with a type'],
-  ['git commit --amend -m "wip"', 'does not start with a type'],
-  ['git add . && git commit -m "wip" && git push', 'does not start with a type'],
-  ['git commit -unormal -m "wip"', 'does not start with a type'],
-  ['git commit -Sabc123 -m "wip"', 'does not start with a type'],
-  ['git commit -m "wip" -m "feat: ✨ Add x."', 'does not start with a type'],
-  ["git commit -m \"$(cat <<'EOF'\nfix: 🐛 Fix x\n\nBody.\nEOF\n)\"", 'does not end with a period'],
-]) {
-  for (const lane of ['main', 'pipeline']) {
-    const deny = verdictOf(line, CALLERS[lane])?.deny ?? ''
-    const parts = ['a commit subject that breaks the git-commit format', '"<type>: <gitmoji> <Description>."', 'Commit guard (workbench-dev-team)', ...(why === undefined ? [] : [why])]
-    check(parts.every(part => deny.includes(part)), `refused [${lane}]: ${show(line)}`)
-  }
-}
-for (const line of [
-  'git commit -m "fix: 🐛 Fix x."',
-  'git commit -m "feat!: 💥 Drop the old endpoint."',
-  'git commit -m "refactor: ♻️ Extract the service."',
-  'git commit -m "refactor: ♻ Extract the service."',
-  'git commit -m "perf: ⚡ Cache the parse."',
-  'git commit -m "chore: 🧑‍💻 Improve the dev loop."',
-  'git commit -m "fix: 🐛 Fix x.  "',
-  'git commit -m "fix: 🐛 Fix x." -m "Body without a period"',
-  'git commit -m "fix: 🐛 Fix x.\n\nBody line."',
-  "git commit -m \"$(cat <<'EOF'\nfix: 🐛 Fix x.\n\nBody.\nEOF\n)\"",
-  'git -c user.name=x commit -m "docs: 📝 Document x."',
-  'git commit -unormal -m "feat: ✨ Add x."',
-  'git commit -uall -m "feat: ✨ Add x."',
-  'git commit -Sabc123 -m "feat: ✨ Add x."',
-  'git commit -aS -m "feat: ✨ Add x."',
-  'git commit -aSmine -m "feat: ✨ Add x."',
-  'git commit -u -m "feat: ✨ Add x."',
-  'git commit -F msg.txt',
-  'git commit --file=msg.txt',
-  'git commit -m "wip" -F msg.txt',
-  'git commit -C HEAD',
-  'git commit --fixup=abc123',
-  'git commit --squash abc123 -m "wip"',
-  'git commit',
-  'git commit --amend --no-edit',
-  'git commit -m "$MSG"',
-  'git commit -m "$(cat msg.txt)"',
-  'git commit -m "fix: 🐛 Fix $X"',
-  "git commit -m \"$(sed -n 1p <<'EOF'\nwip\nEOF\n)\"",
-  'git log -m --oneline',
-  'echo "git commit -m wip"',
-  'git merge -m "wip" feat/x',
-]) {
-  for (const lane of ['main', 'pipeline']) check(verdictOf(line, CALLERS[lane]) === undefined, `passes [${lane}]: ${show(line)}`)
-}
-check(subjectVerdict(parseShell('git commit -m "fix: 🐛 A." && git commit -m b'))?.deny !== undefined, 'a line with two commits is refused for the one that breaks the format')
-check(subjectVerdict(parseShell('git commit -m "fix: 🐛 A." && git commit -m "fix: 🐛 B."')) === undefined, 'a line with two good commits passes the subject check')
-close()
-
 section("scratch: a dev-team agent's bare mktemp is pointed at its folder")
 const FOLDER = '/scratch/session/watson-direct.abc123'
 const TEMPLATE = `'${FOLDER}/tmp.XXXXXXXX'`
@@ -323,8 +181,6 @@ for (const line of [
 ]) {
   check(pointed(line) === line, `runs as written: ${show(line)}`)
 }
-const forced = pointed('D=$(mktemp -d) && git -C "$D" push --force')
-check(commitVerdict(parseShell(forced), forced, CALLERS['sub-agent']) !== undefined, 'the guards judge the pointed line')
 const echoed = 'echo "a; mktemp -d; b"'
 check(pointMktemp(echoed, FOLDER) !== undefined && !readsAsPointed(parseShell(echoed), parseShell(pointMktemp(echoed, FOLDER) ?? ''), FOLDER), 'a quoted mktemp the text match reaches does not read back as pointed')
 const mixed = 'mktemp -d && echo "then mktemp -d; done"'

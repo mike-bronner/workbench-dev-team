@@ -1,12 +1,7 @@
-// hooks/register.ts with hooks/mods/spawn.ts: the rules agent.spawn adds after
-// the dispatch gate. Holmes's helpers run on holmes-lens, a Watson Direct brief
-// with a bare Workdir on a default branch is refused, and the config's
-// fan-out knobs reach the agents that read them.
-
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { configLineOf, configTextOf, isHolmesMode, knobsOf, lensSpawnOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
+import { configLineOf, configTextOf, isGated, isHolmesMode, knobsOf, lensSpawnOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
 import type { RunAnswer } from './world'
 import { BRIEF, spawnInput, world } from './world'
 
@@ -118,6 +113,13 @@ describe('the workspace check — a bare Workdir on a default branch asks for a 
     })
   }
 
+  test('a Watson prompt on main with a bare Workdir and no other slot is refused too', async ($, on) => {
+    const w = world(on, { run: onBranch('main') })
+    const result = (await $.agent.spawn(spawnInput(T('watson'), 'Workdir: /tmp/repo\nfix the parser'))) as Spawned
+    expect(result.deny).toContain('onto main, with no branch recorded')
+    expect(w.spawned).toEqual([])
+  })
+
   test('a feature branch passes', async ($, on) => {
     const w = world(on, { run: onBranch('fix/retry') })
     expect(((await $.agent.spawn(spawnInput(T('watson'), BRIEF))) as Spawned).deny).toBeUndefined()
@@ -148,6 +150,40 @@ describe('the workspace check — a bare Workdir on a default branch asks for a 
       const w = world(on, { run: onBranch('main'), isOn })
       expect(((await $.agent.spawn(spawnInput(type, prompt, extra))) as Spawned).deny).toBeUndefined()
       expect(w.runs).toEqual([])
+    })
+  }
+
+  test('a lane callerLane cannot give is read as the main session, so the brief on main is refused', async ($, on) => {
+    const w = world(on, { run: onBranch('main'), lane: () => new Error('workbench: the lane is unknown') })
+    expect(((await $.agent.spawn(spawnInput(T('watson'), BRIEF))) as Spawned).deny).toContain('onto main, with no branch recorded')
+    expect(w.spawned).toEqual([])
+  })
+
+  test('an orchestrator mode that cannot be read is on, so the brief on main is refused', async ($, on) => {
+    const w = world(on, { run: onBranch('main'), isOn: new Error('no state') })
+    expect(((await $.agent.spawn(spawnInput(T('watson'), BRIEF))) as Spawned).deny).toContain('onto main, with no branch recorded')
+    expect(w.spawned).toEqual([])
+  })
+
+  test("a top-level --agent run's Watson brief is not checked, and runs no git", async ($, on) => {
+    const w = world(on, { run: onBranch('main'), lane: () => 'top-level-agent' })
+    expect(((await $.agent.spawn(spawnInput(T('watson'), BRIEF))) as Spawned).deny).toBeUndefined()
+    expect(w.runs).toEqual([])
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct')])
+  })
+})
+
+describe('isGated — only the main session with orchestrator mode on', () => {
+  for (const [lane, isOn, want] of [
+    ['main', true, true],
+    ['main', false, false],
+    ['sub-agent', true, false],
+    ['sub-agent', false, false],
+    ['top-level-agent', true, false],
+    ['top-level-agent', false, false],
+  ] as const) {
+    test(`${lane}, orchestrator ${isOn ? 'on' : 'off'}: ${want ? 'gated' : 'not gated'}`, () => {
+      expect(isGated(lane, isOn)).toBe(want)
     })
   }
 })

@@ -443,8 +443,8 @@ run's clone is never reused: every run pushes its work before it exits and
 removes its clone in step 10, so the branch on the remote is the whole state.
 Check out `<branch>`, bring in the default branch with
 `git -C <clone path> merge origin/<default branch>`, and continue. **Merge, never rebase.** The branch is already pushed, so a rebase
-rewrites its history, and the next push then needs a force push. The commit guard
-refuses every force push outright, and Watson never force-pushes.
+rewrites its history, and the next push then needs a force push. workbench-core's
+commit guard refuses every force push outright, and Watson never force-pushes.
 Resolve any conflict in a merge commit of its own.
 
 ### 6. Implement, test, commit

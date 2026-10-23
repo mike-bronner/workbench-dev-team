@@ -26,9 +26,9 @@ The colon, emoji, and description each separated by exactly one space: `type: em
 5. Always consult `references/gitmoji.md` to select the correct emoji for the change
 6. Always consult `references/conventional-commits.md` to determine the correct type and overall format for the commit message, based on SemVer mapping and breaking change syntax
 
-The dev-team mod's commit guard holds the subject of a main-session or pipeline
-`git commit -m` to this format, and refuses one that breaks it with the expected
-shape. A message given with `-F`, or written in an editor, is not checked.
+workbench-core's commit subject check holds the subject of a `git commit -m` to
+this format, and refuses one that breaks it with the expected shape. A message
+given with `-F`, or written in an editor, is not checked.
 
 ## Examples
 
@@ -56,25 +56,27 @@ Fixes: #790
 **A sub-agent does not commit or push, and never asks to.** It leaves the tree
 uncommitted and hands the diff summary, the full `git status` list, and this
 message back in its report. The report does not invite a commit. The
-orchestrator takes the uncommitted tree from there. The commit guard refuses
-the sub-agent's commit or push, by design. The scheduled Index pipeline
-(`WORKBENCH_DEV_TEAM_PIPELINE=1`, set by `bin/dispatch-agent.sh`) commits and
+orchestrator takes the uncommitted tree from there. workbench-core's commit
+guard refuses the sub-agent's commit or push, by design. The scheduled Index
+pipeline (`WORKBENCH_DEV_TEAM_PIPELINE=1`, set by `bin/dispatch-agent.sh`) commits and
 pushes unattended from the dispatcher's top-level run, and never asks about
 committing or pushing. How Watson splits that work into commits is his own
 judgment.
 
-**The ask rules.** `/workbench-dev-team:setup` installs ten `permissions.ask`
-rules. Six are for commits and pushes: `git commit *`, `git push *`,
-`git * commit *`, `git * push *`, `git * commit`, and `git * push`. Four are
-for pull request merges: `gh pr merge:*`, `gh * pr merge *`, `gh * pr merge`,
-and `gh api *pulls/*/merge*`. They raise the harness's permission prompt on
+**The ask rules.** `/workbench-core:setup` installs the `permissions.ask` rules.
+Eleven of them cover commits, pushes and merges. Six are for commits and
+pushes: `git commit *`, `git push *`, `git * commit *`, `git * push *`,
+`git * commit`, and `git * push`. Five are for merges: `gh pr merge:*`,
+`gh * pr merge *`, `gh * pr merge`, and `gh api *pulls/*/merge*` for pull
+requests, and `gh api *repos/*/merges*` for a branch merge through the REST
+API. They raise the harness's permission prompt on
 each commit, push, and merge, as the mechanical backstop.
 
 **Run it as a plain git line, so the rules see it.** The rules match a command
 that starts with `git`, `git -C <path>` included, anywhere in a compound line.
 They do not see a commit or push behind `bash -c`, `sh -c`, `env`, `eval`, a
-leading `NAME=value` such as `HUSKY=0`, or a git named by its path, and the
-commit guard refuses those forms. So:
+leading `NAME=value` such as `HUSKY=0`, or a git named by its path, and
+workbench-core's commit guard refuses those forms. So:
 
 - **A one-line message** goes in `-m`: `git commit -m 'feat: ✨ Add email validation endpoint.'`
 - **A message with a body or footers** goes in a file. Write it to the session
@@ -87,8 +89,8 @@ commit guard refuses those forms. So:
 **What is never allowed.** A push that forces or deletes remote refs
 (`--force`, `-f`, a `+` refspec, `--mirror`, `--delete`, `-d`, a `:branch`
 refspec, `--prune`) is refused outright. Merge stays an explicit human request:
-the ask rules prompt a foreground `gh pr merge`, and the commit guard refuses
-one from a sub-agent or from the pipeline.
+the ask rules prompt a foreground `gh pr merge`, and workbench-core's commit
+guard refuses one from a sub-agent or from the pipeline.
 
 **This is a mistake-catcher, not a security boundary.** It stops an honest agent
 that moves too fast. It does not stop an agent that sets out to evade it, and

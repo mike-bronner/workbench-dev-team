@@ -18,7 +18,7 @@
 // the text match missed, or one it found inside a quoted string or a heredoc)
 // leaves the line as it was written, which is how it ran before the mod.
 
-import type { ShellParse, Statement } from './commit-guard'
+import type { ShellParse, Statement } from './review-guard'
 
 // mktemp's no-value options. -t, -p and --tmpdir name a directory, so a line
 // with any of them is not bare.

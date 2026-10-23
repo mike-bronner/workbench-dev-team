@@ -106,9 +106,6 @@ expect_has  "sweep log slug"     "lestrade-sweep-mike-bronner-phpcs-rules-" "$ou
 expect_has  "sweep takes no lock" "lock=none"          "$out"
 
 echo "— pipeline carve-out"
-# Every dispatch is headless, so every dispatch must carry the flag the commit
-# guard reads. A lane that misses it is denied at its first commit, because the
-# ask-rule prompt needs a human who is not there.
 for agent in lestrade holmes watson; do
   expect_has "$agent dispatch is flagged as pipeline" "pipeline=1" "$(run "$FULL" "$agent" 7)"
 done

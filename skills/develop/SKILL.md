@@ -14,8 +14,8 @@ Know which one you are in before you start.
 
 - **Foreground session** — a human is in the conversation. You can ask and wait.
 - **Sub-agent** — dispatched through the Agent tool, Watson's Direct mode
-  included. No human is reachable, the commit guard refuses every commit and
-  push, and you do not merge. You finish with an **uncommitted working tree and a report**:
+  included. No human is reachable, workbench-core's commit guard refuses every
+  commit and push, and you do not merge. You finish with an **uncommitted working tree and a report**:
   the diff summary and a proposed commit message. The report never asks to
   commit. There is no PR to open.
 - **Scheduled Index pipeline** — `bin/dispatch-agent.sh` spawned you with
@@ -229,10 +229,10 @@ The tier, mutation, and doc-drift rules in full: `references/testing.md`.
 ## 5. Commit
 
 **Which lane you are in decides what you may do at all.** Claude Code
-`permissions.ask` rules, installed by `/workbench-dev-team:setup`, raise a
-permission prompt on each commit, push, and merge. The commit
-guard (`hooks/mods/commit-guard.ts`) refuses what those rules cannot cover. It
-is a mistake-catcher, not a security boundary.
+`permissions.ask` rules, installed by `/workbench-core:setup`, raise a
+permission prompt on each commit, push, and merge. workbench-core's commit
+guard refuses what those rules cannot cover. It is a mistake-catcher, not a
+security boundary.
 
 **Sub-agent → you do not commit, merge, or push.** The guard refuses your
 commit, your push, and your pull request merge, keyed on your lane. Do not look for another route, and never reword, split, encode, or

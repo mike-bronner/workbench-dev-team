@@ -3,16 +3,12 @@
 // stand-in $.workbench noun, answer every spawn, model request and Agent call
 // the module passes on, and record what reached them.
 //
-// The stand-in briefCheck reads the six headers and the two token shapes only. The
-// real check is workbench-core's checkBrief, held to its recorded gate verdicts
-// case for case in that repository. What these tests prove is how this module weighs the answer.
-//
 // The disk the guards stat is a map of paths, links included.
 
 import { mock } from 'claude-code/testing'
 import type { On } from 'claude-code'
 
-import type { ShellParse, Statement } from '../hooks/mods/commit-guard'
+import type { ShellParse, Statement } from '../hooks/mods/review-guard'
 
 const UNPLAIN = /[$`\\(){}<\n#*?!]|(?<!&)&(?!&)|^\s*(?:if|then|for|while|until|case|do|function)\b/
 const UNPLACED = new Set(['env', 'sudo', 'doas', 'nice', 'nohup', 'timeout', 'time', 'command', 'builtin', 'exec', 'xargs', 'stdbuf', 'caffeinate', 'noglob', 'bash', 'sh', 'zsh', 'eval', 'source', '.'])
@@ -111,15 +107,6 @@ export function readPlain(line: string): ShellParse {
 export const HOME = '/Users/tester'
 export const CONFIG_PATH = `${HOME}/.claude-workbench/dev-team-config.json`
 
-export const SLOTS = [
-  { header: 'Workdir:', description: 'absolute path' },
-  { header: 'Goal:', description: 'one or two sentences' },
-  { header: 'Context:', description: 'why the task exists' },
-  { header: 'Constraints:', description: 'hard limits, or none' },
-  { header: 'Acceptance:', description: 'the criteria' },
-  { header: 'Done when:', description: 'observable finish line' },
-]
-
 export const BRIEF = [
   'Workdir: /tmp/repo',
   'Goal: Fix the parser.',
@@ -136,10 +123,6 @@ export type World = {
   // What callerLane answers, by the agentId it is asked about. An Error rejects.
   lane: (agentId: string | undefined) => Lane | Error
   isOn: boolean | Error
-  // Makes briefCheck or briefSlots reject, or throw where it is called.
-  checkFails: boolean | 'throw'
-  // Answers briefCheck in place of the stand-in.
-  check?: (prompt: string) => { isComplete: boolean; missing: string[]; shape: 'brief' | 'item-id' | 'repo-sweep' | 'blank' }
   files: Map<string, string>
   // Each spawn that reached the engine: its type, model and prompt.
   spawned: { subagentType: string; model?: string; prompt: string }[]
@@ -178,8 +161,6 @@ export type Entry = 'dir' | 'file' | { link: string }
 export type GuardOptions = {
   // The environment $.env.get answers.
   env?: Record<string, string>
-  // What isUnattended answers. An Error rejects.
-  unattended?: boolean | Error
   // What scratchRoots answers.
   roots?: string[]
   // What $.agent.list() answers: each loop's id, type and parent. An Error rejects.
@@ -224,27 +205,13 @@ function walk(disk: Record<string, Entry>, path: string, hops = 0): string | und
   return at === '' ? '/' : at
 }
 
-function standInCheck(prompt: string) {
-  const lines = prompt.split('\n')
-  if (lines.filter(line => line.trim() !== '').length === 1 && /^\s*Item ID:\s*[0-9]+\s*$/.test(prompt)) {
-    return { isComplete: true, missing: [], shape: 'item-id' as const }
-  }
-  if (lines.filter(line => line.trim() !== '').length === 1 && /^\s*Repo sweep:\s*[^\s/]+\/[^\s/]+\s*$/.test(prompt)) {
-    return { isComplete: true, missing: [], shape: 'repo-sweep' as const }
-  }
-  const missing = SLOTS.map(slot => slot.header).filter(header => !lines.some(line => line.trimStart().startsWith(header)))
-  return { isComplete: missing.length === 0, missing, shape: 'brief' as const }
-}
-
 export function world(
   on: On,
-  options: Partial<Pick<World, 'lane' | 'isOn' | 'checkFails' | 'check'>> & { config?: string; envFails?: boolean; isHomeUnset?: boolean } & GuardOptions = {},
+  options: Partial<Pick<World, 'lane' | 'isOn'>> & { config?: string; envFails?: boolean; isHomeUnset?: boolean } & GuardOptions = {},
 ): World {
   const w: World = {
     lane: options.lane ?? (agentId => (agentId === undefined ? 'main' : 'sub-agent')),
     isOn: options.isOn ?? true,
-    checkFails: options.checkFails ?? false,
-    check: options.check,
     files: new Map(options.config === undefined ? [] : [[CONFIG_PATH, options.config]]),
     spawned: [],
     steps: [],
@@ -276,15 +243,8 @@ export function world(
     return {
       ...built,
       workbench: {
-        briefSlots: async () => (w.checkFails ? Promise.reject(new Error('no template')) : SLOTS),
-        briefCheck: (prompt: string) => {
-          if (w.checkFails === 'throw') throw new Error('briefCheck threw')
-          if (w.checkFails) return Promise.reject(new Error('no template'))
-          return Promise.resolve((w.check ?? standInCheck)(prompt))
-        },
         scratchRoots: async () => (w.rootsFail ? Promise.reject(new Error('no roots')) : (options.roots ?? [])),
         orchestratorIsOn: async () => answer(w.isOn),
-        isUnattended: async () => answer(options.unattended ?? false),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
         parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : readPlain(line)),
       },

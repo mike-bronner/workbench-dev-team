@@ -136,8 +136,8 @@ slot: `references/brief-rationale.md`.
 `git status` list, and a proposed message.** You take the uncommitted tree from
 there. The status list can hold files Watson did not make, such as the human's
 own edits, so read the tree itself, never only the report's file list. Never
-send the agent back to commit: the commit guard refuses a sub-agent's commit
-and push.
+send the agent back to commit: workbench-core's commit guard refuses a
+sub-agent's commit and push.
 
 ## Action routing — Index MCP or gh CLI?
 
@@ -178,7 +178,7 @@ work products.
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
 | "implement / fix / build X" | Item exists → **Watson** Index mode, through the dispatcher (Dispatch protocol, step 4), never the Agent tool. No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the six-slot brief, via the Agent tool; the diff comes back uncommitted) |
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
-| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool; the commit guard refuses a sub-agent's or the pipeline's `gh pr merge`). Board status follows via webhook | same |
+| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool; workbench-core's commit guard refuses a sub-agent's or the pipeline's `gh pr merge`). Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
 
 **Every "ask" and "confirm" in this table goes through `AskUserQuestion`,**
@@ -376,8 +376,8 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 
 ## What the dispatcher does
 
-A Watson Index-mode run ends in commits and pushes. The commit guard refuses
-both to any sub-agent, and only the top-level loop of a `claude -p --agent` run
+A Watson Index-mode run ends in commits and pushes. workbench-core's commit
+guard refuses both to any sub-agent, and only the top-level loop of a `claude -p --agent` run
 commits, with `WORKBENCH_DEV_TEAM_PIPELINE=1` to answer its prompts. The Agent
 tool can start neither, so the dev-team mod runs `bin/dispatch-agent.sh` in
 place of a main-session Watson `Item ID: <n>` call. The script starts the run

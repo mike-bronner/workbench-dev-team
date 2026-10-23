@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import type { Entry, GuardOptions } from './world'
+import type { Entry } from './world'
 import { readPlain, world } from './world'
 
 type Call = { tool: string; command?: string; file_path?: string; notebook_path?: string }
@@ -12,14 +12,6 @@ async function refusalOf($: { tool: { call: (e: never) => Promise<unknown> } }, 
 }
 
 const bash = (command: string): Call => ({ tool: 'Bash', command })
-
-type Lane = 'main' | 'sub-agent' | 'pipeline'
-
-const LANES: Readonly<Record<Lane, { agentId?: string; options: GuardOptions & { lane?: (id: string | undefined) => 'main' | 'sub-agent' | 'top-level-agent' } }>> = {
-  main: { options: { lane: () => 'main', unattended: false } },
-  'sub-agent': { agentId: 'agent-1', options: { lane: () => 'sub-agent', unattended: false, agents: [{ id: 'agent-1', type: 'workbench-dev-team:watson-direct' }] } },
-  pipeline: { options: { lane: () => 'top-level-agent', unattended: true } },
-}
 
 describe('the stand-in reader takes plain lines only', () => {
   test('a plain line reads as its statements', () => {
@@ -37,68 +29,37 @@ describe('the stand-in reader takes plain lines only', () => {
   })
 })
 
-describe('commit guard — the hook passes the lane and the line to the guard', () => {
-  const cases: [string, Lane, string][] = [
-    ['git push --force', 'main', 'forces or deletes'],
-    ['gh pr merge 5', 'sub-agent', 'does not merge'],
-    ['gh pr merge 5', 'pipeline', 'does not merge'],
-    ['git commit -m x', 'sub-agent', 'a sub-agent does not commit or push'],
-    ['HUSKY=0 git commit -m x', 'main', 'as a plain line'],
-    ['git commit -m x', 'main', 'a commit subject that breaks the git-commit format'],
+describe('no guard of its own on commits, pushes or merges — workbench-core holds them', () => {
+  const LINES = ['git push --force', 'gh pr merge 5', 'git commit -m x', 'HUSKY=0 git commit -m x', 'git push']
+  const lanes: [string, string | undefined, Parameters<typeof world>[1]][] = [
+    ['main', undefined, { lane: () => 'main' }],
+    ['sub-agent', 'agent-1', { lane: () => 'sub-agent', agents: [{ id: 'agent-1', type: 'workbench-dev-team:watson-direct' }] }],
+    ['pipeline', undefined, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: 'workbench-dev-team:watson-index' } }],
   ]
-  for (const [line, lane, words] of cases) {
-    test(`refused [${lane}]: ${line}`, async ($, on) => {
-      const w = world(on, LANES[lane].options)
-      expect(await refusalOf($, bash(line), LANES[lane].agentId)).toContain(words)
-      expect(w.ran).toEqual([])
+  for (const [lane, agentId, options] of lanes) {
+    test(`every line reaches the engine [${lane}]`, async ($, on) => {
+      const w = world(on, options)
+      for (const line of LINES) expect(await refusalOf($, bash(line), agentId)).toBeUndefined()
+      expect(w.ran).toEqual(LINES.map(line => `Bash: ${line}`))
     })
   }
-  for (const lane of ['main', 'pipeline'] as const) {
-    test(`a plain commit and push reach the engine [${lane}]`, async ($, on) => {
-      const w = world(on, LANES[lane].options)
-      expect(await refusalOf($, bash('git commit -m "fix: 🐛 Fix x."'), LANES[lane].agentId)).toBeUndefined()
-      expect(await refusalOf($, bash('git push'), LANES[lane].agentId)).toBeUndefined()
-      expect(w.ran).toEqual(['Bash: git commit -m "fix: 🐛 Fix x."', 'Bash: git push'])
-    })
-  }
-  test('a sub-agent reads and searches freely', async ($, on) => {
-    const w = world(on, LANES['sub-agent'].options)
-    expect(await refusalOf($, bash('git status'), 'agent-1')).toBeUndefined()
-    expect(await refusalOf($, bash('grep -n "git push" t.ts | sed -n 1,5p'), 'agent-1')).toBeUndefined()
-    expect(w.ran.length).toBe(2)
+  test("a call outside the review guard's reach is not read, so a reader that fails refuses nothing", async ($, on) => {
+    const w = world(on, { lane: () => 'main', parseFails: true })
+    expect(await refusalOf($, bash('git status'))).toBeUndefined()
+    expect(w.ran).toEqual(['Bash: git status'])
   })
 })
 
-describe('commit guard — an answer the nouns cannot give fails closed', () => {
-  test('a lane callerLane cannot give is read as a sub-agent', async ($, on) => {
-    world(on, { lane: () => new Error('lane unknown') })
-    expect(await refusalOf($, bash('git push'))).toContain('a sub-agent does not commit or push')
-  })
-  test('an isUnattended that rejects is read as unattended, so a merge is refused', async ($, on) => {
-    world(on, { lane: () => 'main', unattended: new Error('unknown') })
-    expect(await refusalOf($, bash('gh pr merge 5'))).toContain('does not merge')
-  })
-  test('an attended main loop may merge plainly, and an unattended one may not', async ($, on) => {
-    world(on, { lane: () => 'main', unattended: false })
-    expect(await refusalOf($, bash('gh pr merge 5'))).toBeUndefined()
-  })
-  test('an unattended main loop refuses a merge', async ($, on) => {
-    world(on, { lane: () => 'main', unattended: true })
-    expect(await refusalOf($, bash('gh pr merge 5'))).toContain('does not merge')
-  })
-  test('an unattended main loop still commits plainly', async ($, on) => {
-    world(on, { lane: () => 'main', unattended: true })
-    expect(await refusalOf($, bash('git commit -m "fix: 🐛 Fix x."'))).toBeUndefined()
-  })
-  test('a line parseShell cannot read is refused, and never reaches the engine', async ($, on) => {
-    const w = world(on, { lane: () => 'main', parseFails: true })
-    expect(await refusalOf($, bash('git status'))).toContain('could not judge')
+describe('review guard — a guard that throws refuses the call', () => {
+  test("a reviewer's line parseShell cannot read is refused, and never reaches the engine", async ($, on) => {
+    const w = reviewWorld(on, { parseFails: true })
+    expect(await refusalOf($, bash('git status'), 'lens-1')).toContain('🛑 Blocked: a call the review guard could not judge.')
     expect(w.ran).toEqual([])
   })
-  test('a sub-agent of the pipeline does not commit, though the pipeline does', async ($, on) => {
-    world(on, { lane: id => (id === undefined ? 'top-level-agent' : 'sub-agent'), unattended: true })
-    expect(await refusalOf($, bash('git commit -m "fix: 🐛 Fix x."'))).toBeUndefined()
-    expect(await refusalOf($, bash('git commit -m "fix: 🐛 Fix x."'), 'helper-1')).toContain('a sub-agent does not commit or push')
+  test('a call whose maker cannot be told is read too, and refused when the reader fails', async ($, on) => {
+    const w = reviewWorld(on, { parseFails: true, agents: [] })
+    expect(await refusalOf($, bash('git status'), 'ghost-1')).toContain('could not judge')
+    expect(w.ran).toEqual([])
   })
 })
 
@@ -206,6 +167,9 @@ describe('review guard — the hook reads the disk, the roots and the working di
     ['a relative path in the tree', bash('touch new.txt'), true],
     ['an Edit in the tree', { tool: 'Edit', file_path: `${SB}/repo/README.md` }, true],
     ['an Edit in scratch', { tool: 'Edit', file_path: `${SB}/tmp/scratch/target.txt` }, false],
+    ['a Write in the tree', { tool: 'Write', file_path: `${SB}/repo/new.txt` }, true],
+    ['a Write in scratch', { tool: 'Write', file_path: `${SB}/tmp/scratch/new.txt` }, false],
+    ['a NotebookEdit in the tree', { tool: 'NotebookEdit', notebook_path: `${SB}/repo/n.ipynb` }, true],
     ['a NotebookEdit in scratch', { tool: 'NotebookEdit', notebook_path: `${SB}/tmp/n.ipynb` }, false],
   ]
   for (const [what, call, isRefused] of cases) {

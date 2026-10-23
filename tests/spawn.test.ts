@@ -1,11 +1,7 @@
-// hooks/register.ts and hooks/mods/spawn.ts: what a dispatch of a dev-team
-// agent turns into. Routing to the mode agent, model and effort from the
-// /config rows, and the dispatch gate with its advisory hint.
-
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { BRIEF, SLOTS, spawnInput, step, world } from './world'
+import { BRIEF, spawnInput, step, world } from './world'
 
 const T = (name: string) => `workbench-dev-team:${name}`
 
@@ -28,9 +24,6 @@ describe('routing — a public type runs the mode its token picks', () => {
     ['holmes-local', 'Item ID: 7', 'holmes-index'],
   ]
   for (const [from, prompt, to] of cases) {
-    // Dispatched from a sub-agent, so the gate stands aside and the routing is
-    // all that is tested: a bare id from the main session is refused by the
-    // gate, which exempts only the two machine-built shapes.
     test(`${from} with ${JSON.stringify(prompt.slice(0, 24))} runs ${to}`, async ($, on) => {
       const w = world(on)
       const result = await $.agent.spawn(spawnInput(T(from), prompt, { parentAgentId: 'agent-parent' }))
@@ -160,140 +153,41 @@ describe('model and effort — from the /config rows at spawn', () => {
   })
 })
 
-describe('the dispatch gate — a main-session brief missing a slot is refused', () => {
+describe('no brief check of its own — workbench-core holds the six-slot gate', () => {
   const PARTIAL = 'Workdir: /tmp/repo\nGoal: Fix it.'
 
-  test('a main-session dispatch missing slots is denied, and nothing spawns', async ($, on) => {
+  test('a main-session dispatch missing slots reaches the engine', async ($, on) => {
     const w = world(on)
     const result = await $.agent.spawn(spawnInput('general-purpose', PARTIAL))
+    expect(result).not.toHaveProperty('deny')
+    expect(w.spawned.map(s => s.prompt)).toEqual([PARTIAL])
+  })
+
+  test('a main-session Watson prompt that is no brief runs Direct mode', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('watson'), 'fix the parser'))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct')])
+  })
+
+  test('a complete brief that dictates method gets no hint from this module', async ($, on) => {
+    const w = world(on)
+    const fenced = `${BRIEF}\n\`\`\`bash\nmake test\n\`\`\``
+    const result = await $.tool.call({ tool: 'Agent', tool_use_id: 'toolu_1', description: 'a task', prompt: fenced, subagent_type: 'general-purpose' } as never)
+    expect((result as { context?: string[] }).context).toBeUndefined()
+    expect(w.calls).toHaveLength(1)
+  })
+
+  test("a Watson dispatch whose prompt is no text throws in the workspace check, and the hook's .catch refuses it", async ($, on) => {
+    const w = world(on)
+    const result = await $.agent.spawn(spawnInput(T('watson'), 42 as never))
     expect(w.spawned).toEqual([])
     const deny = (result as { deny?: string }).deny ?? ''
-    expect(deny.split('\n')[0]).toBe(
-      '🛑 Blocked: an Agent dispatch without a complete brief. Missing: Context:, Constraints:, Acceptance:, Done when:.',
-    )
-    expect(deny).toContain('Dispatch gate (workbench-dev-team).')
-    expect(deny).toContain('six-slot brief, research included')
-    for (const slot of SLOTS) expect(deny).toContain(`${slot.header} (${slot.description})`)
-    expect(deny).toContain('/workbench-dev-team:orchestrate')
-    expect(deny).toContain('the human can run /orchestrator off')
-    expect(deny.split('\n')[0]).not.toContain('**')
-  })
-
-  test('the gate refuses before routing, for a dev-team type too', async ($, on) => {
-    const w = world(on)
-    const result = await $.agent.spawn(spawnInput(T('watson'), 'fix the parser'))
-    expect(result).toHaveProperty('deny')
-    expect(w.spawned).toEqual([])
-  })
-
-  test('a complete brief passes', async ($, on) => {
-    const w = world(on)
-    await $.agent.spawn(spawnInput('general-purpose', BRIEF))
-    expect(w.spawned).toHaveLength(1)
-  })
-
-  test('a machine-built token needs no brief', async ($, on) => {
-    const w = world(on)
-    await $.agent.spawn(spawnInput(T('watson'), 'Item ID: 9'))
-    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-index')])
-  })
-
-  test("a sub-agent's dispatch is not judged", async ($, on) => {
-    const w = world(on)
-    await $.agent.spawn(spawnInput('general-purpose', 'lens prompt', { parentAgentId: 'agent-holmes' }))
-    expect(w.spawned).toHaveLength(1)
-  })
-
-  test("a top-level --agent run's dispatch is not judged", async ($, on) => {
-    const w = world(on, { lane: () => 'top-level-agent' })
-    await $.agent.spawn(spawnInput('general-purpose', 'lens prompt'))
-    expect(w.spawned).toHaveLength(1)
-  })
-
-  test('an unknown lane is read as the main session, so the brief is still checked', async ($, on) => {
-    const w = world(on, { lane: () => new Error('workbench: the lane is unknown') })
-    const result = await $.agent.spawn(spawnInput('general-purpose', 'fix it', { parentAgentId: 'agent-x' }))
-    expect(result).toHaveProperty('deny')
-    expect(w.spawned).toEqual([])
-  })
-
-  test('orchestrator mode off stands the gate down', async ($, on) => {
-    const w = world(on, { isOn: false })
-    await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
-    expect(w.spawned).toHaveLength(1)
-  })
-
-  test('an orchestrator mode that cannot be read is on', async ($, on) => {
-    const w = world(on, { isOn: new Error('no state') })
-    const result = await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
-    expect(result).toHaveProperty('deny')
-    expect(w.spawned).toEqual([])
-  })
-
-  // workbench-core is a declared dependency, so a check that fails is a fault,
-  // and the gate fails closed. /orchestrator off is the way past it.
-  for (const [label, checkFails] of [
-    ['rejects', true],
-    ['throws', 'throw'],
-  ] as const) {
-    test(`a gated dispatch whose brief check ${label} is refused, naming /orchestrator off`, async ($, on) => {
-      const w = world(on, { checkFails })
-      const result = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
-      expect(w.spawned).toEqual([])
-      const deny = (result as { deny?: string }).deny ?? ''
-      expect(deny.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch whose brief could not be checked.')
-      expect(deny).toContain('the human can run /orchestrator off')
-    })
-  }
-
-  // A malformed answer from core throws inside the gate, before next is
-  // called, which only the hook's own .catch can answer. It refuses.
-  for (const [label, answer] of [
-    ['no verdict at all', null],
-    ['a verdict whose missing slots are not a list', { isComplete: false, missing: 'Goal:', shape: 'brief' }],
-  ] as const) {
-    test(`a brief check that answers ${label} is refused by the hook's .catch`, async ($, on) => {
-      const w = world(on, { check: () => answer as never })
-      const result = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
-      expect(w.spawned).toEqual([])
-      const deny = (result as { deny?: string }).deny ?? ''
-      expect(deny.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch whose brief could not be checked.')
-      expect(deny).toContain('the human can run /orchestrator off')
-    })
-  }
-
-  test('a brief check that fails does not touch a dispatch the gate stands aside for', async ($, on) => {
-    const w = world(on, { checkFails: true })
-    await $.agent.spawn(spawnInput('general-purpose', 'lens prompt', { parentAgentId: 'agent-holmes' }))
-    expect(w.spawned).toHaveLength(1)
-  })
-
-  test('with orchestrator mode off, a failing brief check refuses nothing', async ($, on) => {
-    const w = world(on, { checkFails: true, isOn: false })
-    await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
-    expect(w.spawned).toHaveLength(1)
-  })
-
-  // A plugin's own $.agent.spawn is its implementation, not a handoff, and
-  // core's gate never sees one.
-  const SPAWNER: Plugin = {
-    name: 'spawner',
-    register: on => {
-      on('prompt.submit', async ($, e, next) => {
-        await $.agent.spawn({ subagentType: 'general-purpose', prompt: 'no brief here' })
-        return next(e)
-      })
-    },
-  }
-  test("a plugin's own spawn is not judged", { plugins: [SPAWNER] }, async ($, on) => {
-    const w = world(on)
-    on('prompt.submit', async () => ({ text: '' }) as never)
-    await $.prompt.submit({ text: 'go', wait: false, origin: { kind: 'composer' } } as never)
-    expect(w.spawned.map(s => s.prompt)).toEqual(['no brief here'])
+    expect(deny.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch the dev-team spawn rules could not judge.')
+    expect(deny).toContain('Spawn rules (workbench-dev-team).')
   })
 })
 
-describe("the dispatch gate on workbench-core 469497a's orchestrator check (C3n)", () => {
+describe("the workspace check on workbench-core 469497a's orchestrator check (C3n)", () => {
   const CORE: Plugin = {
     name: 'workbench-core',
     register: on => {
@@ -315,78 +209,30 @@ describe("the dispatch gate on workbench-core 469497a's orchestrator check (C3n)
     },
   }
   const off = { command: 'orchestrator', args: 'off', origin: { kind: 'composer' }, presentation: { isFullscreen: false, columns: 80 } } as never
+  const onMain = (argv: readonly string[]) => (argv[0] === 'git' ? { exitCode: 0, stdout: 'main\n', stderr: '' } : undefined)
 
   const SETUPS: [string, string, Parameters<typeof world>[1]][] = [
     ['the session id cannot name a file', '../escape', {}],
     ['HOME is unset and there is no state dir', 's-1', { isHomeUnset: true }],
   ]
   for (const [name, id, options] of SETUPS) {
-    test(`${name}: an incomplete brief is refused, and /orchestrator off stands the gate down`, { plugins: [CORE] }, async ($, on) => {
-      const w = world(on, options)
+    test(`${name}: a Watson brief on main is refused, and /orchestrator off stands the check down`, { plugins: [CORE] }, async ($, on) => {
+      const w = world(on, { ...options, run: onMain })
       on('session.id', () => ({ value: id }))
-      const refused = await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
-      expect((refused as { deny?: string }).deny).toContain('Missing: Workdir:')
+      const refused = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+      expect((refused as { deny?: string }).deny).toContain('onto main, with no branch recorded')
       expect(w.spawned).toEqual([])
       await $.command.run(off)
-      await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
-      expect(w.spawned.map(s => s.prompt)).toEqual(['fix it'])
+      await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+      expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct')])
     })
   }
 
-  test('a legacy file the session id names stands the gate down', { plugins: [CORE] }, async ($, on) => {
-    const w = world(on, { disk: { '/Users/tester/.claude-workbench/orchestrator-mode/s-1': 'file' } })
+  test('a legacy file the session id names stands the check down', { plugins: [CORE] }, async ($, on) => {
+    const w = world(on, { run: onMain, disk: { '/Users/tester/.claude-workbench/orchestrator-mode/s-1': 'file' } })
     on('session.id', () => ({ value: 's-1' }))
-    await $.agent.spawn(spawnInput('general-purpose', 'fix it'))
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     expect(w.spawned).toHaveLength(1)
-  })
-})
-
-describe('the advisory hint — a complete brief that dictates method', () => {
-  const agentCall = (prompt: string, agentId?: string) =>
-    ({ tool: 'Agent', tool_use_id: 'toolu_1', description: 'a task', prompt, subagent_type: 'general-purpose', agentId }) as never
-
-  const FENCED = `${BRIEF}\n\`\`\`bash\nmake test\n\`\`\``
-  const SHELL = `${BRIEF}\ngit log --oneline -5`
-  const STEPS = `${BRIEF}\n1. read\n2. edit\n3. test`
-
-  for (const [label, prompt, marker] of [
-    ['a fenced block', FENCED, 'a fenced code block'],
-    ['a shell command on its own line', SHELL, 'a shell command on its own line'],
-    ['three numbered steps', STEPS, '3 numbered steps'],
-  ] as const) {
-    test(`${label} adds the hint, and blocks nothing`, async ($, on) => {
-      world(on)
-      const result = await $.tool.call(agentCall(prompt))
-      expect(result).not.toHaveProperty('deny')
-      const context = (result as { context?: string[] }).context ?? []
-      expect(context).toHaveLength(1)
-      expect(context[0]).toContain('nothing was blocked')
-      expect(context[0]).toContain(marker)
-    })
-  }
-
-  for (const [label, prompt] of [
-    ['two numbered steps', `${BRIEF}\n1. read\n2. edit`],
-    ['an inline mention of git', `${BRIEF}\nThe bug shows in git log output.`],
-    ["'make sure' as a sentence", `${BRIEF}\nmake sure the suite is green`],
-  ] as const) {
-    test(`${label} adds no hint`, async ($, on) => {
-      world(on)
-      const result = await $.tool.call(agentCall(prompt))
-      expect((result as { context?: string[] }).context).toBeUndefined()
-    })
-  }
-
-  test("a sub-agent's call gets no hint", async ($, on) => {
-    world(on)
-    const result = await $.tool.call(agentCall(FENCED, 'agent-holmes'))
-    expect((result as { context?: string[] }).context).toBeUndefined()
-  })
-
-  test('an Agent call that errored gets no hint', async ($, on) => {
-    const w = world(on)
-    w.agentCall = 'error'
-    const result = await $.tool.call(agentCall(FENCED))
-    expect((result as { context?: string[] }).context).toBeUndefined()
+    expect(w.runs).toEqual([])
   })
 })

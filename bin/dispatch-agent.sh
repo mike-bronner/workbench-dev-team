@@ -309,10 +309,7 @@ set -- --agent "workbench-dev-team:${MODE_TYPE}" \
 set -- "$@" --permission-mode auto --permission-prompts none \
   --output-format stream-json --verbose "$PROMPT"
 
-# Mark the child as the autonomous pipeline. The commit guard in the hooks
-# module (hooks/mods/commit-guard.ts) needs no flag: it reads the run's main
-# loop as a top-level agent, which may commit and push, and still refuses its
-# merges and every sub-agent's commit. `hooks/scripts/pipeline-scope.sh`
+# Mark the child as the autonomous pipeline. `hooks/scripts/pipeline-scope.sh`
 # (PermissionRequest) reads the flag, and answers a prompt for one plain
 # `git -C <dir>`, rm, or rmdir line with "allow" when every path is absolute and
 # stays inside the roots: all

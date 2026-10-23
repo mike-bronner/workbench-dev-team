@@ -8,7 +8,10 @@
   },
   "types": "./types/index.d.ts",
   "dependencies": [
-    "workbench-core"
+    {
+      "name": "workbench-core",
+      "version": ">=0.51.0"
+    }
   ],
   "userConfig": {
     "dispatchCadenceMinutes": {

@@ -1,44 +1,14 @@
 #!/usr/bin/env node
-// Every shell block the agents and their references ship must pass the commit
-// guard in the lanes that run it. Run: node tests/shipped-lines.mjs
-// (tests/test-shipped-lines.sh runs it in the suite).
-//
-// The differential (tests/differential.mjs) fails only where a guard refuses
-// less than the bash guard it replaced, so it cannot see a guard that refuses
-// a line dev-team's own agents run. This test reads every ```bash, ```sh and
-// ```shell block in agents/*.md and references/**/*.md that names git or gh,
-// and holds it to two lanes:
-//   - the pipeline (a top-level `claude -p --agent` run, unattended), where
-//     Watson and Holmes run their Index-mode lines: it must pass, and so must
-//     the subject of every commit it makes (hooks/mods/commit-subject.ts);
-//   - a sub-agent, where Holmes's helpers and the Direct-mode agents run: it
-//     must pass, or be refused only as the commit or push it is.
-// No agent merges, so a block refused as a merge fails in both lanes.
-// A block is judged whole, as an agent pastes it.
-//
-// workbench-core refuses, in every lane and ahead of any plugin guard, a line
-// whose command its reader cannot name (hiddenCommandRefusal in core's
-// hooks/mods/guards.ts, since 4e83554): a command word with an expansion in
-// it, a wrapper it cannot place, or a script piped or fed into a shell. So
-// every shell block in agents/, references/, skills/ and commands/, git or
-// not, is also held to that rule.
-//
-// The commit guard's fifth rule also refuses, in those two lanes, a line
-// with any unknown in its HIDES_NAME list, which holds every unknown the
-// reader can set. So every shell block is held to that list as well, read
-// from the guard itself.
-//
-// Needs node 22.18 or later (type stripping).
 
 import fs from 'node:fs'
 import path from 'node:path'
 import { fileURLToPath } from 'node:url'
 
-import { HIDES_NAME, SUBAGENT_REFUSAL, commitVerdict } from '../hooks/mods/commit-guard.ts'
-import { subjectVerdict } from '../hooks/mods/commit-subject.ts'
 import { fromCore } from './core-root.mjs'
 
 const { parseShell } = await fromCore('hooks/mods/shell.ts')
+const { HIDES_NAME, SUBAGENT_REFUSAL, commitVerdict } = await fromCore('hooks/mods/commit-guard.ts')
+const { subjectVerdict } = await fromCore('hooks/mods/commit-subject.ts')
 
 const ROOT = path.dirname(path.dirname(fileURLToPath(import.meta.url)))
 

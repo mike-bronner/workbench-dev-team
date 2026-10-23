@@ -119,10 +119,12 @@ describe('scratch — a bare mktemp lands in the agent\'s own folder', () => {
     expect(w.ran).toEqual(['Bash: mktemp -d'])
   })
 
-  test('the guards judge the pointed line', async ($, on) => {
-    const w = await withWatson($, on)
-    const answer = (await $.tool.call(bash('mktemp -d && git push --force', 'agent-1'))) as { deny?: string }
-    expect(answer.deny).toContain('forces or deletes')
+  test('the review guard judges the pointed line', async ($, on) => {
+    const w = world(on, { roots: ROOTS, cwd: '/repo', agents: [{ id: 'agent-1', type: T('holmes-local') }] })
+    await $.agent.spawn(spawnInput(T('holmes'), BRIEF))
+    const answer = (await $.tool.call(bash('mktemp -d && chmod 644 /repo/README.md', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toContain('A Holmes reviewer')
+    expect(w.runs.filter(argv => argv[0] === 'mktemp')).toEqual([['mktemp', '-d', '/scratch/session/holmes-local.XXXXXX']])
     expect(w.ran).toEqual([])
   })
 })

@@ -1,9 +1,3 @@
-// What happens when a session dispatches a dev-team agent, as pure functions:
-// which mode agent a dispatch runs, what model and effort the config gives it,
-// and the dispatch gate's refusal and advisory hint. hooks/register.ts holds
-// every hook that touches `$` and calls these, because the engine follows `$`
-// into no imported function.
-
 import type { EngineInterface } from 'claude-code'
 
 import type { DevTeamEffort } from '../../types'
@@ -11,8 +5,6 @@ import type { DevTeamEffort } from '../../types'
 // workbench-core's $.workbench contract, read off the noun itself: dev-team
 // lists core under `dependencies`, and the engine types the noun on `$`.
 type Workbench = EngineInterface['workbench']
-export type BriefCheck = Awaited<ReturnType<Workbench['briefCheck']>>
-export type BriefSlot = Awaited<ReturnType<Workbench['briefSlots']>>[number]
 export type CallerLane = Awaited<ReturnType<Workbench['callerLane']>>
 
 export const PLUGIN = 'workbench-dev-team'
@@ -227,64 +219,13 @@ export function branchUnreadDeny(path: string): string {
   ].join('\n')
 }
 
-// Whether the dispatch gate judges a dispatch: a main-session dispatch while
-// orchestrator mode is on, as workbench-core's gate decides it. A
-// sub-agent's dispatch and a top-level `--agent` run's are exempt.
 export const isGated = (lane: CallerLane, isOn: boolean): boolean => lane === 'main' && isOn
 
-// The refusal for a brief missing slots: the gate's human line, then what it
-// tells the model, from the same slot records the check read.
-export function denyOf(missing: readonly string[], slots: readonly BriefSlot[]): string {
-  const catalogue = slots.map(slot => `${slot.header} (${slot.description})`).join(', ')
+export function spawnFailedDeny(): string {
   return [
-    `🛑 Blocked: an Agent dispatch without a complete brief. Missing: ${missing.join(', ')}.`,
+    '🛑 Blocked: an Agent dispatch the dev-team spawn rules could not judge.',
     '',
-    `Dispatch gate (${PLUGIN}). Every Agent dispatch from the main session uses the six-slot brief, research included. ` +
-      `Slots: ${catalogue}. Add the missing slots and dispatch again. ` +
-      'The dev-team specialists and the brief they expect are in /workbench-dev-team:orchestrate. ' +
-      'To dispatch without the brief in this session, the human can run /orchestrator off.',
+    `Spawn rules (${PLUGIN}). The helper rule or the workspace check failed while reading this dispatch, so it is refused rather than let through unjudged. ` +
+      'Dispatch again. If it keeps failing, report it to the human as a defect in workbench-dev-team.',
   ].join('\n')
-}
-
-// The refusal when the gate judges a dispatch but cannot check its brief:
-// workbench-core's briefCheck rejected or the gate itself failed. Core is a
-// declared dependency, so that is a fault, and the gate fails closed.
-// /orchestrator off stands the gate down, so the refusal never locks the
-// human out.
-export function uncheckedDeny(): string {
-  return [
-    '🛑 Blocked: an Agent dispatch whose brief could not be checked.',
-    '',
-    `Dispatch gate (${PLUGIN}). The gate judges this dispatch, and workbench-core's brief check did not answer, so the gate refuses rather than let an unchecked brief through. ` +
-      'Dispatch again. If the check keeps failing, workbench-core needs repair. ' +
-      'To dispatch without the brief check in this session, the human can run /orchestrator off.',
-  ].join('\n')
-}
-
-// The advisory note on a complete brief that dictates method: a fenced block, a
-// shell command on its own line, or three or more numbered steps. It never
-// blocks. Each pattern is the one core's gate used before it moved into core's
-// hooks module, line by line, over its five ASCII whitespace characters.
-const WS = ' \\t\\r\\v\\f'
-const FENCE = new RegExp(`^[${WS}]*\`\`\``)
-const COMMAND = new RegExp(
-  `^[${WS}]*(\\$[${WS}]+)?(git|gh|npm|npx|yarn|pnpm|composer|php|python3?|pytest|cargo|rustc|bash|zsh|sed|awk|grep|rg|jq|cp|mv|rm|mkdir|chmod|ln|curl|docker)[${WS}]+[^${WS}]`,
-)
-const STEP = new RegExp(`^[${WS}]{0,3}[0-9]+[.)][${WS}]+[^${WS}]`)
-
-export function hintOf(check: BriefCheck, prompt: string): string | undefined {
-  if (check.shape !== 'brief' || !check.isComplete) return undefined
-  const lines = prompt.split('\n')
-  const markers: string[] = []
-  if (lines.some(line => FENCE.test(line))) markers.push('a fenced code block')
-  if (lines.some(line => COMMAND.test(line))) markers.push('a shell command on its own line')
-  const steps = lines.filter(line => STEP.test(line)).length
-  if (steps >= 3) markers.push(`${steps} numbered steps`)
-  if (markers.length === 0) return undefined
-  return (
-    `📐 Dispatch hint (advisory, nothing was blocked): this brief carries ${markers.join(', ')}. ` +
-    'A brief states the outcome and lets the sub-agent pick the method. The sub-agent has the repo in front of it and you do not. ' +
-    'Prefer moving that detail into Done when: as an observable result, or into Constraints: as a hard limit. ' +
-    'Send it as-is if the detail is genuinely a constraint rather than a recipe.'
-  )
 }
