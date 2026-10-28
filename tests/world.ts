@@ -105,6 +105,7 @@ export function readPlain(line: string): ShellParse {
 }
 
 export const HOME = '/Users/tester'
+export const SESSION_ID = 's-1'
 export const CONFIG_PATH = `${HOME}/.claude-workbench/dev-team-config.json`
 
 export const BRIEF = [
@@ -149,6 +150,7 @@ export type World = {
   usage: ({ input_tokens: number; output_tokens: number; cache_read_input_tokens: number; cache_creation_input_tokens: number; model: string } | null)[]
   background: string[]
   sizes: Map<string, number>
+  writeRejects?: (path: string) => boolean
 }
 
 // What a stand-in process.run answers.
@@ -168,6 +170,7 @@ export type GuardOptions = {
   agents?: { id: string; type: string; parentId?: string; status?: string }[] | Error
   // What $.session.cwd() answers.
   cwd?: string
+  sessionId?: string
   // The disk, by absolute path.
   disk?: Record<string, Entry>
   // Makes parseShell reject.
@@ -287,6 +290,14 @@ export function world(
   })
 
   on('fs.exists', async ($, e) => ({ value: w.made.has(e.path) || disk[e.path] !== undefined }))
+
+  on('fs.write', async ($, e) => {
+    if (w.writeRejects?.(e.path)) throw new Error(`EACCES: ${e.path}`)
+    w.files.set(e.path, e.text)
+    return { value: undefined }
+  })
+
+  on('session.id', async () => ({ value: options.sessionId ?? SESSION_ID }))
 
   on('ui.toast', async ($, e) => {
     w.shown.push(`toast: ${e.text}`)

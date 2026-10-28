@@ -29,6 +29,8 @@ Lestrade, Watson, and Holmes used to have no memory of their own reviews: nothin
 
 That installs the agents, the dispatcher script, and the bundled skills (see below). Nothing is scheduled yet.
 
+Node 24 is optional. On a Team or Enterprise login, it runs the fallbacks for the module hooks that Claude Code skips there ("On a Team or Enterprise login" below). Without it, those hooks exit with no output.
+
 ## Bundled skills
 
 The plugin ships three skills for general use, plus one skill the agents write by:
@@ -301,6 +303,22 @@ Two ways to invoke the same agents, same definitions:
 - **No turn end with work outstanding.** A dev-team sub-agent cannot end its turn while a helper it spawned is pending, running or waiting, or while a background command it started is still in flight. The `SubagentStop` hook refuses the turn end, names each outstanding helper and command, and tells the agent to keep making short tool calls, such as `sleep 20`, until each one reports. A sub-agent that ends its turn is never woken by a helper's notice, so without this the reports never reach it. The mod knows a command is the agent's own because it records the background task id of each Bash call that agent makes, and it reads the helpers from `$.agent.list()`. A helper's progress is the mod's own count of its model requests and tool calls, read from the `turn.step` and `tool.call` events its loop raises, plus whether one is under way. A helper with no request or call under way and no new one across two refusals in a row stops holding the turn: the next refusal names it, so the agent reports it as stuck, and the turn end after that is allowed. A background command's progress is the size of its output file, whose path the mod reads from the Bash call's own result text ("Output is being written to: …/<task id>.output"). A command whose output does not grow across two refusals in a row is released the same way, so a dev server or a `tail -f` cannot hold the turn forever. When the path cannot be read, the size counts as unchanged, so the command is released after two refusals. A hook that fails lets the turn end. Every other agent, and the main session, ends its turn as before.
 - **Scratch and the context budget, per run.** A dev-team agent's bare `mktemp` lands in a folder of its own, deleted once a turn of that agent ends with no live child, and at the session's end in any case (above). Every model request of a dev-team run is measured, input tokens cached or not, and the first one past 250k raises one toast and one transcript line for you. Nothing is stopped, since `maxBudgetUsd` reaches only the scheduled path and the Agent tool has no budget parameter.
 
+**On a Team or Enterprise login.** Since Claude Code 2.1.304, such a login seats the built-in guard `cc-plugin-sec-default`. It skips a user's module hooks on `classic.*`, `prompt.compose`, `prompt.section`, `prompt.context`, `skill.prompt` and `tool.check`. Command hooks in `hooks.json` still run. So each module hook on a skipped event has a fallback under `hooks/fallback/`: a TypeScript entry that Node runs, which imports the module's own code.
+
+| Module hook | What a Team login loses | Fallback |
+|---|---|---|
+| `prompt.compose` | The rules section in the system prompt | `session-start.ts` sends the same rules as SessionStart context, in every lane the section reaches |
+| `classic.SubagentStart` | The rules for a sub-agent | `subagent-start.ts` sends them as SubagentStart context, to the same agent types |
+| `classic.SubagentStop` | The hold on a turn end while work is outstanding | `subagent-stop.ts` blocks the turn end with the module's own reason |
+| `classic.SessionStart` | Nothing: it only writes the marker | None |
+
+Every other module hook is on an event the guard leaves alone: `session.start`, `session.end`, `command.run`, `ui.render`, `agent.spawn`, `prompt.submit`, `turn.step`, `turn.complete` and `tool.call`. So the review guard, the routing, the scratch folders and the budget notice need no fallback, and no fallback answers a permission request.
+
+- **The marker decides.** Each skipped module hook writes a marker under `~/.claude-workbench/dev-team-mod-ran/<session id>/` before it calls the next hook. Command hooks run beneath every module, so on a personal login the marker exists before a fallback reads it. A fallback that finds the marker exits with no output, before it loads any module. Dev-team keeps its own marker folder, because workbench-core's marker shows only that core's module ran.
+- **The hold reads a record.** The SubagentStop fallback cannot ask the engine for an agent's helpers. So in a session with no marker, the module records them at the end of each model request of a dev-team sub-agent, in `~/.claude-workbench/dev-team-helper-wait/<session id>/<agent id>.snapshot.json`. The record holds the helpers from `$.agent.list()`, the background commands the agent started, and each helper's count of model requests and tool calls. The fallback adds the in-flight tasks from its own input and the size of each output file, and runs the module's `stopBlockOf`. It keeps its watches in a file beside the record. A record it cannot read lets the turn end, as a module hook that fails does.
+- **Node is optional.** `hooks.json` runs each fallback only when `node` is on `PATH`, and each command exits 0 either way. Node 24 strips the types itself (22.18 or later does too). Without Node, a Team session runs without the dev-team rules and the hold, and a personal login sees no change either way.
+- **Old files go.** The module's `session.start` deletes marker and record files older than 7 days, and the folders they leave empty.
+
 **The mode agents are files.** `agents/watson-direct.md`, `watson-index.md`, `holmes-local.md`, `holmes-index.md`, `lestrade-item.md`, and `lestrade-sweep.md` each carry one mode of a public agent, so a dispatch never loads the mode it does not run. `bin/compose-agents.sh` builds each from its public agent file and a recipe in `references/agent-modes/`, and the output is a pure function of those two files, so a mode prompt is byte-stable for the prompt cache. Edit the public file and the recipe, never a mode file, then run the script. A section a recipe neither copies nor skips stops it. They are files and not types the mod registers because `claude -p --agent <type>` resolves its type before any hooks module loads, so the scheduled path can start only a file-defined type. The public files stay whole, and they run wherever the mod does not, such as Cowork.
 
 **Testing it.** `claude plugin test .` runs `tests/*.test.ts` against the engine's test kit, with a stand-in for core's noun. `claude plugin validate .` checks the manifest and what the module hooks and calls. To type-check, load the folder once beside workbench-core with `--plugin-dir` (the engine lays the API's and core's type declarations into `.claude-plugin/types/`, which is ignored), then run `tsc -p .`. CI has no Claude Code, so these run locally.
@@ -320,7 +338,7 @@ anything fails. Pass `tests` or `lints` to run one group.
 
 The two groups are named apart on purpose:
 
-- **`test-*.sh`** — fifteen scripts that execute shipped logic and assert on
+- **`test-*.sh`** — sixteen scripts that execute shipped logic and assert on
   its behaviour. Six run a shipped script as a subprocess, among them
   `bin/test-compose-agents.sh`, which holds every committed mode agent to what
   the composer builds now, and `bin/test-dispatch-tick.sh`, which runs
@@ -359,6 +377,11 @@ The two groups are named apart on purpose:
   that uses it, because one name can hold different strings in different
   chunks. Four fixture checks pin that reading and need no binary. The test
   skips the binary checks, and says why, when no binary is reachable.
+  `tests/test-fallback.sh` runs each Node fallback as a subprocess. It holds
+  their output to the module's own rules and `stopBlockOf`, proves that a
+  marker keeps each one silent before any heavy module loads, runs each
+  `hooks.json` command with no `node` and with a broken one, and runs the
+  sweep on a real folder. It needs `node` 22.18 or later.
 
 **The tests run workbench-core's real code, never a copy.** The node scripts
 (`tests/guards.mjs`, `tests/differential.mjs`, `tests/shipped-lines.mjs`,

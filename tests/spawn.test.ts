@@ -217,8 +217,7 @@ describe("the workspace check on workbench-core 469497a's orchestrator check (C3
   ]
   for (const [name, id, options] of SETUPS) {
     test(`${name}: a Watson brief on main is refused, and /orchestrator off stands the check down`, { plugins: [CORE] }, async ($, on) => {
-      const w = world(on, { ...options, run: onMain })
-      on('session.id', () => ({ value: id }))
+      const w = world(on, { ...options, sessionId: id, run: onMain })
       const refused = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
       expect((refused as { deny?: string }).deny).toContain('onto main, with no branch recorded')
       expect(w.spawned).toEqual([])
@@ -230,7 +229,6 @@ describe("the workspace check on workbench-core 469497a's orchestrator check (C3
 
   test('a legacy file the session id names stands the check down', { plugins: [CORE] }, async ($, on) => {
     const w = world(on, { run: onMain, disk: { '/Users/tester/.claude-workbench/orchestrator-mode/s-1': 'file' } })
-    on('session.id', () => ({ value: 's-1' }))
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     expect(w.spawned).toHaveLength(1)
     expect(w.runs).toEqual([])

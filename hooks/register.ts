@@ -22,7 +22,9 @@ import { BOARD_TIMEOUT_MS, EMPTY_BOARD, afterFetch, boardArgv, boardOutcome, cad
 
 import { budgetNotice, contextOf, isOverBudget } from './mods/budget'
 import { DISPATCH_CONTEXT, dispatchDeny, dispatcherArgv, dispatchOutcome, dispatchResult, indexDispatchOf, isForcedBackground } from './mods/dispatch'
-import { outputOf, stopBlockOf, withStarted } from './mods/helper-wait'
+import type { ModHook } from './mods/fallback'
+import { markerOf, sweepArgvsOf, waitFileOf } from './mods/fallback'
+import { outputOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
 import type { Activity, Watch } from './mods/helper-wait'
 import type { Disk, ShellParse } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
@@ -184,6 +186,14 @@ async function recordStarted($: EngineInterface, agentId: string | undefined, re
   }
 }
 
+async function waitInputsOf($: EngineInterface, agentId: string) {
+  const { value: type } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId })
+  if (!isDevTeamType(type)) return undefined
+  const { value: started = [] } = await $.state.get({ plugin: 'workbench-dev-team', key: 'backgroundTasks', id: agentId })
+  const agents = await $.agent.list().catch(() => [])
+  return { started, agents }
+}
+
 async function stopBlock(
   $: EngineInterface,
   agentId: string,
@@ -191,10 +201,9 @@ async function stopBlock(
   activity: ReadonlyMap<string, Activity>,
   watches: Map<string, Watch>,
 ): Promise<string | undefined> {
-  const { value: type } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId })
-  if (!isDevTeamType(type)) return undefined
-  const { value: started = [] } = await $.state.get({ plugin: 'workbench-dev-team', key: 'backgroundTasks', id: agentId })
-  const agents = await $.agent.list().catch(() => [])
+  const inputs = await waitInputsOf($, agentId)
+  if (inputs === undefined) return undefined
+  const { started, agents } = inputs
   const sizes = new Map<string, number>()
   for (const entry of started) {
     if (entry.output === undefined || !inFlight.some(task => task.id === entry.id)) continue
@@ -202,6 +211,31 @@ async function stopBlock(
     if (size !== undefined) sizes.set(entry.output, size)
   }
   return stopBlockOf(agentId, agents, started, inFlight, { helper: id => activity.get(id), outputSize: path => sizes.get(path) }, watches)
+}
+
+type Seat = { sessionId?: string }
+
+async function markModRan($: EngineInterface, seat: Seat, sessionId: string, hook: ModHook): Promise<void> {
+  const file = markerOf(await $.env.get('HOME').catch(() => undefined), sessionId, hook)
+  if (file === undefined) return
+  const isWritten = await $.fs.write(file, '').then(
+    () => true,
+    () => false,
+  )
+  if (isWritten) seat.sessionId = sessionId
+}
+
+async function recordWait($: EngineInterface, seat: Seat, agentId: string, activity: ReadonlyMap<string, Activity>): Promise<void> {
+  const sessionId = await $.session.id()
+  if (seat.sessionId === sessionId) return
+  const inputs = await waitInputsOf($, agentId)
+  if (inputs === undefined) return
+  const file = waitFileOf(await $.env.get('HOME'), sessionId, agentId, 'snapshot')
+  if (file !== undefined) await $.fs.write(file, JSON.stringify(snapshotOf(agentId, inputs.agents, inputs.started, id => activity.get(id))))
+}
+
+async function sweepFallbackFiles($: EngineInterface): Promise<void> {
+  for (const argv of sweepArgvsOf(await $.env.get('HOME'))) await $.process.run(argv, { timeoutMs: 10_000 }).catch(() => undefined)
 }
 
 // ── The context budget ───────────────────────────────────────────────────────
@@ -438,11 +472,19 @@ export const register: Register = (on, options) => {
     }
   }
 
+  const seat: Seat = {}
+
   on('session.start', async ($, e, next) => {
+    void sweepFallbackFiles($).catch(() => undefined)
     await $.command.register({ name: RUNS_COMMAND, description: 'Show live and recent dev-team runs from the dispatch logs', immediate: true }).catch(() => undefined)
     await $.command.register({ name: BOARD_COMMAND, description: "Show The Index board's lanes, fetched once per dispatch cadence at most", immediate: true }).catch(() => undefined)
     const open = await $.ui.panes().catch(() => [])
     if (open.some(pane => pane.id === RUNS_PANE || pane.id === BOARD_PANE)) startRefresh($, memory, cadenceMs)
+    return next(e)
+  })
+
+  on('classic.SessionStart', async ($, e, next) => {
+    await markModRan($, seat, e.session_id, 'session-start')
     return next(e)
   })
 
@@ -525,11 +567,14 @@ export const register: Register = (on, options) => {
   // The dev-team session rules: a shared section in the main loop's system
   // prompt, and context at a sub-agent's start.
   on('prompt.compose', async ($, e, next) => {
+    const sessionId = await $.session.id().catch(() => undefined)
+    if (sessionId !== undefined && seat.sessionId !== sessionId) await markModRan($, seat, sessionId, 'prompt-compose')
     const result = await next(e)
     return (await isRulesSession($)) ? { sections: withRules(result.sections) } : result
   })
 
   on('classic.SubagentStart', async ($, e, next) => {
+    await markModRan($, seat, e.session_id, 'subagent-start')
     const result = await next(e)
     if (!isRulesSubagent(e.agent_type) || !(await isRulesSession($))) return result
     return { ...result, additionalContext: [...(result.additionalContext ?? []), RULES] }
@@ -560,6 +605,7 @@ export const register: Register = (on, options) => {
       }
       const result = yield* next(input)
       await measure($, e.agentId, result.usage).catch(() => undefined)
+      if (e.agentId !== undefined) await recordWait($, seat, e.agentId, activity).catch(() => undefined)
       return result
     } finally {
       done()
@@ -567,6 +613,7 @@ export const register: Register = (on, options) => {
   })
 
   on('classic.SubagentStop', async ($, e, next) => {
+    await markModRan($, seat, e.session_id, 'subagent-stop')
     const result = await next(e)
     if (result.block !== undefined) return result
     const block = await stopBlock($, e.agent_id, e.background_tasks ?? [], activity, watches)

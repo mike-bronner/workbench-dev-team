@@ -27,6 +27,99 @@ export function outputOf(id: string, text: unknown): string | undefined {
 
 export const watchKey = (agentId: string, itemKey: string): string => `${agentId}\u0000${itemKey}`
 
+export type WaitSnapshot = { agents: Child[]; started: Started[]; activity: [string, Activity][] }
+
+export type WaitState = { agents: Child[]; started: Started[]; activity: ReadonlyMap<string, Activity> }
+
+const childOf = ({ id, type, status, parentId, name, description }: Child): Child => ({
+  id,
+  type,
+  status,
+  description,
+  ...(parentId === undefined ? {} : { parentId }),
+  ...(name === undefined ? {} : { name }),
+})
+
+export function snapshotOf(agentId: string, agents: readonly Child[], started: readonly Started[], activity: (id: string) => Activity | undefined): WaitSnapshot {
+  const children = agents.filter(agent => agent.parentId === agentId).map(childOf)
+  return {
+    agents: children,
+    started: [...started],
+    activity: children.flatMap(child => {
+      const seen = activity(child.id)
+      return seen === undefined ? [] : [[child.id, { ticks: seen.ticks, inFlight: seen.inFlight }] as [string, Activity]]
+    }),
+  }
+}
+
+type Fields = Record<string, unknown>
+
+const isFields = (value: unknown): value is Fields => typeof value === 'object' && value !== null && !Array.isArray(value)
+const isText = (value: unknown): value is string => typeof value === 'string'
+const isCount = (value: unknown): value is number => typeof value === 'number' && Number.isFinite(value)
+const isOptionalText = (value: unknown): boolean => value === undefined || isText(value)
+
+const asChild = (value: unknown): Child | undefined =>
+  isFields(value) && isText(value.id) && isText(value.type) && isText(value.status) && isText(value.description) && isOptionalText(value.parentId) && isOptionalText(value.name)
+    ? childOf(value as Child)
+    : undefined
+
+const asStarted = (value: unknown): Started | undefined =>
+  isFields(value) && isText(value.id) && isOptionalText(value.output) ? { id: value.id, ...(isText(value.output) ? { output: value.output } : {}) } : undefined
+
+const asActivity = (value: unknown): Activity | undefined => (isFields(value) && isCount(value.ticks) && isCount(value.inFlight) ? { ticks: value.ticks, inFlight: value.inFlight } : undefined)
+
+const asWatch = (value: unknown): Watch | undefined =>
+  isFields(value) && isText(value.mark) && isCount(value.unchanged) && typeof value.isReleased === 'boolean' ? { mark: value.mark, unchanged: value.unchanged, isReleased: value.isReleased } : undefined
+
+const asInFlight = (value: unknown): InFlight | undefined =>
+  isFields(value) && isText(value.id) && isText(value.description) && isOptionalText(value.command)
+    ? { id: value.id, description: value.description, ...(isText(value.command) ? { command: value.command } : {}) }
+    : undefined
+
+function everyOf<T>(value: unknown, as: (item: unknown) => T | undefined): T[] | undefined {
+  if (!Array.isArray(value)) return undefined
+  const items: T[] = []
+  for (const item of value) {
+    const read = as(item)
+    if (read === undefined) return undefined
+    items.push(read)
+  }
+  return items
+}
+
+function pairsOf<T>(value: unknown, as: (item: unknown) => T | undefined): Map<string, T> | undefined {
+  const pairs = everyOf(value, pair => {
+    if (!Array.isArray(pair) || pair.length !== 2 || !isText(pair[0])) return undefined
+    const read = as(pair[1])
+    return read === undefined ? undefined : ([pair[0], read] as [string, T])
+  })
+  return pairs === undefined ? undefined : new Map(pairs)
+}
+
+function parsed(text: string): unknown {
+  try {
+    return JSON.parse(text) as unknown
+  } catch {
+    return undefined
+  }
+}
+
+export function waitStateFrom(text: string): WaitState | undefined {
+  const raw = parsed(text)
+  if (!isFields(raw)) return undefined
+  const agents = everyOf(raw.agents, asChild)
+  const started = everyOf(raw.started, asStarted)
+  const activity = pairsOf(raw.activity, asActivity)
+  return agents === undefined || started === undefined || activity === undefined ? undefined : { agents, started, activity }
+}
+
+export const watchesFrom = (text: string | undefined): Map<string, Watch> => (text === undefined ? undefined : pairsOf(parsed(text), asWatch)) ?? new Map()
+
+export const watchesText = (watches: ReadonlyMap<string, Watch>): string => JSON.stringify([...watches])
+
+export const inFlightOf = (value: unknown): InFlight[] => (Array.isArray(value) ? value.flatMap(item => asInFlight(item) ?? []) : [])
+
 type Item = { key: string; line: string; mark: string; isBusy: boolean }
 
 export function stopBlockOf(
