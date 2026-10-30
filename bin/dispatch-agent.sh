@@ -1,14 +1,6 @@
 #!/usr/bin/env bash
 # Dispatch one dev-team agent as a detached subprocess, behind the circuit breaker.
 #
-# Usage:
-#   dispatch-agent.sh lestrade <item-id>        # triage one item
-#   dispatch-agent.sh lestrade <owner/repo>     # blocker sweep for one repo (no pre-flight)
-#   dispatch-agent.sh holmes   <item-id>        # review one item
-#   dispatch-agent.sh watson   <item-id>        # develop one item
-#   dispatch-agent.sh --check <agent> <item-id>          # print the pre-flight verdict, spawn nothing
-#   dispatch-agent.sh --mark-escalated <agent> <item-id> # record that the breaker escalated this item
-#
 # An item dispatch runs the pre-flight first, and its first output line says what
 # happened:
 #   dispatched <agent> pid=… log=…   the normal case
@@ -52,14 +44,122 @@ MODE=dispatch
 case "${1:-}" in
   --check) MODE=check; shift ;;
   --mark-escalated) MODE=mark; shift ;;
+  --compact-digest) MODE=digest ;;
 esac
+
+DIGEST_CEILING=15000
+
+digest_path() {
+  local vault="${WORKBENCH_MEMORY_PATH:-}"
+  [ -n "$vault" ] || vault=$(jq -r '.memory_path // empty' \
+    "$HOME/.claude/plugins/data/workbench-core-claude-workbench/config.json" 2>/dev/null)
+  printf '%s/dev-team/top-lessons.md' "${vault:-$HOME/Documents/Claude/Memory}"
+}
+
+DIGEST_AWK='
+function bytes(i) { return length(line[i]) + 1 }
+{ line[NR] = $0 }
+END {
+  n = NR; s = 0; open = 0; size = 0; compacted = 0
+  for (i = 1; i <= n; i++) {
+    size += bytes(i)
+    if (line[i] ~ /^## [0-9]+\. .+ — ~?[0-9]+ events?$/) {
+      s++; first[s] = i; open = 1
+      t = line[i]; sub(/.* — /, "", t); count[s] = t; sub(/ events?$/, "", t); approx[s] = t ~ /^~/ ? "~" : ""; sub(/^~/, "", t); tally[s] = t + 0
+      nm = line[i]; sub(/^## [0-9]+\. /, "", nm); sub(/ — ~?[0-9]+ events?$/, "", nm); name[s] = nm
+      kept[s] = 1
+    } else if (line[i] ~ /^\*\*Compacted out/) {
+      compacted = i; open = 0
+    } else if (open && (line[i] ~ /^## / || line[i] == "---")) {
+      open = 0
+    }
+    if (open) { owner[i] = s; secbytes[s] += bytes(i); last[s] = i }
+  }
+  if (s == 0) { print "OVER\t" real "\t" real; exit }
+  at = compacted ? compacted : last[s] + 1
+  entries = compacted ? substr(line[compacted], index(line[compacted], ":**") + 3) : ""
+  sub(/^ +/, "", entries)
+  before = real; left = s; dropped = ""
+  header = "**Compacted out (tally kept, rules dropped; events in dev-team/review-learnings/):** "
+  size += (compacted ? length(entries) - bytes(compacted) : 1) + length(header) + 1
+  while (size > ceiling && left > 1) {
+    pick = 0
+    for (k = 1; k <= s; k++) if (kept[k] && (pick == 0 || tally[k] <= tally[pick])) pick = k
+    kept[pick] = 0; left--
+    entry = name[pick] " — " count[pick]
+    size -= secbytes[pick]
+    size += length(entry) + (entries == "" ? 0 : 2)
+    entries = entries == "" ? entry : entries "; " entry
+    dropped = dropped (dropped == "" ? "" : ", ") name[pick] " (" approx[pick] tally[pick] ")"
+  }
+  if (size > ceiling) { print "OVER\t" before "\t" size; exit }
+  k = 0
+  for (i = 1; i <= n; i++) {
+    if (i == at) { print header entries > out; if (!compacted) print "" > out }
+    if (i == compacted) continue
+    if (owner[i] && !kept[owner[i]]) continue
+    if (owner[i] && i == first[owner[i]]) { k++; l = line[i]; sub(/^## [0-9]+\./, "## " k ".", l); print l > out; continue }
+    print line[i] > out
+  }
+  if (at > n) { print header entries > out }
+  print "COMPACTED\t" before "\t" size "\t" dropped
+}'
+
+digest_warning() {
+  printf 'DIGEST\t⚠️ %s is %s bytes, over its %s-byte ceiling, and %s. Holmes writes a count bump only until someone consolidates the digest by hand.\n' "$1" "$2" "$DIGEST_CEILING" "$3"
+}
+
+compact_digest() {
+  local file dir real snap tmp verdict before after dropped
+  file=$(digest_path)
+  dir=$(dirname "$file")
+  for _ in 1 2; do
+    [ -f "$file" ] || return 0
+    real=$(wc -c < "$file" | tr -d ' ')
+    [ "${real:-0}" -le "$DIGEST_CEILING" ] && return 0
+    snap=$(mktemp "$dir/.top-lessons.md.XXXXXX" 2>/dev/null) || snap=
+    tmp=$(mktemp "$dir/.top-lessons.md.XXXXXX" 2>/dev/null) || tmp=
+    if [ -z "$snap" ] || [ -z "$tmp" ] || ! cp -p "$file" "$snap" || ! cp -p "$file" "$tmp"; then
+      rm -f -- ${snap:+"$snap"} ${tmp:+"$tmp"}
+      digest_warning "$file" "$real" "its folder is not writable, so it could not be compacted"
+      return 1
+    fi
+    real=$(wc -c < "$snap" | tr -d ' ')
+    verdict=$(LC_ALL=C awk -v ceiling="$DIGEST_CEILING" -v real="$real" -v out="$tmp" "$DIGEST_AWK" "$snap")
+    IFS=$'\t' read -r verdict before after dropped <<< "$verdict"
+    if [ "$verdict" != COMPACTED ]; then
+      rm -f -- "$snap" "$tmp"
+      digest_warning "$file" "${before:-$real}" "compaction cannot bring it under: with only the most-cited lesson kept it is ${after:-?} bytes. The file is unchanged"
+      return 1
+    fi
+    if ! cmp -s "$snap" "$file"; then
+      rm -f -- "$snap" "$tmp"
+      continue
+    fi
+    if mv -f "$tmp" "$file"; then
+      rm -f -- "$snap"
+      printf 'DIGEST\tcompacted %s from %s to %s bytes, under its %s-byte ceiling. Moved to the compacted-out line with their tallies: %s.\n' "$file" "$before" "$after" "$DIGEST_CEILING" "$dropped"
+      return 0
+    fi
+    rm -f -- "$snap" "$tmp"
+    digest_warning "$file" "$before" "the compacted copy could not replace it. The file is unchanged"
+    return 1
+  done
+  digest_warning "$file" "$real" "it changed during both compaction attempts, so each compacted copy was discarded. The file keeps those changes"
+  return 1
+}
+
+if [ "$MODE" = digest ]; then
+  compact_digest
+  exit
+fi
 
 AGENT="${1:-}"
 TARGET="${2:-}"
 
 case "$AGENT" in
   lestrade|holmes|watson) ;;
-  *) echo "usage: $(basename "$0") [--check|--mark-escalated] <lestrade|holmes|watson> <item-id|owner/repo>" >&2; exit 2 ;;
+  *) { echo "usage: $(basename "$0") [--check|--mark-escalated] <lestrade|holmes|watson> <item-id|owner/repo>"; echo "       $(basename "$0") --compact-digest"; } >&2; exit 2 ;;
 esac
 
 if [ -z "$TARGET" ]; then
@@ -424,6 +524,12 @@ foreach (inputs, null) as $line ({calls: {}, seen: {}, ended: false};
     end;
   .out[])'
 
+DIGEST_LINE=
+DIGEST_WARNING=
+if [ "$AGENT" = holmes ]; then
+  DIGEST_LINE=$(compact_digest) || DIGEST_WARNING=$DIGEST_LINE
+fi
+
 # The redirect opens in this script's cwd, so a relative LOGDIR still resolves
 # where the pre-flight reads it. The wrapper subshell owns the run folder: its
 # EXIT trap deletes it when the agent exits, on success or failure. A TERM ends
@@ -436,6 +542,7 @@ foreach (inputs, null) as $line ({calls: {}, seen: {}, ended: false};
   trap 'exit 143' TERM
   cd "$RUNDIR" || exit 1
   nohup claude -p "$@" | jq -nrR --unbuffered "$RENDER"
+  [ -z "$DIGEST_WARNING" ] || printf '%s\n' "$DIGEST_WARNING"
 ) > "$LOG" 2>&1 &
 DISPATCHED=$!
 [ -n "$LOCK" ] && printf '%s' "$DISPATCHED" > "$LOCK"
@@ -446,3 +553,4 @@ disown 2>/dev/null || true
 [ "$REPRIEVE" = 1 ] && rm -f "$MARKER"
 
 printf 'dispatched %s pid=%s log=%s\n' "$AGENT" "$DISPATCHED" "$LOG"
+[ -z "$DIGEST_LINE" ] || printf '%s\n' "$DIGEST_LINE"

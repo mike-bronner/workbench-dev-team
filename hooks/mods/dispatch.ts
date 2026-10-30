@@ -14,7 +14,7 @@
 
 import type { ToolResultOf } from 'claude-code'
 
-import { familyOf, itemIdOf } from './spawn'
+import { PLUGIN, familyOf, itemIdOf } from './spawn'
 
 // Where /workbench-dev-team:setup installs the dispatcher, under $HOME.
 export const DISPATCHER = '.claude-workbench/bin/dispatch-agent.sh'
@@ -82,6 +82,18 @@ export function dispatchResult(line: string, prompt: string): ToolResultOf<'Agen
       cache_creation: null,
     },
   }
+}
+
+export const DIGEST_MODE = `${PLUGIN}:holmes-index`
+export const digestArgv = (pluginRoot: string): string[] => ['bash', `${pluginRoot}/bin/dispatch-agent.sh`, '--compact-digest']
+
+export const DIGEST_LABEL = 'Digest notice:'
+
+export function digestNoticeOf(run: { exitCode: number; stdout: string } | undefined): string | undefined {
+  if (run?.exitCode === 0) return undefined
+  const line = run === undefined ? undefined : firstLine(run.stdout)?.replace(/^DIGEST\t/u, '')
+  const why = line ?? `⚠️ the top-lessons digest ceiling check could not run (${run === undefined ? 'no process' : `exit ${run.exitCode}`}), so the digest may be over its ceiling.`
+  return `${DIGEST_LABEL} ${why} Quote this line in your report.`
 }
 
 // Whether a dev-team dispatch must be put in the background: every one whose

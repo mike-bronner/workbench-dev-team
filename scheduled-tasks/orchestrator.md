@@ -50,6 +50,8 @@ Every item dispatch runs a pre-flight inside `dispatch-agent.sh` before it spawn
 - `REPRIEVE<TAB><note>`, followed by a `dispatched` line — a human moved an escalated item back to its lane. The script consumed the marker and dispatched one fresh run at a raised budget. Record a **reprieve**.
 - `ESCALATE<TAB><reason>` — the item is wedged. Nothing was spawned. Escalate it as below, and record an **escalation**.
 
+A Holmes dispatch can print a `DIGEST<TAB><note>` line after its `dispatched` line. Before the run started, the script held the top-lessons digest at its ceiling. If the note starts with ⚠️, the digest is still over its ceiling, and Holmes can only bump a count until a human consolidates it. Quote that note in your tick report. A `DIGEST` line changes nothing else you do.
+
 To escalate an item:
 
 1. Load the escalation tools once (deferred): `ToolSearch query: select:mcp__the-index__move,mcp__the-index__add_comment,mcp__the-index__release_item`.

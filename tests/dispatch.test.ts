@@ -5,8 +5,8 @@
 
 import { describe, expect, test } from 'claude-code/testing'
 
-import { DISPATCH_CONTEXT, dispatchOutcome, indexDispatchOf, isForcedBackground } from '../hooks/mods/dispatch'
-import { BRIEF, HOME, world } from './world'
+import { DIGEST_LABEL, DISPATCH_CONTEXT, digestArgv, digestNoticeOf, dispatchOutcome, indexDispatchOf, isForcedBackground } from '../hooks/mods/dispatch'
+import { BRIEF, HOME, spawnInput, world } from './world'
 
 const T = (name: string) => `workbench-dev-team:${name}`
 const DISPATCHER = `${HOME}/.claude-workbench/bin/dispatch-agent.sh`
@@ -186,5 +186,74 @@ describe('dispatch — the pure rules', () => {
     expect(isForcedBackground(T('watson'), false)).toBe(false)
     expect(isForcedBackground(T('watson'), true)).toBe(false)
     expect(isForcedBackground('Explore', undefined)).toBe(false)
+  })
+})
+
+describe('Holmes Index-mode spawn — the digest ceiling check runs first', () => {
+  const isDigestRun = (argv: readonly string[]) => argv[2] === '--compact-digest'
+  const digestRuns = (w: { runs: string[][] }) => w.runs.filter(isDigestRun)
+  const WARNING = '⚠️ /v/dev-team/top-lessons.md is 16000 bytes, over its 15000-byte ceiling, and compaction cannot bring it under.'
+  const promptOf = (w: { spawned: { prompt: string }[] }) => w.spawned[0]?.prompt ?? ''
+
+  test('a Holmes Item ID spawn runs the check, and a digest within the ceiling adds nothing', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 5'))
+    expect(digestRuns(w)).toHaveLength(1)
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-index')])
+    expect(promptOf(w)).not.toContain(DIGEST_LABEL)
+  })
+
+  test('the check runs the plugin\'s own bundled dispatcher, never the installed copy', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 5'))
+    const [argv] = digestRuns(w)
+    expect(argv?.[0]).toBe('bash')
+    expect(argv?.[1]?.endsWith('/bin/dispatch-agent.sh')).toBe(true)
+    expect(argv?.[1]).not.toBe(DISPATCHER)
+    expect(argv?.[1]).not.toContain('.claude-workbench')
+    expect(digestArgv('/p')).toEqual(['bash', '/p/bin/dispatch-agent.sh', '--compact-digest'])
+  })
+
+  test('with HOME unset the check does not run, and the prompt says it could not', async ($, on) => {
+    const w = world(on, { isHomeUnset: true })
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 5'))
+    expect(digestRuns(w)).toEqual([])
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-index')])
+    expect(promptOf(w)).toContain(`${DIGEST_LABEL} ⚠️ the top-lessons digest ceiling check could not run (no process)`)
+  })
+
+  test('a digest that cannot come under puts its warning in the prompt, and the run still starts', async ($, on) => {
+    const w = world(on, { run: argv => (argv[2] === '--compact-digest' ? { exitCode: 1, stdout: `DIGEST\t${WARNING}\n`, stderr: '' } : undefined) })
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 5'))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-index')])
+    expect(promptOf(w).startsWith('Item ID: 5\n\n')).toBe(true)
+    expect(promptOf(w)).toContain(`${DIGEST_LABEL} ${WARNING} Quote this line in your report.`)
+    expect(promptOf(w)).not.toContain('DIGEST\t')
+  })
+
+  test('a check that cannot run says so in the prompt', async ($, on) => {
+    const w = world(on, { run: argv => (argv[2] === '--compact-digest' ? new Error('ENOENT') : undefined) })
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 5'))
+    expect(promptOf(w)).toContain(`${DIGEST_LABEL} ⚠️ the top-lessons digest ceiling check could not run (no process)`)
+  })
+
+  test('a check that exits non-zero with no output says so in the prompt', async ($, on) => {
+    const w = world(on, { run: argv => (argv[2] === '--compact-digest' ? { exitCode: 127, stdout: '', stderr: 'No such file\n' } : undefined) })
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 5'))
+    expect(promptOf(w)).toContain('could not run (exit 127)')
+  })
+
+  test('no other mode runs the check', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('holmes'), BRIEF))
+    await $.agent.spawn(spawnInput(T('lestrade'), 'Item ID: 5'))
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    expect(digestRuns(w)).toEqual([])
+  })
+
+  test('digestNoticeOf is silent on exit 0 and keeps the warning text without its tag', () => {
+    expect(digestNoticeOf({ exitCode: 0, stdout: 'DIGEST\tcompacted x\n' })).toBeUndefined()
+    expect(digestNoticeOf({ exitCode: 1, stdout: '\nDIGEST\tover\n' })).toBe(`${DIGEST_LABEL} over Quote this line in your report.`)
+    expect(digestNoticeOf(undefined)).toContain('could not run (no process)')
   })
 })

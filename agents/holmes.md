@@ -801,7 +801,7 @@ mcp__plugin_workbench-core_memory__write(
 )
 ```
 
-Then read `dev-team/top-lessons.md` and bump the **Clean first-pass approvals** count at the top with a targeted edit. **Only that one line changes**, so never retype the file to change it: a full rewrite of a 15,000-character digest to move one number spends a large part of the run and risks corrupting every other line.
+Then read `dev-team/top-lessons.md` and bump the **Clean first-pass approvals** count at the top with a targeted edit. **Only that one line changes**, so never retype the file to change it: a full rewrite of a 15,000-byte digest to move one number spends a large part of the run and risks corrupting every other line.
 
 ```
 mcp__plugin_workbench-core_memory__edit(
@@ -854,7 +854,7 @@ mcp__plugin_workbench-core_memory__write(
 
 If the write errors, log it and continue — a memory-write failure never changes your verdict or blocks the report (§6).
 
-**4. Refresh the top-lessons digest** — the small, always-current checklist Watson and Lestrade read before they work (not an archive; that's the per-event notes above). Read the current digest and increment this event's category tally ("still open" counts the same as "fixed," both are signal the category recurs). **A count bump alone is an `edit`** of that one heading line, `## <k>. <category> — <n> events`, exactly as Path B edits its tally. Rewrite the whole file with `write` only when the refresh must add a rule or the bump changes the ranking, and then carry the **Clean first-pass approvals** count line through unchanged (Path A never increments it):
+**4. Refresh the top-lessons digest** — the small, always-current checklist Watson and Lestrade read before they work (not an archive; that's the per-event notes above). Read the current digest and increment this event's category tally ("still open" counts the same as "fixed," both are signal the category recurs). **A count bump alone is an `edit`** of that one heading line, `## <k>. <category> — <n> events`, exactly as Path B edits its tally. Rewrite the whole file with `write` only when the refresh must add a rule or the bump changes the ranking, and then carry the **Clean first-pass approvals** count line through unchanged (Path A never increments it). A category listed on the **Compacted out** line has no ranked section: bump its count there with an `edit` of that entry. Move it back into the ranked list, with its tally, only when the refresh must add a rule for it:
 
 ```
 mcp__plugin_workbench-core_memory__read("dev-team/top-lessons.md")   # missing → start fresh, all counts at zero
@@ -895,15 +895,29 @@ review run's entire budget spent re-emitting it. Every refresh obeys all five:
    note you wrote in step 3. Reference it; do not reproduce it.
 3. **Rank honestly.** Categories are ordered by count, every time. Verify the order
    after incrementing rather than assuming the existing sequence is still correct.
-4. **Hard ceiling: 15,000 characters.** If your composed content would exceed it,
-   **consolidate before writing** — merge redundant rules, drop superseded clauses —
-   and say so in the report. Never write past the ceiling.
-5. **Preserve the meta-rule block, the scope note, and this maintenance section**
-   verbatim. They are what keep the file from regrowing.
+4. **Hard ceiling: 15,000 bytes, as `wc -c` counts the whole file.** Code holds it
+   before your run starts: `bin/dispatch-agent.sh --compact-digest` runs ahead of
+   every Index-mode run, from the dispatcher or from the dev-team mod at an Agent
+   spawn. While the file is over the ceiling, it moves the least-cited lesson out of
+   the ranked list and onto one **Compacted out** line, with its tally, and keeps the
+   most-cited lessons and their tallies as they are. So you start at or under the
+   ceiling. Your own write must stay there too: if your composed content would
+   exceed it, **consolidate before writing** — merge redundant rules, drop
+   superseded clauses — and say so in the report. Never write past the ceiling.
+5. **Preserve the meta-rule block, the scope note, the Compacted out line, and this
+   maintenance section** verbatim. They are what keep the file from regrowing.
 
-If a refresh cannot satisfy these without dropping real signal, write the count bump
-alone, and flag the digest as needing a consolidation pass in your report (§6). A
-degraded refresh beats a 128K rewrite.
+If your prompt carries a `Digest notice:` line that says the check **could not run**,
+the digest's size is unknown, not over. Measure it with `wc -c` on the digest file in
+the vault (by default `~/Documents/Claude/Memory/dev-team/top-lessons.md`), and go on
+as the measurement says. If the notice says the digest is over
+the ceiling, or the digest you measured is over it, compaction could not bring it
+under. Write the count bump alone, and quote the notice or your measurement in your
+report (§6). In a dispatched run, the dispatcher also writes
+that warning as the last line of your run's log. If a refresh cannot satisfy these
+rules without dropping real signal, write the count bump alone, and flag the digest
+as needing a consolidation pass in your report (§6). A degraded refresh beats a
+128K rewrite.
 
 ### 6. Report
 
@@ -921,6 +935,12 @@ If a note write in §5.5 returned `created: false`, add this line under the repo
 
 ```
 ⚠️ Vault note replaced: <path> (created: false). Restore the earlier note from the vault's git history.
+```
+
+If your prompt carried a `Digest notice:` line, or §5.5 found the digest over its ceiling, add this line under the report line:
+
+```
+⚠️ Digest over ceiling: <the notice's text, or the size you measured>. Count bump only; the digest needs a consolidation pass.
 ```
 
 ## Rules

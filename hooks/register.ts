@@ -21,7 +21,18 @@ import type { RunsView } from '../types'
 import { BOARD_TIMEOUT_MS, EMPTY_BOARD, afterFetch, boardArgv, boardOutcome, cadenceMsOf, escalatedOf, isDue } from './mods/board'
 
 import { budgetNotice, contextOf, isOverBudget } from './mods/budget'
-import { DISPATCH_CONTEXT, dispatchDeny, dispatcherArgv, dispatchOutcome, dispatchResult, indexDispatchOf, isForcedBackground } from './mods/dispatch'
+import {
+  DIGEST_MODE,
+  DISPATCH_CONTEXT,
+  digestArgv,
+  digestNoticeOf,
+  dispatchDeny,
+  dispatcherArgv,
+  dispatchOutcome,
+  dispatchResult,
+  indexDispatchOf,
+  isForcedBackground,
+} from './mods/dispatch'
 import type { ModHook } from './mods/fallback'
 import { markerOf, sweepArgvsOf, waitFileOf } from './mods/fallback'
 import { outputOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
@@ -266,6 +277,13 @@ async function runDispatcher($: EngineInterface, itemId: string, prompt: string)
   const outcome = dispatchOutcome(run)
   if ('deny' in outcome) return outcome
   return { result: dispatchResult(outcome.line, prompt), context: [DISPATCH_CONTEXT] }
+}
+
+async function withDigestNotice($: EngineInterface, prompt: string): Promise<string> {
+  const home = await $.env.get('HOME').catch(() => undefined)
+  const run = home ? await $.process.run(digestArgv($.plugin.root), { timeoutMs: 30_000 }).catch(() => undefined) : undefined
+  const notice = digestNoticeOf(run)
+  return notice === undefined ? prompt : `${prompt.replace(/\s+$/u, '')}\n\n${notice}`
 }
 
 // ── The guards ───────────────────────────────────────────────────────────────
@@ -551,6 +569,7 @@ export const register: Register = (on, options) => {
     } catch {
       routed = undefined
     }
+    if (routed?.subagentType === DIGEST_MODE) routed = { ...routed, prompt: await withDigestNotice($, routed.prompt) }
     const spawned = routed ?? input
     const result = await next(spawned)
     if (result.agentId !== undefined) {
