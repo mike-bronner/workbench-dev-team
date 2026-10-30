@@ -1,0 +1,354 @@
+{
+  "lane": "lestrade-item",
+  "name": "phpcs-rules-356-red-main",
+  "repo": "mike-bronner/phpcs-rules",
+  "item_id": 541,
+  "as_of": "2026-08-19T23:42:48Z",
+  "commit": "222ec02b1550f9ba47cd4443e983a664450443da",
+  "known_outcome": "Triaged to Backlog with size=S bv=great rr=high ts=extremely estimate=3 priority=11.33. Holmes approved the PR on its first review against these AC.",
+  "source": {
+    "item_id": 541,
+    "issue": "mike-bronner/phpcs-rules#356",
+    "triage_log": "lestrade-541-20260819-164248.log",
+    "ac_comment": "https://github.com/mike-bronner/clean-code/issues/356#issuecomment-5349381773"
+  },
+  "item": {
+    "assignees": [],
+    "content_node_id": "I_kwDOTXIXrs8AAAABNdQwiA",
+    "created_at": "2026-08-19T23:29:25+00:00",
+    "event_action": "created",
+    "event_type": "projects_v2_item",
+    "id": 541,
+    "installation_id": 121915255,
+    "in_flight_at": null,
+    "issue_number": 356,
+    "labels": [],
+    "project_node_id": "PVT_kwDOEA1bdM4BTeiF",
+    "pr_number": null,
+    "repo": "mike-bronner/phpcs-rules",
+    "state": "OPEN",
+    "status": null,
+    "title": "main is red: ConvertToCollection reviewed-site census holds a stale duplicate entry for tests/Sniffs.php after the #350/#352 merge",
+    "updated_at": "2026-08-19T23:42:48Z",
+    "url": "https://github.com/mike-bronner/phpcs-rules/issues/356",
+    "field_changes": [],
+    "issue_fields": [
+      {
+        "id": "IFSS_kgDOAmguKg",
+        "name": "Priority",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY44w",
+            "name": "Urgent"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45A",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45Q",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45g",
+            "name": "Low"
+          }
+        ]
+      },
+      {
+        "id": "IFSS_kgDOAmguLQ",
+        "name": "Effort",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY45w",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46A",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46Q",
+            "name": "Low"
+          }
+        ]
+      }
+    ],
+    "issue_types": [
+      {
+        "id": "IT_kwDOEA1bdM4B59eI",
+        "name": "Acceptance Criteria"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B59eK",
+        "name": "PBI"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B593j",
+        "name": "Product Goal"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4CC2_s",
+        "name": "Sprint Goal"
+      }
+    ],
+    "project_fields": [
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn0",
+        "name": "Title",
+        "type": "TITLE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn4",
+        "name": "Assignees",
+        "type": "ASSIGNEES"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtQn8",
+        "name": "Status",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "cbd7979f",
+            "name": "Inbox"
+          },
+          {
+            "id": "f75ad846",
+            "name": "Backlog"
+          },
+          {
+            "id": "61e4505c",
+            "name": "Ready"
+          },
+          {
+            "id": "47fc9ee4",
+            "name": "In Progress"
+          },
+          {
+            "id": "df73e18b",
+            "name": "In Review"
+          },
+          {
+            "id": "a2a5a03d",
+            "name": "Approved"
+          },
+          {
+            "id": "63246415",
+            "name": "Escalated"
+          },
+          {
+            "id": "98236657",
+            "name": "Done"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoA",
+        "name": "Labels",
+        "type": "LABELS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoE",
+        "name": "Linked pull requests",
+        "type": "LINKED_PULL_REQUESTS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoI",
+        "name": "Milestone",
+        "type": "MILESTONE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoM",
+        "name": "Repository",
+        "type": "REPOSITORY"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoU",
+        "name": "Reviewers",
+        "type": "REVIEWERS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoY",
+        "name": "Parent issue",
+        "type": "PARENT_ISSUE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoc",
+        "name": "Sub-issues progress",
+        "type": "SUB_ISSUES_PROGRESS"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtR0A",
+        "name": "Size",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "56a7b1fe",
+            "name": "XXS"
+          },
+          {
+            "id": "6c6483d2",
+            "name": "XS"
+          },
+          {
+            "id": "f784b110",
+            "name": "S"
+          },
+          {
+            "id": "7515a9f1",
+            "name": "M"
+          },
+          {
+            "id": "817d0097",
+            "name": "L"
+          },
+          {
+            "id": "db339eb2",
+            "name": "XL"
+          },
+          {
+            "id": "5f5fa3a6",
+            "name": "XXL"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtR0E",
+        "name": "Estimate",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtSFQ",
+        "name": "Priority",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSYo",
+        "name": "Business Value",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "a74718d4",
+            "name": "minimal"
+          },
+          {
+            "id": "5128d06f",
+            "name": "low"
+          },
+          {
+            "id": "2940f8d9",
+            "name": "average"
+          },
+          {
+            "id": "50022154",
+            "name": "high"
+          },
+          {
+            "id": "1578c7e9",
+            "name": "great"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSaA",
+        "name": "Risk Reduction",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "faec73a5",
+            "name": "minimal"
+          },
+          {
+            "id": "65e247a5",
+            "name": "low"
+          },
+          {
+            "id": "7ce3e86e",
+            "name": "average"
+          },
+          {
+            "id": "810a8319",
+            "name": "high"
+          },
+          {
+            "id": "a70e8a80",
+            "name": "extreme"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSb8",
+        "name": "Time Sensitive",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "02b4afa4",
+            "name": "not"
+          },
+          {
+            "id": "32766ba9",
+            "name": "somewhat"
+          },
+          {
+            "id": "1603ed6a",
+            "name": "normal"
+          },
+          {
+            "id": "044b07e0",
+            "name": "highly"
+          },
+          {
+            "id": "5ebd63f5",
+            "name": "extremely"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ80",
+        "name": "Created",
+        "type": "CREATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9E",
+        "name": "Updated",
+        "type": "UPDATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9U",
+        "name": "Closed",
+        "type": "CLOSED"
+      }
+    ]
+  },
+  "github": {
+    "issues": [
+      {
+        "number": 356,
+        "title": "main is red: ConvertToCollection reviewed-site census holds a stale duplicate entry for tests/Sniffs.php after the #350/#352 merge",
+        "body": "`main` fails CI at HEAD. The failure blocks every open PR, because no branch can reach a green gate while it inherits this.\n\n## The failing test\n\n`tests/Standards/ConvertToCollectionTest.php:541` — `it('reports only the reviewed sites across the package source')`. It compares the sniff's live findings against `CONVERT_TO_COLLECTION_REVIEWED_SITES`, the hand-maintained ledger issue #286 left behind.\n\nResult on `main` HEAD `2664d15`: `1 failed, 2008 passed`. Run [32309976519](https://github.com/mike-bronner/phpcs-rules/actions/runs/32309976519).\n\n## The diagnosis\n\nThe ledger records two reviewed sites for `tests/Sniffs.php`. The file holds one.\n\n```\nExpected: 'tests/Sniffs.php' => [ ['line' => 204, 'column' => 15], ['line' => 197, 'column' => 15] ]\nFound:    'tests/Sniffs.php' => [ ['line' => 205, 'column' => 15] ]\n```\n\nThere is one native array call in that file, the `array_filter()` in `shippedSmokeSniffs()`. A human reviewed it at `e6f9406`. No new native array call arrived. Only the line number moved.\n\nThe duplicate is a merge artifact. Trace the ledger entry across the three merges of 2026-08-19:\n\n| Commit | PR | `tests/Sniffs.php` entry |\n|---|---|---|\n| `e6f9406` | census regenerated | `[{196, 15}]` |\n| `85656ae` | #352 | `[{197, 15}]` |\n| `3637e81` | #351 | `[{197, 15}]` |\n| `2664d15` | #350 | `[{204, 15}, {197, 15}]` |\n\nPR #350 shifted the same call to line 204 on its own branch and updated its own copy of the ledger. Git merged that edit next to the existing `{197, 15}` line instead of replacing it. Both entries then landed on `main`, and #352's separate additions pushed the real call one line further, to 205.\n\nEach PR passed CI alone. The combination fails. Branch CI runs before the merge, so nothing tested the merged tree.\n\n## The fix\n\nReplace the two entries with the one true site:\n\n```php\n'tests/Sniffs.php' => [\n    ['line' => 205, 'column' => 15],\n],\n```\n\nThis records a line shift for a call a human already reviewed, and drops a duplicate git created. It blesses no new call site, so it does not weaken the guard.\n\nVerified: apply that edit to a clean `origin/main` worktree and the test passes, `214 assertions`.\n\n## Why this is its own issue\n\nI found this while implementing #334 on PR #355. That PR touches four files, all under `ComponentMarkupSniff`. It touches neither `tests/Sniffs.php` nor any `ConvertToCollection` file. A pristine `origin/main` worktree reproduces the failure with none of PR #355's commits present.\n\nThe repair belongs to `main`, not to an unrelated Livewire PR.\n\n## Acceptance criteria\n\n- [ ] `CONVERT_TO_COLLECTION_REVIEWED_SITES` records exactly one site for `tests/Sniffs.php`, at line 205, column 15.\n- [ ] `composer test` passes on `main`.\n- [ ] The ledger's other entries stay unchanged. Only `tests/Sniffs.php` drifted.\n- [ ] Consider a guard against the recurrence: the ledger is a line-number list that two concurrent PRs can each edit and git can merge textually. Record whether a guard is worth adding, or why it is not.\n",
+        "labels": [],
+        "state": "OPEN",
+        "createdAt": "2026-08-19T23:29:24Z",
+        "comments": []
+      }
+    ],
+    "pulls": []
+  },
+  "held_acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] `git diff` (or the PR diff) shows the `'tests/Sniffs.php'` key inside `CONVERT_TO_COLLECTION_REVIEWED_SITES` (in `tests/Standards/ConvertToCollectionTest.php`) appears exactly once as a map key, with its value collapsed to the single tuple `['line' => 205, 'column' => 15]` — not appended alongside the existing `204`/`197` entries, and not achieved by adding a second, later `'tests/Sniffs.php'` key that merely overrides the first at evaluation time.\n- [ ] The diff is confined to that one block (the `'tests/Sniffs.php' => [...]` entry, roughly lines 199-202) — no other line in `ConvertToCollectionTest.php` changes, including the `$convertToCollectionSweptFiles` sweep closure and every other file key in the ledger.\n- [ ] `composer test` (full, unfiltered — not `--filter`-scoped) is run on a clean checkout of the exact commit being merged (`git status` clean, `git rev-parse HEAD` shown) and the pasted summary line shows the full-suite pass count (`2009 passed`, the issue's `2008 passed` plus the one test this fix turns green) — a restated claim without the transcript does not satisfy this.\n- [ ] Before merge, the branch is rebased onto the then-current `main` tip and `composer test` is re-run on that rebased tree, with the `main` SHA it was verified against recorded in the PR. `tests/Sniffs.php` has several other open PRs inserting lines above line 205; a stale rebase can reopen this exact bug within days.\n- [ ] The PR names, with `grep` evidence, exactly one call in `tests/Sniffs.php` to a function the `ConvertToCollection` sniff is configured to flag (currently `array_filter()` at line 205) — confirming the corrected entry blesses no new call site and the sniff's configured-function list has no other match in that file. (`array_diff()`/`array_values()` at line 207 are native array calls but outside the sniff's configured scope, not overlooked.)\n- [ ] The PR records an explicit decision on a guard against this defect class. The actual defect was two stale/duplicate `line`/`column` tuples surviving a three-way merge inside one file's entry list — not a duplicate top-level key, which PHP itself would silently collapse — and entries drift whenever unrelated lines are inserted above a tracked call site. Either a concrete safeguard addressing that mechanism (e.g., a check that each ledger tuple still resolves to a call of the expected kind at that exact position) is added, or a one-paragraph rationale — naming the mechanism, not boilerplate — explains why none is needed now.\n",
+  "expect": {
+    "move": "Backlog",
+    "fields": [
+      "Size",
+      "Business Value",
+      "Risk Reduction",
+      "Time Sensitive",
+      "Estimate",
+      "Priority"
+    ],
+    "ac_anchors": [
+      "tests/Sniffs\\.php",
+      "CONVERT_TO_COLLECTION_REVIEWED_SITES|ConvertToCollectionTest|reviewed.sites",
+      "composer test|test suite|full suite|suite (passes|is green)"
+    ]
+  }
+}

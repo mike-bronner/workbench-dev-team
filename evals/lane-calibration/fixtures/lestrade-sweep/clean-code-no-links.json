@@ -1,0 +1,42 @@
+{
+  "lane": "lestrade-sweep",
+  "name": "clean-code-no-links",
+  "repo": "mike-bronner/clean-code",
+  "as_of": "2026-09-27T15:06:39Z",
+  "known_outcome": "Two open issues and no dependency between them: #387 names #385 only as provenance. The sweep wrote nothing.",
+  "source": {
+    "sweep_log": "lestrade-sweep-mike-bronner-clean-code-20260927-080639.log",
+    "open_issue_count_in_log": 2
+  },
+  "github": {
+    "issues": [
+      {
+        "number": 385,
+        "title": "Ship the clean-code standards as Laravel Boost guidelines, and remove every comment from code and the ruleset",
+        "body": "## Problem\n\n**Agents cannot see the standards until the linter rejects their code.**\n\n- The standards live on mikebronner.dev/clean-code, in `docs/standards/` (73 documents) and in `docs/phpmd/` (35).\n- Laravel Boost loads none of these.\n- An agent in a consuming project therefore writes code, fails `phpcs`, and fixes it afterwards.\n- It should write compliant code from the start.\n\n**Comments drift, and the ruleset is mostly comments.**\n\nMeasured on `main` at `4c05dc6`:\n\n| Location | Comment lines |\n|---|---|\n| `CleanCode/ruleset.xml` | 3,297 of 3,557 (93%), for 57 `<rule ref>` entries |\n| `CleanCode/**/*.php` | 1,746 |\n| `tests/` (excluding fixtures) | ~22,900 |\n\n- #384 closed as completed, but its `rules.xml` criterion was never met.\n- `4c05dc6` removed three test docblocks that still claimed a PHP 8.1 floor and an 8.4-only CI.\n\n**How the two halves connect:** once the guidelines and `docs/standards/` hold the reasoning, a code comment has nothing left to say.\n\n## Part 1: Boost guidelines\n\nShip one guideline per documented standard under `resources/boost/guidelines/`. The goal is that an agent follows the standards while it writes code.\n\nEach guideline:\n- States the rule, with a short example of compliant code and of non-compliant code.\n- Names every sniff code that enforces the rule, for example `CleanCode.Conditionals.DisallowElse`.\n- Says whether each sniff is auto-fixable by `phpcbf`.\n- For a standard no sniff can check, says it is enforced by code review only. That covers Tier 3 standards such as `classes-contracts-interfaces`.\n- Links the matching `docs/standards/*.md`.\n\nThe source of truth is the mikebronner.dev content. Wherever a guideline and `docs/standards/` disagree, fix the disagreement. Do not copy it.\n\n**Boost discovery limits.** These were verified against Boost v2.9.1, and the README must state them:\n- Boost loads a package's guidelines only when the consumer's `boost.json` lists the package under `packages`.\n- The package must be a direct Composer dependency. A package pulled in transitively gets nothing.\n- Boost versions before v2.9.1 keep only the last guideline file from each package.\n\nWhether each guideline applies to agent-only development is tracked in mikebronner/mikebronner.me#22. That discussion stays out of these guidelines.\n\n## Part 2: Remove comments\n\n- **PHP:** remove every comment from all PHP under `CleanCode/` and `tests/`.\n  - Keep functional directives (`phpcs:ignore`, `phpcs:disable`, `phpcs:enable`).\n  - `tests/fixtures/` is excluded, because fixtures are sniff input.\n- **Rulesets:** in `CleanCode/ruleset.xml`, `phpcs.self.xml` and `phpunit.xml.dist`, keep only one-line comments that label a group of rules, for example `<!-- Conditionals -->`.\n- Removed comments are deleted, not moved into docs. Git history and the linked issues keep their reasoning.\n\n## Acceptance criteria\n\n- [ ] Every standard in `docs/standards/` has a guideline under `resources/boost/guidelines/`. Each guideline names its enforcing sniff codes or states that it is enforced by code review only.\n- [ ] A throwaway Laravel project that requires this package directly, and whose `boost.json` lists the package, receives every guideline after `boost:install`.\n- [ ] The README documents the `boost.json` requirement, the direct-dependency requirement and the Boost version floor.\n- [ ] No comment remains in PHP under `CleanCode/` or `tests/` (fixtures excluded), except `phpcs:*` directives.\n- [ ] The three XML files contain only one-line group labels.\n- [ ] `CONTRIBUTING.md` states the no-comment rule.\n- [ ] `composer test` and `composer lint` stay green.\n- [ ] The error count from `composer lint:self` does not increase. Measure before and after, because #384 found that removing annotations changes which codes some sniffs report.\n",
+        "labels": [
+          {
+            "name": "enhancement"
+          }
+        ],
+        "state": "OPEN",
+        "createdAt": "2026-09-24T18:29:48Z",
+        "comments": []
+      },
+      {
+        "number": 387,
+        "title": "Ship Boost guidelines for the PHPMD-port sniffs documented only in docs/phpmd/",
+        "body": "📋 Follow-up from Holmes's review of #385 (PR #386).\n\n🔍 **Observation:** 16 loaded `CleanCode.*` sniffs are named in no Boost guideline. Each is a PHPMD port documented only in `docs/phpmd/`.\n\n📍 **Location:** `CleanCode/Sniffs/` (auto-registered by the `CleanCode` standard) and `docs/phpmd/*.md`.\n\n💡 **Why it's worth doing:** #385 exists so that agents write compliant code before `phpcs` runs. Its guidelines cover `docs/standards/` only. An agent in a consuming project still meets these 16 rules only when the linter rejects its code.\n\n🏷️ **Tracked under:** systemic-debt\n\n## ✅ Sniffs with no guideline\n\n- [ ] `CleanCode.Naming.LongVariable`\n- [ ] `CleanCode.Naming.LongClassName`\n- [ ] `CleanCode.Naming.BooleanGetMethodName`\n- [ ] `CleanCode.Metrics.CyclomaticComplexity`\n- [ ] `CleanCode.Metrics.NPathComplexity`\n- [ ] `CleanCode.Metrics.DepthOfInheritance`\n- [ ] `CleanCode.Metrics.NumberOfChildren`\n- [ ] `CleanCode.Functions.ExcessiveMethodLength`\n- [ ] `CleanCode.Functions.ExcessiveParameterList`\n- [ ] `CleanCode.Functions.DisallowBooleanArgumentFlag`\n- [ ] `CleanCode.Arrays.DuplicatedArrayKey`\n- [ ] `CleanCode.Conditionals.DisallowListAssignmentInCondition`\n- [ ] `CleanCode.ControlStructures.DisallowCountInLoopExpression`\n- [ ] `CleanCode.ControlStructures.DisallowExitExpression`\n- [ ] `CleanCode.Controversial.Superglobals`\n- [ ] `CleanCode.Debug.DisallowDebugFunctions`\n\n⏭️ `CleanCode.Naming.ShortVariable` and `CleanCode.Naming.ShortClassName` are left off on purpose. They enforce a rule the semantic-naming guideline already states. PR #386 fixes them.\n\n## 🔀 Open decision for triage\n\nThere are two ways to close this. One is a guideline per `docs/phpmd/` page. The other folds each sniff into the existing guideline whose rule it enforces. The second keeps the one-guideline-per-standard shape #385 chose.\n\n## 🟡 Non-blocking\n\nThis sits outside #385's acceptance criteria. It is also outside the unit PR #386 delivers. #385 scopes its guidelines to `docs/standards/`.\n\n<!-- followup-from: PR#386 -->",
+        "labels": [],
+        "state": "OPEN",
+        "createdAt": "2026-09-27T15:03:40Z",
+        "comments": []
+      }
+    ],
+    "pulls": []
+  },
+  "expect": {
+    "links": [],
+    "optional_links": []
+  }
+}

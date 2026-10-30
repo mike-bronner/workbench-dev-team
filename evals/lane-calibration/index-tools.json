@@ -1,0 +1,491 @@
+[
+  {
+    "name": "add_blocked_by",
+    "title": "Add Blocked By Tool",
+    "description": "Mark native GitHub \"blocked by\" dependencies on an issue. 'issue_number' is the\nblocked issue; 'blocked_by' is an array of issue numbers in the same repo that\nblock it. Declare the acting 'agent' — the links are set by that agent's GitHub\nApp through GitHub's native issue dependency graph (not a comment). Additive and\nidempotent: links that already exist are skipped, none are ever removed. Requires\nindex.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "blocked_by": {
+          "description": "Issue numbers in the same repo that block 'issue_number'.",
+          "minItems": 1,
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "issue_number": {
+          "description": "The blocked issue's number.",
+          "type": "integer"
+        },
+        "repo": {
+          "description": "Repository in 'owner/name' format.",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "blocked_by",
+        "issue_number",
+        "repo"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "add_comment",
+    "title": "Add Comment Tool",
+    "description": "Post a comment on a project item's GitHub Issue, or on a specific PR conversation when\n'pr_number' is given (use this for Holmes's review notes and Watson's block questions,\nwhich live on the PR). Declare the acting 'agent' — the comment is posted by that\nagent's GitHub App. Body is markdown. Requires index.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "body": {
+          "description": "Comment body (markdown supported).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "id": {
+          "description": "project_items.id of the item to comment on.",
+          "type": "integer"
+        },
+        "pr_number": {
+          "description": "Optional: comment on this PR's conversation instead of the issue.",
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "body",
+        "id"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "check_repo_access",
+    "title": "Check Repo Access Tool",
+    "description": "Report whether The Index's GitHub App governs a repository — i.e. whether\nagent work for that repo should be dispatched through this MCP (signed by an\nagent's GitHub App) or fall back to the plain gh CLI. Authenticates as the\nApp (App JWT) and checks GET /repos/{owner}/{repo}/installation: 200 means\ngoverned, 404 means not. Rate limits and 5xx surface as errors, never as a\nfalse 'governed: false'. Results cache for ~5 minutes per repo.",
+    "inputSchema": {
+      "properties": {
+        "repo": {
+          "description": "Repository in 'owner/name' format (e.g. 'octocat/hello-world').",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "repo"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "claim_item",
+    "title": "Claim Item Tool",
+    "description": "Mark a project item as being actively worked, so 'list_development_items' stops\noffering it to a second agent. Dr. Watson calls this when it takes an item, and\n'release_item' on every exit path. Refuses when the item is already claimed —\na live claim means another run owns it, and a stale one means the previous run\ndied and Dispatch should release it before re-dispatching. Requires the\nindex.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "description": "The project_items.id to claim (NOT the GitHub issue number).",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "close_as_duplicate",
+    "title": "Close As Duplicate Tool",
+    "description": "Close issues as duplicates of a canonical issue via GitHub's native\nduplicate relationship. 'canonical' is the surviving issue; 'duplicates'\nis an array of issue numbers in the same repo to close as duplicates of\nit. Declare the acting 'agent' — each duplicate is closed (state reason\nDUPLICATE) and linked to the canonical by that agent's GitHub App, not a\ncomment. Idempotent: an issue already closed as a duplicate of the same\ncanonical is skipped, and an issue cannot be a duplicate of itself.\nRequires index.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "canonical": {
+          "description": "The surviving issue's number — duplicates are linked to it and closed in its favor.",
+          "type": "integer"
+        },
+        "duplicates": {
+          "description": "Issue numbers in the same repo to close as duplicates of 'canonical'.",
+          "minItems": 1,
+          "items": {
+            "type": "integer"
+          },
+          "type": "array"
+        },
+        "repo": {
+          "description": "Repository in 'owner/name' format.",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "canonical",
+        "duplicates",
+        "repo"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "create_issue",
+    "title": "Create Issue Tool",
+    "description": "Open a new GitHub issue as the acting agent and land it in the dev-team\npipeline in one call: the issue is created by that agent's GitHub App\n(declare 'agent'), added to the configured project board, and — on org\nrepos — stamped with a native issue Type ('PBI' by default; pass 'type'\nto override). Use this for Holmes's non-blocking review follow-ups and\nany agent-authored issue, instead of a raw `gh issue create` the server\nnever sees. Board-add and Type are best-effort and reported under\n'board'/'issue.type'; they never fail the create, and on user-owned repos\nthe Type is silently skipped. Requires index.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "body": {
+          "description": "Issue body (markdown supported).",
+          "minLength": 1,
+          "type": "string"
+        },
+        "repo": {
+          "description": "Target repository as 'owner/name'.",
+          "type": "string"
+        },
+        "title": {
+          "description": "Issue title.",
+          "minLength": 1,
+          "type": "string"
+        },
+        "type": {
+          "description": "Optional native issue Type name (e.g. 'PBI', 'Product Goal'). Omit to\nauto-stamp 'PBI' on org repos. Resolved case-insensitively against the\nowner's issue-type catalog; silently skipped on user-owned repos.",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "body",
+        "repo",
+        "title"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "find_item",
+    "title": "Find Item Tool",
+    "description": "Resolve a repo + issue (or PR) number to its project_items.id without scanning\nthe board, mirroring the matching done at webhook ingestion. No GitHub round-trip.\nReturns { found: true, item: { id, repo, issue_number, pr_number, title, status } }\nwhen the issue/PR is on the board, or { found: false } when it is not — the latter\nis a normal result (webhook lag or an off-board issue), not an error.",
+    "inputSchema": {
+      "properties": {
+        "issue_number": {
+          "description": "The GitHub issue or PR number to resolve.",
+          "type": "integer"
+        },
+        "repo": {
+          "description": "Repository in 'owner/name' format (e.g. 'octocat/hello-world').",
+          "type": "string"
+        }
+      },
+      "type": "object",
+      "required": [
+        "issue_number",
+        "repo"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "get_item",
+    "title": "Get Item Tool",
+    "description": "Fetch full details of a single project item by its ID, including\nproject_fields (the ProjectV2 field catalog with single-select option ids, sourced\nlive from GitHub) and field_changes (the meta audit trail). Miss Wormwood reads\nproject_fields to size WSJF Fibonacci values and resolve option ids for update_fields.",
+    "inputSchema": {
+      "properties": {
+        "blockers": {
+          "description": "When true, include blocker state (blocked_by + has_open_blockers) via a live\nGraphQL pull. Off by default to avoid the extra round-trip.",
+          "type": "boolean"
+        },
+        "id": {
+          "description": "project_items.id (NOT the GitHub issue number).",
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "list_development_items",
+    "title": "List Development Items Tool",
+    "description": "Pick the next issue for Dr. Watson to work on: status IN ('In Progress', 'Ready'), issues\nonly (no PRs), with In Progress first (crash-recovery resume) then Ready, each group ordered\nby the GitHub Projects Priority custom field (highest first), excluding items whose\nblockedBy dependencies contain any open Issue, and excluding items whose linked open pull\nrequest was opened by someone other than Watson (a human's open PR would otherwise park its\nissue at the head of the lane for the life of that PR). Items whose open PR is Watson's own\nare still returned — that is the crash-recovery resume path. Also excludes items with an\nin-flight claim (see 'claim_item'), so a run already underway is never handed to a second\nagent; pass include_claimed=true to see them, which is how Dispatch finds a claim whose run\ndied and releases it. Live-pulls GraphQL for priority, blockers, and linked-PR provenance on\neach candidate. Use limit=1 to get just the top pick.",
+    "inputSchema": {
+      "properties": {
+        "include_claimed": {
+          "description": "Include items carrying an in-flight claim (default false). Only Dispatch needs\nthis — it sweeps claims whose owning run died and releases them. A normal\nnext-up pick must leave it unset.",
+          "type": "boolean"
+        },
+        "limit": {
+          "description": "Max items to return after priority sort, blocker filter, and foreign-open-PR\nfilter (1-25, default 1).",
+          "minimum": 1,
+          "maximum": 25,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {}
+  },
+  {
+    "name": "list_items",
+    "title": "List Items Tool",
+    "description": "Generic debug listing of project items. Accepts optional status, labels, and limit filters.\nUse when you need a flexible view not covered by the specialized list_* tools.",
+    "inputSchema": {
+      "properties": {
+        "labels": {
+          "description": "Comma-separated label filter. Returns items tagged with ANY of the given labels.",
+          "type": "string"
+        },
+        "limit": {
+          "description": "Max items to return (1-100, default 25).",
+          "minimum": 1,
+          "maximum": 100,
+          "type": "integer"
+        },
+        "status": {
+          "description": "Status filter. Accepts a single status name ('Ready'), comma-separated list\n('Ready,Triage'), or 'null' for items with no status. Omit to include all.",
+          "type": "string"
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {}
+  },
+  {
+    "name": "list_review_items",
+    "title": "List Review Items Tool",
+    "description": "List project items currently in 'In Review' status — the queue Tracer Bullet\npolls to review open PRs. Returns oldest first.",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "description": "Max items to return (1-100, default 25).",
+          "minimum": 1,
+          "maximum": 100,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {}
+  },
+  {
+    "name": "list_unrefined_items",
+    "title": "List Unrefined Items Tool",
+    "description": "List project items in the Inbox lane awaiting triage. Miss Wormwood polls this to\npick up new tickets and populate acceptance criteria + WSJF fields. Returns oldest first.",
+    "inputSchema": {
+      "properties": {
+        "limit": {
+          "description": "Max items to return (1-100, default 25).",
+          "minimum": 1,
+          "maximum": 100,
+          "type": "integer"
+        }
+      },
+      "type": "object"
+    },
+    "annotations": {}
+  },
+  {
+    "name": "move",
+    "title": "Move Tool",
+    "description": "Move a project item to a different Status column (e.g. 'In Progress', 'In Review',\n'Done'). Looks up the Status single-select field on the GitHub project, finds the\noption matching 'column' by name (case-insensitive), and dispatches\nupdateProjectV2ItemFieldValue. Declare the acting 'agent' — the move is performed by\nthat agent's GitHub App. Requires index.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "column": {
+          "description": "Target Status column name (e.g. 'In Progress', 'In Review', 'Done').\nMatched case-insensitively against the project's Status options.",
+          "type": "string"
+        },
+        "id": {
+          "description": "project_items.id of the item to move.",
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "column",
+        "id"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "release_item",
+    "title": "Release Item Tool",
+    "description": "Clear a project item's in-flight claim so 'list_development_items' offers it again.\nDr. Watson calls this on EVERY exit path — success, budget wind-down, hands-off,\ndrift, wrong-lane, blocked — and Dispatch calls it to release a claim whose run\ndied without cleaning up. Idempotent: releasing an unclaimed item succeeds and\nreports 'was_claimed' false, so cleanup never becomes an error path. Requires the\nindex.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "id": {
+          "description": "The project_items.id to release (NOT the GitHub issue number).",
+          "minimum": 1,
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "id"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "set_acceptance_criteria",
+    "title": "Set Acceptance Criteria Tool",
+    "description": "Set an item's acceptance criteria. The AC is maintained as a single dedicated follow-up\ncomment on the GitHub issue (marked with an HTML comment on its first line) — never the\nissue description. Pass the AC as markdown (a checklist) in 'criteria'; the server\nfind-or-updates that one marked comment, so re-running replaces its content rather than\nstacking duplicates. The issue body is never read or written. Inspector Lestrade calls\nthis instead of editing the issue with gh. Declare the acting 'agent' — the comment is\nmanaged by that agent's GitHub App. Requires index.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "criteria": {
+          "description": "Acceptance criteria as markdown (a `- [ ]` checklist). Do NOT include the\n\"## Acceptance Criteria\" heading — the server adds it. The AC is maintained as\na dedicated marked follow-up comment on the issue, never the issue body.",
+          "type": "string"
+        },
+        "id": {
+          "description": "project_items.id of the issue.",
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "criteria",
+        "id"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "submit_review",
+    "title": "Submit Review Tool",
+    "description": "Submit a pull-request review for a project item — approve or request changes. Sherlock\nHolmes calls this instead of `gh pr review`. Pass the acting 'agent', the item id, the\nPR number (read via gh), the decision ('approve' or 'request_changes'), and the review\nbody markdown. The review is posted by the declared agent's GitHub App. Requires\nindex.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "body": {
+          "description": "The review body as markdown.",
+          "type": "string"
+        },
+        "decision": {
+          "description": "Either 'approve' or 'request_changes'.",
+          "type": "string"
+        },
+        "id": {
+          "description": "project_items.id of the reviewed item.",
+          "type": "integer"
+        },
+        "pr_number": {
+          "description": "The pull-request number to review.",
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "body",
+        "decision",
+        "id",
+        "pr_number"
+      ]
+    },
+    "annotations": {}
+  },
+  {
+    "name": "update_fields",
+    "title": "Update Fields Tool",
+    "description": "Update one or more ProjectV2 custom fields on an item. 'fields' is a map of\nfield-name => value. Numeric fields accept numbers, single-select fields accept\nthe option name (matched case-insensitively). Unsupported field types (iteration,\ndate) are reported as errors. On org-repo issues this also fans out two GitHub-native\nissue attributes the board can't hold: writing 'Priority' derives the issue-level\nPriority single-select from the WSJF, and a 'Type' key (or the auto-'PBI' default)\nsets the native issue Type — both best-effort, reported under 'issue_writes', and\nnever fatal to the board write. Declare the acting 'agent' — updates are performed by\nthat agent's GitHub App (Inspector Lestrade for WSJF scoring during triage). Requires\nindex.mcp.write scope.",
+    "inputSchema": {
+      "properties": {
+        "agent": {
+          "description": "The agent identity performing this action: 'holmes', 'watson', or 'lestrade'.\nDeclare your own name — the action is signed by that agent's GitHub App.",
+          "enum": [
+            "holmes",
+            "lestrade",
+            "watson"
+          ],
+          "type": "string"
+        },
+        "fields": {
+          "description": "Map of field name (case-insensitive) to new value. NUMBER fields accept\nnumeric values; SINGLE_SELECT fields accept the option name; TEXT fields\naccept strings. On org-repo issues, writing the 'Priority' NUMBER also\nderives the GitHub-native issue Priority single-select (Urgent/High/\nMedium/Low) from the WSJF — never pass that as input. A 'Type' key sets\nthe native issue Type (e.g. 'PBI'); omit it to auto-stamp 'PBI' only when\nthe issue has no type yet. Both issue-side writes are best-effort and\nnever fail the board write.",
+          "type": "object"
+        },
+        "id": {
+          "description": "project_items.id.",
+          "type": "integer"
+        }
+      },
+      "type": "object",
+      "required": [
+        "agent",
+        "fields",
+        "id"
+      ]
+    },
+    "annotations": {}
+  }
+]

@@ -77,14 +77,27 @@ class Handler(BaseHTTPRequestHandler):
         if valid is not None and auth not in ["Bearer " + t for t in valid]:
             return self.reply(401, {"message": "Unauthenticated."})
         params = (request or {}).get("params") or {}
+        method = (request or {}).get("method", "")
+        rid = (request or {}).get("id")
+        if method.startswith("notifications/"):
+            return self.reply(202, "")
+        if method == "initialize":
+            return self.reply(200, {"jsonrpc": "2.0", "id": rid, "result": {
+                "protocolVersion": params.get("protocolVersion", "2025-06-18"),
+                "capabilities": {"tools": {}},
+                "serverInfo": {"name": "fake-index", "version": "1"},
+            }})
+        if method == "tools/list":
+            return self.reply(200, {"jsonrpc": "2.0", "id": rid, "result": {"tools": world.get("tools_list", [])}})
         name = params.get("name", "")
         arguments = params.get("arguments") or {}
         tools = world.get("tools", {})
         key = name + "#claimed" if arguments.get("include_claimed") else name
         answer = tools.get(key, tools.get(name))
+        if answer is not None and "byArg" in answer:
+            answer = answer.get("answers", {}).get(str(arguments.get(answer["byArg"])), answer.get("default"))
         if answer is None:
             answer = {"result": {"count": 0, "items": []} if name.startswith("list_") else {"ok": True}}
-        rid = (request or {}).get("id")
         if "status" in answer:
             return self.reply(answer["status"], answer.get("raw", ""), answer.get("contentType", "application/json"))
         if "rpcError" in answer:

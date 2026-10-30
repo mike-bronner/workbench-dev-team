@@ -1,0 +1,362 @@
+{
+  "lane": "lestrade-item",
+  "name": "laravel-model-caching-638-readme",
+  "repo": "mike-bronner/laravel-model-caching",
+  "item_id": 608,
+  "as_of": "2026-09-27T14:05:59Z",
+  "commit": "b6f127c5be78cec650206e28669ca0fb78bdc6e2",
+  "known_outcome": "Triaged to Backlog with size=S bv=high rr=high ts=normal estimate=3 priority=7. Holmes approved the PR on its first review against these AC.",
+  "source": {
+    "item_id": 608,
+    "issue": "mike-bronner/laravel-model-caching#638",
+    "triage_log": "lestrade-608-20260927-070559.log",
+    "ac_comment": "https://github.com/mike-bronner/laravel-model-caching/issues/638#issuecomment-5856562870"
+  },
+  "item": {
+    "assignees": [],
+    "content_node_id": "I_kwDOBjBpkc8AAAABSdHfvg",
+    "created_at": "2026-09-21T23:14:52+00:00",
+    "event_action": "created",
+    "event_type": "projects_v2_item",
+    "id": 608,
+    "installation_id": 121915255,
+    "in_flight_at": null,
+    "issue_number": 638,
+    "labels": [
+      "bug"
+    ],
+    "project_node_id": "PVT_kwDOEA1bdM4BTeiF",
+    "pr_number": null,
+    "repo": "mike-bronner/laravel-model-caching",
+    "state": "OPEN",
+    "status": null,
+    "title": "README: the \"What Does Not Get Cached\" list is wrong about lazy loads and select()",
+    "updated_at": "2026-09-27T14:05:59Z",
+    "url": "https://github.com/mike-bronner/laravel-model-caching/issues/638",
+    "field_changes": [],
+    "issue_fields": [
+      {
+        "id": "IFSS_kgDOAmguKg",
+        "name": "Priority",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY44w",
+            "name": "Urgent"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45A",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45Q",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45g",
+            "name": "Low"
+          }
+        ]
+      },
+      {
+        "id": "IFSS_kgDOAmguLQ",
+        "name": "Effort",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY45w",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46A",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46Q",
+            "name": "Low"
+          }
+        ]
+      }
+    ],
+    "issue_types": [
+      {
+        "id": "IT_kwDOEA1bdM4B59eI",
+        "name": "Acceptance Criteria"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B59eK",
+        "name": "PBI"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B593j",
+        "name": "Product Goal"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4CC2_s",
+        "name": "Sprint Goal"
+      }
+    ],
+    "project_fields": [
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn0",
+        "name": "Title",
+        "type": "TITLE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn4",
+        "name": "Assignees",
+        "type": "ASSIGNEES"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtQn8",
+        "name": "Status",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "cbd7979f",
+            "name": "Inbox"
+          },
+          {
+            "id": "f75ad846",
+            "name": "Backlog"
+          },
+          {
+            "id": "61e4505c",
+            "name": "Ready"
+          },
+          {
+            "id": "47fc9ee4",
+            "name": "In Progress"
+          },
+          {
+            "id": "df73e18b",
+            "name": "In Review"
+          },
+          {
+            "id": "a2a5a03d",
+            "name": "Approved"
+          },
+          {
+            "id": "63246415",
+            "name": "Escalated"
+          },
+          {
+            "id": "98236657",
+            "name": "Done"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoA",
+        "name": "Labels",
+        "type": "LABELS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoE",
+        "name": "Linked pull requests",
+        "type": "LINKED_PULL_REQUESTS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoI",
+        "name": "Milestone",
+        "type": "MILESTONE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoM",
+        "name": "Repository",
+        "type": "REPOSITORY"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoU",
+        "name": "Reviewers",
+        "type": "REVIEWERS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoY",
+        "name": "Parent issue",
+        "type": "PARENT_ISSUE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoc",
+        "name": "Sub-issues progress",
+        "type": "SUB_ISSUES_PROGRESS"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtR0A",
+        "name": "Size",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "56a7b1fe",
+            "name": "XXS"
+          },
+          {
+            "id": "6c6483d2",
+            "name": "XS"
+          },
+          {
+            "id": "f784b110",
+            "name": "S"
+          },
+          {
+            "id": "7515a9f1",
+            "name": "M"
+          },
+          {
+            "id": "817d0097",
+            "name": "L"
+          },
+          {
+            "id": "db339eb2",
+            "name": "XL"
+          },
+          {
+            "id": "5f5fa3a6",
+            "name": "XXL"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtR0E",
+        "name": "Estimate",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtSFQ",
+        "name": "Priority",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSYo",
+        "name": "Business Value",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "a74718d4",
+            "name": "minimal"
+          },
+          {
+            "id": "5128d06f",
+            "name": "low"
+          },
+          {
+            "id": "2940f8d9",
+            "name": "average"
+          },
+          {
+            "id": "50022154",
+            "name": "high"
+          },
+          {
+            "id": "1578c7e9",
+            "name": "great"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSaA",
+        "name": "Risk Reduction",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "faec73a5",
+            "name": "minimal"
+          },
+          {
+            "id": "65e247a5",
+            "name": "low"
+          },
+          {
+            "id": "7ce3e86e",
+            "name": "average"
+          },
+          {
+            "id": "810a8319",
+            "name": "high"
+          },
+          {
+            "id": "a70e8a80",
+            "name": "extreme"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSb8",
+        "name": "Time Sensitive",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "02b4afa4",
+            "name": "not"
+          },
+          {
+            "id": "32766ba9",
+            "name": "somewhat"
+          },
+          {
+            "id": "1603ed6a",
+            "name": "normal"
+          },
+          {
+            "id": "044b07e0",
+            "name": "highly"
+          },
+          {
+            "id": "5ebd63f5",
+            "name": "extremely"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ80",
+        "name": "Created",
+        "type": "CREATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9E",
+        "name": "Updated",
+        "type": "UPDATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9U",
+        "name": "Closed",
+        "type": "CLOSED"
+      }
+    ]
+  },
+  "github": {
+    "issues": [
+      {
+        "number": 638,
+        "title": "README: the \"What Does Not Get Cached\" list is wrong about lazy loads and select()",
+        "body": "## 🔴 Verdict\n\nThe \"What Does Not Get Cached\" list is wrong about two things. The test suite asserts the opposite for both.\n\nA consumer cannot check these claims. They would have to read this package's tests. The list is all they have.\n\n## 🔴 Wrong: lazy-loaded relationships are cached\n\n`README.md:64` says only eager-loaded relationships are cached. It tells the reader to use `with()` to get caching.\n\n`tests/Integration/CachedBuilder/LazyLoadTest.php` asserts the opposite. It pins the cache key and tags across `testBelongsToRelationship`, `testHasManyRelationship` and `testHasOneRelationship`.\n\nThe related model's builder is a `CachedBuilder`. So `$post->comments` takes the same path as `with('comments')`.\n\n**Cost:** a reader adds `with()` calls to get caching they already had.\n\n## 🔴 Wrong: `select()` is cached\n\n`README.md:65` says custom column selections bypass the cache.\n\n`tests/Integration/CachedBuilder/SelectTest.php:44` asserts they are cached. The test is `testSelectFieldsAreCached`. The selected columns form part of the cache key. Raw expressions and `addSelect()` are cached too.\n\n**Cost:** this one can cause harm. A reader may reach for `select()` to avoid the cache. They get a cached result instead.\n\n## 🟡 Wrong list: transactions\n\n`README.md:66` sits under a heading about caching. The entry is about flushing. Queries inside a transaction are cached like any other.\n\nThe real behaviour is a timing one. Flushes fire on the Eloquent model event. That happens inside the transaction rather than at commit. There is no `afterCommit` handling in `src/Traits/Caching.php`.\n\nSo a rolled-back transaction leaves the cache already flushed.\n\n## 🟡 Missing: two real bypasses\n\n**`lockForUpdate()` and `sharedLock()`.** `src/Traits/Caching.php:529` reads `$baseQuery->lock !== null`. Three tests pin it in `tests/Integration/CachedBuilder/LockTest.php`.\n\n**A non-`Cachable` eager load.** `isCachable()` at `src/Traits/Caching.php:489` reduces over `eagerLoad`. One non-cachable relation sets the flag false for the whole query. It does not scope to that relationship.\n\nSo `Post::with('author')` stops caching `Post` when `Author` is a plain model. Check this first when caching appears to stop working. It is documented nowhere.\n\n## 🛠️ What a fix looks like\n\nRewrite the list from `isCachable()` and the tests that pin each branch. Do not edit around the current text. Move the transaction entry out of the list. State it as flush timing instead.\n\n## 📋 Why this is its own issue\n\nFound while writing `resources/boost/guidelines/core.md` on `docs/agents-contribution-guide`. That file deliberately omits both wrong claims.\n\nThe guideline change concerns what this package tells AI agents. This concerns what the README tells human readers. Each deserves its own review.\n",
+        "labels": [
+          {
+            "name": "bug"
+          }
+        ],
+        "state": "OPEN",
+        "createdAt": "2026-09-21T23:14:42Z",
+        "comments": []
+      }
+    ],
+    "pulls": []
+  },
+  "held_acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] \"What Does Not Get Cached\" no longer claims lazy-loaded relationships bypass the cache, and an adjacent line states instead that lazy-loaded relationships are cached the same way as eager-loaded ones, since the related model's query also runs through `CachedBuilder`\n- [ ] \"What Does Not Get Cached\" no longer claims `select()` bypasses the cache, and an adjacent line states instead that custom column selections — `select()`, `addSelect()`, and raw expressions — are cached, with the selected columns forming part of the cache key\n- [ ] The transaction entry is removed from \"What Does Not Get Cached\" and a flush-timing note is added next to README's existing \"Cache is automatically flushed when\" section, stating: the flush fires on the Eloquent model event during the transaction, not on commit, so a rollback does not undo a flush that already happened\n- [ ] \"What Does Not Get Cached\" documents `lockForUpdate()` and `sharedLock()` queries as bypassing the cache on both sides — reads hit the database directly, and the results are never written to cache\n- [ ] \"What Does Not Get Cached\" documents that eager-loading a direct (first-level) relation whose related model is not `Cachable` disables caching for the entire query — the base model and every other relation in the same `with()` call, not just that one relation — and notes this check does not extend to a nested eager load such as `with('comments.replies')`\n- [ ] The existing `inRandomOrder()` entry is left unchanged, since it was already accurate\n- [ ] The PR's diff is limited to README.md, and its description cites the specific `isCachable()` behavior (`src/Traits/Caching.php`) and test (`LazyLoadTest`, `SelectTest`, or `LockTest`) that each new or changed bullet reflects\n",
+  "expect": {
+    "move": "Backlog",
+    "fields": [
+      "Size",
+      "Business Value",
+      "Risk Reduction",
+      "Time Sensitive",
+      "Estimate",
+      "Priority"
+    ],
+    "ac_anchors": [
+      "lazy",
+      "select\\(",
+      "transaction",
+      "lockForUpdate|sharedLock",
+      "Cachable"
+    ]
+  }
+}

@@ -82,7 +82,7 @@ The skill also fixes **who gets dispatched, and what they're told**. Routing cov
 
 **Independent units dispatch together.** Work in different repos or in files that do not overlap, read-only research, and reviews of a finished tree all go out at once, in one message. Local work (interactive sessions, Watson's Direct mode, Holmes's Local mode, research) has no count cap on sub-agents. The Index pipeline stays bounded on purpose: scheduled Dispatch starts one Watson per tick, and every Index-mode cap stays.
 
-The skill also **routes GitHub actions to the right executor**. Two rules: (1) *agent work products* (formal reviews, AC, status moves) only ever go through The Index, signed as the dispatched agent — never `gh`; (2) *your own actions* (comments you dictate, merges you order) go through `gh` under your identity, on any repo. Whether a repo is Index-governed is answered by `check_repo_access` — a server-side tool that checks The Index GitHub App's installation list (spec in `THE_INDEX_HANDOFF_ROUTING.md`; until it ships, the skill degrades to a `list_items` scan and says so). Merges are never delegated to agents and only happen on your explicit request.
+The skill also **routes GitHub actions to the right executor**. Two rules: (1) *agent work products* (formal reviews, AC, status moves) only ever go through The Index, signed as the dispatched agent — never `gh`; (2) *your own actions* (comments you dictate, merges you order) go through `gh` under your identity, on any repo. Whether a repo is Index-governed is answered by `check_repo_access` — a server-side tool that checks The Index GitHub App's installation list. Only when that call fails does the skill fall back to a `list_items` scan, and it says so. Merges are never delegated to agents and only happen on your explicit request.
 
 ## Commits
 
@@ -186,6 +186,10 @@ The fan-out rows reach Holmes (both modes) and Lestrade's Item mode as one `Dev-
 **Two environment variables still override the pins, on purpose.** They are the deliberate opt-outs for a project that needs another model or effort. `CLAUDE_CODE_SUBAGENT_MODEL` together with `CLAUDE_CODE_SUBAGENT_MODEL_FORCE=1` beats the frontmatter `model`. Without `FORCE`, the pin wins. `CLAUDE_CODE_EFFORT_LEVEL` is recorded as beating `--effort`, so it still moves a scheduled run's effort. How it ranks against a frontmatter `effort` on the interactive path is not verified.
 
 **An older install's config file moves into `/config` once.** Earlier releases kept these knobs in `~/.claude-workbench/dev-team-config.json`, which nothing reads now. Setup Step 6 first finds every agent whose `model` or `effort` there differs from the pin and asks you, one question per agent, whether to move it onto the pin instead. It then writes every value that differs from its row's default with `claude plugin configure`, checks each landed in the settings file where `dispatch-agent.sh` reads it, and renames the old file to `dev-team-config.json.migrated-<stamp>`, so a later run never moves it over an edit you made in `/config`. A value no row takes, such as an integer effort, is named for you to set by hand. `commands/test-config-pin.sh` runs the check, the replacement and the move against fixture configs.
+
+### Lane calibration
+
+`evals/lane-calibration/` measures whether a cheaper model or effort gets the same result as the pin, for `holmes-lens`, `lestrade-sweep` and `lestrade-item`. It replays closed Index items against a fake Index and a fake `gh`, so no run writes to The Index or GitHub. It costs real money, so it runs only by hand, and never in CI. It changes no setting: it reports, and you decide. `evals/lane-calibration/README.md` describes how to run it.
 
 ## Setup
 
@@ -338,7 +342,7 @@ anything fails. Pass `tests` or `lints` to run one group.
 
 The two groups are named apart on purpose:
 
-- **`test-*.sh`** — sixteen scripts that execute shipped logic and assert on
+- **`test-*.sh`** — seventeen scripts that execute shipped logic and assert on
   its behaviour. Six run a shipped script as a subprocess, among them
   `bin/test-compose-agents.sh`, which holds every committed mode agent to what
   the composer builds now, and `bin/test-dispatch-tick.sh`, which runs
@@ -382,6 +386,10 @@ The two groups are named apart on purpose:
   marker keeps each one silent before any heavy module loads, runs each
   `hooks.json` command with no `node` and with a broken one, and runs the
   sweep on a real folder. It needs `node` 22.18 or later.
+  `evals/lane-calibration/test-lane-calibration.sh` tests the lane-calibration
+  eval offline: its graders, its pricing, its MCP safety check, its fake `gh`,
+  and the fake Index's MCP handshake. It runs no agent and spends nothing. The
+  eval itself is never part of the suite or CI (see "Lane calibration").
 
 **The tests run workbench-core's real code, never a copy.** The node scripts
 (`tests/guards.mjs`, `tests/differential.mjs`, `tests/shipped-lines.mjs`,

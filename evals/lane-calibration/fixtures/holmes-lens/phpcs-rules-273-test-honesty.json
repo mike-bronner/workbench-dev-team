@@ -1,0 +1,27 @@
+{
+  "lane": "holmes-lens",
+  "name": "phpcs-rules-273-test-honesty",
+  "repo": "mike-bronner/phpcs-rules",
+  "pr": 273,
+  "base": "f42e15104490b4d65a637ddea47f8824bdf5caba",
+  "head": "bc833bd5ce54a6e2bbaaa592b1fc61eff99af08c",
+  "as_of": "2026-08-09T03:00:43Z",
+  "known_outcome": "Holmes rejected this commit: declarationStart() in ExcessiveMethodLengthSniff skips a comment between two modifier keywords, but no fixture reaches that branch.",
+  "source": {
+    "item_id": 364,
+    "item_status": "Done",
+    "issue": "mike-bronner/phpcs-rules#91",
+    "review": "https://github.com/mike-bronner/clean-code/pull/273#pullrequestreview-4890393555",
+    "review_learning": "dev-team/review-learnings/phpcs-rules-pr273-2026-08-08.md"
+  },
+  "lens": "Test-honesty lens",
+  "acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] Rule documented (PHPMD `ExcessiveMethodLength`, Code Size ruleset) including default configurable properties `minimum` (100) and `ignore-whitespace` (false)\n- [ ] Positive test fixtures added: methods under the `minimum` line threshold produce no violations\n- [ ] Negative test fixtures added: methods at/over the threshold are flagged, with the violation reported at the correct line (method declaration)\n- [ ] Boundary test fixtures added: exactly at `minimum` (no violation) and `minimum + 1` (violation), per PHPMD's off-by-one semantics\n- [ ] `ignore-whitespace` behavior covered: a test where blank/whitespace-only lines push a method over `minimum` only when `ignore-whitespace` is false\n- [ ] Evaluated existing PHPCS/Slevomat/Generic sniffs for an exact match to PHPMD's method-length metric; result (match found & configured, or none found) is documented in the sniff/PR\n- [ ] Custom sniff implemented (if no exact match exists) that counts method body lines and exposes configurable `minimum` and `ignoreWhitespace` properties via ruleset.xml\n- [ ] Sniff wired into the master `rules.xml`\n- [ ] Sniff wired into the package `rules.xml` shipped via Composer\n- [ ] After scaffold (#2) lands, `vendor/bin/phpcs --standard=rules.xml <file>` reports `ExcessiveMethodLength` violations without requiring a separate `phpmd` run\n\n### Testing (current convention — see CONTRIBUTING.md)\n\n- [ ] If this lands as a new custom CleanCode sniff: fixtures live at `tests/fixtures/<Name>Sniff/` (or `tests/fixtures/_rulesets/<Standard>/` when the standard is implemented by several sniffs at once) with the fixed names `passing.php` and `failing.php` (both always required — compliant and violating code in separate files, `passing.php` discriminating enough to include near-miss shapes the sniff must stay silent on), plus `autofixed.php` (the fixer's actual output on `failing.php`) only if the sniff is auto-fixable\n- [ ] If this is instead implemented by wiring an existing third-party (Slevomat/Squiz) sniff into `rules.xml`: no fixture contract applies — pin the configured behaviour with a wiring test under `tests/Rules/` (e.g. `tests/Rules/LineLengthRulesTest.php`) or `tests/Ruleset/` (e.g. `tests/Ruleset/DisallowStaticMembersTest.php`), per CONTRIBUTING.md step 5\n- [ ] A new custom sniff is added to `SWEPT_SNIFFS` in `tests/Contract/SniffContractTest.php` (plus the autofixable-sniffs / fixer-resolves-every-violation lists where applicable), and gets a dedicated `tests/Standards/<Name>Test.php` asserting the exact lines, columns, and violation sources\n- [ ] Tests use Pest's functional style (`it('does the thing', function () { ... })`), not a `TestCase` subclass — and never the retired `AbstractSniffUnitTest` harness or the superseded `Fixtures/<SniffClassName>/`-style layout\n- [ ] `composer test` (full Pest suite) and `composer lint` (PSR-12 self-lint, fixtures excluded) both pass\n",
+  "expect": {
+    "any_of": [
+      [
+        "ExcessiveMethodLength|declarationStart",
+        "comment"
+      ]
+    ]
+  }
+}

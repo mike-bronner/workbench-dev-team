@@ -1,0 +1,31 @@
+{
+  "lane": "holmes-lens",
+  "name": "phpcs-rules-175-correctness",
+  "repo": "mike-bronner/phpcs-rules",
+  "pr": 175,
+  "base": "8c819129107e24517e5b8c636353b9a75d8b5787",
+  "head": "d3879c0a8c1f1138b6051adf7b8cc78c9f5cda2d",
+  "as_of": "2026-08-08T16:18:49Z",
+  "known_outcome": "Holmes rejected this commit: DisallowConstructorInstantiationSniff exempts only a `new` directly after T_THROW, so `throw match(...)`, `throw (new X())` and ternaries under throw are flagged; and a file-scope `function __construct()` is treated as a constructor.",
+  "source": {
+    "item_id": 345,
+    "item_status": "Done",
+    "issue": "mike-bronner/phpcs-rules#72",
+    "review": "https://github.com/mike-bronner/clean-code/pull/175#pullrequestreview-4889168038",
+    "review_learning": "dev-team/review-learnings/phpcs-rules-pr175-2026-08-08.md"
+  },
+  "lens": "Correctness lens",
+  "acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] Constructor-injection standard (as described in the issue, including rationale and link to mikebronner.dev/clean-code) is captured in the repo's documentation (e.g. a standards/contributing doc) so it's discoverable alongside the other standards in this repo.\n- [ ] Assessment recorded (in the doc or a closing comment) of whether any narrow token-based PHPCS heuristic could catch a partial slice of this standard (e.g. flagging `new ClassName()` calls inside a constructor body for classes that are also type-hinted as constructor params elsewhere).\n- [ ] If a partial-enforcement slice is identified, a separate follow-up issue is opened describing that focused sniff scope — this issue itself gets no sniff class added, now or later. Any human feedback that the slice is \"easily lintable\" (e.g. the reclassification/sniff-scope discussion on #176) is scoped and resolved entirely on that follow-up issue, not here.\n- [ ] If no partial-enforcement slice is feasible, that conclusion is stated explicitly (not left implicit) before closing.\n- [ ] No behavioral/lint changes ship under this issue — this issue's scope is fixed at Tier 3/documentation-only regardless of later \"actually lintable\" feedback on the follow-up sniff issue; a Tier reclassification of the standard itself, if it happens, is a separate doc update tracked on the follow-up issue, not a reopening of this one.\n\n### Testing (current convention — see CONTRIBUTING.md)\n\n- [ ] If this lands as a new custom CleanCode sniff: fixtures live at `tests/fixtures/<Name>Sniff/` (or `tests/fixtures/_rulesets/<Standard>/` when the standard is implemented by several sniffs at once) with the fixed names `passing.php` and `failing.php` (both always required — compliant and violating code in separate files, `passing.php` discriminating enough to include near-miss shapes the sniff must stay silent on), plus `autofixed.php` (the fixer's actual output on `failing.php`) only if the sniff is auto-fixable\n- [ ] If this is instead implemented by wiring an existing third-party (Slevomat/Squiz) sniff into `rules.xml`: no fixture contract applies — pin the configured behaviour with a wiring test under `tests/Rules/` (e.g. `tests/Rules/LineLengthRulesTest.php`) or `tests/Ruleset/` (e.g. `tests/Ruleset/DisallowStaticMembersTest.php`), per CONTRIBUTING.md step 5\n- [ ] A new custom sniff is added to `SWEPT_SNIFFS` in `tests/Contract/SniffContractTest.php` (plus the autofixable-sniffs / fixer-resolves-every-violation lists where applicable), and gets a dedicated `tests/Standards/<Name>Test.php` asserting the exact lines, columns, and violation sources\n- [ ] Tests use Pest's functional style (`it('does the thing', function () { ... })`), not a `TestCase` subclass — and never the retired `AbstractSniffUnitTest` harness or the superseded `Fixtures/<SniffClassName>/`-style layout\n- [ ] `composer test` (full Pest suite) and `composer lint` (PSR-12 self-lint, fixtures excluded) both pass\n",
+  "expect": {
+    "any_of": [
+      [
+        "throw",
+        "T_THROW|immediately|direct|preced|match|ternar|paren|\\(new"
+      ],
+      [
+        "__construct",
+        "file.scope|file-level|top.level|global|outside (a|any) class|not inside a class|class-like|enclosing"
+      ]
+    ]
+  }
+}

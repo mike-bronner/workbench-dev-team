@@ -1,0 +1,355 @@
+{
+  "lane": "lestrade-item",
+  "name": "clean-code-389-require-test-file",
+  "repo": "mike-bronner/clean-code",
+  "item_id": 620,
+  "as_of": "2026-09-28T20:06:14Z",
+  "commit": "4bf3ddfb73540f0ba9371f687a19ee49737d255a",
+  "known_outcome": "Triaged to Backlog with size=M bv=high rr=low ts=normal estimate=5 priority=3.2. Holmes approved the PR on its first review against these AC.",
+  "source": {
+    "item_id": 620,
+    "issue": "mike-bronner/clean-code#389",
+    "triage_log": "lestrade-620-20260928-130614.log",
+    "ac_comment": "https://github.com/mike-bronner/clean-code/issues/389#issuecomment-5877571524"
+  },
+  "item": {
+    "assignees": [],
+    "content_node_id": "I_kwDOTXIXrs8AAAABTv-CFA",
+    "created_at": "2026-09-28T19:52:51+00:00",
+    "event_action": "created",
+    "event_type": "projects_v2_item",
+    "id": 620,
+    "installation_id": 121915255,
+    "in_flight_at": null,
+    "issue_number": 389,
+    "labels": [],
+    "project_node_id": "PVT_kwDOEA1bdM4BTeiF",
+    "pr_number": null,
+    "repo": "mike-bronner/clean-code",
+    "state": "OPEN",
+    "status": null,
+    "title": "RequireTestFile ignores tests/Unit and tests/Feature in Laravel apps",
+    "updated_at": "2026-09-28T20:06:14Z",
+    "url": "https://github.com/mike-bronner/clean-code/issues/389",
+    "field_changes": [],
+    "issue_fields": [
+      {
+        "id": "IFSS_kgDOAmguKg",
+        "name": "Priority",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY44w",
+            "name": "Urgent"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45A",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45Q",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45g",
+            "name": "Low"
+          }
+        ]
+      },
+      {
+        "id": "IFSS_kgDOAmguLQ",
+        "name": "Effort",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY45w",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46A",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46Q",
+            "name": "Low"
+          }
+        ]
+      }
+    ],
+    "issue_types": [
+      {
+        "id": "IT_kwDOEA1bdM4B59eI",
+        "name": "Acceptance Criteria"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B59eK",
+        "name": "PBI"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B593j",
+        "name": "Product Goal"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4CC2_s",
+        "name": "Sprint Goal"
+      }
+    ],
+    "project_fields": [
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn0",
+        "name": "Title",
+        "type": "TITLE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn4",
+        "name": "Assignees",
+        "type": "ASSIGNEES"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtQn8",
+        "name": "Status",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "cbd7979f",
+            "name": "Inbox"
+          },
+          {
+            "id": "f75ad846",
+            "name": "Backlog"
+          },
+          {
+            "id": "61e4505c",
+            "name": "Ready"
+          },
+          {
+            "id": "47fc9ee4",
+            "name": "In Progress"
+          },
+          {
+            "id": "df73e18b",
+            "name": "In Review"
+          },
+          {
+            "id": "a2a5a03d",
+            "name": "Approved"
+          },
+          {
+            "id": "63246415",
+            "name": "Escalated"
+          },
+          {
+            "id": "98236657",
+            "name": "Done"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoA",
+        "name": "Labels",
+        "type": "LABELS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoE",
+        "name": "Linked pull requests",
+        "type": "LINKED_PULL_REQUESTS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoI",
+        "name": "Milestone",
+        "type": "MILESTONE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoM",
+        "name": "Repository",
+        "type": "REPOSITORY"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoU",
+        "name": "Reviewers",
+        "type": "REVIEWERS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoY",
+        "name": "Parent issue",
+        "type": "PARENT_ISSUE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoc",
+        "name": "Sub-issues progress",
+        "type": "SUB_ISSUES_PROGRESS"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtR0A",
+        "name": "Size",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "56a7b1fe",
+            "name": "XXS"
+          },
+          {
+            "id": "6c6483d2",
+            "name": "XS"
+          },
+          {
+            "id": "f784b110",
+            "name": "S"
+          },
+          {
+            "id": "7515a9f1",
+            "name": "M"
+          },
+          {
+            "id": "817d0097",
+            "name": "L"
+          },
+          {
+            "id": "db339eb2",
+            "name": "XL"
+          },
+          {
+            "id": "5f5fa3a6",
+            "name": "XXL"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtR0E",
+        "name": "Estimate",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtSFQ",
+        "name": "Priority",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSYo",
+        "name": "Business Value",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "a74718d4",
+            "name": "minimal"
+          },
+          {
+            "id": "5128d06f",
+            "name": "low"
+          },
+          {
+            "id": "2940f8d9",
+            "name": "average"
+          },
+          {
+            "id": "50022154",
+            "name": "high"
+          },
+          {
+            "id": "1578c7e9",
+            "name": "great"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSaA",
+        "name": "Risk Reduction",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "faec73a5",
+            "name": "minimal"
+          },
+          {
+            "id": "65e247a5",
+            "name": "low"
+          },
+          {
+            "id": "7ce3e86e",
+            "name": "average"
+          },
+          {
+            "id": "810a8319",
+            "name": "high"
+          },
+          {
+            "id": "a70e8a80",
+            "name": "extreme"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSb8",
+        "name": "Time Sensitive",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "02b4afa4",
+            "name": "not"
+          },
+          {
+            "id": "32766ba9",
+            "name": "somewhat"
+          },
+          {
+            "id": "1603ed6a",
+            "name": "normal"
+          },
+          {
+            "id": "044b07e0",
+            "name": "highly"
+          },
+          {
+            "id": "5ebd63f5",
+            "name": "extremely"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ80",
+        "name": "Created",
+        "type": "CREATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9E",
+        "name": "Updated",
+        "type": "UPDATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9U",
+        "name": "Closed",
+        "type": "CLOSED"
+      }
+    ]
+  },
+  "github": {
+    "issues": [
+      {
+        "number": 389,
+        "title": "RequireTestFile ignores tests/Unit and tests/Feature in Laravel apps",
+        "body": "`RequireTestFileSniff` looks for a class's test only at `tests/{path}/{name}Test.php`. Laravel apps split tests into `tests/Unit` and `tests/Feature`, so a class that has a test still gets a warning.\n\n## Example\n\ncrossbible has `app/Providers/AppServiceProvider.php`, and its test is `tests/Unit/Providers/AppServiceProviderTest.php`. The sniff expects `tests/Providers/AppServiceProviderTest.php` and warns `RequireTestFile.Missing`.\n\nEvery Laravel app that gets `phpcs.xml` from `mike-bronner/laravel-development-settings` hits this, because that file runs `<rule ref=\"CleanCode\"/>` with the default properties.\n\n## Expected\n\nA test under `tests/Unit/` or `tests/Feature/` at the same relative path counts as the class's test. The default `tests/{path}/{name}Test.php` keeps working for packages.\n\n## Notes\n\n`testPathTemplate` is a single pattern, so a project cannot list both locations today. Options include a list of templates or a glob across the first level under `tests/`.\n",
+        "labels": [],
+        "state": "OPEN",
+        "createdAt": "2026-09-28T19:52:42Z",
+        "comments": []
+      }
+    ],
+    "pulls": []
+  },
+  "held_acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] With default properties, a concrete class at `app/Providers/AppServiceProvider.php` whose only test is `tests/Unit/Providers/AppServiceProviderTest.php` gets no `RequireTestFile.Missing` warning.\n- [ ] With default properties, the same class gets no warning when its only test is `tests/Feature/Providers/AppServiceProviderTest.php`.\n- [ ] With default properties, a class under `src/` behaves the same way: `src/Foo/Bar.php` with only `tests/Unit/Foo/BarTest.php` gets no warning.\n- [ ] With default properties, a class directly under a source root gets no warning when its only test sits directly under a suite directory. The existing fixture `src/Split.php` with `tests/Unit/SplitTest.php` is this case.\n- [ ] With default properties, a test at `tests/{path}/{name}Test.php` still counts, so a package layout keeps passing.\n- [ ] With default properties, a test at the mirrored path under any other directory directly below `tests/` also counts, for example `tests/Integration/Providers/AppServiceProviderTest.php`. The default does not depend on a fixed list of suite names.\n- [ ] With default properties, the sniff still warns on `app/Providers/AppServiceProvider.php` in each of these cases, each pinned by its own test: the only test is `tests/Unit/AppServiceProviderTest.php` (wrong level), `tests/Unit/Providers/Extra/AppServiceProviderTest.php` (one level too deep), `tests/Unit/Extra/Providers/AppServiceProviderTest.php` (extra level above the mirrored path), or `tests/Unit/Providers/OtherTest.php` (wrong name).\n- [ ] A ruleset that sets `testDirectory` or `testPathTemplate` to a non-default value gets the single-location result it got before this change. At least one test sets the property through ruleset properties, and asserts that `src/Split.php` with only `tests/Unit/SplitTest.php` still warns under `testPathTemplate` set to `{name}Test.php`. The existing `tests/*` test-root case still passes.\n- [ ] The `RequireTestFile.Missing` warning names each location pattern the sniff checked. A test on `src/Untested.php` under defaults asserts the message contains both the package-layout path and the suite-directory form. The source code `RequireTestFile.Missing` is unchanged.\n- [ ] A source path containing a glob metacharacter never counts an unrelated test under a suite directory as its test. One test pins a negative case, such as `src/Od*d.php` with only `tests/Unit/OdadTest.php`, which must warn. One test pins a positive case, such as `src/Odd[Name].php` with `tests/Unit/Odd[Name]Test.php`, which must not warn.\n- [ ] Every existing case in `tests/Standards/RequireTestFileTest.php` passes unmodified, except the `src/Split.php` row under \"a test below the configured test root\". That row is moved to the no-warning side and its label describes the new behavior. No existing test is deleted. This keeps the exemptions (abstract classes, `excludePatterns`, `STDIN`, paths outside `sourceDirectories`) and the no-`tests/`-directory case covered.\n- [ ] The README entry for `CleanCode.Testing.RequireTestFile` lists the default test locations literally, and says that a custom `testDirectory` or `testPathTemplate` replaces them.\n- [ ] `composer test`, `composer lint`, and `composer lint:self` pass, with no new `phpcs:ignore`, no skipped tests, and no new ruleset exclusions.\n",
+  "expect": {
+    "move": "Backlog",
+    "fields": [
+      "Size",
+      "Business Value",
+      "Risk Reduction",
+      "Time Sensitive",
+      "Estimate",
+      "Priority"
+    ],
+    "ac_anchors": [
+      "tests/Unit",
+      "tests/Feature",
+      "testDirectory|testPathTemplate",
+      "tests/\\{path\\}|package layout|still counts|keeps (working|passing)"
+    ]
+  }
+}

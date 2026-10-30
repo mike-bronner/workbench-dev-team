@@ -1,0 +1,355 @@
+{
+  "lane": "lestrade-item",
+  "name": "zed-laravel-362-userinfo",
+  "repo": "mike-bronner/zed-laravel",
+  "item_id": 590,
+  "as_of": "2026-08-29T13:23:42Z",
+  "commit": "07ade3ee0d5f4ed3d68474e13ae1f7112ee6c4e4",
+  "known_outcome": "Triaged to Backlog with size=M bv=high rr=high ts=normal estimate=5 priority=4.2. Holmes approved the PR on its first review against these AC.",
+  "source": {
+    "item_id": 590,
+    "issue": "mike-bronner/zed-laravel#362",
+    "triage_log": "lestrade-590-20260829-062342.log",
+    "ac_comment": "https://github.com/mike-bronner/zed-laravel/issues/362#issuecomment-5462668725"
+  },
+  "item": {
+    "assignees": [],
+    "content_node_id": "I_kwDOQoj8xs8AAAABOx0rRQ",
+    "created_at": "2026-08-29T13:16:55+00:00",
+    "event_action": "created",
+    "event_type": "projects_v2_item",
+    "id": 590,
+    "installation_id": 121915255,
+    "in_flight_at": null,
+    "issue_number": 362,
+    "labels": [],
+    "project_node_id": "PVT_kwDOEA1bdM4BTeiF",
+    "pr_number": null,
+    "repo": "mike-bronner/zed-laravel",
+    "state": "OPEN",
+    "status": null,
+    "title": "Percent-encode userinfo in `database::userinfo` — raw `/`, `?`, `#` in a password break connections and defeat redaction",
+    "updated_at": "2026-08-29T13:23:42Z",
+    "url": "https://github.com/mike-bronner/zed-laravel/issues/362",
+    "field_changes": [],
+    "issue_fields": [
+      {
+        "id": "IFSS_kgDOAmguKg",
+        "name": "Priority",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY44w",
+            "name": "Urgent"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45A",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45Q",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45g",
+            "name": "Low"
+          }
+        ]
+      },
+      {
+        "id": "IFSS_kgDOAmguLQ",
+        "name": "Effort",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY45w",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46A",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46Q",
+            "name": "Low"
+          }
+        ]
+      }
+    ],
+    "issue_types": [
+      {
+        "id": "IT_kwDOEA1bdM4B59eI",
+        "name": "Acceptance Criteria"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B59eK",
+        "name": "PBI"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B593j",
+        "name": "Product Goal"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4CC2_s",
+        "name": "Sprint Goal"
+      }
+    ],
+    "project_fields": [
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn0",
+        "name": "Title",
+        "type": "TITLE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn4",
+        "name": "Assignees",
+        "type": "ASSIGNEES"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtQn8",
+        "name": "Status",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "cbd7979f",
+            "name": "Inbox"
+          },
+          {
+            "id": "f75ad846",
+            "name": "Backlog"
+          },
+          {
+            "id": "61e4505c",
+            "name": "Ready"
+          },
+          {
+            "id": "47fc9ee4",
+            "name": "In Progress"
+          },
+          {
+            "id": "df73e18b",
+            "name": "In Review"
+          },
+          {
+            "id": "a2a5a03d",
+            "name": "Approved"
+          },
+          {
+            "id": "63246415",
+            "name": "Escalated"
+          },
+          {
+            "id": "98236657",
+            "name": "Done"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoA",
+        "name": "Labels",
+        "type": "LABELS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoE",
+        "name": "Linked pull requests",
+        "type": "LINKED_PULL_REQUESTS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoI",
+        "name": "Milestone",
+        "type": "MILESTONE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoM",
+        "name": "Repository",
+        "type": "REPOSITORY"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoU",
+        "name": "Reviewers",
+        "type": "REVIEWERS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoY",
+        "name": "Parent issue",
+        "type": "PARENT_ISSUE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoc",
+        "name": "Sub-issues progress",
+        "type": "SUB_ISSUES_PROGRESS"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtR0A",
+        "name": "Size",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "56a7b1fe",
+            "name": "XXS"
+          },
+          {
+            "id": "6c6483d2",
+            "name": "XS"
+          },
+          {
+            "id": "f784b110",
+            "name": "S"
+          },
+          {
+            "id": "7515a9f1",
+            "name": "M"
+          },
+          {
+            "id": "817d0097",
+            "name": "L"
+          },
+          {
+            "id": "db339eb2",
+            "name": "XL"
+          },
+          {
+            "id": "5f5fa3a6",
+            "name": "XXL"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtR0E",
+        "name": "Estimate",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtSFQ",
+        "name": "Priority",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSYo",
+        "name": "Business Value",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "a74718d4",
+            "name": "minimal"
+          },
+          {
+            "id": "5128d06f",
+            "name": "low"
+          },
+          {
+            "id": "2940f8d9",
+            "name": "average"
+          },
+          {
+            "id": "50022154",
+            "name": "high"
+          },
+          {
+            "id": "1578c7e9",
+            "name": "great"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSaA",
+        "name": "Risk Reduction",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "faec73a5",
+            "name": "minimal"
+          },
+          {
+            "id": "65e247a5",
+            "name": "low"
+          },
+          {
+            "id": "7ce3e86e",
+            "name": "average"
+          },
+          {
+            "id": "810a8319",
+            "name": "high"
+          },
+          {
+            "id": "a70e8a80",
+            "name": "extreme"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSb8",
+        "name": "Time Sensitive",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "02b4afa4",
+            "name": "not"
+          },
+          {
+            "id": "32766ba9",
+            "name": "somewhat"
+          },
+          {
+            "id": "1603ed6a",
+            "name": "normal"
+          },
+          {
+            "id": "044b07e0",
+            "name": "highly"
+          },
+          {
+            "id": "5ebd63f5",
+            "name": "extremely"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ80",
+        "name": "Created",
+        "type": "CREATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9E",
+        "name": "Updated",
+        "type": "UPDATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9U",
+        "name": "Closed",
+        "type": "CLOSED"
+      }
+    ]
+  },
+  "github": {
+    "issues": [
+      {
+        "number": 362,
+        "title": "Percent-encode userinfo in `database::userinfo` — raw `/`, `?`, `#` in a password break connections and defeat redaction",
+        "body": "Follow-up from Holmes's review of #355 (PR #358).\n\n**Observation:** `database::userinfo` splices the `.env` password into a connection URL with no percent-encoding:\n\n```rust\nformat!(\"{user}:{password}\")   // laravel-lsp/src/database.rs:468-473\n```\n\nRFC 3986 requires `@`, `/`, `?` and `#` in a userinfo component to be percent-encoded. Not doing so causes two distinct failures, one functional and one a credential-disclosure hazard.\n\n**1. Connections silently fail.** `sqlx` parses connection strings through `Url::parse` (`sqlx-mysql-0.9.0/src/options/parse.rs:91`). A password containing `/` makes `build_mysql_candidates` manufacture `mysql://user:p/ss@host:3306/db`, which the parser rejects with *invalid port number* — schema introspection fails with no useful diagnostic.\n\n**2. The redaction gate fails open on the same class.** PR #358 rewrote `mask_url_credentials` to decide the credential span with an RFC 3986 parse. That closed the `@`-in-password leak (#355) and the path-`@` mangling, but one class survives: a password whose leading run up to a raw `/`, `?` or `#` is entirely ASCII digits ≤ 65535. The parser reads `user:<digits>` as `host:port`, reports no password, and the value is returned **completely unmasked** across all four display surfaces plus the server log. Verified by compiling PR #358's exact function body against `url` 2.5.8:\n\n```\nmysql://user:12/34@host/db                | parse ok, password=None | out: mysql://user:12/34@host/db\nmysql://user:1234/56@host/db              | parse ok, password=None | out: mysql://user:1234/56@host/db\nmysql://user:012345/aG9zdG5hbWU=@host/db  | parse ok, password=None | out: mysql://user:012345/aG9zdG5hbWU=@host/db\n```\n\nThe third line is the one that matters: `openssl rand -base64` output contains `/` and digits, so this is a plausible generated-password shape rather than an exotic one.\n\n**Why this can't be fixed in `mask_url_credentials`:** `mysql://user:12/34@host/db` and `mysql://host:3306/db@x` are structurally identical to any RFC 3986 parser — valid host, valid port, path containing `@`. No rule inside the masking function separates them, and #355's AC explicitly requires the latter to come back untouched. PR #358 documents this residue accurately and pins it with a test; it is genuinely irreducible at that layer.\n\nPercent-encoding at the point of construction is the fix that actually retires the class. Every URL the LSP builds would then parse cleanly, `password()` would always be `Some`, and the fail-open arm would be unreachable for anything this codebase produces.\n\n**Location:** `laravel-lsp/src/database.rs:468-473` (`userinfo`), with call sites in `build_mysql_candidates` and `build_postgres_candidates` (`:2237`).\n\n**Tracked under:** latent-hazard\n\nNon-blocking, and *unrelated to the coherent unit PR #358 delivers* — #358 is a display-layer redaction fix and closes its own class correctly. This is a connection-string defect whose repair happens to also eliminate the display residue. It belongs to whoever picks up `userinfo()`, not to #355.\n\nNote that a `.env` value a **user** types with a raw `/` in the password is outside this fix's reach and stays in the documented fail-open set — but such a value is already non-functional as a connection string for Laravel itself, so the practical exposure after this change is close to nil.\n\n<!-- followup-from: PR#358 -->\n",
+        "labels": [],
+        "state": "OPEN",
+        "createdAt": "2026-08-29T13:16:53Z",
+        "comments": []
+      }
+    ],
+    "pulls": []
+  },
+  "held_acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] `database::userinfo()` (laravel-lsp/src/database.rs:468) percent-encodes every byte not in RFC 3986's `unreserved` (`ALPHA DIGIT - . _ ~`) or `sub-delims` (`! $ & ' ( ) * + , ; =`) set — this includes `:`, `/`, `?`, `#`, `[`, `]`, `@`, `%`, space, control bytes, and non-ASCII UTF-8 bytes. Applies identically to **both** the username and the password. A literal `:` in the *username* is encoded too, even though RFC 3986's general userinfo grammar permits it unencoded — this function uses `:` as its own username/password separator, so an unencoded `:` there mis-splits the same way the digit-run/`/` collision mis-splits a password.\n- [ ] All four call sites that build a URL through `userinfo()` receive the encoded value: `build_mysql_candidates`'s unix-socket and TCP branches, and `build_postgres_candidates`'s unix-socket and TCP branches. No caller is left splicing a raw, unencoded credential.\n- [ ] A password containing `/`, `?`, `#`, or `@` (e.g. an `openssl rand -base64`-shaped value, matching the issue's examples) now parses successfully via `sqlx::mysql::MySqlConnectOptions` / `sqlx::postgres::PgConnectOptions`'s `FromStr` (already a dependency — no new crate needed), yielding the intended username and password through their accessors — not a parse error, and not a misread host/port for the digit-run cases.\n- [ ] A credential built only from legal `unreserved`/`sub-delims` characters (including marks like `!$&'()*+,;=~-._`) produces a byte-for-byte identical URL to today's output — no incidental re-encoding of already-safe or already-legal characters. The empty-password no-trailing-colon behavior (`mysql://root@host/db`, never `mysql://root:@host/db`) is preserved.\n- [ ] A literal `%` in a credential is always percent-encoded to `%25`, with no ambiguity: a password containing `%` immediately followed by two hex digits (e.g. `sec%3Dret`) round-trips to the literal string `sec%3Dret`, never decoding to `sec=ret`.\n- [ ] The `DB_URL` passthrough candidate (`config.url`, both MySQL and Postgres) is untouched — encoding applies only to URLs `userinfo()` helps construct, never to a full connection string supplied verbatim by the user.\n- [ ] Unit tests, each verified via the `MySqlConnectOptions`/`PgConnectOptions` parse named above, cover: (a) a password containing `/`, one containing `?`, one containing `#`, one containing `@`; (b) the digit-run-before-`/` shapes quoted in the issue (`12/34`, `1234/56`, `012345/aG9zdG5hbWU=`) plus the equivalent digit-run-before-`?` and digit-run-before-`#` shapes (e.g. `12?34`, `12#34`); (c) a username containing a reserved character (e.g. `foo@bar` or `a:b`), proving the username is encoded symmetrically with the password; (d) at least one test per production call site — both branches of `build_mysql_candidates` and both branches of `build_postgres_candidates` — building a real `ConnCandidate` with a special-character credential and confirming the credential *and* the trailing `socket=`/`host=` query value both parse back correctly.\n",
+  "expect": {
+    "move": "Backlog",
+    "fields": [
+      "Size",
+      "Business Value",
+      "Risk Reduction",
+      "Time Sensitive",
+      "Estimate",
+      "Priority"
+    ],
+    "ac_anchors": [
+      "userinfo",
+      "percent.?encod",
+      "mysql",
+      "postgres|\\bpg"
+    ]
+  }
+}

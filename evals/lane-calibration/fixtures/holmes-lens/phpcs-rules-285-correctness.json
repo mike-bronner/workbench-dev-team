@@ -1,0 +1,27 @@
+{
+  "lane": "holmes-lens",
+  "name": "phpcs-rules-285-correctness",
+  "repo": "mike-bronner/phpcs-rules",
+  "pr": 285,
+  "base": "f42e15104490b4d65a637ddea47f8824bdf5caba",
+  "head": "c1d61429e90ac5eb30f04239288a76138ecf0068",
+  "as_of": "2026-08-09T11:36:36Z",
+  "known_outcome": "Holmes rejected this commit: ConvertToCollectionSniff checks only the immediately preceding token, so `new \\array_map(...)` and `function &array_map(...)` are flagged as native calls.",
+  "source": {
+    "item_id": 435,
+    "item_status": "Done",
+    "issue": "mike-bronner/phpcs-rules#165",
+    "review": "https://github.com/mike-bronner/clean-code/pull/285#pullrequestreview-4891267372",
+    "review_learning": "dev-team/review-learnings/phpcs-rules-pr285-2026-08-09.md"
+  },
+  "lens": "Correctness lens",
+  "acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] New sniff class (e.g. `MikeBronner\\CleanCode\\Sniffs\\...\\ForbiddenArrayFunctionSniff`) registers appropriately and is wired into the standard's ruleset so it runs via `vendor/bin/phpcs --standard=rules.xml`.\n- [ ] The list of flagged native array-manipulation functions is a public, configurable sniff property; the shipped default is `array_map`, `array_filter`, `array_reduce`.\n- [ ] Detection matches a global-scope call: a `T_STRING` token equal to one of the configured function names, immediately followed by `(`, and **not** preceded by `->`, `::`, `new`, or `function` (i.e. not a method call, static call, object instantiation, or function/method definition of that name).\n- [ ] Each flagged call reports a **warning** (not an error) whose message names the Collection equivalent (`array_map()` → `collect()->map()`, `array_filter()` → `collect()->filter()`, `array_reduce()` → `collect()->reduce()`).\n- [ ] Calls to array functions not present in the configured list are not flagged.\n- [ ] Unit test fixture(s) (`*UnitTest.inc` + `*UnitTest.php` expected-warning map, per this repo's PHPCS sniff test harness convention) cover: each default function called bare at global scope (flagged), the same function names called as a method (`$obj->array_map()`) or static call (`Foo::array_map()`) (not flagged), a function/method definition named `array_map` (not flagged), and a call to a function outside the configured list (not flagged).\n- [ ] Sniff self-lints clean against the standard's own source when run through the standard.\n- [ ] Issue/PR references the parent standard #30 as Tier 2 (custom sniff), not Tier 3 — matches the reclassification landed in PR #164; docs-consistency only, no change to the heuristic/scope/boundaries above.\n\n### Testing (current convention — see CONTRIBUTING.md)\n\n- [ ] If this lands as a new custom CleanCode sniff: fixtures live at `tests/fixtures/<Name>Sniff/` (or `tests/fixtures/_rulesets/<Standard>/` when the standard is implemented by several sniffs at once) with the fixed names `passing.php` and `failing.php` (both always required — compliant and violating code in separate files, `passing.php` discriminating enough to include near-miss shapes the sniff must stay silent on), plus `autofixed.php` (the fixer's actual output on `failing.php`) only if the sniff is auto-fixable\n- [ ] If this is instead implemented by wiring an existing third-party (Slevomat/Squiz) sniff into `rules.xml`: no fixture contract applies — pin the configured behaviour with a wiring test under `tests/Rules/` (e.g. `tests/Rules/LineLengthRulesTest.php`) or `tests/Ruleset/` (e.g. `tests/Ruleset/DisallowStaticMembersTest.php`), per CONTRIBUTING.md step 5\n- [ ] A new custom sniff is added to `SWEPT_SNIFFS` in `tests/Contract/SniffContractTest.php` (plus the autofixable-sniffs / fixer-resolves-every-violation lists where applicable), and gets a dedicated `tests/Standards/<Name>Test.php` asserting the exact lines, columns, and violation sources\n- [ ] Tests use Pest's functional style (`it('does the thing', function () { ... })`), not a `TestCase` subclass — and never the retired `AbstractSniffUnitTest` harness or the superseded `Fixtures/<SniffClassName>/`-style layout\n- [ ] `composer test` (full Pest suite) and `composer lint` (PSR-12 self-lint, fixtures excluded) both pass\n",
+  "expect": {
+    "any_of": [
+      [
+        "ConvertToCollection|NON_FUNCTION_CALL_PRECEDERS|preced",
+        "T_NS_SEPARATOR|new \\\\|namespace|qualif|T_BITWISE_AND|&array_map|by.reference|function &"
+      ]
+    ]
+  }
+}

@@ -1,0 +1,354 @@
+{
+  "lane": "lestrade-item",
+  "name": "clean-code-388-inferred-return-type",
+  "repo": "mike-bronner/clean-code",
+  "item_id": 617,
+  "as_of": "2026-09-28T14:46:43Z",
+  "commit": "4bf3ddfb73540f0ba9371f687a19ee49737d255a",
+  "known_outcome": "Triaged to Backlog with size=S bv=average rr=high ts=somewhat estimate=3 priority=5.33. Holmes approved the PR on its first review against these AC.",
+  "source": {
+    "item_id": 617,
+    "issue": "mike-bronner/clean-code#388",
+    "triage_log": "lestrade-617-20260928-074643.log",
+    "ac_comment": "https://github.com/mike-bronner/clean-code/issues/388#issuecomment-5872381543"
+  },
+  "item": {
+    "assignees": [],
+    "content_node_id": "I_kwDOTXIXrs8AAAABTsF4jw",
+    "created_at": "2026-09-28T14:32:27+00:00",
+    "event_action": "created",
+    "event_type": "projects_v2_item",
+    "id": 617,
+    "installation_id": 121915255,
+    "in_flight_at": null,
+    "issue_number": 388,
+    "labels": [],
+    "project_node_id": "PVT_kwDOEA1bdM4BTeiF",
+    "pr_number": null,
+    "repo": "mike-bronner/clean-code",
+    "state": "OPEN",
+    "status": null,
+    "title": "InferredReturnType fixer writes a return type before a closure's use clause, producing a parse error",
+    "updated_at": "2026-09-28T14:46:43Z",
+    "url": "https://github.com/mike-bronner/clean-code/issues/388",
+    "field_changes": [],
+    "issue_fields": [
+      {
+        "id": "IFSS_kgDOAmguKg",
+        "name": "Priority",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY44w",
+            "name": "Urgent"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45A",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45Q",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY45g",
+            "name": "Low"
+          }
+        ]
+      },
+      {
+        "id": "IFSS_kgDOAmguLQ",
+        "name": "Effort",
+        "options": [
+          {
+            "id": "IFSSO_kgDOBDY45w",
+            "name": "High"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46A",
+            "name": "Medium"
+          },
+          {
+            "id": "IFSSO_kgDOBDY46Q",
+            "name": "Low"
+          }
+        ]
+      }
+    ],
+    "issue_types": [
+      {
+        "id": "IT_kwDOEA1bdM4B59eI",
+        "name": "Acceptance Criteria"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B59eK",
+        "name": "PBI"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4B593j",
+        "name": "Product Goal"
+      },
+      {
+        "id": "IT_kwDOEA1bdM4CC2_s",
+        "name": "Sprint Goal"
+      }
+    ],
+    "project_fields": [
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn0",
+        "name": "Title",
+        "type": "TITLE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQn4",
+        "name": "Assignees",
+        "type": "ASSIGNEES"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtQn8",
+        "name": "Status",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "cbd7979f",
+            "name": "Inbox"
+          },
+          {
+            "id": "f75ad846",
+            "name": "Backlog"
+          },
+          {
+            "id": "61e4505c",
+            "name": "Ready"
+          },
+          {
+            "id": "47fc9ee4",
+            "name": "In Progress"
+          },
+          {
+            "id": "df73e18b",
+            "name": "In Review"
+          },
+          {
+            "id": "a2a5a03d",
+            "name": "Approved"
+          },
+          {
+            "id": "63246415",
+            "name": "Escalated"
+          },
+          {
+            "id": "98236657",
+            "name": "Done"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoA",
+        "name": "Labels",
+        "type": "LABELS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoE",
+        "name": "Linked pull requests",
+        "type": "LINKED_PULL_REQUESTS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoI",
+        "name": "Milestone",
+        "type": "MILESTONE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoM",
+        "name": "Repository",
+        "type": "REPOSITORY"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoU",
+        "name": "Reviewers",
+        "type": "REVIEWERS"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoY",
+        "name": "Parent issue",
+        "type": "PARENT_ISSUE"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtQoc",
+        "name": "Sub-issues progress",
+        "type": "SUB_ISSUES_PROGRESS"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtR0A",
+        "name": "Size",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "56a7b1fe",
+            "name": "XXS"
+          },
+          {
+            "id": "6c6483d2",
+            "name": "XS"
+          },
+          {
+            "id": "f784b110",
+            "name": "S"
+          },
+          {
+            "id": "7515a9f1",
+            "name": "M"
+          },
+          {
+            "id": "817d0097",
+            "name": "L"
+          },
+          {
+            "id": "db339eb2",
+            "name": "XL"
+          },
+          {
+            "id": "5f5fa3a6",
+            "name": "XXL"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtR0E",
+        "name": "Estimate",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhAtSFQ",
+        "name": "Priority",
+        "type": "NUMBER"
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSYo",
+        "name": "Business Value",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "a74718d4",
+            "name": "minimal"
+          },
+          {
+            "id": "5128d06f",
+            "name": "low"
+          },
+          {
+            "id": "2940f8d9",
+            "name": "average"
+          },
+          {
+            "id": "50022154",
+            "name": "high"
+          },
+          {
+            "id": "1578c7e9",
+            "name": "great"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSaA",
+        "name": "Risk Reduction",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "faec73a5",
+            "name": "minimal"
+          },
+          {
+            "id": "65e247a5",
+            "name": "low"
+          },
+          {
+            "id": "7ce3e86e",
+            "name": "average"
+          },
+          {
+            "id": "810a8319",
+            "name": "high"
+          },
+          {
+            "id": "a70e8a80",
+            "name": "extreme"
+          }
+        ]
+      },
+      {
+        "id": "PVTSSF_lADOEA1bdM4BTeiFzhAtSb8",
+        "name": "Time Sensitive",
+        "type": "SINGLE_SELECT",
+        "options": [
+          {
+            "id": "02b4afa4",
+            "name": "not"
+          },
+          {
+            "id": "32766ba9",
+            "name": "somewhat"
+          },
+          {
+            "id": "1603ed6a",
+            "name": "normal"
+          },
+          {
+            "id": "044b07e0",
+            "name": "highly"
+          },
+          {
+            "id": "5ebd63f5",
+            "name": "extremely"
+          }
+        ]
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ80",
+        "name": "Created",
+        "type": "CREATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9E",
+        "name": "Updated",
+        "type": "UPDATED"
+      },
+      {
+        "id": "PVTF_lADOEA1bdM4BTeiFzhQeJ9U",
+        "name": "Closed",
+        "type": "CLOSED"
+      }
+    ]
+  },
+  "github": {
+    "issues": [
+      {
+        "number": 388,
+        "title": "InferredReturnType fixer writes a return type before a closure's use clause, producing a parse error",
+        "body": "## 🐛 Summary\nOn a closure with a `use` clause, `CleanCode.TypeHints.InferredReturnType` inserts `: <type>` before `use`. The result is a parse error. It also reports closures that already declare a return type.\n\n## 🔁 Reproduce (0.1.1)\nInput:\n```php\n$handler = function (int $severity, string $message) use (&$reason): bool {\n    $reason = $message;\n\n    return true;\n};\n```\nAfter `phpcbf`:\n```php\n$handler = function (int $severity, string $message): true use (&$reason): bool {\n```\nPHP refuses to parse this line.\n\n## 🔍 Cause\nBoth checks in `CleanCode/Sniffs/TypeHints/InferredReturnTypeSniff.php` anchor on the parameter list's closing parenthesis.\n- **Detection:** `hasReturnType()` looks for `T_COLON` right after that parenthesis. On a closure the next token is `T_USE`, so an existing return type goes unseen.\n- **Fix:** `report()` adds the type straight after the same parenthesis. That puts it before `use (...)` rather than after it.\n\n## ✅ Expected\n- A closure with `use (...): type` is recognised as typed and is not reported.\n- A closure with `use (...)` and no return type gets the type after the `use` list's closing parenthesis.\n\n## 📎 Context\nThis surfaced in `mike-bronner/laravel-development-settings` PR #35, at `src/Support/CheckedFile.php`. That repository now avoids the construct. Any consumer running `phpcbf` on such a closure gets a file that no longer parses.\n",
+        "labels": [],
+        "state": "OPEN",
+        "createdAt": "2026-09-28T14:32:18Z",
+        "comments": []
+      }
+    ],
+    "pulls": []
+  },
+  "held_acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] A closure that declares its return type after a `use (...)` clause (e.g. `function (...) use (&$x): bool { ... }`) is recognized by `CleanCode.TypeHints.InferredReturnType` as already typed, and produces neither an error nor a warning.\n- [ ] A closure with a `use (...)` clause and no return type is still reported as missing a return type hint, and its auto-fix inserts the inferred return type immediately after the `use` clause's closing parenthesis (not before it, and not after only the first captured variable), producing syntactically valid PHP (verified by a parse check such as `php -l`).\n- [ ] A closure with a `use (...)` clause that captures more than one variable (mixing by-value and by-reference, e.g. `use ($a, &$b)`) is handled the same way: the return type lands after the whole use-list's closing parenthesis.\n- [ ] Whitespace or a comment between the use-list's closing parenthesis and the tokens that follow it does not change the detection or fix-placement outcome.\n- [ ] A closure with no `use` clause, and a named (non-closure) function, are unaffected by this fix: the sniff's existing test coverage for both cases (reported error lines and fixed-signature assertions) continues to pass unmodified.\n- [ ] Re-running the fixer on an already-fixed closure with a `use` clause is a no-op: no duplicate return type is inserted and the fixer converges.\n- [ ] If the use clause's closing parenthesis cannot be located, the sniff does not report an error, applies no fix, and does not throw.\n- [ ] Running the fixer against the issue's reproduction case (a closure with `use (&$reason)` and an inferable `bool` return) produces `function (int $severity, string $message) use (&$reason): bool` (whitespace aside) and the file parses as valid PHP.\n- [ ] Test coverage exists for both directions of the fix: a `use`-clause closure that already declares a return type (asserted absent from both errors and warnings), and a `use`-clause closure with no return type (asserted present as an error, with the exact fixed declaration text confirmed rather than a substring match).\n",
+  "expect": {
+    "move": "Backlog",
+    "fields": [
+      "Size",
+      "Business Value",
+      "Risk Reduction",
+      "Time Sensitive",
+      "Estimate",
+      "Priority"
+    ],
+    "ac_anchors": [
+      "\\buse\\b",
+      "already (declares|typed|has)|declares (a|its) return type|existing return type|typed closure",
+      "after .*(use|closing paren)"
+    ]
+  }
+}

@@ -1,0 +1,27 @@
+{
+  "lane": "holmes-lens",
+  "name": "workbench-ynab-253-test-honesty",
+  "repo": "mike-bronner/workbench-ynab",
+  "pr": 253,
+  "base": "6bc19570655a73c2730d14ee657502e64985091d",
+  "head": "171e7a4a2c945d49a00c359e3b24f552b17f610a",
+  "as_of": "2026-08-01T22:53:13Z",
+  "known_outcome": "Holmes rejected this commit: tests/unit/portfolio-report.test.sh uses a whole-file assert_present 'portfolio-rollup.js' for a section-3 claim, and the string also appears in the file's intro, so the assertion passes vacuously.",
+  "source": {
+    "item_id": 150,
+    "item_status": "Done",
+    "issue": "mike-bronner/workbench-ynab#85",
+    "review": "https://github.com/mike-bronner/workbench-ynab/pull/253#pullrequestreview-4836001242",
+    "review_learning": "dev-team/review-learnings/workbench-ynab-pr253-2026-08-01.md"
+  },
+  "lens": "Test-honesty lens",
+  "acceptance_criteria": "## Acceptance Criteria\n\n- [ ] `commands/ynab-portfolio.md` slash command exists, is syntactically valid, and is reachable via Claude's slash-command picker\n- [ ] The skill reads the M6-6 budgets config to discover which budgets are enabled and their assigned roles/tags (e.g. `business`); no budget IDs are hard-coded\n- [ ] Per-budget data is fetched via namespaced `mcp__plugin_workbench-ynab_ynab__*` tools scoped by `budget_id`; where M6-6 cached per-budget fragments are available they are consumed instead of re-fetching\n- [ ] Aggregated output includes all four summary dimensions: combined account balances / net worth, aggregate income vs spending, cross-budget Ready-to-Assign, and a unified health score\n- [ ] All milliunit amounts are converted to the display currency before aggregation; no raw-milliunit values are summed across budgets\n- [ ] Schedule C activity is aggregated across all `business`-tagged budgets and the result is fed into the M6-4 quarterly-tax tracker to produce a single YTD tax picture (not per-budget fragments)\n- [ ] The report renders into the frozen v1 HTML template reusing its fragment-fill approach; dark-theme tokens (#1a1a2e / #16a085 / #e74c3c / #f39c12), a KPI dashboard section, and collapsible per-budget detail sections are present\n- [ ] The `@media print` block from the frozen template is inherited by the rollup report; the missing-print-CSS bug from the prototype does not recur (verified by inspecting rendered HTML)\n- [ ] Dispatch summary output is severity-prefixed with findings ordered most-severe first, spanning all budgets\n- [ ] The rollup is strictly read-only: no budget data, category, or transaction is modified at any point during execution",
+  "expect": {
+    "any_of": [
+      [
+        "portfolio-report|assert_present",
+        "portfolio-rollup|whole.file|section|intro|anywhere"
+      ]
+    ]
+  }
+}

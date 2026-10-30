@@ -1,0 +1,15 @@
+{
+  "baseline": "opus-medium",
+  "runs_per_cell": 3,
+  "cells": {
+    "opus-medium": {"model": "claude-opus-5-5[1m]", "effort": "medium"},
+    "opus-low": {"model": "claude-opus-5-5[1m]", "effort": "low"},
+    "sonnet-medium": {"model": "claude-sonnet-5-5", "effort": "medium"},
+    "haiku-medium": {"model": "claude-haiku-5-5", "effort": "medium"}
+  },
+  "lanes": {
+    "holmes-lens": ["opus-medium", "opus-low", "sonnet-medium", "haiku-medium"],
+    "lestrade-sweep": ["opus-medium", "opus-low", "sonnet-medium", "haiku-medium"],
+    "lestrade-item": ["opus-medium", "opus-low", "sonnet-medium"]
+  }
+}
