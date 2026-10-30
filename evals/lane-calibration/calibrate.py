@@ -18,18 +18,46 @@ ROOT = HERE.parent.parent
 FAKE_INDEX = ROOT / "tests" / "fake-index.py"
 LENS_PHASES = ROOT / "references" / "holmes" / "review-phases.md"
 PRICING_URL = "https://platform.claude.com/docs/en/about-claude/pricing.md"
+USER_AGENT = "workbench-dev-team-lane-calibration"
 RUN_TIMEOUT_S = 1800
 RUN_BUDGET_USD = "10"
-GITHUB_TOKEN_VARS = ("GH_TOKEN", "GITHUB_TOKEN", "GH_ENTERPRISE_TOKEN", "GITHUB_ENTERPRISE_TOKEN", "CLAUDE_PROJECT_DIR")
+MIN_VALID_RUNS = 3
+SCRUBBED_PREFIXES = ("GIT_", "GH_", "GITHUB_")
+SCRUBBED_VARS = ("SSH_AUTH_SOCK", "SSH_ASKPASS", "CLAUDE_PROJECT_DIR")
+TOKEN_VARS = ("GH_TOKEN", "GITHUB_TOKEN")
+GIT_PINS = (
+    ("credential.helper", ""),
+    ("core.askPass", ""),
+    ("protocol.allow", "never"),
+    ("protocol.https.allow", "never"),
+    ("protocol.http.allow", "never"),
+    ("protocol.ssh.allow", "never"),
+    ("protocol.git.allow", "never"),
+    ("protocol.file.allow", "always"),
+)
+PLUGINS = ("workbench-dev-team@claude-workbench", "workbench-core@claude-workbench")
+SETTINGS_DENY = [
+    "Bash(git push:*)", "Bash(git * push)", "Bash(git * push *)",
+    "Bash(git -c:*)", "Bash(git * -c *)",
+    "Bash(git --config-env*)", "Bash(git * --config-env*)",
+    "Bash(git credential*)", "Bash(git * credential*)", "Bash(git-credential*)", "Bash(*/git-credential*)",
+    "Bash(git config*protocol.*)", "Bash(git * config*protocol.*)",
+    "Bash(gh auth:*)", "Bash(*/gh auth*)",
+    "Bash(claude:*)", "Bash(claude)", "Bash(* claude)", "Bash(* claude *)", "Bash(*/claude)", "Bash(*/claude *)",
+]
+NETWORK_BINARIES = ("curl", "wget", "security", "nc", "ssh", "scp")
+BINARY_PATHS = ("/usr/bin", "/bin", "/opt/homebrew/bin", "/usr/local/bin")
 DENIED_TOOLS = [
     "Workflow", "Artifact", "Monitor", "PushNotification", "RemoteTrigger", "SendMessage",
     "DesignSync", "ReportFindings", "CronCreate", "CronDelete", "CronList", "ScheduleWakeup",
     "TaskCreate", "TaskGet", "TaskList", "TaskOutput", "TaskStop", "TaskUpdate",
     "EnterWorktree", "ExitWorktree", "ListMcpResourcesTool", "ReadMcpResourceTool",
     "ReadMcpResourceDirTool", "NotebookEdit", "WebFetch", "WebSearch",
-    "Bash(curl:*)", "Bash(wget:*)", "Bash(security:*)",
 ]
-WSJF_WRITES = ("set_acceptance_criteria", "update_fields", "move", "add_comment")
+DENIED_TOOLS += [f"Bash({name}:*)" for name in NETWORK_BINARIES]
+DENIED_TOOLS += [f"Bash({path}/{name}:*)" for path in BINARY_PATHS for name in NETWORK_BINARIES + ("gh",)]
+INDEX_WRITES = ("set_acceptance_criteria", "update_fields", "move", "add_comment")
+ALL_INDEX_WRITES = INDEX_WRITES + ("add_blocked_by", "close_as_duplicate", "submit_review", "create_issue", "claim_item", "release_item")
 CAVEAT = (
     "A fixture's known outcome is what happened historically, and nobody re-checked it. "
     "A historical verdict, link set or AC counts as correct even if it was wrong, so a cell "
@@ -74,12 +102,17 @@ def git(*args, cwd=None, env=None):
     subprocess.run(["git", *args], cwd=cwd, env=env, check=True, capture_output=True, text=True)
 
 
+def remote_url(repo):
+    return f"https://github.com/{repo}.git"
+
+
 def mirror(out, repo, shas):
     path = out / "repos" / (repo.replace("/", "__") + ".git")
     if not path.exists():
-        git("clone", "--bare", "--quiet", f"https://github.com/{repo}.git", str(path))
+        git("clone", "--bare", "--quiet", remote_url(repo), str(path))
+        git("-C", str(path), "remote", "remove", "origin")
     for sha in shas:
-        git("-C", str(path), "fetch", "--quiet", "origin", sha)
+        git("-C", str(path), "fetch", "--quiet", "--no-write-fetch-head", remote_url(repo), sha)
         git("-C", str(path), "update-ref", f"refs/eval/{sha}", sha)
     return path
 
@@ -138,8 +171,8 @@ def start_index(rundir, fixture):
     raise SafetyError("the fake Index did not start")
 
 
-def run_env(rundir, fixture, extra):
-    env = {k: v for k, v in os.environ.items() if k not in GITHUB_TOKEN_VARS}
+def run_env(rundir, extra):
+    env = {k: v for k, v in os.environ.items() if not k.startswith(SCRUBBED_PREFIXES) and k not in SCRUBBED_VARS}
     (rundir / "ghconfig").mkdir(exist_ok=True)
     (rundir / "gitconfig").write_text("")
     env.update({
@@ -148,13 +181,17 @@ def run_env(rundir, fixture, extra):
         "GH_CONFIG_DIR": str(rundir / "ghconfig"),
         "GH_PROMPT_DISABLED": "1",
         "GIT_CONFIG_NOSYSTEM": "1",
+        "GIT_CONFIG_SYSTEM": str(rundir / "gitconfig"),
         "GIT_CONFIG_GLOBAL": str(rundir / "gitconfig"),
         "GIT_TERMINAL_PROMPT": "0",
         "GIT_SSH_COMMAND": "false",
+        "GIT_CONFIG_COUNT": str(len(GIT_PINS)),
         "WORKBENCH_DEV_TEAM_PIPELINE": "1",
         "EVAL_GH_DATA": str(rundir / "fixture.json"),
         "EVAL_GH_LOG": str(rundir / "gh-log.jsonl"),
     })
+    for i, (key, value) in enumerate(GIT_PINS):
+        env[f"GIT_CONFIG_KEY_{i}"], env[f"GIT_CONFIG_VALUE_{i}"] = key, value
     env.update(extra)
     return env
 
@@ -170,8 +207,7 @@ def prepare_run(out, rundir, fixture):
     lane = fixture["lane"]
     if lane == "holmes-lens":
         checkout = rundir / "checkout"
-        source = mirror(out, fixture["repo"], [])
-        git("clone", "--quiet", "--shared", "--no-checkout", str(source), str(checkout))
+        git("clone", "--quiet", "--shared", "--no-checkout", str(mirror(out, fixture["repo"], [])), str(checkout))
         git("-C", str(checkout), "checkout", "--quiet", "-B", f"eval-pr-{fixture['pr']}", fixture["head"])
         git("-C", str(checkout), "update-ref", "refs/remotes/origin/main", fixture["base"])
         git("-C", str(checkout), "remote", "set-url", "--push", "origin", "eval-replay-no-push")
@@ -185,6 +221,39 @@ def prepare_run(out, rundir, fixture):
     return f"Repo sweep: {fixture['repo']}", {}
 
 
+def known_plugins(home):
+    names = set()
+    sources = ((home / ".claude" / "plugins" / "installed_plugins.json", "plugins"), (home / ".claude" / "settings.json", "enabledPlugins"))
+    for path, key in sources:
+        try:
+            names |= set(json.loads(path.read_text()).get(key) or {})
+        except (OSError, ValueError, AttributeError):
+            continue
+    return names
+
+
+def run_settings(home):
+    enabled = {plugin: False for plugin in known_plugins(home)}
+    enabled.update({plugin: True for plugin in PLUGINS})
+    return {"enabledPlugins": enabled, "permissions": {"deny": SETTINGS_DENY}}
+
+
+def build_cmd(lane, cell, rundir, port, prompt):
+    (rundir / "mcp.json").write_text(json.dumps({"mcpServers": {"the-index": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}))
+    (rundir / "settings.json").write_text(json.dumps(run_settings(Path.home())))
+    return [
+        "claude", "-p", "--agent", f"workbench-dev-team:{lane}",
+        "--model", cell["model"], "--effort", cell["effort"],
+        "--setting-sources", "project", "--settings", str(rundir / "settings.json"),
+        "--strict-mcp-config", "--mcp-config", str(rundir / "mcp.json"),
+        "--disallowedTools", ",".join(DENIED_TOOLS),
+        "--allowedTools", "mcp__the-index__*",
+        "--max-budget-usd", RUN_BUDGET_USD,
+        "--permission-mode", "auto", "--permission-prompts", "none",
+        "--output-format", "stream-json", "--verbose", prompt,
+    ]
+
+
 def check_init(event):
     servers = {s.get("name"): s.get("status") for s in event.get("mcp_servers", [])}
     if set(servers) != {"the-index"}:
@@ -192,6 +261,10 @@ def check_init(event):
     foreign = [t for t in event.get("tools", []) if t.startswith("mcp__") and not t.startswith("mcp__the-index__")]
     if foreign:
         raise SafetyError(f"the run loaded MCP tools outside the fake Index: {foreign}")
+    plugins = {p.get("name") if isinstance(p, dict) else p for p in event.get("plugins", [])}
+    expected = {plugin.split("@")[0] for plugin in PLUGINS}
+    if plugins != expected:
+        raise SafetyError(f"the run loaded plugins {sorted(plugins)}; only {sorted(expected)} may load")
     return servers["the-index"] == "connected"
 
 
@@ -228,17 +301,34 @@ def execute(cmd, cwd, env, stream_path):
 
 
 def read_jsonl(path):
+    records = []
     if not path.exists():
-        return []
-    return [json.loads(line) for line in path.read_text().splitlines() if line.strip()]
+        return records
+    for line in path.read_text().splitlines():
+        try:
+            record = json.loads(line)
+        except ValueError:
+            continue
+        if isinstance(record, dict):
+            records.append(record)
+    return records
+
+
+def unreadable_lines(path):
+    lines = [line for line in path.read_text().splitlines() if line.strip()] if path.exists() else []
+    return len(lines) - len(read_jsonl(path))
 
 
 def index_calls(path):
     calls = []
     for entry in read_jsonl(path):
-        body = entry.get("body") or {}
-        if body.get("method", "tools/call") == "tools/call" and (body.get("params") or {}).get("name"):
-            calls.append((body["params"]["name"], body["params"].get("arguments") or {}))
+        body = entry.get("body")
+        if not isinstance(body, dict):
+            continue
+        params = body.get("params") if isinstance(body.get("params"), dict) else {}
+        if body.get("method", "tools/call") == "tools/call" and params.get("name"):
+            arguments = params.get("arguments")
+            calls.append((params["name"], arguments if isinstance(arguments, dict) else {}))
     return calls
 
 
@@ -258,11 +348,20 @@ def finding_blocks(text):
     return re.split(r"(?im)^\s*-?\s*\**claim\**:", text or "")[1:]
 
 
+def blocker_blocks(text):
+    return [b for b in finding_blocks(text) if re.search(r"severity\**:\s*\**\s*blocker", b, re.I)]
+
+
 def grade_lens(fixture, text):
-    blocks = finding_blocks(text)
+    blocks, blockers = finding_blocks(text), blocker_blocks(text)
+    if fixture["expect"].get("no_blockers"):
+        if blockers:
+            return False, f"{len(blockers)} blocker finding(s) on a PR Holmes approved"
+        if blocks or re.search(r"no findings", text or "", re.I):
+            return True, "no blocker on a PR Holmes approved"
+        return False, "no structured findings and no 'no findings' line in the report"
     if not blocks:
         return False, "no structured findings in the report"
-    blockers = [b for b in blocks if re.search(r"severity\**:\s*\**\s*blocker", b, re.I)]
     for group in fixture["expect"]["any_of"]:
         if any(all(re.search(rx, b, re.I) for rx in group) for b in blockers):
             return True, "a blocker finding names the known defect"
@@ -289,7 +388,7 @@ def grade_sweep(fixture, calls):
 def grade_item(fixture, calls):
     expect = fixture["expect"]
     for name, args in calls:
-        if name in WSJF_WRITES and str(args.get("id")) != str(fixture["item_id"]):
+        if name in INDEX_WRITES and str(args.get("id")) != str(fixture["item_id"]):
             return False, f"{name} aimed at item {args.get('id')}"
     criteria = [args.get("criteria") or "" for name, args in calls if name == "set_acceptance_criteria"]
     if not criteria:
@@ -313,38 +412,20 @@ def grade_item(fixture, calls):
 
 
 def grade(fixture, calls, text):
-    if fixture["lane"] == "holmes-lens":
-        return grade_lens(fixture, text)
-    if fixture["lane"] == "lestrade-sweep":
-        return grade_sweep(fixture, calls)
-    return grade_item(fixture, calls)
-
-
-def run_one(out, lane, cell_id, cell, fixture, n):
-    rundir = out / "runs" / lane / cell_id / fixture["name"] / str(n)
-    prompt, extra = prepare_run(out, rundir, fixture)
-    index, port = start_index(rundir, fixture)
     try:
-        (rundir / "mcp.json").write_text(json.dumps({"mcpServers": {"the-index": {"type": "http", "url": f"http://127.0.0.1:{port}/mcp"}}}))
-        cmd = [
-            "claude", "-p", "--agent", f"workbench-dev-team:{lane}",
-            "--model", cell["model"], "--effort", cell["effort"],
-            "--strict-mcp-config", "--mcp-config", str(rundir / "mcp.json"),
-            "--disallowedTools", ",".join(DENIED_TOOLS),
-            "--allowedTools", "mcp__the-index__*",
-            "--max-budget-usd", RUN_BUDGET_USD,
-            "--permission-mode", "auto", "--permission-prompts", "none",
-            "--output-format", "stream-json", "--verbose", prompt,
-        ]
-        started = time.monotonic()
-        code, state = execute(cmd, rundir / "work", run_env(rundir, fixture, extra), rundir / "stream.jsonl")
-        wall = round(time.monotonic() - started, 1)
-    finally:
-        index.kill()
-        index.wait()
+        if fixture["lane"] == "holmes-lens":
+            return grade_lens(fixture, text)
+        if fixture["lane"] == "lestrade-sweep":
+            return grade_sweep(fixture, calls)
+        return grade_item(fixture, calls)
+    except Exception as failure:
+        return False, f"the run's output could not be graded: {type(failure).__name__}: {failure}"
+
+
+def build_record(lane, cell_id, cell, fixture, n, rundir, code, state, wall):
     result, requests = stream_metrics(rundir / "stream.jsonl")
     calls = index_calls(rundir / "index-log.jsonl")
-    text = (result or {}).get("result", "")
+    text = (result or {}).get("result", "") if isinstance(result, dict) else ""
     record = {
         "lane": lane, "cell": cell_id, "model": cell["model"], "effort": cell["effort"],
         "fixture": fixture["name"], "run": n, "wall_s": wall, "exit": code,
@@ -355,9 +436,12 @@ def run_one(out, lane, cell_id, cell, fixture, n):
         "index_calls": [{"name": name, "arguments": args} for name, args in calls],
         "gh_calls": read_jsonl(rundir / "gh-log.jsonl"),
         "result_text": text,
+        "timed_out": state["timeout"],
         "invalid": None,
     }
-    if state["connected"] is False:
+    if state["connected"] is None:
+        record["invalid"] = "the run printed no init event, so its MCP servers were never checked"
+    elif state["connected"] is False:
         record["invalid"] = "the fake Index did not connect"
     elif result is None and not state["timeout"]:
         record["invalid"] = "the run ended without a result event"
@@ -369,9 +453,36 @@ def run_one(out, lane, cell_id, cell, fixture, n):
         record["pass"], record["reason"] = False, f"run ended with {record['result_subtype']}"
     else:
         record["pass"], record["reason"] = grade(fixture, calls, text)
-    for leftover in ("checkout", "snapshot.git"):
-        shutil.rmtree(rundir / leftover, ignore_errors=True)
     return record
+
+
+def run_one(out, lane, cell_id, cell, fixture, n):
+    rundir = out / "runs" / lane / cell_id / fixture["name"] / str(n)
+    index = None
+    try:
+        prompt, extra = prepare_run(out, rundir, fixture)
+        index, port = start_index(rundir, fixture)
+        cmd = build_cmd(lane, cell, rundir, port, prompt)
+        started = time.monotonic()
+        code, state = execute(cmd, rundir / "work", run_env(rundir, extra), rundir / "stream.jsonl")
+        wall = round(time.monotonic() - started, 1)
+    finally:
+        if index is not None:
+            index.kill()
+            index.wait()
+        for leftover in ("checkout", "snapshot.git"):
+            shutil.rmtree(rundir / leftover, ignore_errors=True)
+    return build_record(lane, cell_id, cell, fixture, n, rundir, code, state, wall)
+
+
+def harness_failure(lane, cell_id, cell, fixture, n, failure):
+    detail = getattr(failure, "stderr", None) or f"{type(failure).__name__}: {failure}"
+    reason = f"the harness failed: {str(detail).strip()}"
+    return {
+        "lane": lane, "cell": cell_id, "model": cell["model"], "effort": cell["effort"],
+        "fixture": fixture["name"], "run": n, "invalid": reason, "pass": False, "reason": reason,
+        "gh_calls": [], "index_calls": [], "model_usage": {}, "requests": [], "cli_cost_usd": None, "result_text": "",
+    }
 
 
 def cmd_run(args):
@@ -388,6 +499,10 @@ def cmd_run(args):
     if not args.confirm:
         print("Nothing ran. Add --confirm to spend on these runs.")
         return 0
+    exported = [name for name in TOKEN_VARS if os.environ.get(name)]
+    if exported:
+        print(f"Refused: {', '.join(exported)} is set in this shell, and a run could read it from this process's environment. Start a new shell without it and run again, because unset does not remove it from what ps eww shows for this shell.", file=sys.stderr)
+        return 1
     out = Path(args.out or Path.home() / "Developer" / "scratchpad" / "lane-calibration" / datetime.now().strftime("%Y%m%d-%H%M%S"))
     out.mkdir(parents=True, exist_ok=False)
     claude_version = subprocess.run(["claude", "--version"], capture_output=True, text=True).stdout.strip()
@@ -407,14 +522,8 @@ def cmd_run(args):
             abort.set()
             print(f"STOPPED: {stop}", file=sys.stderr)
             return
-        except (OSError, subprocess.CalledProcessError) as failure:
-            detail = getattr(failure, "stderr", None) or failure
-            record = {
-                "lane": lane, "cell": cell_id, "model": cell["model"], "effort": cell["effort"],
-                "fixture": fixture["name"], "run": n, "invalid": f"the harness failed: {detail}".strip(),
-                "pass": False, "gh_calls": [], "index_calls": [],
-            }
-            record["reason"] = record["invalid"]
+        except Exception as failure:
+            record = harness_failure(lane, cell_id, cell, fixture, n, failure)
         with lock, open(out / "results.jsonl", "a") as f:
             f.write(json.dumps(record) + "\n")
         print(f"{lane} {cell_id} {fixture['name']} #{n}: {'pass' if record['pass'] else 'fail'} ({record['reason']})", flush=True)
@@ -428,6 +537,15 @@ def cmd_run(args):
     if abort.is_set():
         return 2
     return cmd_report(argparse.Namespace(out=str(out)))
+
+
+def fetch_prices(url):
+    request = urllib.request.Request(url, headers={"User-Agent": USER_AGENT})
+    with urllib.request.urlopen(request, timeout=30) as reply:
+        prices = parse_prices(reply.read().decode())
+    if not prices:
+        raise ReportError(f"no price rows parsed from {url}")
+    return prices
 
 
 def parse_prices(markdown):
@@ -492,25 +610,40 @@ def base_model(model):
     return re.sub(r"\[.*\]$", "", model)
 
 
+def priced_requests(record):
+    for request in record["requests"]:
+        tokens = request_tokens(request.get("usage") or {})
+        if str(request.get("model", "")).startswith("claude-") and any(tokens.values()):
+            yield base_model(request["model"]), tokens
+
+
+def add(totals, key, tokens):
+    old = totals.get(key, {k: 0 for k in tokens})
+    totals[key] = {k: old[k] + tokens[k] for k in tokens}
+
+
 def run_cost(record, prices):
-    total = 0.0
+    total, billed, streamed = 0.0, {}, {}
     for model, usage in record["model_usage"].items():
-        billed = usage_tokens(usage)
-        streamed = {k: 0 for k in billed}
-        for request in record["requests"]:
-            if base_model(request["model"]) != base_model(model):
-                continue
-            tokens = request_tokens(request["usage"])
-            total += cost(prices, model, tokens, tokens["input"] + tokens["write_5m"] + tokens["write_1h"] + tokens["hit"])
-            streamed = {k: streamed[k] + tokens[k] for k in streamed}
-        total += cost(prices, model, {k: max(billed[k] - streamed[k], 0) for k in billed}, 0)
+        tokens = usage_tokens(usage)
+        if any(tokens.values()):
+            add(billed, base_model(model), tokens)
+    for base, tokens in priced_requests(record):
+        total += cost(prices, base, tokens, tokens["input"] + tokens["write_5m"] + tokens["write_1h"] + tokens["hit"])
+        add(streamed, base, tokens)
+    for base, tokens in billed.items():
+        seen = streamed.get(base, {k: 0 for k in tokens})
+        total += cost(prices, base, {k: max(tokens[k] - seen[k], 0) for k in tokens}, 0)
     return total
 
 
 def run_tokens(record):
     totals = {"all": 0, "output": 0}
-    for usage in record["model_usage"].values():
-        tokens = usage_tokens(usage)
+    if record["model_usage"]:
+        sources = [usage_tokens(u) for u in record["model_usage"].values()]
+    else:
+        sources = [tokens for _, tokens in priced_requests(record)]
+    for tokens in sources:
         totals["all"] += sum(tokens.values())
         totals["output"] += tokens["output"]
     return totals
@@ -527,6 +660,7 @@ def summarize(records, prices):
     rows = {}
     for cell_id, runs in cells.items():
         valid = [r for r in runs if not r["invalid"]]
+        cli = [r.get("cli_cost_usd") for r in valid]
         rows[cell_id] = {
             "model": runs[0]["model"], "effort": runs[0]["effort"],
             "runs": len(valid), "invalid": len(runs) - len(valid),
@@ -535,48 +669,59 @@ def summarize(records, prices):
             "output_tokens": mean([run_tokens(r)["output"] for r in valid]),
             "wall_s": mean([r["wall_s"] for r in valid]),
             "cost": mean([run_cost(r, prices) for r in valid]),
-            "cli_cost": mean([r["cli_cost_usd"] or 0.0 for r in valid]),
+            "cli_cost": mean(cli) if cli and None not in cli else None,
+            "blockers": mean([len(blocker_blocks(r.get("result_text"))) for r in valid]),
         }
     return rows
 
 
-def cheapest(rows, baseline):
-    if baseline not in rows or not rows[baseline]["runs"]:
-        return None
+def cheapest(rows, baseline, order):
+    if baseline not in rows or rows[baseline]["runs"] < MIN_VALID_RUNS:
+        return None, f"No cell can be named: the baseline has fewer than {MIN_VALID_RUNS} valid runs."
     floor = rows[baseline]["pass_rate"]
-    matching = [c for c, row in rows.items() if row["runs"] and row["pass_rate"] >= floor]
-    return min(matching, key=lambda c: rows[c]["cost"])
+    if floor == 0:
+        return None, "No match: the baseline passed no run, so no cell can be shown to match it."
+    matching = [c for c, row in rows.items() if row["runs"] >= MIN_VALID_RUNS and row["pass_rate"] >= floor]
+    rank = {c: i for i, c in enumerate(order)}
+    return min(matching, key=lambda c: (round(rows[c]["cost"], 4), rank.get(c, len(order)))), None
+
+
+def money(value):
+    return "unknown" if value is None else f"${value:.4f}"
 
 
 def lane_section(lane, records, prices, baseline, order):
     rows = summarize(records, prices)
-    lines = [f"## {lane}", "", "| Cell | Model | Effort | Valid runs | Pass rate | Mean tokens (output) | Mean wall time | Mean cost | Claude Code's cost |", "|---|---|---|---|---|---|---|---|---|"]
-    for cell_id in [c for c in order if c in rows]:
+    cells = [c for c in order if c in rows]
+    lens = lane == "holmes-lens"
+    head = "| Cell | Model | Effort | Valid runs | Pass rate | Mean tokens (output) | Mean wall time | Mean cost | Claude Code's cost |"
+    lines = [f"## {lane}", "", head + (" Mean blockers |" if lens else ""), "|---" * (10 if lens else 9) + "|"]
+    for cell_id in cells:
         row = rows[cell_id]
         mark = " (baseline)" if cell_id == baseline else ""
-        lines.append(
+        line = (
             f"| {cell_id}{mark} | `{row['model']}` | {row['effort']} | {row['runs']} | {row['pass_rate']:.0%} | "
-            f"{row['tokens']:,.0f} ({row['output_tokens']:,.0f}) | {row['wall_s']:.0f} s | ${row['cost']:.4f} | ${row['cli_cost']:.4f} |"
+            f"{row['tokens']:,.0f} ({row['output_tokens']:,.0f}) | {row['wall_s']:.0f} s | {money(row['cost'])} | {money(row['cli_cost'])} |"
         )
-    pick = cheapest(rows, baseline)
+        lines.append(line + (f" {row['blockers']:.1f} |" if lens else ""))
+    pick, why = cheapest(rows, baseline, order)
     lines.append("")
     if pick is None:
-        lines.append("No cell can be named: the baseline cell has no valid runs in these results.")
+        lines.append(why)
     else:
         lines.append(
             f"**Cheapest cell that matches the baseline pass rate: {pick}** (`{rows[pick]['model']}` at {rows[pick]['effort']}), "
             f"pass rate {rows[pick]['pass_rate']:.0%} against the baseline's {rows[baseline]['pass_rate']:.0%}, "
-            f"mean cost ${rows[pick]['cost']:.4f} against ${rows[baseline]['cost']:.4f}."
+            f"mean cost {money(rows[pick]['cost'])} against {money(rows[baseline]['cost'])}."
         )
-    fixtures = sorted({r["fixture"] for r in records})
-    lines += ["", "Passes per fixture:", "", "| Fixture | " + " | ".join(c for c in order if c in rows) + " |", "|---|" + "---|" * len([c for c in order if c in rows])]
-    for name in fixtures:
+    lines += ["", "Passes per fixture:", "", "| Fixture | " + " | ".join(cells) + " |", "|---|" + "---|" * len(cells)]
+    for name in sorted({r["fixture"] for r in records}):
         cols = []
-        for cell_id in [c for c in order if c in rows]:
+        for cell_id in cells:
             runs = [r for r in records if r["cell"] == cell_id and r["fixture"] == name and not r["invalid"]]
             cols.append(f"{sum(r['pass'] for r in runs)}/{len(runs)}")
         lines.append(f"| {name} | " + " | ".join(cols) + " |")
-    failures = [r for r in records if not r["pass"]]
+    failures = [r for r in records if not r["pass"] and not r["invalid"]]
     if failures:
         lines += ["", "Why runs failed:", ""]
         lines += [f"- {r['cell']} / {r['fixture']} #{r['run']}: {r['reason']}" for r in failures]
@@ -584,14 +729,41 @@ def lane_section(lane, records, prices, baseline, order):
 
 
 def write_audit(records):
-    refused = [c for r in records for c in r["gh_calls"] if c["outcome"] == "refused"]
-    writes = [c for r in records for c in r["index_calls"] if c["name"] in WSJF_WRITES + ("add_blocked_by", "close_as_duplicate", "submit_review", "create_issue", "claim_item", "release_item")]
+    refused = [c for r in records for c in r["gh_calls"] if c.get("outcome") == "refused"]
+    writes = [c for r in records for c in r["index_calls"] if c.get("name") in ALL_INDEX_WRITES]
     return [
         "## Writes",
         "",
         f"- Index write calls: {len(writes)}. Each one went to the run's local fake Index, which logged it as the run's output. None reached The Index.",
         f"- gh calls the fake gh refused as writes: {len(refused)}. None reached GitHub.",
+        "- A write made past a best-effort layer, such as the real gh at another path, would appear in neither count. The eval's README names those routes.",
     ] + [f"  - `gh {' '.join(c['argv'])}`" for c in refused]
+
+
+def render_report(out, records, prices, fetched, skipped):
+    grid = load_cells()
+    meta = json.loads((out / "meta.json").read_text()) if (out / "meta.json").exists() else {}
+    lines = [
+        "# Dev-team lane calibration",
+        "",
+        f"Results: `{out}`. Claude Code: {meta.get('claude_version', 'unknown')}.",
+        f"Prices: {PRICING_URL}, read {fetched:%Y-%m-%d %H:%M} UTC. Cost uses the base input, 5-minute and 1-hour cache write, cache hit and output rates, per model.",
+        f"A cell needs at least {MIN_VALID_RUNS} valid runs to be named. A run that times out after its init event counts as a failure, at the cost of the requests it streamed. A run that times out before it is invalid. A cost tie goes to the cell listed first in cells.json.",
+        "",
+        f"**Caveat:** {CAVEAT}",
+        "",
+    ]
+    if skipped:
+        lines += [f"**{skipped} result line(s) could not be read** and are left out.", ""]
+    for lane in grid["lanes"]:
+        lane_records = [r for r in records if r["lane"] == lane]
+        if lane_records:
+            lines += lane_section(lane, lane_records, prices, grid["baseline"], list(grid["cells"])) + [""]
+    invalid = [r for r in records if r["invalid"]]
+    if invalid:
+        lines += ["## Invalid runs", "", "These runs are left out of every pass rate.", ""]
+        lines += [f"- {r['lane']} {r['cell']} / {r['fixture']} #{r['run']}: {r['invalid']}" for r in invalid] + [""]
+    return "\n".join(lines + write_audit(records)) + "\n"
 
 
 def cmd_report(args):
@@ -600,37 +772,12 @@ def cmd_report(args):
     if not records:
         print(f"No results in {out}.", file=sys.stderr)
         return 1
-    fetched = datetime.now(timezone.utc)
     try:
-        request = urllib.request.Request(PRICING_URL, headers={"User-Agent": "workbench-dev-team-lane-calibration"})
-        with urllib.request.urlopen(request, timeout=30) as reply:
-            prices = parse_prices(reply.read().decode())
-        if not prices:
-            raise ReportError(f"no price rows parsed from {PRICING_URL}")
-        grid = load_cells()
-        meta = json.loads((out / "meta.json").read_text()) if (out / "meta.json").exists() else {}
-        lines = [
-            "# Dev-team lane calibration",
-            "",
-            f"Results: `{out}`. Claude Code: {meta.get('claude_version', 'unknown')}.",
-            f"Prices: {PRICING_URL}, read {fetched:%Y-%m-%d %H:%M} UTC. Cost uses the base input, 5-minute and 1-hour cache write, cache hit and output rates, per model.",
-            "",
-            f"**Caveat:** {CAVEAT}",
-            "",
-        ]
-        for lane in grid["lanes"]:
-            lane_records = [r for r in records if r["lane"] == lane]
-            if lane_records:
-                lines += lane_section(lane, lane_records, prices, grid["baseline"], list(grid["cells"])) + [""]
-        invalid = [r for r in records if r["invalid"]]
-        if invalid:
-            lines += ["## Invalid runs", "", "These runs are left out of every pass rate.", ""]
-            lines += [f"- {r['lane']} {r['cell']} / {r['fixture']} #{r['run']}: {r['invalid']}" for r in invalid] + [""]
-        lines += write_audit(records)
+        prices = fetch_prices(PRICING_URL)
+        report = render_report(out, records, prices, datetime.now(timezone.utc), unreadable_lines(out / "results.jsonl"))
     except (ReportError, OSError) as failure:
         print(f"No report: {failure}", file=sys.stderr)
         return 1
-    report = "\n".join(lines) + "\n"
     (out / "report.md").write_text(report)
     print(report)
     return 0

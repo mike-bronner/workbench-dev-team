@@ -189,7 +189,7 @@ The fan-out rows reach Holmes (both modes) and Lestrade's Item mode as one `Dev-
 
 ### Lane calibration
 
-`evals/lane-calibration/` measures whether a cheaper model or effort gets the same result as the pin, for `holmes-lens`, `lestrade-sweep` and `lestrade-item`. It replays closed Index items against a fake Index and a fake `gh`, so no run writes to The Index or GitHub. It costs real money, so it runs only by hand, and never in CI. It changes no setting: it reports, and you decide. `evals/lane-calibration/README.md` describes how to run it.
+`evals/lane-calibration/` measures whether a cheaper model or effort gets the same result as the pin, for `holmes-lens`, `lestrade-sweep` and `lestrade-item`. It replays closed Index items against a fake Index and a fake `gh`, so the writes the lanes make go to the fakes. Its README names which no-write layers hold, and which an agent could get past on purpose. It costs real money, so it runs only by hand, and never in CI. It changes no setting: it reports, and you decide. `evals/lane-calibration/README.md` describes how to run it.
 
 ## Setup
 

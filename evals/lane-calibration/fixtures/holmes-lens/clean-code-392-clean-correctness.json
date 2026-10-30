@@ -1,0 +1,22 @@
+{
+  "lane": "holmes-lens",
+  "name": "clean-code-392-clean-correctness",
+  "repo": "mike-bronner/clean-code",
+  "pr": 392,
+  "base": "bfa376abd69f31f6d4308092b7af56f824ccd6cf",
+  "head": "f4c69d213b11cf93a76d469347f04396623c0392",
+  "as_of": "2026-10-05T17:32:26Z",
+  "known_outcome": "Holmes approved this commit on the first review, and the PR merged with no further change. The review found no blocker.",
+  "source": {
+    "item_id": 617,
+    "item_status": "Done",
+    "issue": "mike-bronner/clean-code#388",
+    "review": "https://github.com/mike-bronner/clean-code/pull/392#pullrequestreview-5418340306",
+    "review_learning": null
+  },
+  "lens": "Correctness lens",
+  "acceptance_criteria": "<!-- acceptance-criteria -->\n\n## Acceptance Criteria\n\n- [ ] A closure that declares its return type after a `use (...)` clause (e.g. `function (...) use (&$x): bool { ... }`) is recognized by `CleanCode.TypeHints.InferredReturnType` as already typed, and produces neither an error nor a warning.\n- [ ] A closure with a `use (...)` clause and no return type is still reported as missing a return type hint, and its auto-fix inserts the inferred return type immediately after the `use` clause's closing parenthesis (not before it, and not after only the first captured variable), producing syntactically valid PHP (verified by a parse check such as `php -l`).\n- [ ] A closure with a `use (...)` clause that captures more than one variable (mixing by-value and by-reference, e.g. `use ($a, &$b)`) is handled the same way: the return type lands after the whole use-list's closing parenthesis.\n- [ ] Whitespace or a comment between the use-list's closing parenthesis and the tokens that follow it does not change the detection or fix-placement outcome.\n- [ ] A closure with no `use` clause, and a named (non-closure) function, are unaffected by this fix: the sniff's existing test coverage for both cases (reported error lines and fixed-signature assertions) continues to pass unmodified.\n- [ ] Re-running the fixer on an already-fixed closure with a `use` clause is a no-op: no duplicate return type is inserted and the fixer converges.\n- [ ] If the use clause's closing parenthesis cannot be located, the sniff does not report an error, applies no fix, and does not throw.\n- [ ] Running the fixer against the issue's reproduction case (a closure with `use (&$reason)` and an inferable `bool` return) produces `function (int $severity, string $message) use (&$reason): bool` (whitespace aside) and the file parses as valid PHP.\n- [ ] Test coverage exists for both directions of the fix: a `use`-clause closure that already declares a return type (asserted absent from both errors and warnings), and a `use`-clause closure with no return type (asserted present as an error, with the exact fixed declaration text confirmed rather than a substring match).\n",
+  "expect": {
+    "no_blockers": true
+  }
+}
