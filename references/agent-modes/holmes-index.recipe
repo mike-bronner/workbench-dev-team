@@ -52,3 +52,57 @@ section: ### 6. Report
 section: ## Rules
 skip: ## Rules — Local mode
 section: ## Rules — The Index mode
+
+cut: The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
+put: The PR checkout (step 4b) is the one exception: `holmes-checkout.sh` makes it and removes it.
+cut: - `Bash` — clone + reads to review the code:
+put: - `Bash` — reads to review the code: `gh pr checks`, `gh pr view`, `gh pr diff`, `gh pr list`, `gh issue view`, a GET `gh api`, and the `bin/holmes-*.sh` scripts named below. The review guard refuses every other `gh` verb, `curl` and `security`.
+cut: No GraphQL, no curl, no Keychain lookups.
+cut: **Every `mcp__the-index__` tool is The Index mode's alone.**
+cut: Every write tool requires `agent: "holmes"`
+cut: Resolve the PR by its link to the issue, never by a text search.
+put: Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-find-pr.sh <repo> <issue_number>`. It prints the number of the PR linked to the issue, called `PR_NUM` below. When it exits 1, no PR is linked: report `no PR for #<issue_number>` and exit, writing nothing.
+cut: PR_NUM=$(gh issue view <issue_number> -R <repo> --json closedByPullRequestsReferences
+cut: If no PR is found, log `no PR for #<issue_number>` and exit.
+cut: Some `In Review` items aren't finished work
+put: Some `In Review` items are **Watson asking a tactical question before implementing**. Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-decision-request.sh <repo> $PR_NUM` first.
+cut: gh pr view $PR_NUM -R <repo> --json additions,deletions,comments
+cut: Count how many times changes have been requested on this PR
+put: Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-strike-count.sh <repo> $PR_NUM`. It prints `CHANGES_COUNT`: the change-requests on this PR since Mike last weighed in on it, through a comment, a review or an inline comment. So when an escalated PR comes back with Mike's decision, the count starts fresh.
+cut: ACTIVITY=$(gh pr view $PR_NUM -R <repo> --json comments,reviews)
+cut: gh issue view <issue_number> -R <repo> --json title,body,labels,comments
+put: Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-read-ac.sh <repo> <issue_number>`. It prints the acceptance criteria from the managed `<!-- acceptance-criteria -->` comment, or from the issue body only when no such comment exists. Read the rest of the issue with `gh issue view <issue_number> -R <repo>`.
+cut: The acceptance criteria live in a **managed comment**, not the body.
+cut: 1. **Marked comment first.**
+cut: 2. **Fall back to the body**
+cut: mcp__plugin_workbench-core_memory__search(query: "<repo>", folder: "feedback")
+cut: `gh pr diff` alone is a flat blob
+put: Review the PR in a checkout of its tree, never in `gh pr diff` alone. **The checkout is the shared evidence room**: every lens reviewer and the skeptic read this same path, and nobody re-clones.
+put:
+put: Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-checkout.sh open <repo> $PR_NUM <scratch root>`. It clones the repo into a fresh `holmes.XXXXXX` folder under the scratch root, checks out the PR's head, and prints the folder's path: the `<checkout path>` every lens prompt names. Run `gh pr diff $PR_NUM -R <repo>` for the overview. Before you report, on every exit path, run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-checkout.sh close <checkout path>`. The dev-team mod removes a checkout your run left open.
+cut: `mktemp` prints the folder's path. That printed path is the `<checkout path>`
+cut: mktemp -d <scratch root>/holmes.XXXXXX
+cut: So, immediately before your **first** board write
+put: So, immediately before your **first** board write, call `get_item` for your item again. The verdict guard refuses every board write and every learning note until a read made after your helpers ran shows the item still `In Review`. When it has moved on, write nothing, report the verdict and its findings in your output as usual, and end with the stale line in §6. Call `move` only after the verdict call it follows (`submit_review`, or the escalation or answer comment) has returned.
+cut: mcp__the-index__get_item(<ITEM_ID>)
+cut: **Fail closed.** If `status` is anything other than `In Review`
+cut: ⏭️ stale — item moved to <status> while the review ran
+cut: Your review isn't wasted: report the verdict
+cut: **Strike gate — check `CHANGES_COUNT` from §3 before submitting.**
+put: **Strike gate.** The verdict guard refuses `request_changes` once `CHANGES_COUNT` is 3 or more:
+cut: - **`CHANGES_COUNT < 3`** → submit request-changes normally
+cut: **A new note gets a name no other note has.**
+put: **A new note gets a name no other note has.** `<repo-slug>` is the repo name in lowercase, with the `/` written as `-`. Before each note `write` below, run `date +%H%M%S` and `openssl rand -hex 3`, each on a line of its own, and put what they print in `<hhmmss>` and `<token>`. Read that path, and write only after the read answers `Document not found`. The verdict guard refuses a note whose time or token this run did not print, whose path no read proved free, or that carries no category tag. `created: false` means the write replaced an existing note: do not write again, and add the §6 replaced-note line.
+cut: date +%H%M%S
+cut: Put the time in `<hhmmss>` and the six hex digits in `<token>`.
+cut: - **The read answers `Document not found: <path>`:**
+cut: - **The read returns a note:**
+cut: - **The read fails with any other error:**
+cut: Then check the write's result. `created: true` is the expected answer.
+cut: - **Never merge PRs.**
+cut: - **No Write/Edit tools — for you or your sub-agents.**
+cut: - **No WebFetch.**
+cut: - **A new vault note never replaces an existing one.**
+cut: - **The 3-strike rule gates the verdict, not the review.**
+cut: - **Never write a stale verdict.**
+cut: - **If no PR exists for the item**

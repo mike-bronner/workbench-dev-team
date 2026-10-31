@@ -68,6 +68,7 @@ declare module 'claude-code' {
       // as scratch is, so the notice comes once per run.
       overBudget: StateFamily<boolean>
       backgroundTasks: StateFamily<{ id: string; output?: string }[]>
+      verdictLedger: StateFamily<import('../hooks/mods/verdict-guard').Ledger>
       // What the runs pane draws: the newest dispatched runs, read from the
       // dispatch logs while the pane is open.
       runs: RunsView

@@ -87,7 +87,7 @@
 // a package script (`npm run format`); and a zsh builtin outside its tables
 // that sets a variable by name (zformat -f or -a, zregexparse, and module
 // builtins such as sysread, zstat -A and zselect -a). Nor does it catch a
-// program off every list that writes on its own (`gh pr checkout`). The
+// program off every list that writes on its own. The
 // reviewer prompts' no-write rule and the human's review of the diff are the
 // backstop there.
 
@@ -767,6 +767,14 @@ export function reviewBash(parse: ShellParse, context: Context): Verdict {
       }
       continue
     }
+    if (name === 'gh') {
+      const fault = ghFault(args)
+      if (fault !== undefined) return { finding: fault }
+      continue
+    }
+    if (NETWORK_WRITERS.has(name)) {
+      return { finding: { action: `\`${name}\``, reason: `a reviewer runs no \`${name}\`: curl can write to any service, and security reads the Keychain. Read through gh's read verbs, and post only through the Index tools.` } }
+    }
     if (MUTATING.has(name)) {
       if (isFed) return { finding: { action: `\`${name}\``, reason: `\`${name}\` changes files, and its paths arrive from xargs or parallel at run time, where the guard cannot read them.` } }
       for (const raw of writeTargets(name, args, cwd ?? '')) write(name, raw)
@@ -804,6 +812,41 @@ export function reviewBash(parse: ShellParse, context: Context): Verdict {
     }
   }
   return { writes }
+}
+
+const NETWORK_WRITERS: ReadonlySet<string> = new Set(['curl', 'security'])
+
+const GH_READS: Readonly<Record<string, ReadonlySet<string>>> = {
+  pr: new Set(['view', 'diff', 'list', 'checks', 'status']),
+  issue: new Set(['view', 'list', 'status']),
+  run: new Set(['view', 'list']),
+  repo: new Set(['view']),
+  release: new Set(['view', 'list']),
+}
+
+const GH_API_FIELDS = /^(?:-[fF]|--field|--raw-field|--input)(?:=|$)|^-[fF]\S/
+
+export function ghFault(args: readonly string[]): Finding | undefined {
+  const [group = '', verb = ''] = args
+  if (args.length === 0 || ['--version', '--help', 'search'].includes(group)) return undefined
+  if (group === 'api') {
+    let isWrite = args.includes('graphql')
+    for (let i = 1; i < args.length; i++) {
+      const arg = args[i] ?? ''
+      const method = arg === '-X' || arg === '--method' ? args[++i] : /^(?:-X|--method=)(.+)$/.exec(arg)?.[1]
+      if (method !== undefined) isWrite ||= method.toUpperCase() !== 'GET'
+      else isWrite ||= GH_API_FIELDS.test(arg)
+    }
+    if (isWrite) {
+      return { action: '`gh api` writing or GraphQL', reason: '`gh api` with a method other than GET, a field, an input body, or the graphql endpoint can write to GitHub. A reviewer reads through REST GET only, and posts only through the Index tools.' }
+    }
+    return undefined
+  }
+  if (GH_READS[group]?.has(verb)) return undefined
+  return {
+    action: `\`gh ${[group, verb].filter(Boolean).join(' ')}\``,
+    reason: `\`gh ${group} ${verb}\` is not one of gh's read verbs, so it is refused. A reviewer never merges, reviews, comments, edits, creates, clones or checks out through gh: the verdict goes through the Index tools, and the PR checkout through holmes-checkout.sh.`,
+  }
 }
 
 // The verdict on an Edit, Write or NotebookEdit of `raw`.

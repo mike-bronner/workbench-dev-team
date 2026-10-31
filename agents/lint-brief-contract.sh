@@ -52,6 +52,14 @@ SLOTS_SLASH="${SLOTS_CSV//,/ / }"                   # Workdir / Goal / …
 
 fail_file() { FAIL=$((FAIL + 1)); echo "  ❌ $1"; shift; for m in "$@"; do echo "       • $m"; done; }
 
+MOD_CHECKS_BRIEF='The dev-team mod refuses a Holmes Local dispatch that lacks a slot'
+mod_checks_brief() {
+  grep -q '^# Composed by bin/compose-agents.sh from agents/holmes.md ' "$1" \
+    && awk '/^## The brief contract/{f=1} f && /^## /&& !/^## The brief contract/{exit} f{print}' "$1" | tr '\n' ' ' | grep -Fq "$MOD_CHECKS_BRIEF" \
+    && grep -q 'missingSlotsOf(routed.prompt)' "$ROOT/hooks/register.ts" \
+    && grep -Fq 'a Holmes Local dispatch carries the six-slot brief, from any caller' "$ROOT/tests/spawn.test.ts"
+}
+
 for file in "$DIR"/*.md; do
   agent="$(basename "$file" .md)"
 
@@ -83,6 +91,12 @@ for file in "$DIR"/*.md; do
     && [[ $tokens_only == *'`Item ID: <n>`'* || $tokens_only == *'`Repo sweep: <owner/repo>`'* ]]; then
     PASS=$((PASS + 1))
     echo "  ✅ $agent — a token-only mode of $composed_from, no brief contract"
+    continue
+  fi
+
+  if mod_checks_brief "$file"; then
+    PASS=$((PASS + 1))
+    echo "  ✅ $agent — a mode of $composed_from whose brief slots and fan-out exemption the dev-team mod holds (tests/spawn.test.ts, tests/spawn-rules.test.ts)"
     continue
   fi
 
@@ -241,7 +255,7 @@ fi
 # of them either.
 BRIEF_DOCS=("$ROOT/skills/orchestrate/SKILL.md" "$ROOT/README.md")
 for doc in "$DIR"/*.md; do
-  grep -q '^## Input — a dispatch token, never a brief' "$doc" || BRIEF_DOCS+=("$doc")
+  grep -q '^## Input — a dispatch token, never a brief' "$doc" || mod_checks_brief "$doc" || BRIEF_DOCS+=("$doc")
 done
 
 # Scope of the template. Requiring it on read-only research too is what lets the

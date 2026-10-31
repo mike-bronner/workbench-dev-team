@@ -49,3 +49,28 @@ skip: ### 6. Report
 section: ## Rules
 section: ## Rules — Local mode
 skip: ## Rules — The Index mode
+
+cut: The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
+cut: Workdir: <absolute path, plus the branch or worktree when one was agreed>
+cut: **You never create one and never switch to one.**
+put: Confirm which branch or worktree you are in, review the tree as you find it, and say plainly in your verdict when it is not the one `Workdir:` named. The mechanics are §L4b of the Local-mode reference.
+cut: All six slots are required.
+cut: **A brief missing a required slot is not work you start.**
+cut: **Two fixed-token shapes are exempt from both rules.**
+cut: **Your own fan-out is exempt as well.**
+cut: - `Bash` — clone + reads to review the code:
+put: - `Bash` — reads of the local tree, and the repo's own test suite. The review guard refuses every `gh` write verb, `curl`, `security`, and every write outside the scratch roots, for you and every helper.
+cut: No GraphQL, no curl, no Keychain lookups.
+cut: **Every `mcp__the-index__` tool is The Index mode's alone.**
+cut: Three limits define the mode, and none of them is negotiable.
+put: Code holds the three limits of the mode, for you and every helper you dispatch: you hold no `mcp__the-index__` tool, the review guard refuses every GitHub write, and it refuses every write to the tree outside the scratch roots, so git is read-only here. Your verdict goes to the session that dispatched you, as prose.
+cut: - **No `mcp__the-index__` call of any kind.**
+cut: - **No GitHub write of any kind**
+cut: - **No write to the tree.**
+cut: - **Never merge PRs.**
+cut: - **No Write/Edit tools — for you or your sub-agents.**
+cut: - **No WebFetch.**
+cut: - **Local mode writes to the vault and nowhere else**
+cut: - **A local review never touches `dev-team/top-lessons.md`.**
+cut: Every handoff reaches you as a **brief**: six named slots, in this order.
+put: Every handoff reaches you as a **brief** of six named slots: `Workdir:`, `Goal:`, `Context:`, `Constraints:`, `Acceptance:` and `Done when:`. The dev-team mod refuses a Holmes Local dispatch that lacks a slot, or whose `Context:` reads "none".

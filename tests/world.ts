@@ -179,6 +179,7 @@ export type GuardOptions = {
   // 128 (not a repository), mktemp makes `<template with XXXXXX as abc123>`,
   // and anything else exits 0 with no output.
   run?: (argv: readonly string[]) => RunAnswer | undefined
+  tools?: (input: Record<string, unknown>) => { text?: string; isError?: boolean; result?: unknown } | undefined
 }
 
 // Where `path` lands on `disk`, every link followed, or undefined when it
@@ -335,6 +336,8 @@ export function world(
     w.ran.push(`${input.tool}: ${String(input.command ?? input.file_path ?? input.notebook_path ?? '')}`)
     w.calls.push({ ...(e as Record<string, unknown>) })
     if (w.agentCall === 'error') return { isError: true, result: 'boom', text: 'boom' } as never
+    const answered = options.tools?.(e as Record<string, unknown>)
+    if (answered !== undefined) return answered as never
     const backgroundTaskId = input.tool === 'Bash' ? w.background.shift() : undefined
     const text = `Command running in background with ID: ${backgroundTaskId}. Output is being written to: /tasks/${backgroundTaskId}.output. You will be notified when it completes.`
     if (backgroundTaskId !== undefined) return { result: { stdout: '', stderr: '', interrupted: false, backgroundTaskId }, text } as never

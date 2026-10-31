@@ -337,10 +337,6 @@ grep -Fq 'Cap: 10 verifications per review, in priority order, in The Index mode
 report "cap — Phase C's verification cap binds The Index mode, never Local mode" ${cap[@]+"${cap[@]}"}
 
 # ── 7c. Each composed mode file carries its own mode, and only it ─────────────
-# bin/compose-agents.sh builds holmes-local and holmes-index from holmes.md, and
-# the dev-team mod routes every dispatch of workbench-dev-team:holmes to one of
-# them. So the limits above reach a local review only if holmes-local.md carries
-# them, and the board path survives only if holmes-index.md carries it.
 modes=()
 LOCAL_MODE="$DIR/holmes-local.md"
 INDEX_MODE="$DIR/holmes-index.md"
@@ -348,8 +344,13 @@ for f in "$LOCAL_MODE" "$INDEX_MODE"; do
   [ -f "$f" ] || modes+=("missing mode file: $(basename "$f")")
 done
 if [ -f "$LOCAL_MODE" ] && [ -f "$INDEX_MODE" ]; then
-  [ "$(section '^## Local mode' "$LOCAL_MODE")" = "$localsec" ] \
-    || modes+=("holmes-local.md does not carry holmes.md's Local-mode section, limits included")
+  local_mode_sec="$(section '^## Local mode' "$LOCAL_MODE" | tr '\n' ' ')"
+  for line in 'Code holds the three limits of the mode' 'references/holmes/local-review.md` first, before any other action in this mode' '**The rubric is the brief.**'; do
+    printf '%s' "$local_mode_sec" | grep -Fq "$line" \
+      || modes+=("holmes-local.md's Local-mode section lost: $line")
+  done
+  grep -Fq 'describe('"'"'a reviewer reaches GitHub through gh read verbs only' "$ROOT/tests/guards.test.ts" \
+    || modes+=("tests/guards.test.ts no longer proves the review guard refuses a reviewer's gh writes, which holmes-local.md leaves to code")
   grep -Fq 'mcp__the-index__' <(sed -n '/^tools:/p' "$LOCAL_MODE") \
     && modes+=("holmes-local.md grants an Index tool, which Local mode never calls")
   for step in '### 0. The config line' '##### 4a.5. Search `feedback/`' '#### 4d. Check conformance' '#### 4e. Defects and observations'; do

@@ -53,8 +53,8 @@ describe('routing — a public type runs the mode its token picks', () => {
   }
 
   for (const [prompt, to] of [
-    ['Item ID: 9\nand then review the parser', 'holmes-local'],
-    ['Item ID: 9 please', 'holmes-local'],
+    [`Item ID: 9\nand then review the parser\n${BRIEF}`, 'holmes-local'],
+    [`Item ID: 9 please\n${BRIEF}`, 'holmes-local'],
     ['\n  Item ID: 9  \n', 'holmes-index'],
   ] as const) {
     test(`holmes with ${JSON.stringify(prompt)} runs ${to}`, async ($, on) => {
@@ -232,5 +232,31 @@ describe("the workspace check on workbench-core 469497a's orchestrator check (C3
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     expect(w.spawned).toHaveLength(1)
     expect(w.runs).toEqual([])
+  })
+})
+
+describe('a Holmes Local dispatch carries the six-slot brief, from any caller (C4)', () => {
+  for (const slot of ['Workdir:', 'Goal:', 'Context:', 'Constraints:', 'Acceptance:', 'Done when:']) {
+    test(`a brief with no ${slot} is refused, and nothing is spawned`, async ($, on) => {
+      const w = world(on)
+      const prompt = BRIEF.split('\n').filter(line => !line.startsWith(slot)).join('\n')
+      const result = (await $.agent.spawn(spawnInput(T('holmes'), prompt, { parentAgentId: 'agent-parent' }))) as { deny?: string }
+      expect(result.deny).toContain(slot)
+      expect(w.spawned).toEqual([])
+    })
+  }
+
+  test('a Context: that reads "none" is refused, and a Constraints: that reads "none" is not', async ($, on) => {
+    const w = world(on)
+    const result = (await $.agent.spawn(spawnInput(T('holmes'), BRIEF.replace(/^Context:.*$/mu, 'Context: none'), { parentAgentId: 'agent-parent' }))) as { deny?: string }
+    expect(result.deny).toContain('Context:')
+    await $.agent.spawn(spawnInput(T('holmes'), BRIEF, { parentAgentId: 'agent-parent' }))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-local')])
+  })
+
+  test('an Index-mode token needs no brief', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 9', { parentAgentId: 'agent-parent' }))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-index')])
   })
 })

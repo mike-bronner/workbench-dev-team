@@ -229,3 +229,22 @@ export function spawnFailedDeny(): string {
       'Dispatch again. If it keeps failing, report it to the human as a defect in workbench-dev-team.',
   ].join('\n')
 }
+
+export const BRIEF_SLOTS: readonly string[] = ['Workdir:', 'Goal:', 'Context:', 'Constraints:', 'Acceptance:', 'Done when:']
+
+export function missingSlotsOf(prompt: string): string[] {
+  const lines = prompt.split('\n').map(line => line.trim())
+  const missing = BRIEF_SLOTS.filter(slot => !lines.some(line => line.startsWith(slot)))
+  const context = lines.find(line => line.startsWith('Context:'))?.slice('Context:'.length).trim()
+  if (context !== undefined && (context === '' || /^none\.?$/i.test(context))) missing.push('Context: (it reads "none" or is empty)')
+  return missing
+}
+
+export function briefDeny(missing: readonly string[]): string {
+  return [
+    `🛑 Blocked: a Holmes Local-mode dispatch whose brief lacks ${missing.join(', ')}.`,
+    '',
+    `Brief contract (${PLUGIN}). Every Holmes Local review takes the six-slot brief: Workdir:, Goal:, Context:, Constraints:, Acceptance:, and Done when:. ` +
+      'Constraints: may read "none", and Context: may not. Nothing was spawned. Add every missing slot and dispatch again.',
+  ].join('\n')
+}

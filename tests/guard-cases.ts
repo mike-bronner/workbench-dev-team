@@ -139,6 +139,10 @@ export const REVIEW_PASSES: readonly string[] = [
 // Lines a reviewer may never run in the tree under review.
 export const REVIEW_REFUSALS: readonly string[] = [
   'chmod 644 README.md',
+  'git switch -c feature',
+  'git checkout -b feature',
+  'git branch feature',
+  'git worktree add ../x',
   'git restore .',
   'git checkout -- file.txt',
   'git stash',

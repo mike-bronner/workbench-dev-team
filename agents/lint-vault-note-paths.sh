@@ -33,7 +33,6 @@
 #   4. The three known note writes are still found: two in holmes.md, one in
 #      local-review.md, and the composed holmes-index.md carries holmes.md's two.
 #      A rename that hid them from this scan must fail, never pass empty.
-#   5. Both composed Holmes modes carry the Rules pointer.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
@@ -103,6 +102,17 @@ for rel in "${files[@]}"; do
 
   # ── 3. The rule, in prose, beside the writes ──────────────────────────────
   prose="$(tr '\n' ' ' < "$f" | tr -s ' ')"
+  if [ "$rel" = agents/holmes-index.md ]; then
+    for phrase in 'date +%H%M%S' 'openssl rand -hex 3' 'The verdict guard refuses a note whose time or token this run did not print, whose path no read proved free' \
+                  '`created: false` means the write replaced an existing note: do not write again' \
+                  'Vault note replaced: <path> (created: false).'; do
+      [[ $prose == *"$phrase"* ]] || bad "$rel — the note-writing rule lacks: $phrase"
+    done
+    grep -Fq "describe('verdict guard — learning notes (C2)'" "$ROOT/tests/verdict-guard.test.ts" \
+      && ok "$rel — the verdict guard holds the rest of the rule, and tests/verdict-guard.test.ts proves it" \
+      || bad "$rel — leaves the note-naming rule to the verdict guard, and tests/verdict-guard.test.ts no longer proves it"
+    continue
+  fi
   for phrase in 'date +%H%M%S' 'openssl rand -hex 3' 'Never make up the token yourself.' \
                 'answers `Document not found: <path>` both for a missing file and for a note it cannot parse' \
                 'This is the only answer that counts as free.' \
@@ -120,12 +130,9 @@ done
 [ "$count_local" -eq 1 ] && ok "local-review.md — the §L5.5 note write found" \
   || bad "local-review.md — expected 1 checked note write by a built path, found $count_local"
 
-# ── 5. The Rules pointer reaches both composed modes ────────────────────────
-for mode in holmes-index holmes-local; do
-  grep -Fq '**A new vault note never replaces an existing one.**' "$DIR/$mode.md" \
-    && ok "$mode.md carries the Rules pointer" \
-    || bad "$mode.md — the Rules pointer to the note-naming rule is gone"
-done
+grep -Fq '**A new vault note never replaces an existing one.**' "$DIR/holmes-local.md" \
+  && ok "holmes-local.md carries the Rules pointer" \
+  || bad "holmes-local.md — the Rules pointer to the note-naming rule is gone"
 
 echo
 echo "$PASS passed, $FAIL failed"

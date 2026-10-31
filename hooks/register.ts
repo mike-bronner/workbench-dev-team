@@ -50,6 +50,7 @@ import {
   DEFAULT_BRANCHES,
   branchDeny,
   branchUnreadDeny,
+  briefDeny,
   configLineOf,
   configTextOf,
   familyOf,
@@ -58,11 +59,38 @@ import {
   isHolmesMode,
   knobsOf,
   lensSpawnOf,
+  missingSlotsOf,
   modeTypeOf,
   spawnFailedDeny,
   withConfigLine,
   workdirOf,
 } from './mods/spawn'
+import type { Call, Facts, Ledger } from './mods/verdict-guard'
+import {
+  CORE_CONFIG,
+  DIGEST_PATH,
+  EMPTY_LEDGER,
+  INDEX_MODE,
+  LOCAL_DIGEST_DENY,
+  LOCAL_MODE,
+  CANCELLED,
+  CHECKS_ARGV,
+  checksOf,
+  factOf,
+  whyOf,
+  isBoardWrite,
+  isDigest,
+  isMemoryWrite,
+  isWatched,
+  judgeBoard,
+  judgeDigestEdit,
+  judgeDigestWrite,
+  judgeNote,
+  observe,
+  staleNote,
+  vaultOf,
+  verdictFailed,
+} from './mods/verdict-guard'
 
 async function gated($: EngineInterface, agentId: string | undefined): Promise<boolean> {
   const lane = await $.workbench.callerLane(agentId === undefined ? {} : { agentId }).catch(() => 'main' as const)
@@ -182,6 +210,8 @@ async function endRun($: EngineInterface, agentId: string | undefined): Promise<
     await $.state.set({ plugin: 'workbench-dev-team', key: 'scratch', id: key }, '')
     await recordFolder($, [folder], 'remove')
   }
+  const holmes = await holmesRunOf($, agentId)
+  if (holmes !== undefined && !hasLiveChild((await $.agent.list().catch(() => undefined)) ?? [{ parentId: agentId, status: 'running' }], agentId)) await closeCheckouts($, holmes).catch(() => undefined)
   const { value: told } = await $.state.get({ plugin: 'workbench-dev-team', key: 'overBudget', id: key })
   if (told) await $.state.set({ plugin: 'workbench-dev-team', key: 'overBudget', id: key }, false)
 }
@@ -357,6 +387,118 @@ async function guard($: EngineInterface, e: GuardInput): Promise<string | undefi
   const deny = await reviewDeny($, e, parse)
   if (deny === undefined || reviewer) return deny
   return `${deny}\n\nThe guard could not tell which agent made this call, so it held the call to the reviewer's rule. Report this to the human as a guard defect.`
+}
+
+const VERDICT_UNKNOWN_RUN =
+  '⚠️ Verdict guard (workbench-dev-team): the mod could not tell which agent made a call, so the guard let it through unjudged. Report this to the human as a guard defect if it repeats.'
+
+async function holmesRunOf($: EngineInterface, agentId: string | undefined): Promise<Run | undefined> {
+  const run = await runOf($, agentId).catch(() => {
+    $.ui.log(VERDICT_UNKNOWN_RUN, { to: 'transcript' })
+    return undefined
+  })
+  return run?.type === INDEX_MODE || run?.type === LOCAL_MODE ? run : undefined
+}
+
+async function ledgerOf($: EngineInterface, run: Run): Promise<Ledger> {
+  const { value } = await $.state.get({ plugin: 'workbench-dev-team', key: 'verdictLedger', id: run.key })
+  return (value as Ledger | undefined) ?? EMPTY_LEDGER
+}
+
+async function updateLedger($: EngineInterface, run: Run, change: (ledger: Ledger) => Ledger): Promise<void> {
+  for (let attempt = 0; attempt < 8; attempt++) {
+    const { value, version } = await $.state.get({ plugin: 'workbench-dev-team', key: 'verdictLedger', id: run.key })
+    if ((await $.state.set({ plugin: 'workbench-dev-team', key: 'verdictLedger', id: run.key }, change((value as Ledger | undefined) ?? EMPTY_LEDGER), { ifVersion: version })).isSet) return
+  }
+}
+
+async function scriptRun($: EngineInterface, script: string, ...args: string[]) {
+  return $.process.run(['bash', `${$.plugin.root}/bin/${script}`, ...args], { timeoutMs: 30_000 }).catch(() => undefined)
+}
+
+async function factsOf($: EngineInterface, holmes: Run, ledger: Ledger, call: Call): Promise<Facts> {
+  const { repo, issue } = ledger
+  if (repo === undefined || issue === undefined) return {}
+  let pr = ledger.pr
+  if (pr === undefined) {
+    const run = await scriptRun($, 'holmes-find-pr.sh', repo, String(issue))
+    const found = factOf(run)
+    if (found === undefined) return { why: { pr: whyOf(run) } }
+    pr = found === null ? null : found !== undefined && /^[0-9]+$/.test(found) ? Number(found) : undefined
+    if (pr !== undefined) await updateLedger($, holmes, l => ({ ...l, pr }))
+  }
+  if (pr === undefined || pr === null) return { pr }
+  const tool = call.tool.replace(/^.*__/u, '')
+  const body = typeof call.body === 'string' ? call.body : ''
+  const facts: Facts = { pr, why: {} }
+  if (tool === 'submit_review' || tool === 'add_comment') {
+    const run = await scriptRun($, 'holmes-decision-request.sh', repo, String(pr))
+    const decision = factOf(run)
+    if (decision === 'decision-request' || decision === 'review') facts.decision = decision
+    else facts.why = { ...facts.why, decision: whyOf(run) }
+  }
+  if ((tool === 'submit_review' && call.decision === 'request_changes') || (tool === 'add_comment' && body.trimStart().startsWith('🛑 **Escalating'))) {
+    const run = await scriptRun($, 'holmes-strike-count.sh', repo, String(pr))
+    const strikes = factOf(run)
+    if (strikes !== undefined && strikes !== null && /^[0-9]+$/.test(strikes)) facts.strikes = Number(strikes)
+    else facts.why = { ...facts.why, strikes: whyOf(run) }
+  }
+  if ((tool === 'submit_review' && call.decision === 'approve') || (tool === 'add_comment' && body.trimStart().startsWith(CANCELLED))) {
+    const run = await $.process.run(CHECKS_ARGV(pr, repo), { timeoutMs: 60_000 }).catch(() => undefined)
+    const read = run === undefined ? { names: [] } : checksOf(run)
+    facts.checks = read.checks
+    facts.why = { ...facts.why, checks: read.checks === undefined ? whyOf(run) : read.names.join(', ') }
+  }
+  return facts
+}
+
+async function memoryAvailableOf($: EngineInterface): Promise<boolean> {
+  const tools = await $.tool.list().catch(() => undefined)
+  return tools === undefined || tools.some(tool => /memory__search$/u.test(tool.name))
+}
+
+async function digestTextOf($: EngineInterface): Promise<string | undefined> {
+  const home = (await $.env.get('HOME').catch(() => undefined)) ?? ''
+  const env = await $.env.get('WORKBENCH_MEMORY_PATH').catch(() => undefined)
+  const core = await $.fs.read(`${home}/${CORE_CONFIG}`).catch(() => undefined)
+  return $.fs.read(`${vaultOf(env, core, home)}/${DIGEST_PATH}`).catch(() => undefined)
+}
+
+async function verdictDeny($: EngineInterface, run: Run, call: Call): Promise<string | undefined> {
+  try {
+    if (run.type === LOCAL_MODE) return isMemoryWrite(call.tool) && isDigest(call) ? LOCAL_DIGEST_DENY : undefined
+    if (isBoardWrite(call.tool)) {
+      const ledger = await ledgerOf($, run)
+      const facts = await factsOf($, run, ledger, call)
+      return judgeBoard(ledger, call, { ...facts, memoryAvailable: await memoryAvailableOf($) })
+    }
+    if (!isMemoryWrite(call.tool)) return undefined
+    const ledger = await ledgerOf($, run)
+    if (!isDigest(call)) return judgeNote(ledger, call)
+    const stale = staleNote(ledger)
+    if (stale !== undefined) return stale
+    const current = await digestTextOf($)
+    if (call.tool.endsWith('__edit')) return judgeDigestEdit(String(call.old_text ?? ''), String(call.new_text ?? ''), current)
+    return judgeDigestWrite(String(call.content ?? ''), current)
+  } catch (error) {
+    return verdictFailed(error)
+  }
+}
+
+async function recordVerdict($: EngineInterface, run: Run, call: Call, result: unknown): Promise<void> {
+  if (run.type !== INDEX_MODE) return
+  const isError = (result as { isError?: unknown } | undefined)?.isError === true
+  await updateLedger($, run, ledger => observe(ledger, call, result, isError))
+}
+
+async function closeCheckouts($: EngineInterface, run: Run): Promise<void> {
+  const { checkouts } = await ledgerOf($, run)
+  if (checkouts.length === 0) return
+  const roots = await $.workbench.scratchRoots()
+  for (const path of checkouts) {
+    if (/\/holmes\.[A-Za-z0-9]{6}$/u.test(path) && roots.includes(path.slice(0, path.lastIndexOf('/'))) && isDeletable(path, roots)) await $.process.run(['rm', '-rf', '--', path])
+  }
+  await updateLedger($, run, ledger => ({ ...ledger, checkouts: [] }))
 }
 
 // ── The panes ────────────────────────────────────────────────────────────────
@@ -569,6 +711,10 @@ export const register: Register = (on, options) => {
     } catch {
       routed = undefined
     }
+    if (routed?.subagentType === LOCAL_MODE) {
+      const missing = missingSlotsOf(routed.prompt)
+      if (missing.length > 0) return { deny: briefDeny(missing) }
+    }
     if (routed?.subagentType === DIGEST_MODE) routed = { ...routed, prompt: await withDigestNotice($, routed.prompt) }
     const spawned = routed ?? input
     const result = await next(spawned)
@@ -655,15 +801,24 @@ export const register: Register = (on, options) => {
   on('tool.call', async ($, e, next) => {
     const done = begin(e.agentId)
     try {
+      const holmes = isWatched(e.tool) ? await holmesRunOf($, e.agentId) : undefined
+      if (holmes !== undefined) {
+        const verdict = await verdictDeny($, holmes, e as unknown as Call)
+        if (verdict !== undefined) return { deny: verdict }
+      }
+      const watch = async <R>(result: R): Promise<R> => {
+        if (holmes !== undefined) await recordVerdict($, holmes, e as unknown as Call, result).catch(() => undefined)
+        return result
+      }
       if (e.tool === 'Bash' || e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
         const call = e.tool === 'Bash' && typeof e.command === 'string' ? { ...e, command: await withScratch($, e.agentId, e.command) } : e
         const deny = await guard($, call)
         if (deny !== undefined) return { deny }
         const result = await next(call)
         if (e.tool === 'Bash') await recordStarted($, e.agentId, result).catch(() => undefined)
-        return result
+        return watch(result)
       }
-      if (e.tool !== 'Agent') return next(e)
+      if (e.tool !== 'Agent') return watch(await next(e))
       const isModel = next.origin.plugin === 'engine'
       let call = e
       if (isModel) {
@@ -677,7 +832,7 @@ export const register: Register = (on, options) => {
           if (isForcedBackground(e.subagent_type, e.run_in_background)) call = { ...e, run_in_background: true }
         }
       }
-      return await next(call)
+      return watch(await next(call))
     } finally {
       done()
     }

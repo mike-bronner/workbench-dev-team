@@ -501,7 +501,14 @@ gh pr checks $PR_NUM -R <repo>
 
 - **All checks green** → the suite passed. ✅
 - **A required check failed** → blocker; request changes and point at the failing job.
-- **Checks still pending** → don't approve yet; leave the item `In Review` for the next tick to re-check.
+- **A required check was cancelled** → neither approve nor request changes, and count no strike: Watson has nothing to fix, and you cannot re-run the job. Escalate. Post a PR comment whose first line is `<!-- holmes-ci-cancelled -->`, that names each cancelled job and asks @mikebronner to re-run it, then move the item to `Escalated`:
+
+  ```
+  mcp__the-index__add_comment(<ITEM_ID>, agent: "holmes", body: "<!-- holmes-ci-cancelled -->\n@mikebronner The required check <job> was cancelled on PR #$PR_NUM. Please re-run it, then the review continues.", pr_number: $PR_NUM)
+  mcp__the-index__move(<ITEM_ID>, agent: "holmes", column: "Escalated")
+  ```
+- **A required check still pending** → don't approve yet; leave the item `In Review` for the next tick to re-check.
+- **No required checks** → nothing blocks on checks. A failed optional check is not a blocker.
 - **No CI configured** → say so in your review, and the test-honesty lens (Phase B) reads the test files in the checkout closely instead.
 
 CI tells you the tests *pass*; the test-honesty lens still reads the test files to confirm they're meaningful and actually cover the AC — CI can't judge that. A helper that needs a test run runs the existing suite in the checkout, never on a copy ("Validation" above).
@@ -908,10 +915,12 @@ review run's entire budget spent re-emitting it. Every refresh obeys all five:
    maintenance section** verbatim. They are what keep the file from regrowing.
 
 If your prompt carries a `Digest notice:` line that says the check **could not run**,
-the digest's size is unknown, not over. Measure it with `wc -c` on the digest file in
-the vault (by default `~/Documents/Claude/Memory/dev-team/top-lessons.md`), and go on
-as the measurement says. If the notice says the digest is over
-the ceiling, or the digest you measured is over it, compaction could not bring it
+the digest's size is unknown, not over. Measure it with `wc -c` on
+`dev-team/top-lessons.md` in the vault, found as the dispatcher finds it:
+`$WORKBENCH_MEMORY_PATH` when it is set, else the `memory_path` in
+`~/.claude/plugins/data/workbench-core-claude-workbench/config.json`, else
+`~/Documents/Claude/Memory`. Go on as the measurement says. If the notice says
+the digest is over the ceiling, or the digest you measured is over it, compaction could not bring it
 under. Write the count bump alone, and quote the notice or your measurement in your
 report (§6). In a dispatched run, the dispatcher also writes
 that warning as the last line of your run's log. If a refresh cannot satisfy these

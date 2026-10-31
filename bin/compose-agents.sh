@@ -107,6 +107,8 @@ compose() {
         next
       }
       if (key == "text") { out[++no] = "T" val; next }
+      if (key == "cut") { if (val == "") fail("cut: names no text"); cuts[++nc] = val; next }
+      if (key == "put") { if (nc == 0) fail("put: before any cut:"); puts[nc] = puts[nc] val "\n"; next }
       fail("unknown directive \"" key "\"")
     }
 
@@ -117,6 +119,45 @@ compose() {
       for (i = 1; i <= nh; i++) if (!(order[i] in seen)) fail("neither copies nor skips \"" order[i] "\"")
       if (tools == "") tools = front("tools")
 
+      prev = ""; n = 0
+      for (i = 1; i <= no; i++) {
+        kind = substr(out[i], 1, 1); val = substr(out[i], 2)
+        if (kind == "S") {
+          b = block[val]; sub(/\n+$/, "", b)
+          L[++n] = ""; m = split(b, part, "\n"); for (k = 1; k <= m; k++) L[++n] = part[k]
+        } else {
+          if (prev != "T") L[++n] = ""
+          L[++n] = val
+        }
+        prev = kind
+      }
+
+      fence = 0
+      for (i = 1; i <= n; i++) {
+        if (L[i] ~ /^[ \t]*```/) { if (!fence) isopen[i] = 1; else closes[i] = 1; inside[i] = 1; fence = !fence; continue }
+        inside[i] = fence
+      }
+      for (c = 1; c <= nc; c++) {
+        hits = 0
+        for (i = 1; i <= n; i++) { t = L[i]; sub(/^[ \t]+/, "", t); if (index(t, cuts[c]) == 1) { hits++; at = i } }
+        if (hits != 1) fail("cut: \"" cuts[c] "\" matches " hits " lines of the composed text, not one")
+        if (inside[at] && !(at in isopen)) { while (!(at in isopen)) at-- }
+        if (at in isopen) {
+          for (j = at + 1; j <= n && !(j in closes); j++) ;
+          j++
+        } else {
+          ind = match(L[at], /[^ \t]/) - 1
+          for (j = at + 1; j <= n; j++) {
+            if (L[j] ~ /^[ \t]*$/ || L[j] ~ /^#+ / || (j in isopen)) break
+            if (L[j] ~ /^[ \t]*([-*]|[0-9]+\.) / && match(L[j], /[^ \t]/) - 1 <= ind) break
+          }
+        }
+        for (k = at; k < j; k++) gone[k] = 1
+        if (c in puts) put[at] = puts[c]
+        else if (at > 1 && L[at - 1] ~ /^[ \t]*$/ && j <= n && L[j] ~ /^[ \t]*$/) gone[j] = 1
+      }
+      if (failed) exit 1
+
       print "---"
       print "name: " name
       print "# Composed by bin/compose-agents.sh from agents/" source ".md and " recipe ". Edit those, then run the script."
@@ -126,19 +167,14 @@ compose() {
       if (front("model") != "") print "model: " front("model")
       if (front("effort") != "") print "effort: " front("effort")
       print "---"
-
-      # One blank line between blocks. Consecutive text lines form one block.
-      prev = ""
-      for (i = 1; i <= no; i++) {
-        kind = substr(out[i], 1, 1); val = substr(out[i], 2)
-        if (kind == "S") {
-          b = block[val]; sub(/\n+$/, "", b)
-          print ""; print b
-        } else {
-          if (prev != "T") print ""
-          print val
-        }
-        prev = kind
+      lastblank = 0; cutsince = 0
+      for (i = 1; i <= n; i++) {
+        if (i in put) { printf "%s", put[i]; lastblank = 0; cutsince = 0 }
+        if (i in gone) { cutsince = 1; continue }
+        blank = L[i] ~ /^[ \t]*$/
+        if (blank && lastblank && cutsince) continue
+        print L[i]; lastblank = blank
+        if (!blank) cutsince = 0
       }
     }
   ' "$ROOT/agents/$source.md" "$recipe"

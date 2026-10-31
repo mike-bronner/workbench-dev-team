@@ -180,6 +180,84 @@ refuse "a name that does not match the file" 's/^name: pub-a/name: pub-b/'
 refuse "an unknown directive" 's/^text: A literal line./txet: A literal line./'
 refuse "no description" '/^description:/d'
 refuse "a heading the source holds twice" 'source:## Shared'
+refuse "a cut that matches no line" '$a\
+cut: No such line'
+refuse "a cut that matches two lines" '$a\
+cut: A'
+refuse "a put with no cut before it" '/^name:/a\
+put: orphan'
+
+# cut: and put:, on a source built to exercise each block shape.
+D=$(fixture cuts)
+cat >> "$D/agents/pub.md" <<'EOF'
+
+## Mode C
+
+Keep one.
+
+Drop this paragraph,
+and its second line.
+
+Keep two.
+
+- keep item
+- drop item
+  with a continuation
+  - and a nested item
+- keep last item
+
+```bash
+# drop this fence
+echo gone
+```
+
+Swap me out.
+
+Keep three.
+
+- gone one
+- gone two
+
+After list.
+EOF
+cat >> "$D/references/agent-modes/pub-a.recipe" <<'EOF'
+section: ## Mode C
+cut: Drop this paragraph,
+cut: - drop item
+cut: echo gone
+cut: Swap me out.
+put: Put in its place.
+cut: - gone one
+cut: - gone two
+EOF
+bash "$D/bin/compose-agents.sh" >/dev/null 2>&1
+expect "a recipe with cuts composes" "$?" 0
+cat > "$WORK/want-c" <<'EOF'
+## Mode C
+
+Keep one.
+
+Keep two.
+
+- keep item
+- keep last item
+
+Put in its place.
+
+Keep three.
+
+After list.
+EOF
+if sed -n '/^## Mode C$/,$p' "$D/agents/pub-a.md" | cmp -s - "$WORK/want-c"; then
+  ok "cut: drops a paragraph, a list item with its continuation and nested items, a whole list, and a fence, leaving one blank line; put: replaces a block"
+else
+  bad "the cut output differs: $(sed -n '/^## Mode C$/,$p' "$D/agents/pub-a.md" | diff "$WORK/want-c" - | head -8 | tr '\n' ' ')"
+fi
+if grep -q 'Swap me out\|drop item\|echo gone' "$D/agents/pub.md"; then
+  ok "the public source keeps every line a cut drops"
+else
+  bad "the public source lost a cut line"
+fi
 
 echo
 echo "$pass passed, $fail failed"

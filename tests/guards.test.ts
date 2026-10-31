@@ -191,3 +191,48 @@ describe('review guard — the hook reads the disk, the roots and the working di
     expect(await refusalOf($, bash(`chmod 644 ${SB}/repo/README.md`), 'lens-1')).toContain(`\`${SB}/home/Developer/scratchpad\`, \`${SB}/tmp\``)
   })
 })
+
+describe('a reviewer reaches GitHub through gh read verbs only (C9, C19, C21)', () => {
+  const HOLMES = { lane: () => 'top-level-agent' as const, env: { CLAUDE_CODE_AGENT: 'workbench-dev-team:holmes-index' } }
+  for (const line of [
+    'gh pr merge 5',
+    'gh pr review 5 --approve',
+    'gh pr comment 5 -b looks-good',
+    'gh issue create -t x -b y',
+    'gh issue comment 1 -b x',
+    'gh pr checkout 5',
+    'gh repo clone o/r /scratch/x',
+    'gh project item-edit --id x',
+    'gh api -X POST repos/o/r/issues',
+    'gh api --method=PATCH repos/o/r/pulls/5',
+    'gh api repos/o/r/issues -f title=x',
+    'gh api repos/o/r/issues --input body.json',
+    'gh api graphql -F query=x',
+    'curl -X POST https://api.github.com/repos/o/r/issues',
+    'security find-generic-password -s x -w',
+    'gh auth status --show-token',
+    'gh auth status',
+  ]) {
+    test(`\`${line}\` is refused`, async ($, on) => {
+      const w = world(on, HOLMES)
+      expect(await refusalOf($ as never, bash(line))).toContain('Blocked')
+      expect(w.ran).toEqual([])
+    })
+  }
+  for (const line of [
+    'gh pr view 5 -R o/r --json reviews',
+    'gh pr checks 5 -R o/r',
+    'gh pr diff 5 -R o/r',
+    'gh pr list -R o/r --state all',
+    'gh issue view 1 -R o/r --json body,comments',
+    'gh api repos/o/r/pulls/5/comments',
+    'gh api -X GET repos/o/r',
+    'gh run list --branch main',
+  ]) {
+    test(`\`${line}\` reaches the engine`, async ($, on) => {
+      const w = world(on, HOLMES)
+      expect(await refusalOf($ as never, bash(line))).toBeUndefined()
+      expect(w.ran).toEqual([`Bash: ${line}`])
+    })
+  }
+})

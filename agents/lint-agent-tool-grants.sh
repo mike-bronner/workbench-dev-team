@@ -113,6 +113,36 @@ for agent in watson holmes lestrade; do
   fi
 done
 
+reviewer_held() {
+  local banned="Write Edit NotebookEdit WebFetch" tool held=""
+  case "$1" in holmes-local|holmes-lens) banned="$banned mcp__the-index__" ;; esac
+  for tool in $banned; do
+    case "$tool" in
+      mcp__*) printf '%s\n' "$2" | grep -q "^$tool" && held="$held $tool*" ;;
+      *) printf '%s\n' "$2" | grep -Fqx "$tool" && held="$held $tool" ;;
+    esac
+  done
+  printf '%s' "$held"
+}
+for probe in "holmes-index|Bash\nWrite|Write" "holmes-lens|Read\nWebFetch|WebFetch" "holmes-local|Read\nmcp__the-index__move|mcp__the-index__*" "holmes-index|Read\nmcp__the-index__move|"; do
+  IFS='|' read -r agent tools want <<< "$probe"
+  got="$(reviewer_held "$agent" "$(printf '%b' "$tools")")"
+  if [ "${got# }" = "$want" ]; then PASS=$((PASS + 1)); echo "  ✅ reviewer grant probe: $agent with $(printf '%b' "$tools" | tr '\n' ',') flags '${want:-nothing}'"
+  else FAIL=$((FAIL + 1)); echo "  ❌ reviewer grant probe: $agent flags '$got', want '$want'"; fi
+done
+for file in "$DIR"/holmes*.md; do
+  agent="$(basename "$file" .md)"
+  tools="$(awk 'NR==1 && $0=="---"{f=1;next} f && $0=="---"{exit} f{print}' "$file" | sed -n 's/^tools://p' | tr ',' '\n' | sed 's/^[[:space:]]*//; s/[[:space:]]*$//')"
+  held="$(reviewer_held "$agent" "$tools")"
+  if [ -z "$tools" ]; then
+    FAIL=$((FAIL + 1)); echo "  ❌ $agent — has no tools: line, so it inherits every tool, Write and WebFetch included"
+  elif [ -n "$held" ]; then
+    FAIL=$((FAIL + 1)); echo "  ❌ $agent — a reviewer is granted$held"
+  else
+    PASS=$((PASS + 1)); echo "  ✅ $agent — a reviewer, grants no write tool and no WebFetch"
+  fi
+done
+
 # section <file> <heading prefix> — the body under the heading line that starts
 # with the prefix, through the line before the next heading at the same or a
 # higher level. The heading line itself is left out: Holmes's §4a.5 heading says
