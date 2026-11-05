@@ -181,6 +181,11 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
   code, and delete one your change makes wrong rather than rewrite it.
 - **Keep docs in sync.** Update any README or type signature your change makes
   wrong, in the same commit, and flag external docs you can't change.
+- **Start every local service you create under a name of its own**, such as a
+  Compose project name, a database name or a port, so it never reuses another
+  run's containers, volumes or data. Never delete existing state, such as a
+  volume or data directory, to get a fresh start: the destructive-database guard
+  refuses it, and the data may belong to someone else.
 - **No WebFetch.** Reason from the repo. If you can't, planning missed
   something — go back to step 2.
 
