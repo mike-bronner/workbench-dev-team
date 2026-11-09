@@ -33,15 +33,12 @@ you relay — you do not implement, triage, or review in the main context.
   Local mode when the work is still an uncommitted tree, which is how every
   Watson Direct-mode run comes back.
 
-A specialist loads `/workbench-dev-team:develop`, and a generic agent does not.
 `/develop` §1 is where the discovery rule lives — don't restate it in a prompt,
 and don't pre-decide any of it. Why the routing turns on skill loading:
 `references/brief-rationale.md`.
 
 **Read-only dispatches stay generic, and should.** `Explore`, `Plan`, and
-`general-purpose` are the right call whenever nothing gets written. They are
-generic in *destination* only — the brief below governs them exactly as it
-governs a Watson build.
+`general-purpose` are the right call whenever nothing gets written.
 
 ## Dispatch in parallel — every independent unit at once
 
@@ -57,24 +54,28 @@ scheduled tick, and every Index-mode cap stays.
 **Same-repo work that could split needs worktrees, and the human creates
 them.** Propose them through the workspace check (below), then dispatch one
 Watson per worktree. Never create a worktree yourself. Until they exist,
-same-repo units run one at a time. Why: `references/brief-rationale.md`.
+same-repo units run one at a time, the short unit first. Never merge two units
+into one brief: the short one then waits behind the long one. Why:
+`references/brief-rationale.md`.
+
+**New work gets its own dispatch.** Never SendMessage new work to a running
+agent: it waits behind that agent's current task. A message to a running agent
+carries only answers or corrections to its own brief.
 
 ## Check the workspace before you dispatch
 
-**Branches and worktrees are wanted. The human picks them.** Most dev work lands
-on a branch, and a PR is a normal finish line. What is not yours is creating a
-branch unasked, or creating a worktree at all: the human creates worktrees.
+**Branches and worktrees are wanted. The human picks them.** What is not yours
+is creating a branch unasked, or creating a worktree at all: the human creates
+worktrees.
 Before any dispatch whose work ends in a commit,
 read the target tree (`git -C <workdir> status -sb`, `git worktree list`) and ask.
 
 Three cases, each ending in a question:
 
 - **On `main`, `master`, or `trunk`** — propose a branch name and ask before it
-  is created. The harness tells you to branch first on the default branch; that
-  is a reason to raise the branch, never a licence to cut it unasked.
+  is created.
 - **On a feature branch already carrying unrelated work** — name what is on it,
-  propose a branch off the base, and ask. Stacking this task on somebody's
-  half-finished one is the failure being prevented.
+  propose a branch off the base, and ask.
 - **Inside a worktree** — confirm it is the one meant for this task, and ask
   when it is not.
 
@@ -90,14 +91,11 @@ stays valid, and means there was no workspace decision to record.
 them.** Ask the same way. Once the human has created them, name each in its own
 brief and dispatch one Watson per worktree. Never pass the Agent tool's
 `isolation: "worktree"`: the provisioning guard denies an agent-made worktree.
-One working tree holds one branch, so two runs sharing it overwrite each other's
-edits.
 
 **A read-only dispatch decides no workspace.** `Explore`, `Plan`, and
 `general-purpose` write nothing, and take the tree as it stands.
 
-Why the check exists, and why the answer widens `Workdir:` instead of adding a
-slot: `references/brief-rationale.md`.
+Why: `references/brief-rationale.md`.
 
 ## Dispatch protocol
 
@@ -107,8 +105,8 @@ slot: `references/brief-rationale.md`.
 2. **No `model` parameter.** Never pass the Agent tool's `model` to a dev-team
    agent. The agent's frontmatter carries the configured model, and the
    alias-only parameter would override it (see "Model and effort" below).
-3. **Every handoff is a brief.** Sub-agents have no memory of this
-   conversation, so send the six slots defined below and nothing else — for
+3. **Every handoff is a brief.** Send the six slots defined below and nothing
+   else — for
    Watson's Direct mode, Holmes's Local mode, and the read-only `Explore`,
    `Plan`, and `general-purpose` runs alike. Research is not exempt, and that is
    the point (why: `references/brief-rationale.md`). Three shapes are exempt:
@@ -139,6 +137,21 @@ own edits, so read the tree itself, never only the report's file list. Never
 send the agent back to commit: workbench-core's commit guard refuses a
 sub-agent's commit and push.
 
+**The full suite runs once, last.** This is the one test timeline:
+
+- Watson runs the tests he wrote and the existing tests that cover the files
+  he changed.
+- A Holmes review pass runs only the tests that cover the change.
+- When every Holmes concern is fixed, or no review ran, dispatch Holmes on a
+  brief whose `Goal:` begins `Final suite run:`. Ask the commit or push
+  question only after it comes back green. A red run goes to Watson as a
+  bounded fix, and the final run repeats.
+- On an Index-mode PR, CI is that final run, and Holmes adds none.
+
+No brief slot asks for a test run outside this timeline, such as "the suite
+passes": not `Acceptance:`, `Done when:`, `Constraints:`, or `Context:`. Never
+run the full suite yourself. Why: `references/brief-rationale.md`.
+
 ## Action routing — Index MCP or gh CLI?
 
 When the user asks for a GitHub action (review, comment, merge, triage, fix),
@@ -149,8 +162,7 @@ two questions decide the path. Answer them in order.
 - **Agent work products** — formal PR reviews, acceptance criteria, status
   moves, agent comments — exist only inside The Index pipeline, signed by that
   agent's GitHub App. They go through a dispatched agent and its MCP write
-  tools. Never produce them with `gh`; a Claude-authored verdict posted under
-  the user's identity forges the review gate.
+  tools. Never produce them with `gh`. Why: `references/brief-rationale.md`.
 - **The user's own actions** — comments they dictate, merges they order — are
   theirs, executed directly with `gh` under their identity, on any repo. You
   are the secretary here, not an agent.
@@ -223,9 +235,9 @@ Each slot's full rule, and what a brief must carry:
 `references/brief-detail.md`. Worked briefs: `references/brief-examples.md`.
 
 - **`Workdir:`** — written as the workspace check (above) records it.
-- **`Goal:`** — the one bounded slot: concise, measurable, achievable.
-  Background that will not fit moves to `Context:`. Why:
-  `references/brief-rationale.md`.
+- **`Goal:`** — the one bounded slot: concise, measurable, achievable. A brief
+  is an investigation or a bounded change, never both. Background that will
+  not fit moves to `Context:`. Why: `references/brief-rationale.md`.
 - **`Context:`** — unbounded. It may not read "none", though `Constraints:`
   may, and it carries at least one sentence on why the task exists. Why:
   `references/brief-rationale.md`.
@@ -233,7 +245,8 @@ Each slot's full rule, and what a brief must carry:
   activity.
 - **`Acceptance:`** — required. Number the criteria. Each names a result,
   never a method. When this session ran `/workbench-core:intake`, copy its
-  criteria here. Why: `references/brief-rationale.md`.
+  criteria here, minus any that asks for a test run outside the test timeline
+  (above). Why: `references/brief-rationale.md`.
 - **`Done when:`** — where the task stops, such as the change handed back
   uncommitted, not what the result must satisfy.
 
@@ -270,12 +283,11 @@ answers from you.
   two readings was meant, a decision settled in a conversation it never saw, a
   target that does not exist in the repo.
 
-Expect the second one: it is the contract working, not an agent stalling.
 Answer what the conversation already settles, relay to the human
 what only the human can settle, then **re-dispatch the updated brief** —
 SendMessage the answers to the agent that is waiting, or send it a corrected
-brief. Never start a fresh agent on the old brief. The brief was what was wrong,
-so a new agent hits the same wall at full cost, and two of them wait.
+brief. Never start a fresh agent on the old brief. Why:
+`references/brief-rationale.md`.
 
 ### The companion gate
 
@@ -341,20 +353,21 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 | Holmes | review item 17 | e5f6… | 🔄 running |
 ```
 
-- **Relay verdicts, not transcripts.** When an agent completes, report the
-  outcome in two or three sentences — branch, PR link, verdict, blockers. Never
-  paste its full output into the conversation; that defeats the lean-context
-  point of delegating.
+- **The human sees only your reply text.** Every hand-back, peer message,
+  task notification, and tool output is invisible to them. So restate in the
+  reply what a decision or a finding needs from a hand-back: the options with
+  their grades, the findings, the reasons, the risks, and the test results. No
+  sentence count caps it. Never paste the raw transcript: that defeats the
+  lean-context point of delegating.
 - **Failures surface verbatim.** An agent that errored or hit its budget cap is
   reported as such, with its last reported state. No silent retries.
 - **Decisions come home through `AskUserQuestion`.** Watson's `/develop` skill
   returns a meaningful fork as a graded table and a recommendation. Holmes's
   Local mode returns a rubric dispute the same way. A brief can come back with
   questions only the human can settle. Put each one to the human through
-  `AskUserQuestion`, never as prose. The human never sees a hand-back, so the
-  agent's options table, with its grades and recommendation, is context the
-  call needs: show it in the reply, just above the call. It is the one part of
-  a hand-back you show in full. Never ask with a label for options the reply
+  `AskUserQuestion`, never as prose. The agent's options table, with its grades
+  and recommendation, is context the call needs: show it in the reply, just
+  above the call, in full. Never ask with a label for options the reply
   does not show, such as "Option B" or "Watson's option 2". Put the recommended
   option first, and keep the agent's options and grades unchanged. Each
   option's description carries its grade and any warning, so the question

@@ -206,6 +206,18 @@ else
   fail_file "watson — mode default" "${mode_problems[@]}"
 fi
 
+stop_problems=()
+for stop_file in "$DIR/watson.md" "$DIR/watson-direct.md"; do
+  tr '\n' ' ' < "$stop_file" | tr -s ' ' | grep -Fq "stop at \`/develop\` §7's checkpoint, or at 125k tokens of working context, whichever comes first." \
+    || stop_problems+=("$(basename "$stop_file") — a non-converging investigation no longer stops at /develop §7's checkpoint or at 125k tokens")
+done
+if [ ${#stop_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ watson — a non-converging investigation stops at §7's checkpoint or at 125k tokens"
+else
+  fail_file "watson — the investigation stop is gone" "${stop_problems[@]}"
+fi
+
 # The working-context budget, on every agent file. Checked per file rather than
 # per agent name for the same reason the brief contract is: a fourth agent
 # inherits the rule by being an agents/*.md, and the suite reddens on the one

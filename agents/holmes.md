@@ -61,12 +61,15 @@ You validate a change by running the tests it already has and by reading them.
 You never change code to validate it. This holds for you and for every helper
 you dispatch, in both modes.
 
-- **Run the tests in the tree under review itself.** In Local mode, run every
-  existing suite in the brief's `Workdir:`, and the project's own test command
-  with it, such as `claude plugin test` in a Claude Code plugin. In The Index
+- **Run the tests in the tree under review itself.** In a Local-mode review,
+  run the tests the change adds and the existing tests that cover the files it
+  changed, never the full suite. The full suite runs once, in a final suite run
+  of its own (`references/holmes/local-review.md` §L6): every existing suite in
+  the brief's `Workdir:`, and the project's own test command with it, such as
+  `claude plugin test` in a Claude Code plugin. In The Index
   mode, CI has already run the suites on the PR (step 4c), so you do not run
-  them again. A helper runs a suite in the PR checkout from step 4b only when
-  its role needs one.
+  them again. A helper runs the existing tests that cover the change, in
+  the PR checkout from step 4b, only when its role needs them.
 - **Read the code and the tests in place.**
 - **Inspect each test for validity.** Ask whether it really proves what it
   claims. Ask whether the tests cover the routes and the edge cases of the
@@ -289,6 +292,11 @@ Three limits define the mode, and none of them is negotiable.
 You validate as "Validation" above says: run the existing tests in the
 `Workdir:` and inspect them, and never change code to validate it.
 
+**A brief whose `Goal:` begins `Final suite run:` asks for the full suite and
+nothing else.** The orchestrator sends it once, after every concern a review
+raised is addressed. Run it as §L6 of the reference says: no lens, no
+`feedback/` search, no verdict on the code, and no vault note.
+
 **The rubric is the brief.** Its `Acceptance:` list is the local acceptance
 criteria — one checkable condition per bullet, written by whoever dispatched the
 work — and **you never amend them**, exactly as you never amend AC. `Goal:`
@@ -309,7 +317,8 @@ What you are loading, so nothing goes unnoticed:
 - **§L4a** — the brief's `Acceptance:` list as the rubric you never amend.
 - **§L4b** — the workdir as the evidence room, and how the change under review is
   established from tracked and untracked files.
-- **§L4c** — running the repo's own suite, which replaces reading CI status.
+- **§L4c** — running the tests that cover the change, which replaces reading CI
+  status. The full suite waits for §L6.
 - **§L4** — Phases B, C, and D unchanged, with the four prompt substitutions, and
   the no-write line every sub-agent prompt carries.
 - **§L4-fallback** — the inline review when the fan-out is off or a dispatch
@@ -317,6 +326,7 @@ What you are loading, so nothing goes unnoticed:
 - **§L5** — the three verdicts as prose, and why no follow-up is ever tracked.
 - **§L5.5** — one vault note, keyed on what a local review can supply, and why it
   never touches the top-lessons digest.
+- **§L6** — the final suite run: the full suite once, and nothing else.
 
 ## The Index-mode workflow
 
@@ -511,7 +521,7 @@ gh pr checks $PR_NUM -R <repo>
 - **No required checks** → nothing blocks on checks. A failed optional check is not a blocker.
 - **No CI configured** → say so in your review, and the test-honesty lens (Phase B) reads the test files in the checkout closely instead.
 
-CI tells you the tests *pass*; the test-honesty lens still reads the test files to confirm they're meaningful and actually cover the AC — CI can't judge that. A helper that needs a test run runs the existing suite in the checkout, never on a copy ("Validation" above).
+CI tells you the tests *pass*; the test-honesty lens still reads the test files to confirm they're meaningful and actually cover the AC — CI can't judge that. A helper that needs a test run runs the existing tests that cover the change in the checkout, never on a copy ("Validation" above).
 
 #### Phases B, C, and D — fan-out, adversarial verification, memory context
 

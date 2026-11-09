@@ -2,7 +2,8 @@
 
 On-demand detail for `agents/holmes.md`. Sherlock Holmes reads this file when a
 prose brief puts him in **Local mode**, and follows it end to end in place of the
-Index-mode workflow (§1–§6 of the agent prompt).
+Index-mode workflow (§1–§6 of the agent prompt). **A brief whose `Goal:` begins
+`Final suite run:` is not a review:** follow §L6 and nothing else.
 
 **What Local mode reviews: the uncommitted working tree in the brief's
 `Workdir:`** — the tracked changes plus the untracked files git would not
@@ -63,7 +64,7 @@ output.
 | §4a read the issue and AC | **replaced** — the rubric is the brief (§L4a) |
 | §4a.5 `feedback/` search | **unchanged** — run it before the lenses, search the workdir's repo, and check the change against every rule it confirms |
 | §4b check out the PR | **replaced** — the workdir *is* the evidence room (§L4b) |
-| §4c CI status | **replaced** — run the repo's own suite (§L4c) |
+| §4c CI status | **replaced** — run the tests that cover the change (§L4c); the full suite waits for §L6 |
 | Phases B, C, D | **unchanged in substance** — substitutions in §L4 |
 | `§4-fallback` inline path | **replaced** — the workdir and the brief, read inline (§L4-fallback) |
 | §4d AC conformance | **unchanged**, read against the brief's rubric |
@@ -142,19 +143,27 @@ the change.
 <workdir> status -sb`) and say so in your report when you are not. Do not switch
 to it — switching is a write.
 
-## §L4c — run the repo's own suite
+## §L4c — run the tests that cover the change
 
 Index mode does not run tests locally because the toolchain is wrong and it is
-slow. Neither holds here: you are sitting in the repository's own working
-directory, on the human's machine, with its toolchain installed. So run it.
+slow. The toolchain holds no problem here: you are sitting in the repository's
+own working directory, on the human's machine, with its toolchain installed. So
+run the tests that cover the change: the tests it adds, and the existing tests
+that cover the files it changed, such as a test that imports, sources, or names
+a changed file.
 
-Discover the entry point from the repo the same way any agent does — its
-`CLAUDE.md`, its README, its package manifest, its makefile — and run it
-**read-only**. Never a flag that rewrites files (`--fix`, `--write`, a formatter
-in write mode), never a command that installs or upgrades anything, never a
-commit.
+**Never run the full suite in a review pass.** A review can take several rounds,
+and a full run in each one is the slow run this rule removes. The full suite
+runs once, in the final suite run (§L6), after every concern a review raised is
+addressed.
 
-- **Green** → the suite passed. ✅
+Discover the runner from the repo the same way any agent does — its
+`CLAUDE.md`, its README, its package manifest, its makefile — select the
+covering tests through it, and run them **read-only**. Never a flag that
+rewrites files (`--fix`, `--write`, a formatter in write mode), never a command
+that installs or upgrades anything, never a commit.
+
+- **Green** → the covering tests passed. ✅
 - **Red** → a blocker. Name the failing test and say plainly whether the change
   under review plausibly caused it. **Never isolate by mutating the tree** — no
   `restore`, no `stash`, no `checkout`, no `reset`, and nothing else that moves
@@ -162,15 +171,15 @@ commit.
   answer "what did this change do?" without touching anything. If you still
   cannot tell whether the failure is pre-existing, say that instead of finding
   out destructively.
-- **No suite you can discover** → say so in the verdict, and the test-honesty
-  lens reads the test files closely instead. Same fallback as an Index-mode PR
-  with no CI configured.
+- **No covering test you can discover** → say so in the verdict, and the
+  test-honesty lens reads the test files closely instead. Same fallback as an
+  Index-mode PR with no CI configured.
 
-A green suite tells you the tests *pass*. The test-honesty lens still reads them
+A green run tells you the tests *pass*. The test-honesty lens still reads them
 to judge whether they mean anything.
 
 **Validate in place, never by changing code** (`agents/holmes.md`
-"Validation"). Run the existing suites in the `Workdir:`, read the tests, and
+"Validation"). Run the covering tests in the `Workdir:`, read the tests, and
 judge whether each one proves what it claims and whether they cover the routes
 and the edge cases. Write no probe script, copy no repository, and trim no test
 file to run a single test. Mutation testing runs only through the project's own
@@ -279,7 +288,7 @@ plus everything belonging to the coherent unit carry no actionable finding.
 ✅ **Approved** — <workdir>
 
 ## Review Summary
-- <what was reviewed: files changed, suite result>
+- <what was reviewed: files changed, covering-test result>
 - Every `Acceptance:` criterion is met: <AC1 — how>, <AC2 — how>
 - Everything belonging to the coherent unit is clean
 
@@ -413,3 +422,43 @@ history:
 
 A memory-write failure is logged and never changes your verdict or blocks your
 report — same rule as Index mode.
+
+## §L6 — the final suite run: the full suite, once, and nothing else
+
+The full suite runs once per unit of work, as the last step before the human is
+asked to commit or push. The orchestrator sends it only after every concern a
+review raised is addressed, on a six-slot brief whose `Goal:` begins
+`Final suite run:`. Neither Watson's loop nor a review pass runs the full suite,
+so this run is the only one.
+
+The three hard limits and the brief contract still bind. Nothing else from the
+review path runs: no §0 fan-out, no `feedback/` search, no lens, no
+verification, no Phase D, no verdict on the code, and no vault note.
+
+1. Establish the change as §L4b says. If the change is empty, report that and
+   stop.
+2. Discover the suite's entry point as §L4c says. Run every existing suite in
+   the `Workdir:`, and the project's own test command with it, such as
+   `claude plugin test` in a Claude Code plugin. Run them read-only, under
+   §L4c's limits.
+3. Report the result to the dispatching session, as prose, in one of three
+   forms:
+
+```
+✅ **Suite green** — <workdir>
+- <each command run, and its pass count>
+```
+
+```
+🔄 **Suite red** — <workdir>
+- <each failing test — `file:line` — whether the change plausibly caused it>
+```
+
+```
+⚠️ **No suite found** — <workdir>
+- <where you looked for an entry point>
+```
+
+On a red run, never isolate the failure by changing the tree. §L4c's red rule
+holds here. The orchestrator sends a red run to Watson as a bounded fix, and the
+final suite run repeats after the fix.

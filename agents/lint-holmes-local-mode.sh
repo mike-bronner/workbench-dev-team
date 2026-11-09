@@ -178,9 +178,13 @@ for step in \
   '§5 verdict' '§5.5 learnings'; do
   grep -Fq "$step" "$LOCAL" || steps+=("no local answer stated for Index-mode $step")
 done
-for anchor in '§L3' '§L4a' '§L4b' '§L4c' '§L4-fallback' '§L5' '§L5.5'; do
+for anchor in '§L3' '§L4a' '§L4b' '§L4c' '§L4-fallback' '§L5' '§L5.5' '§L6'; do
   grep -Fq "## $anchor" "$LOCAL" || steps+=("the reference has no $anchor section")
 done
+grep -Fq '**Never run the full suite in a review pass.**' "$LOCAL" \
+  || steps+=("the reference no longer keeps the full suite out of a review pass, so every review round runs it")
+printf '%s' "$localsec" | grep -Fq '`Final suite run:`' \
+  || steps+=("holmes.md no longer names the Final suite run: brief, so the one full-suite run has no dispatch")
 grep -Fq 'review-phases.md' "$LOCAL" \
   || steps+=("the reference never hands off to review-phases.md, so Phases B-D are unreachable")
 report "steps — every board-coupled step has a local replacement" ${steps[@]+"${steps[@]}"}

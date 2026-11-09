@@ -130,6 +130,17 @@ if [ -n "$s" ]; then
     check "$s" "$kind" "orchestrate decisions bullet names: $kind" "orchestrate — the decisions bullet lost: $kind"
   done
 fi
+section skills/orchestrate/SKILL.md '- **The human sees only your reply text.**' '- **Failures surface verbatim.**' orchestrate
+if [ -n "$s" ]; then
+  for kind in 'hand-back, peer message, task notification, and tool output is invisible' 'the options with their grades, the findings, the reasons, the risks, and the test results' 'No sentence count caps it' 'Never paste the raw transcript'; do
+    check "$s" "$kind" "orchestrate visibility bullet names: $kind" "orchestrate — the visibility bullet lost: $kind"
+  done
+fi
+if grep -Fq 'two or three sentences' "$ROOT/skills/orchestrate/SKILL.md"; then
+  bad "orchestrate — a sentence count caps the relay of a hand-back again"
+else
+  ok "orchestrate sets no sentence count on a relayed hand-back"
+fi
 if grep -Fq 'Relay them to the user untouched' "$ROOT/skills/orchestrate/SKILL.md"; then
   bad "orchestrate — forks are relayed untouched as prose again"
 else

@@ -585,8 +585,8 @@ sharper AC, Holmes's answer, or Mike's call), implement on the same branch.
 
 Before you mark the PR ready (step 7), run the `/develop` §4 Test standards
 against your own diff, the way Holmes will read it. As the builder, you
-mutation-test every new test yourself (delete/invert the guarded code, confirm
-it goes red), because Holmes reads tests and never mutates code. Give every
+mutation-test every new test yourself (delete/invert the guarded code, rerun
+only that test, confirm it goes red), because Holmes reads tests and never mutates code. Give every
 new branch / field / error-path a discriminating test, fail closed on every error /
 absent-field / unexpected-input path, and grep the tree for doc-drift on every
 symbol or claim you changed. These are the top review-rejection categories —
@@ -634,7 +634,7 @@ Implements #<issue_number>
 [copy the AC from the issue, mark completed items with [x]]
 
 ## Test Plan
-- [ ] All existing tests pass
+- [ ] The existing tests that cover the changed files pass
 - [ ] New tests cover the changes
 - [ ] Manual verification steps if applicable
 

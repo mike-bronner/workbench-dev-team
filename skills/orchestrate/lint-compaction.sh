@@ -223,10 +223,10 @@ dev_bytes="$(wc -c < "$DEVELOP" | tr -d ' ')"
 [ "$dev_bytes" -le "$SURVIVE_BYTES" ] || survive+=("develop: the file is $dev_bytes bytes; want $SURVIVE_BYTES or less, so no rule sits past the line")
 
 # orchestrate is not, so its must-survive sections and phrases are pinned one
-# row each: <section|phrase>|orchestrate|<heading or words>.
+# row each: <section|phrase>|<file>|<heading or words>.
 while IFS='|' read -r kind which want; do
   [ -n "$kind" ] || continue
-  case "$which" in orchestrate) file="$SKILL" ;; *) survive+=("unknown file '$which'"); continue ;; esac
+  case "$which" in orchestrate) file="$SKILL" ;; develop) file="$DEVELOP" ;; *) survive+=("unknown file '$which'"); continue ;; esac
   if [ "$kind" = section ]; then end="$(section_end "$file" "$want")"; else end="$(phrase_end "$file" "$want")"; fi
   if [ "$end" = -1 ]; then
     survive+=("$which: no $kind '$want'")
@@ -247,16 +247,29 @@ section|orchestrate|### Passing a gh body
 section|orchestrate|## The brief
 section|orchestrate|### Must omit
 section|orchestrate|### When a brief comes back
+phrase|orchestrate|same-repo units run one at a time, the short unit first.
+phrase|orchestrate|Never merge two units into one brief
+phrase|orchestrate|**New work gets its own dispatch.** Never SendMessage new work to a running agent
+phrase|orchestrate|A brief is an investigation or a bounded change, never both.
 phrase|orchestrate|A first line of `SKIP`
 phrase|orchestrate|means nothing was spawned: relay it to the human rather than retrying
 phrase|orchestrate|Track a spawned run from its log rather than from a completion notification
 phrase|orchestrate|check the log for `Permission denied:` lines
+phrase|orchestrate|**The full suite runs once, last.**
+phrase|orchestrate|dispatch Holmes on a brief whose `Goal:` begins `Final suite run:`
+phrase|orchestrate|On an Index-mode PR, CI is that final run, and Holmes adds none.
+phrase|orchestrate|No brief slot asks for a test run outside this timeline
+phrase|orchestrate|Never run the full suite yourself.
+phrase|orchestrate|minus any that asks for a test run outside the test timeline
 phrase|orchestrate|body in a quoted heredoc or a file
 phrase|orchestrate|Never write a multi-line body in double quotes
 phrase|orchestrate|**Refused** — a slot is missing
 phrase|orchestrate|**Questions** — every slot is there
 phrase|orchestrate|Never start a fresh agent on the old brief
 phrase|orchestrate|A refusal means the rule worked. Report it, then re-dispatch.
+phrase|develop|the existing tests that cover the files you changed, never the full suite.**
+phrase|develop|rerun only that test, never a wider set
+phrase|develop|**Investigation not converging?** When three hypotheses in a row are ruled out with no confirmed cause, stop.
 EOF
 report "survive — develop fits inside the line whole, and orchestrate's must-survive sections and pinned phrases end inside it" ${survive[@]+"${survive[@]}"}
 

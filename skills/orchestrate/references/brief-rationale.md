@@ -36,6 +36,14 @@ Branches and worktrees are the expected, wanted outcome of most dev work. The
 failure was creating them without asking, so all three rules in the skill end in
 a question to the human and never in a refusal.
 
+**What each case prevents.** Most dev work lands on a branch, and a PR is a
+normal finish line, so the check raises a branch rather than refusing one. On
+the default branch, the harness says to branch first. That is a reason to raise
+the branch, never a licence to cut it unasked. On a feature branch that already
+carries unrelated work, the failure is stacking this task on somebody's
+half-finished one. Two Watsons need two worktrees because one working tree
+holds one branch, so two runs sharing it overwrite each other's edits.
+
 **Since 2026-10-05 the human creates every worktree.** Mike's rule is "i create
 worktrees, never the agents", because agent-made worktrees leave orphan trees.
 workbench-core's provisioning guard denies the Agent tool's
@@ -72,6 +80,36 @@ The Index is limited."
   throughput bounded deliberately.
 - **Worktrees stay the human's** in both lanes, for the reason in the workspace
   section above. Same-repo parallel work waits for the worktrees he creates.
+- **A short unit never waits behind a long one.** On 2026-11-09 two small UI
+  edits went by SendMessage to a Watson already running an open-ended
+  memory-leak investigation, and waited about 10 minutes behind it. So the
+  short unit runs first or gets a worktree, new work gets its own dispatch,
+  and an investigation and a bounded change never share a brief.
+
+## Why the full suite runs once, last
+
+In the same incident, every investigation step ran the full serial suite, 6 to
+15 minutes each. So Watson runs only the tests he wrote and the existing tests
+that cover the files he changed, and each mutation check reruns only the test
+that guards it.
+
+Direct-mode work reaches no CI before a commit, so that left nobody running the
+full suite on it. A full run inside Holmes's review would come back on every
+review round. So the full suite is one final Holmes run, dispatched with a
+`Goal:` that begins `Final suite run:` after every review concern is addressed,
+and before the commit or push question goes to Mike.
+
+An Index-mode pull request gets no such Holmes run. CI already runs the full
+suite on the pull request, in the repo's own toolchain, and Holmes's step 4c
+reads its result. A Holmes run there would duplicate CI in a scratch clone whose
+toolchain may not match.
+
+The agents' own rules limit their runs, but the orchestrator writes the briefs.
+A brief that asks for "the suite passes", or an orchestrator that runs the full
+suite to check a criterion, puts the slow run back. A vault note from
+2026-08-01 already said not to pad briefs with full-suite runs, and it did not
+hold. So the timeline lives in the skill the orchestrator reads before each
+dispatch, and it filters the criteria copied from intake too.
 
 ## Why development goes to a specialist
 
@@ -90,11 +128,24 @@ and only a specialist carries the standard for choosing it.
 
 **Rule it explains:** every handoff uses the brief, read-only research included.
 
+Sub-agents have no memory of the conversation, so the brief is all a research
+run knows too. `Explore`, `Plan`, and `general-purpose` are generic in
+*destination* only: the brief governs them exactly as it governs a Watson build.
+
 That is load-bearing rather than tidy: it is exactly what lets the companion
 gate stop guessing whether a dispatch is code work. A template that applied only
 to work ending in a diff would need someone — a hook, or you at speed — to
 classify each prompt first, and that classification is the part that never
 worked. The measurements are in the gate section below.
+
+## Why agent work products never go through `gh`
+
+**Rule it explains:** *Action routing*, question 1, in `SKILL.md` — a review,
+acceptance criteria, a status move, or an agent comment goes through a
+dispatched agent, never through `gh`.
+
+`gh` acts under the user's identity, and a Claude-authored verdict posted
+under the user's identity forges the review gate.
 
 ## Why `Goal:` is the one bounded slot
 
@@ -220,6 +271,15 @@ Three consequences follow from where the criteria come from.
 
 The gate checks the header's presence and nothing inside it, for the reason in
 the gate section below.
+
+## Why a returned brief is re-dispatched, never restarted
+
+**Rule it explains:** *When a brief comes back* in `SKILL.md` — answer the
+questions, then send the updated brief to the waiting agent.
+
+Expect questions: they are the contract working, not an agent stalling. The
+brief was what was wrong, so a fresh agent on the old brief hits the same wall
+at full cost, and two agents then wait.
 
 ## Why the companion gate never classifies a dispatch
 

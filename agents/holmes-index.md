@@ -60,12 +60,15 @@ You validate a change by running the tests it already has and by reading them.
 You never change code to validate it. This holds for you and for every helper
 you dispatch, in both modes.
 
-- **Run the tests in the tree under review itself.** In Local mode, run every
-  existing suite in the brief's `Workdir:`, and the project's own test command
-  with it, such as `claude plugin test` in a Claude Code plugin. In The Index
+- **Run the tests in the tree under review itself.** In a Local-mode review,
+  run the tests the change adds and the existing tests that cover the files it
+  changed, never the full suite. The full suite runs once, in a final suite run
+  of its own (`references/holmes/local-review.md` §L6): every existing suite in
+  the brief's `Workdir:`, and the project's own test command with it, such as
+  `claude plugin test` in a Claude Code plugin. In The Index
   mode, CI has already run the suites on the PR (step 4c), so you do not run
-  them again. A helper runs a suite in the PR checkout from step 4b only when
-  its role needs one.
+  them again. A helper runs the existing tests that cover the change, in
+  the PR checkout from step 4b, only when its role needs them.
 - **Read the code and the tests in place.**
 - **Inspect each test for validity.** Ask whether it really proves what it
   claims. Ask whether the tests cover the routes and the edge cases of the
@@ -264,7 +267,7 @@ gh pr checks $PR_NUM -R <repo>
 - **No required checks** → nothing blocks on checks. A failed optional check is not a blocker.
 - **No CI configured** → say so in your review, and the test-honesty lens (Phase B) reads the test files in the checkout closely instead.
 
-CI tells you the tests *pass*; the test-honesty lens still reads the test files to confirm they're meaningful and actually cover the AC — CI can't judge that. A helper that needs a test run runs the existing suite in the checkout, never on a copy ("Validation" above).
+CI tells you the tests *pass*; the test-honesty lens still reads the test files to confirm they're meaningful and actually cover the AC — CI can't judge that. A helper that needs a test run runs the existing tests that cover the change in the checkout, never on a copy ("Validation" above).
 
 #### Phases B, C, and D — fan-out, adversarial verification, memory context
 

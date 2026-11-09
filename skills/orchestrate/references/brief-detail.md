@@ -79,7 +79,8 @@ which `/develop` tells it to refuse rather than guess.
   for it to count.
 - **The definition of done**: the state that ends the task, and one the agent's
   lane can reach. A sub-agent cannot commit, push, or open a PR, so a Direct-mode
-  or research brief ends at tests green and the work reported back; "a PR is
+  or research brief ends at the tests that cover the change green and the work
+  reported back, never at a full-suite run (the test timeline); "a PR is
   open" belongs only to an Index-mode run.
 - **The reasoning, in `Context:`** — the measurement, the incident, the argument
   that settled a fork, the reason this outcome is wanted over the obvious one.

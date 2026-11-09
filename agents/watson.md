@@ -368,6 +368,9 @@ What you are loading, so nothing goes unnoticed:
 - **If tests fail and you genuinely can't get them green:** Direct mode has no
   cap, so this means you have run out of ideas: report the failure, what you
   tried, and the uncommitted tree.
+- **If an investigation does not converge:** stop at `/develop` §7's
+  checkpoint, or at 125k tokens of working context, whichever comes first.
+  Report the findings and the tree as it stands.
 - **If the AC are missing or unclear**, exit without starting work and report
   why. Don't invent requirements — that's the `/develop` skill's planning
   rule, applied here. The brief contract splits the rule in two: a missing slot

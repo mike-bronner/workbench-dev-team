@@ -34,9 +34,28 @@ Agent(
              has changed.
            - AC2: The cache interface the other services call is unchanged.
            - AC3: No dependency is added.
-           Done when: Expiry is covered by tests, the suite is green, and the
+           Done when: Expiry is covered by green tests, and the
            change comes back uncommitted with a proposed commit message."
 )
+```
+
+## The final suite run
+
+Example — the same work, after every Holmes concern on it is addressed. The
+`Goal:` opens with `Final suite run:`, which tells Holmes to run the full suite
+and nothing else:
+
+```
+Workdir: /Users/mike/Developer/bar (branch: fix/cache-expiry)
+Goal: Final suite run: the full suite passes on the cache-expiry change.
+Context: Watson ran only the tests that cover the files he changed, and
+the review found nothing left open. This is the one full-suite run before
+Mike is asked to commit.
+Constraints: none
+Acceptance:
+- AC1: Every existing suite in the workdir passes, or each failing test is
+  named with whether the change plausibly caused it.
+Done when: The suite result comes back as prose.
 ```
 
 ## One task, both ways
@@ -77,9 +96,8 @@ Acceptance:
 - AC2: No request is attempted more than 5 times.
 - AC3: The public client API is unchanged.
 - AC4: No dependency is added.
-Done when: Retry timing and the attempt cap are covered by tests, the
-full suite is green, and the change comes back uncommitted with a
-proposed commit message.
+Done when: Retry timing and the attempt cap are covered by green tests,
+and the change comes back uncommitted with a proposed commit message.
 ```
 
 The scripted version pins the file, the runner, the command order, and the

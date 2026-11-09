@@ -203,23 +203,24 @@ The tier, mutation, and doc-drift rules in full: `references/testing.md`.
 - **Every new branch, field, error-path, and edge gets a discriminating test** —
   not just the happy path. A test only counts if it *fails when that specific
   behavior regresses*: cover each new conditional branch, each new field, each
-  error / absent-input path, and the boundary cases — not merely the one path
-  that demos.
+  error / absent-input path, and the boundary cases.
 - **Mutation-test your own tests.** For every test guarding a behavior, delete or
-  invert the guarded code and confirm the test **goes red**. A test that stays
-  green when its target breaks is theater: rewrite it until it discriminates.
-  **Never restore a mutation with `git checkout`, `git restore`, or
-  `git stash`:** each reverts the whole file to the last commit, erasing your
-  uncommitted work too. Confirm your final diff holds no mutation.
+  invert the guarded code, rerun only that test, never a wider set, and confirm
+  it **goes red**. A test that stays green when its target breaks is theater:
+  rewrite it until it discriminates. **Never restore a mutation with
+  `git checkout`, `git restore`, or `git stash`:** each reverts the whole file
+  to the last commit, erasing your uncommitted work too.
 - **Fail closed by default.** For every error, absent-field, or unexpected-input
   path, state the behavior explicitly and default to **fail-closed** — reject,
   throw, or refuse — never fail-open (silently proceed, swallow the error, or
   return a default that masks the problem). Then test the closed path, not just
   the open one.
 - **Use the repo's existing test framework**, never your favorite.
-- **Run the full suite, and get it green for your change.** Fix every failure
-  your change caused. A failure your change did not cause is out of scope
-  (§2): confirm it fails the same way without your change, then report it
+- **Run the tests you wrote and the existing tests that cover the files you
+  changed, never the full suite.** The full suite belongs to CI on the pull
+  request, or to Holmes's final run. Get those tests green: fix every failure
+  your change caused. A failure your change did not cause is out of scope (§2):
+  confirm it fails the same way without your change, then report it
   rather than fold a fix in.
 - **Grep the tree for every symbol or documented claim your diff changed**
   (doc-drift) — code, comments, README, docs — and fix each in the same change.
@@ -304,6 +305,9 @@ as you start on it, and follow it.
   uncommitted. Either way, report what you tried and what's failing.
 - **Need info you can't get from the repo?** Don't WebFetch, don't invent.
   Report the gap and what would unblock you.
+- **Investigation not converging?** When three hypotheses in a row are ruled
+  out with no confirmed cause, stop. Report the causes ruled out, the evidence,
+  and the next step you would take.
 - **At a fork without a clear recommendation?** Apply the Decision Protocol for
   your lane. Reaching for the protocol is not a failure; deciding a
   consequential fork unilaterally is.

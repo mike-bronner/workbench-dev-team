@@ -10,7 +10,7 @@
 # The skill loads in full on every orchestration; the reference does not load at
 # all until a rule is challenged. That saving is the whole reason the reasoning
 # moved, and it evaporates the moment an author explains a rule in place again.
-# Each of the four relocated arguments is pinned by a phrase belonging to it
+# Each relocated argument is pinned by a phrase belonging to it
 # alone: present in the reference, absent from the skill.
 #
 # One rule stated twice is the same failure in slower motion — two copies drift
@@ -59,7 +59,13 @@ check_moved "fan-out exemption"      "622 dispatches"
 check_moved "no length limit"        "proxy for prescriptiveness"
 check_moved "gate never classifies"  "barely a quarter of the cases"
 check_moved "Constraints vs Context" "the token senders reach for by default"
-report "split — all four arguments live in the reference, none in the skill" ${split[@]+"${split[@]}"}
+check_moved "default-branch case"    "never a licence to cut it unasked"
+check_moved "unrelated-work case"    "half-finished one"
+check_moved "one tree, one branch"   "overwrite each other's edits"
+check_moved "research brief"         "*destination* only"
+check_moved "gh voice"               "forges the review gate"
+check_moved "returned brief"         "hits the same wall"
+report "split — every relocated argument lives in the reference, none in the skill" ${split[@]+"${split[@]}"}
 
 # A reference nothing points at is a file nobody reads. Every section of
 # reasoning must be reachable from the rule it explains, so the count is read off

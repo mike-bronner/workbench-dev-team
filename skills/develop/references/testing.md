@@ -55,6 +55,12 @@ theater: it asserts trivia or the wrong thing. Rewrite it until it
 discriminates. This is the cheapest defense against the most common review
 rejection, tests that do not actually test.
 
+Each mutation reruns only the test that guards it, never a wider set: not the
+rest of its file, not its folder, and never the full suite. Name that one test
+to the runner, such as with a filter or a single case, so a mutation costs
+seconds rather than a suite run. When the runner cannot select one test, run
+the smallest unit it can, such as the one script that holds the test.
+
 Never restore a mutation with `git checkout`, `git restore`, or `git stash`.
 Each one reverts the whole file or tree to the last commit, and in an
 uncommitted change that erases your own work along with the mutation. Undo the
