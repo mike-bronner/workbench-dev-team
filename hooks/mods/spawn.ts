@@ -232,10 +232,44 @@ export function spawnFailedDeny(): string {
 
 export const BRIEF_SLOTS: readonly string[] = ['Workdir:', 'Goal:', 'Context:', 'Constraints:', 'Acceptance:', 'Done when:']
 
+const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
+const LABELS = BRIEF_SLOTS.map(slot => new RegExp(`^[#*_\`\\s]*${escape(slot.slice(0, -1))}[*_\`\\s]*:[*_\`]*`, 'iu'))
+const labelOf = (slot: string): RegExp => LABELS[BRIEF_SLOTS.indexOf(slot)] ?? /$^/u
+const BULLET = /^(?:[-*+]|\d+[.)]|AC\d+:)\s/iu
+
+type Block = { head: string; items: string[] }
+
+function blocksOf(prompt: string, slot: string): Block[] {
+  const lines = prompt.split('\n')
+  const label = labelOf(slot)
+  const blocks: Block[] = []
+  let current: { block: Block; indent: number } | undefined
+  for (const raw of lines) {
+    if (label.test(raw)) {
+      const head = raw.replace(label, '').trim()
+      current = { block: { head, items: head === '' ? [] : [head] }, indent: Number.POSITIVE_INFINITY }
+      blocks.push(current.block)
+      continue
+    }
+    if (LABELS.some(other => other.test(raw))) {
+      current = undefined
+      continue
+    }
+    const line = raw.trim()
+    if (current === undefined || line === '') continue
+    const indent = raw.length - raw.trimStart().length
+    const { items } = current.block
+    if (items.length === 0 || (BULLET.test(line) && indent <= current.indent)) {
+      items.push(line)
+      if (BULLET.test(line)) current.indent = indent
+    } else items[items.length - 1] += ` ${line}`
+  }
+  return blocks
+}
+
 export function missingSlotsOf(prompt: string): string[] {
-  const lines = prompt.split('\n').map(line => line.trim())
-  const missing = BRIEF_SLOTS.filter(slot => !lines.some(line => line.startsWith(slot)))
-  const context = lines.find(line => line.startsWith('Context:'))?.slice('Context:'.length).trim()
+  const missing = BRIEF_SLOTS.filter(slot => blocksOf(prompt, slot).length === 0)
+  const context = blocksOf(prompt, 'Context:')[0]?.head
   if (context !== undefined && (context === '' || /^none\.?$/i.test(context))) missing.push('Context: (it reads "none" or is empty)')
   return missing
 }
@@ -245,6 +279,82 @@ export function briefDeny(missing: readonly string[]): string {
     `🛑 Blocked: a Holmes Local-mode dispatch whose brief lacks ${missing.join(', ')}.`,
     '',
     `Brief contract (${PLUGIN}). Every Holmes Local review takes the six-slot brief: Workdir:, Goal:, Context:, Constraints:, Acceptance:, and Done when:. ` +
-      'Constraints: may read "none", and Context: may not. Nothing was spawned. Add every missing slot and dispatch again.',
+      'Constraints: carries the exact line "Run no mutation testing of any kind.", and Context: may not read "none". Nothing was spawned. Add every missing slot and dispatch again.',
   ].join('\n')
+}
+
+export const NO_MUTATION_LINE = '- Run no mutation testing of any kind.'
+
+const LEAD = /^[\s\-*+_`"'()]+/u
+const NO_MUTATION = /^run no mutation testing of any kind(?![\w-])/iu
+const EXCEPTION = /\b(?:except|but|unless|other than)\b/iu
+const MUTATION = /(?<![a-z0-9])muta[nt]/iu
+const REMOVAL = /(?<![a-z0-9])(?:(?:remov|delet|revert|restor|invert|undo|drop|disabl)\w*|comment\w*[\s-]+out\b)/iu
+const FAILURE = /(?<![a-z0-9])(?:(?:fail|brok|break|redden)\w*|(?:go|goes|going|went|gone|turn|turns|turning|turned)\s+(?:\S+\s+){0,3}?red\b)/iu
+const BANNED_SLOTS: readonly string[] = ['Goal:', 'Acceptance:', 'Done when:']
+const REPEAT_JUDGED_SLOTS: readonly string[] = ['Workdir:', 'Context:', 'Constraints:']
+const QUOTED_MAX = 200
+
+function isNoMutationLine(item: string): boolean {
+  const text = item.replace(LEAD, '').replace(/^\d+[.)]/u, '').replace(LEAD, '')
+  const match = NO_MUTATION.exec(text)
+  return match !== null && !EXCEPTION.test(text.slice(match[0].length))
+}
+
+function carriesNoMutationLine(items: readonly string[]): boolean {
+  const at = items.findIndex(isNoMutationLine)
+  return at !== -1 && !items.slice(at + 1).some(item => EXCEPTION.test(item))
+}
+
+const isBanned = (item: string): boolean => {
+  const prose = item.replace(/`[^`]*`/gu, '')
+  return MUTATION.test(prose) || (REMOVAL.test(prose) && FAILURE.test(prose))
+}
+
+export type MutationFindings = { missingSlots: string[]; lacksNoMutationLine: boolean; bannedItems: { slot: string; item: string }[] }
+
+export function mutationFindingsOf(prompt: string): MutationFindings {
+  const constraints = blocksOf(prompt, 'Constraints:')
+  const criteria = blocksOf(prompt, 'Acceptance:')
+  return {
+    missingSlots: [...(constraints.length === 0 ? ['Constraints:'] : []), ...(criteria.length === 0 ? ['Acceptance:'] : [])],
+    lacksNoMutationLine: constraints.length > 0 && !constraints.every(block => carriesNoMutationLine(block.items)),
+    bannedItems: [
+      ...BANNED_SLOTS.map(slot => [slot, blocksOf(prompt, slot)] as const),
+      ...REPEAT_JUDGED_SLOTS.map(slot => [slot, blocksOf(prompt, slot).slice(1)] as const),
+    ].flatMap(([slot, blocks]) => blocks.flatMap(block => block.items.filter(item => !isNoMutationLine(item) && isBanned(item)).map(item => ({ slot, item })))),
+  }
+}
+
+const quoted = (item: string): string => (item.length > QUOTED_MAX ? `${item.slice(0, QUOTED_MAX)}…` : item)
+
+export function mutationDeny(mode: string, findings: MutationFindings): string {
+  const fixes = [
+    ...findings.missingSlots.map(slot => `- ${slot} could not be found. Write it as a label at the start of its own line, such as "${slot}".`),
+    ...(findings.lacksNoMutationLine ? [`- A Constraints: block carries no no-mutation line. Add this exact bullet to every Constraints: block: "${NO_MUTATION_LINE}"`] : []),
+    ...findings.bannedItems.map(
+      ({ slot, item }) =>
+        `- ${slot} "${quoted(item)}" mentions mutation, or holds both a removal word and a failure word. Rephrase it to state what the test covers instead, for example "a test covers <the behavior>". ` +
+        'If the item must quote such words, as in "a test covers the GraphQL `mutation` endpoint", put them in backticks, which the gate does not read.',
+    ),
+  ]
+  return [
+    `🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`,
+    '',
+    `No-mutation rule (${PLUGIN}). The human ruled out mutation testing of any kind. Every Watson and Holmes brief carries the exact line "${NO_MUTATION_LINE.slice(2)}" in every Constraints: block, with no exception after it. No item in Goal:, Acceptance: or Done when:, or in a repeated Workdir:, Context: or Constraints: block, mentions mutation or says a test fails when something is removed. ` +
+      'Nothing was spawned. Make each fix below and dispatch again.',
+    ...fixes,
+  ].join('\n')
+}
+
+const MUTATION_GATED: Readonly<Record<string, string>> = {
+  [`${PLUGIN}:watson-direct`]: 'Watson Direct-mode',
+  [`${PLUGIN}:holmes-local`]: 'Holmes Local-mode',
+}
+
+export function mutationRefusalOf(subagentType: string, prompt: string): string | undefined {
+  const mode = MUTATION_GATED[subagentType]
+  if (mode === undefined) return undefined
+  const findings = mutationFindingsOf(prompt)
+  return findings.missingSlots.length > 0 || findings.lacksNoMutationLine || findings.bannedItems.length > 0 ? mutationDeny(mode, findings) : undefined
 }

@@ -21,8 +21,8 @@ fail-open path and put it back. In Local mode that tree is exactly what the huma
 approves. A write there is never safe, even one you undo: it can corrupt the
 tree and races any other run reading it. They validate as `agents/holmes.md` "Validation" says: run the
 existing tests in that tree, and inspect them. They write no probe script and
-copy no repository, not even into scratch, and mutation testing runs only
-through a project's own in-place runner such as `pest --mutate`. A hole no test
+copy no repository, not even into scratch, and they run no mutation testing of
+any kind: they judge test strength by reading the tests. A hole no test
 covers comes back as a finding that names the missing test, and the builder adds
 it.
 
@@ -76,8 +76,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. Validate by running the existing tests in that tree and
 reading them. Write no probe script, copy no repository, change no code, and
-trim no test file. Run mutation testing only through the project's own runner
-that mutates in place without editing a file, such as `pest --mutate`. Report a
+trim no test file. Run no mutation testing of any kind: judge test strength by
+reading the tests. Report a
 hole no test covers as a finding that names the missing test.
 PR number: <PR_NUM>   Repo: <repo>
 
@@ -135,8 +135,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. Validate by running the existing tests in that tree and
 reading them. Write no probe script, copy no repository, change no code, and
-trim no test file. Run mutation testing only through the project's own runner
-that mutates in place without editing a file, such as `pest --mutate`. Report a
+trim no test file. Run no mutation testing of any kind: judge test strength by
+reading the tests. Report a
 hole no test covers as a finding that names the missing test.
 A reviewer claims the following BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
@@ -160,8 +160,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. Validate by running the existing tests in that tree and
 reading them. Write no probe script, copy no repository, change no code, and
-trim no test file. Run mutation testing only through the project's own runner
-that mutates in place without editing a file, such as `pest --mutate`. Report a
+trim no test file. Run no mutation testing of any kind: judge test strength by
+reading the tests. Report a
 hole no test covers as a finding that names the missing test.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
@@ -178,8 +178,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. Validate by running the existing tests in that tree and
 reading them. Write no probe script, copy no repository, change no code, and
-trim no test file. Run mutation testing only through the project's own runner
-that mutates in place without editing a file, such as `pest --mutate`. Report a
+trim no test file. Run no mutation testing of any kind: judge test strength by
+reading the tests. Report a
 hole no test covers as a finding that names the missing test.
 A reviewer claims the following SECURITY BLOCKER:
   claim: <claim>   location: <file:line>   evidence: <evidence>
@@ -200,8 +200,8 @@ Checkout (already prepared, do not re-clone): <checkout path>
 Never change a file in the tree under review, not even for a moment and not
 even to undo it after. Validate by running the existing tests in that tree and
 reading them. Write no probe script, copy no repository, change no code, and
-trim no test file. Run mutation testing only through the project's own runner
-that mutates in place without editing a file, such as `pest --mutate`. Report a
+trim no test file. Run no mutation testing of any kind: judge test strength by
+reading the tests. Report a
 hole no test covers as a finding that names the missing test.
 Claim: <claim>   location: <file:line>   evidence: <evidence>
 

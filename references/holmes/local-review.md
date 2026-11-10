@@ -284,8 +284,8 @@ to judge whether they mean anything.
 "Validation"). Run the covering tests in the `Workdir:`, read the tests, and
 judge whether each one proves what it claims and whether they cover the routes
 and the edge cases. Write no probe script, copy no repository, and trim no test
-file to run a single test. Mutation testing runs only through the project's own
-runner that mutates in place without editing a file, such as `pest --mutate`.
+file to run a single test. Run no mutation testing of any kind: judge test
+strength by reading the tests.
 A suspected hole that no test covers is a finding that names the missing test,
 and the builder adds it.
 
@@ -338,9 +338,8 @@ and no formatter or linter run with a write flag. That holds even for a moment:
 a file you rename and rename back still changes the tree the human approves, and
 races any other run reading it. Validate by running the existing tests in this
 directory and reading them. Write no probe script, copy no repository, and trim
-no test file, not even in scratch. Run mutation testing only through the
-project's own runner that mutates in place without editing a file, such as
-pest --mutate. Report a hole no test covers as a finding that names the missing
+no test file, not even in scratch. Run no mutation testing of any kind: judge
+test strength by reading the tests. Report a hole no test covers as a finding that names the missing
 test. A PreToolUse hook refuses writes to the working tree, and that
 denial is final -- report it, never work around it.
 ```

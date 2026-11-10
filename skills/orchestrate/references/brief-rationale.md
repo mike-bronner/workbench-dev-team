@@ -90,8 +90,7 @@ The Index is limited."
 
 In the same incident, every investigation step ran the full serial suite, 6 to
 15 minutes each. So Watson runs only the tests he wrote and the existing tests
-that cover the files he changed, and each mutation check reruns only the test
-that guards it.
+that cover the files he changed.
 
 Direct-mode work reaches no CI before a commit, so that left nobody running the
 full suite on it. A full run inside Holmes's review would come back on every
@@ -234,6 +233,10 @@ beyond what the repo already states, so "none" there is a true answer. A task
 always has a reason for existing, so "none" there is never true — and a "none"
 the receiver accepts becomes the token senders reach for by default, which
 reproduces the bare instruction the whole template exists to kill.
+
+A Watson or Holmes brief is the one exception: its `Constraints:` always
+carries the no-mutation line, because the human ruled that no mutation
+testing runs.
 
 The pair was written the other way round once, which is why
 `agents/lint-brief-contract.sh` greps for both halves and fails on a flip.

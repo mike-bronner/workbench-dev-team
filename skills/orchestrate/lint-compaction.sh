@@ -276,7 +276,8 @@ phrase|orchestrate|range: origin/<base>...HEAD, pr: <n>)`. First check out the P
 phrase|orchestrate|Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose
 phrase|orchestrate|Never unwind commits to fake an uncommitted tree
 phrase|develop|the existing tests that cover the files you changed, never the full suite.**
-phrase|develop|rerun only that test, never a wider set
+phrase|develop|**Run no mutation testing of any kind.**
+phrase|orchestrate|The dev-team mod's no-mutation gate refuses one without it.
 phrase|develop|**Investigation not converging?** When three hypotheses in a row are ruled out with no confirmed cause, stop.
 EOF
 for gone in 'also through a script' 'One test file, a filter, or one case still runs'; do

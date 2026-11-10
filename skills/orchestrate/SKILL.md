@@ -230,7 +230,7 @@ Context: <prose: why the task exists, and what the agent cannot derive from
          the working directory. As long as it needs to be.>
 Constraints:
 - <one hard limit, and the reason for it>
-- <one per bullet, or "none">
+- <one per bullet>
 Acceptance:
 - AC1: <one condition someone other than you can check without asking>
 - AC2: <one per bullet>
@@ -245,14 +245,17 @@ Each slot's full rule, and what a brief must carry:
   is an investigation or a bounded change, never both. Background that will
   not fit moves to `Context:`. Why: `references/brief-rationale.md`.
 - **`Context:`** — unbounded. It may not read "none", though `Constraints:`
-  may, and it carries at least one sentence on why the task exists. Why:
-  `references/brief-rationale.md`.
+  may outside Watson and Holmes, and it carries at least one sentence on why
+  the task exists. Why: `references/brief-rationale.md`.
 - **`Constraints:`** — a limit on a database names the category, never one
-  activity.
+  activity. Watson and Holmes briefs carry the exact line "Run no mutation
+  testing of any kind." The dev-team mod's no-mutation gate refuses
+  one without it.
 - **`Acceptance:`** — required. Number the criteria. Each names a result,
   never a method. When this session ran `/workbench-core:intake`, copy its
   criteria here, minus any that asks for a test run outside the test timeline
-  (above). Why: `references/brief-rationale.md`.
+  (above). Why: `references/brief-rationale.md`. The no-mutation ban on
+  its items: `references/brief-detail.md`.
 - **`Done when:`** — where the task stops, such as the change handed back
   uncommitted, not what the result must satisfy.
 

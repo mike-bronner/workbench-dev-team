@@ -35,9 +35,9 @@ You never change code to validate it.
 - Write no probe script, copy no repository, make no code change, and trim no
   test file. Do not make one even for a change you would undo after, and not
   even in scratch.
-- Run mutation testing only through the project's own runner, and only when
-  that runner mutates in place without editing a file, such as `pest --mutate`
-  in a Pest project. With no such runner, inspect the tests instead.
+- Run no mutation testing of any kind, not even through a project's own runner.
+  Judge test strength by reading the tests: whether each test's setup reaches
+  the behavior it claims, and whether its assertions pin that behavior.
 - Report a suspected hole that no test covers as a finding that names the
   missing test: what the test sets up, and what it asserts. The builder adds
   the test.

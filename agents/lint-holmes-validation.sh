@@ -8,9 +8,7 @@
 # the project, then ruled that a reviewer never changes code to validate it: it
 # runs the existing tests in place and inspects them for validity, and a hole no
 # test covers is a finding that names the missing test, which the builder adds.
-# Mutation testing stays only through a project's own runner that mutates in
-# place without editing a file, such as `pest --mutate` (vault:
-# feedback/reviews-work-in-place-not-scratch-copies.md). The prompts used to
+# The prompts used to
 # send every lens, skeptic and panel role to "a probe on a copy in your own
 # scratch folder", and the reviewers did exactly that.
 #
@@ -37,10 +35,6 @@
 #     the negation ("Don't forget to probe the path");
 #   - it comes later in the sentence ("Edit the line, and do not forget to put
 #     it back").
-# The one exception is the stated Pest-style one: a mention of mutation passes
-# in a sentence that names a project's own runner or `pest --mutate`. That
-# exception covers the mutation mention only, never another topic in the same
-# sentence.
 #
 # ACCEPTED LIMITS (Mike, 2026-10-09). The topic lists are finite, so an ask
 # worded around them passes: a verb off the list (flip, replace, rewrite, stub
@@ -71,6 +65,7 @@ if ! command -v python3 >/dev/null 2>&1; then
 fi
 
 python3 - "$ROOT" <<'PY'
+import os
 import re
 import sys
 
@@ -87,7 +82,7 @@ FILES = [
 TOPIC = re.compile(
     r"\bprob(?:e|es|ed|ing)\b"
     r"|\bcop(?:y|ies|ied|ying)\b"
-    r"|\b(?P<mutation>mutat\w*)"
+    r"|\bmutat\w*"
     r"|(?<!the )(?<!this )(?<!that )(?<!'s )(?<!a )"
     r"\b(?:chang|edit|invert|delet|remov|modif|patch|alter|tweak|break|comment(?:s|ed|ing)?\s+out)\w*"
     r"(?:\s+\S+){0,3}?\s+(?:code|checks?|guard\w*|lines?|conditions?|branch\w*|source)\b",
@@ -98,7 +93,6 @@ NEGATION = re.compile(r"\b(?:no|never|not|don't|do not|nothing|nor|without|canno
 BOUNDARY = re.compile(r"[,;:]|\b(?:if|when|unless)\b", re.I)
 # A verb that turns a negation into an ask ("don't forget to probe").
 REVERSAL = re.compile(r"\b(?:forget|hesitate|fail|skip|omit|neglect)\b", re.I)
-EXCEPTION = re.compile(r"own (?:in-place )?runner|pest --mutate", re.I)
 
 MUST_FAIL = [
     # Mike's review of this lint (2026-10-09): asks the first version missed.
@@ -114,19 +108,19 @@ MUST_FAIL = [
     "At most, write one small probe script in scratch.",
     "Copy the repository into scratch and trim the test files.",
     "Mutation-test the guard: delete or invert the guarded code and confirm red.",
-    # A negation after the ask does not govern it, and the exception covers
-    # mutation only.
     "Edit the guarded line, and do not forget to put it back.",
     "Use the project's own runner, then edit the guarded line.",
     "Invert the condition and confirm the test fails.",
     # A negation that governs another clause, or that a verb reverses.
     "If no test covers the branch, invert the condition and confirm red.",
+    "Run mutation testing only through the project's own runner, and only when that runner mutates in place without editing a file, such as `pest --mutate` in a Pest project.",
+    "Mutation testing runs only through a project's own in-place runner such as `pest --mutate`.",
     "Don't forget to probe the fail-open path on a copy of the checkout.",
 ]
 MUST_PASS = [
     "Write no probe script, copy no repository, make no code change, and trim no test file.",
     "Do not make one even for a change you would undo after, and not even in scratch.",
-    "Run mutation testing only through the project's own runner, and only when that runner mutates in place without editing a file, such as `pest --mutate` in a Pest project.",
+    "Run no mutation testing of any kind, not even through a project's own runner.",
     "Report a hole no test covers as a finding that names the missing test.",
     "Never change a file in the tree under review, not even for a moment and not even to undo it after.",
     "You never change code to validate it.",
@@ -196,8 +190,6 @@ def governed(sentence, start):
 def ask(sentence):
     """The first topic word no prohibition governs, or None."""
     for m in TOPIC.finditer(sentence):
-        if m.group("mutation") and EXCEPTION.search(sentence):
-            continue
         if not governed(sentence, m.start()):
             return m.group(0)
     return None
@@ -234,11 +226,33 @@ for rel in FILES:
         missing.append("copy no repository")
     if "names the missing test" not in flat.lower():
         missing.append("a hole no test covers is a finding that names the missing test")
+    if "test strength by reading the tests" not in flat.lower():
+        missing.append("judge test strength by reading the tests")
     if missing:
         for m in missing:
             bad(f"{rel} — does not state: {m}")
     else:
         ok(f"{rel} states the rule")
+
+MUTATION = re.compile(r"\bmutat\w*", re.I)
+shipped = sorted(
+    os.path.relpath(os.path.join(d, f), ROOT)
+    for top in ("agents", "skills", "references", "commands")
+    for d, _, names in os.walk(os.path.join(ROOT, top))
+    for f in names
+    if f.endswith(".md")
+)
+asks = []
+for rel in shipped:
+    text = open(f"{ROOT}/{rel}", encoding="utf-8").read()
+    for s in sentences(text):
+        m = next((m for m in MUTATION.finditer(s) if not governed(s, m.start())), None)
+        if m:
+            asks.append((rel, m.group(0), s))
+for rel, word, s in asks:
+    bad(f"{rel} names '{word}' with no prohibition governing it: {s[:180]}")
+if not asks:
+    ok(f"no sentence in the {len(shipped)} shipped Markdown files asks for mutation testing")
 
 print()
 print(f"{passed} passed, {failed} failed")

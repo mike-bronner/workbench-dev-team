@@ -9,3 +9,5 @@ memory/
 # folder as a plugin (a --plugin-dir session). They are written per Claude Code
 # build, so they are never committed. tsconfig.json extends the tsconfig inside.
 .claude-plugin/types/
+
+node_modules/

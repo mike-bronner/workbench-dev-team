@@ -1,7 +1,7 @@
 # Testing — the §4 rules that need more than a bullet
 
 The skill's §4 states each rule. This file carries the reasons and the detail
-for three of them: the test tier, mutation testing, and the doc-drift grep.
+for three of them: the test tier, judging test strength, and the doc-drift grep.
 
 ## Write each test at the lowest tier that can prove the behavior
 
@@ -47,25 +47,15 @@ upstream line.
 higher-tier tests to a lower tier as part of another change. That is its own
 change, and the human decides it.
 
-## Mutation-test your own tests
+## Judge your tests by reading them, never by mutation
 
-For every test that guards a behavior, delete or invert the guarded code and
-confirm the test goes red. A test that stays green when its target breaks is
-theater: it asserts trivia or the wrong thing. Rewrite it until it
-discriminates. This is the cheapest defense against the most common review
-rejection, tests that do not actually test.
-
-Each mutation reruns only the test that guards it, never a wider set: not the
-rest of its file, not its folder, and never the full suite. Name that one test
-to the runner, such as with a filter or a single case, so a mutation costs
-seconds rather than a suite run. When the runner cannot select one test, run
-the smallest unit it can, such as the one script that holds the test.
-
-Never restore a mutation with `git checkout`, `git restore`, or `git stash`.
-Each one reverts the whole file or tree to the last commit, and in an
-uncommitted change that erases your own work along with the mutation. Undo the
-mutation by hand, then read your final diff and confirm no mutation is left in
-it.
+Run no mutation testing of any kind: no deleted or inverted guard, no targeted
+spot check, and no mutation runner. The human ruled it a waste of time. Judge
+each test by reading it instead. Its setup must reach the branch it claims to
+cover, and its assertions must pin that specific behavior, not trivia or the
+happy path alone. A test whose fixture never reaches the guarded path covers
+nothing: rewrite the fixture until it does. Holmes judges test strength the
+same way, by reading the tests.
 
 ## Grep for every symbol or claim your diff changed
 

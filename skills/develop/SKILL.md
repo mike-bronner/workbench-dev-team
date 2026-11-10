@@ -191,7 +191,7 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
 
 ## 4. Test
 
-The tier, mutation, and doc-drift rules in full: `references/testing.md`.
+The tier, test-strength, and doc-drift rules in full: `references/testing.md`.
 
 - **Every change gets a test.** Bug fixes get a regression test; features get
   coverage of the new behavior; refactors get tests that prove behavior didn't
@@ -201,15 +201,13 @@ The tier, mutation, and doc-drift rules in full: `references/testing.md`.
   boundary a lower tier cannot reach. This wins over upstream guidance that
   says otherwise, such as Laravel Boost's, and you state the departure.
 - **Every new branch, field, error-path, and edge gets a discriminating test** —
-  not just the happy path. A test only counts if it *fails when that specific
-  behavior regresses*: cover each new conditional branch, each new field, each
-  error / absent-input path, and the boundary cases.
-- **Mutation-test your own tests.** For every test guarding a behavior, delete or
-  invert the guarded code, rerun only that test, never a wider set, and confirm
-  it **goes red**. A test that stays green when its target breaks is theater:
-  rewrite it until it discriminates. **Never restore a mutation with
-  `git checkout`, `git restore`, or `git stash`:** each reverts the whole file
-  to the last commit, erasing your uncommitted work too.
+  not just the happy path. A test only counts if its setup reaches that
+  specific behavior and its assertions pin it: cover each new conditional
+  branch, each new field, each error / absent-input path, and the boundary
+  cases.
+- **Run no mutation testing of any kind.** Never delete or invert code to see a
+  test go red, not even as a spot check. Judge each test by reading it, as
+  Holmes does.
 - **Fail closed by default.** For every error, absent-field, or unexpected-input
   path, state the behavior explicitly and default to **fail-closed** — reject,
   throw, or refuse — never fail-open (silently proceed, swallow the error, or
@@ -229,8 +227,8 @@ The tier, mutation, and doc-drift rules in full: `references/testing.md`.
   rules.
 - **Self-review the diff before you hand it on.** Read the whole diff you are
   about to commit or report, as a reviewer would: debug output, commented-out
-  code, an unrequired comment, forgotten TODOs, leftover scaffolding, a
-  mutation you did not revert, and anything that smells like a credential.
+  code, an unrequired comment, forgotten TODOs, leftover scaffolding, and
+  anything that smells like a credential.
 
 ## 5. Commit
 

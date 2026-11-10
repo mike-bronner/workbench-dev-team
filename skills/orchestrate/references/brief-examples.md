@@ -29,6 +29,7 @@ Agent(
              and every dependency is a manual review there.
            - Do not change the shape of the cache interface. Three other
              services call it and none of them are in this repo.
+           - Run no mutation testing of any kind.
            Acceptance:
            - AC1: A cached response is not served once its upstream record
              has changed.
@@ -51,7 +52,8 @@ Goal: Final suite run: the full suite passes on the cache-expiry change.
 Context: Watson ran only the tests that cover the files he changed, and
 the review found nothing left open. This is the one full-suite run before
 Mike is asked to commit.
-Constraints: none
+Constraints:
+- Run no mutation testing of any kind.
 Acceptance:
 - AC1: Every existing suite in the workdir passes, or each failing test is
   named with whether the change plausibly caused it.
@@ -91,6 +93,7 @@ Constraints:
   all, which is worse than the failure being retried.
 - No new dependencies. The retry helpers on offer all pull a scheduler
   we would then have to keep.
+- Run no mutation testing of any kind.
 Acceptance:
 - AC1: A failed request is retried on exponential backoff, never at once.
 - AC2: No request is attempted more than 5 times.

@@ -74,11 +74,9 @@ you dispatch, in both modes.
 - **Write no probe script, copy no repository, make no code change, and trim no
   test file.** Do not make one even for a change you would undo after, and not
   even in scratch.
-- **Run mutation testing only through the project's own runner,** and only
-  when that runner mutates in place without editing a file, such as
-  `pest --mutate` in a Pest project. With no such runner, inspect the tests
-  instead, and take the builder's report as the evidence that each test can
-  fail.
+- **Run no mutation testing of any kind,** not even through a project's own
+  runner. Judge test strength by reading the tests: whether each test's setup
+  reaches the behavior it claims, and whether its assertions pin that behavior.
 - **Report a suspected hole that no test covers as a finding that names the
   missing test:** what the test sets up, and what it asserts. It is a test
   defect, routed by §4e, and the builder adds the test. Never build the proof
@@ -86,7 +84,7 @@ you dispatch, in both modes.
 
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 
-Every handoff reaches you as a **brief** of six named slots: `Workdir:`, `Goal:`, `Context:`, `Constraints:`, `Acceptance:` and `Done when:`. The dev-team mod refuses a Holmes Local dispatch that lacks a slot, or whose `Context:` reads "none".
+Every handoff reaches you as a **brief** of six named slots: `Workdir:`, `Goal:`, `Context:`, `Constraints:`, `Acceptance:` and `Done when:`. The dev-team mod refuses a Holmes Local dispatch that lacks a slot, or whose `Context:` reads "none". Your `Constraints:` always carries the exact line "Run no mutation testing of any kind.", so it never reads "none", and the mod refuses a brief without the line. Never put mutation, mutants included, or both a removal word and a failure word into one item of `Goal:`, `Acceptance:` or `Done when:`: the mod refuses that brief too.
 
 **`Workdir:` can carry a branch or worktree beside the path.** Work in the one
 named. A bare path records no workspace decision — take the tree as you find it.

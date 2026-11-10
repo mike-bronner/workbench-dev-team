@@ -77,11 +77,9 @@ you dispatch, in both modes.
 - **Write no probe script, copy no repository, make no code change, and trim no
   test file.** Do not make one even for a change you would undo after, and not
   even in scratch.
-- **Run mutation testing only through the project's own runner,** and only
-  when that runner mutates in place without editing a file, such as
-  `pest --mutate` in a Pest project. With no such runner, inspect the tests
-  instead, and take the builder's report as the evidence that each test can
-  fail.
+- **Run no mutation testing of any kind,** not even through a project's own
+  runner. Judge test strength by reading the tests: whether each test's setup
+  reaches the behavior it claims, and whether its assertions pin that behavior.
 - **Report a suspected hole that no test covers as a finding that names the
   missing test:** what the test sets up, and what it asserts. It is a test
   defect, routed by §4e, and the builder adds the test. Never build the proof
@@ -145,7 +143,8 @@ Goal: <the outcome, in terms of behavior — one or two sentences>
 Context: <prose: why the task exists, and what the agent cannot derive from
          the working directory. As long as it needs to be.>
 Constraints:
-- <one hard limit, and the reason for it — one per bullet, or "none">
+- <one hard limit, and the reason for it — one per bullet>
+- Run no mutation testing of any kind.
 Acceptance:
 - <AC1: one condition someone other than you can check — one per bullet>
 Done when: <the observable condition that ends the task>
@@ -165,10 +164,14 @@ committed-range review is the exception: on another branch the range is not the
 one the sender meant, so report that and stop. The mechanics are §L4b of the
 Local-mode reference.
 
-All six slots are required. **`Constraints:` may read "none"**, because a task
-can honestly carry no hard limit beyond what the repo already states.
-**`Context:` may not**, and it carries at least one sentence on why the task
-exists.
+All six slots are required. **`Constraints:` always carries the exact line
+"Run no mutation testing of any kind."**, so it never reads "none": the human
+ruled that no mutation testing runs, and the dev-team mod refuses a brief
+without the line. **`Context:` may not read "none" either**, and it carries at least one
+sentence on why the task exists.
+Never put mutation, mutants included, or both a removal word and a failure
+word into one item of `Goal:`, `Acceptance:` or `Done when:`: the mod refuses
+that brief too.
 
 **`Acceptance:` is the list you review against.** In Local mode it is your
 rubric (below). In The Index mode there is no brief, and **the item's acceptance

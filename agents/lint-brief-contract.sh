@@ -128,8 +128,16 @@ for file in "$DIR"/*.md; do
   # Which slot may say "none", and which may not. An accepted "none" in
   # `Context:` becomes the default token and rebuilds the bare instruction the
   # template exists to kill, so the allowance belongs to `Constraints:` alone.
-  printf '%s\n' "$section" | grep -Fq '`Constraints:` may read "none"' \
-    || missing+=("'Constraints:' is never allowed to read \"none\"")
+  case "$agent" in
+    watson*|holmes*)
+      printf '%s\n' "$section" | tr '\n' ' ' | grep -Fq '**`Constraints:` always carries the exact line "Run no mutation testing of any kind."**' \
+        || missing+=("'Constraints:' is not held to the exact no-mutation line")
+      ;;
+    *)
+      printf '%s\n' "$section" | grep -Fq '`Constraints:` may read "none"' \
+        || missing+=("'Constraints:' is never allowed to read \"none\"")
+      ;;
+  esac
   printf '%s\n' "$section" | grep -Fq '`Context:` may not' \
     || missing+=("'Context:' is not held to carrying a reason the task exists")
   printf '%s\n' "$section" | grep -Eq '`Context:`( is the one slot that)? may (be empty|read "none")' \

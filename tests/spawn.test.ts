@@ -163,10 +163,11 @@ describe('no brief check of its own — workbench-core holds the six-slot gate',
     expect(w.spawned.map(s => s.prompt)).toEqual([PARTIAL])
   })
 
-  test('a main-session Watson prompt that is no brief runs Direct mode', async ($, on) => {
+  test('a main-session Watson prompt that is no brief runs Direct mode, so the no-mutation rule judges it', async ($, on) => {
     const w = world(on)
-    await $.agent.spawn(spawnInput(T('watson'), 'fix the parser'))
-    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct')])
+    const result = (await $.agent.spawn(spawnInput(T('watson'), 'fix the parser'))) as { deny?: string }
+    expect(result.deny).toContain('🛑 Blocked: a Watson Direct-mode dispatch')
+    expect(w.spawned).toEqual([])
   })
 
   test('a complete brief that dictates method gets no hint from this module', async ($, on) => {
@@ -246,10 +247,13 @@ describe('a Holmes Local dispatch carries the six-slot brief, from any caller (C
     })
   }
 
-  test('a Context: that reads "none" is refused, and a Constraints: that reads "none" is not', async ($, on) => {
+  test('a Context: that reads "none" is refused, and a Constraints: that reads "none" passes the slot check', async ($, on) => {
     const w = world(on)
     const result = (await $.agent.spawn(spawnInput(T('holmes'), BRIEF.replace(/^Context:.*$/mu, 'Context: none'), { parentAgentId: 'agent-parent' }))) as { deny?: string }
     expect(result.deny).toContain('Context:')
+    const none = (await $.agent.spawn(spawnInput(T('holmes'), BRIEF.replace('Constraints:\n- Run no mutation testing of any kind.', 'Constraints: none')))) as { deny?: string }
+    expect(none.deny).not.toContain('brief lacks')
+    expect(none.deny).toContain('No-mutation rule (workbench-dev-team).')
     await $.agent.spawn(spawnInput(T('holmes'), BRIEF, { parentAgentId: 'agent-parent' }))
     expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-local')])
   })
@@ -258,5 +262,122 @@ describe('a Holmes Local dispatch carries the six-slot brief, from any caller (C
     const w = world(on)
     await $.agent.spawn(spawnInput(T('holmes'), 'Item ID: 9', { parentAgentId: 'agent-parent' }))
     expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-index')])
+  })
+})
+
+describe('the no-mutation gate, wired into agent.spawn', () => {
+  const NO_LINE = '- Run no mutation testing of any kind.'
+  const withConstraints = (lines: string) => BRIEF.replace(`Constraints:\n${NO_LINE}`, lines)
+  const withAcceptance = (line: string) => BRIEF.replace('- AC1: the field survives', line)
+  const denyOf = (result: unknown) => (result as { deny?: string }).deny
+
+  for (const [family, mode] of [['watson', 'Watson Direct-mode'], ['holmes', 'Holmes Local-mode']] as const) {
+    test(`a ${family} brief with no no-mutation line is refused, the refusal names the line to add, and nothing is spawned`, async ($, on) => {
+      const w = world(on)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), withConstraints('Constraints: none'))))
+      expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`)
+      expect(deny).toContain('Add this exact bullet to every Constraints: block: "- Run no mutation testing of any kind."')
+      expect(deny).not.toContain('Acceptance: "')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief with a fails-when-removed criterion is refused, and the refusal says to state what the test covers`, async ($, on) => {
+      const w = world(on)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), withAcceptance('- AC1: the test fails if the guard is removed'))))
+      expect(deny).toContain('- Acceptance: "- AC1: the test fails if the guard is removed"')
+      expect(deny).toContain('Rephrase it to state what the test covers instead')
+      expect(deny).toContain('put them in backticks, which the gate does not read')
+      expect(deny).not.toContain('Add this exact bullet to every Constraints: block:')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief with both faults names both fixes`, async ($, on) => {
+      const w = world(on)
+      const prompt = withAcceptance('- AC1: the test fails if the guard is removed').replace(`Constraints:\n${NO_LINE}`, 'Constraints: none')
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+      expect(deny).toContain('Add this exact bullet to every Constraints: block:')
+      expect(deny).toContain('- Acceptance: "- AC1: the test fails if the guard is removed"')
+      expect(w.spawned).toEqual([])
+    })
+
+    for (const slot of ['Acceptance:', 'Constraints:'] as const) {
+      test(`a ${family} brief with no findable ${slot} slot is refused for that slot, and nothing is spawned`, async ($, on) => {
+        const w = world(on)
+        const deny = denyOf(await $.agent.spawn(spawnInput(T(family), BRIEF.replace(slot, `The ${slot.slice(0, -1).toLowerCase()} list`))))
+        expect(deny?.split('\n')[0]).toBe(
+          family === 'holmes' ? `🛑 Blocked: a Holmes Local-mode dispatch whose brief lacks ${slot}.` : `🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`,
+        )
+        if (family === 'watson') expect(deny).toContain(`- ${slot} could not be found.`)
+        expect(deny).not.toContain('Add this exact bullet')
+        expect(w.spawned).toEqual([])
+      })
+    }
+
+    for (const label of ['**Acceptance**:', 'acceptance:', '**Acceptance:**'] as const) {
+      test(`a ${family} brief labelled ${JSON.stringify(label)} is read and spawned`, async ($, on) => {
+        const w = world(on)
+        const result = await $.agent.spawn(spawnInput(T(family), BRIEF.replace('Acceptance:', label)))
+        expect(denyOf(result)).toBeUndefined()
+        expect(w.spawned.map(s => s.subagentType)).toEqual([T(family === 'watson' ? 'watson-direct' : 'holmes-local')])
+      })
+    }
+
+    test(`a ${family} brief with the no-mutation line and a coverage criterion is spawned`, async ($, on) => {
+      const w = world(on)
+      const result = await $.agent.spawn(spawnInput(T(family), withAcceptance('- AC1: a test covers the dropped field')))
+      expect(denyOf(result)).toBeUndefined()
+      expect(w.spawned.map(s => s.subagentType)).toEqual([T(family === 'watson' ? 'watson-direct' : 'holmes-local')])
+    })
+
+    test(`a ${family} brief from a sub-agent caller is judged, and nothing is spawned`, async ($, on) => {
+      const w = world(on)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), withConstraints('Constraints: none'), { parentAgentId: 'agent-parent' })))
+      expect(deny).toContain('No-mutation rule (workbench-dev-team).')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief is judged with the orchestrator off`, async ($, on) => {
+      const w = world(on, { isOn: false })
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), withConstraints('Constraints: none'))))
+      expect(deny).toContain('No-mutation rule (workbench-dev-team).')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} dispatch whose routing throws is refused, never spawned unjudged`, async ($, on) => {
+      const w = world(on)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), 42 as never, { parentAgentId: 'agent-parent' })))
+      expect(deny?.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch the dev-team spawn rules could not judge.')
+      expect(w.spawned).toEqual([])
+    })
+  }
+
+  for (const [from, prompt, to] of [
+    ['watson', 'Item ID: 42', 'watson-index'],
+    ['holmes', 'Item ID: 42', 'holmes-index'],
+    ['lestrade', 'Repo sweep: mike-bronner/phpcs-rules', 'lestrade-sweep'],
+    ['lestrade', BRIEF.replace(`Constraints:\n${NO_LINE}`, 'Constraints: none'), 'lestrade'],
+  ] as const) {
+    test(`${from} with ${JSON.stringify(prompt.slice(0, 24))} carries no no-mutation line and runs ${to}`, async ($, on) => {
+      const w = world(on)
+      const result = await $.agent.spawn(spawnInput(T(from), prompt))
+      expect(denyOf(result)).toBeUndefined()
+      expect(w.spawned.map(s => s.subagentType)).toEqual([T(to)])
+    })
+  }
+
+  test('a general-purpose dispatch with a banned criterion and no line passes', async ($, on) => {
+    const w = world(on)
+    const prompt = withAcceptance('- AC1: the test fails if the guard is removed').replace(`Constraints:\n${NO_LINE}`, 'Constraints: none')
+    const result = await $.agent.spawn(spawnInput('general-purpose', prompt))
+    expect(denyOf(result)).toBeUndefined()
+    expect(w.spawned.map(s => s.subagentType)).toEqual(['general-purpose'])
+  })
+
+  test('a Lestrade brief with a fails-when-removed criterion is routed but not judged', async ($, on) => {
+    const w = world(on)
+    const prompt = withAcceptance('- AC1: the test fails if the guard is removed').replace(`Constraints:\n${NO_LINE}`, 'Constraints: none')
+    const result = await $.agent.spawn(spawnInput(T('lestrade'), prompt))
+    expect(denyOf(result)).toBeUndefined()
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('lestrade')])
   })
 })

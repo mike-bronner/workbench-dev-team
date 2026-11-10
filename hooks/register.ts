@@ -61,6 +61,7 @@ import {
   lensSpawnOf,
   missingSlotsOf,
   modeTypeOf,
+  mutationRefusalOf,
   spawnFailedDeny,
   withConfigLine,
   workdirOf,
@@ -664,8 +665,6 @@ export const register: Register = (on, options) => {
   })
 
   on('agent.spawn', async ($, e, next) => {
-    // Only the model's own Agent calls are judged, the ones core's gate sees.
-    // A plugin's $.agent.spawn is the plugin's implementation, not a handoff.
     const isModel = next.origin.plugin === 'engine'
     const isGatedCall = isModel && (await gated($, e.parentAgentId))
 
@@ -693,8 +692,6 @@ export const register: Register = (on, options) => {
       }
     }
 
-    // Nothing in this block calls next, so a failure here passes the dispatch
-    // on unchanged, and next is called once either way.
     let routed: typeof e | undefined
     let knobs: ReturnType<typeof knobsOf> = {}
     try {
@@ -711,10 +708,14 @@ export const register: Register = (on, options) => {
     } catch {
       routed = undefined
     }
+    const inputFamily = familyOf(input.subagentType)
+    if (routed === undefined && (inputFamily === 'watson' || inputFamily === 'holmes')) return { deny: spawnFailedDeny() }
     if (routed?.subagentType === LOCAL_MODE) {
       const missing = missingSlotsOf(routed.prompt)
       if (missing.length > 0) return { deny: briefDeny(missing) }
     }
+    const mutationRefusal = routed === undefined ? undefined : mutationRefusalOf(routed.subagentType, routed.prompt)
+    if (mutationRefusal !== undefined) return { deny: mutationRefusal }
     if (routed?.subagentType === DIGEST_MODE) routed = { ...routed, prompt: await withDigestNotice($, routed.prompt) }
     const spawned = routed ?? input
     const result = await next(spawned)

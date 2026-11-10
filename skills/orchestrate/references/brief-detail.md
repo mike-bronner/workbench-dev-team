@@ -39,8 +39,10 @@ asking the agent what it meant. It is where the task stops, such as the change
 handed back uncommitted, which is a different thing from what the result must
 satisfy.
 
-**`Constraints:` may read "none". `Context:` may not**, and `Context:` carries
-at least one sentence on why the task exists. The asymmetry is deliberate, and
+**`Constraints:` may read "none" in a brief to Lestrade or another agent, never
+in a Watson or Holmes brief, which carries the no-mutation line (below).
+`Context:` may not**, and `Context:` carries at least one sentence on why the
+task exists. The asymmetry is deliberate, and
 `references/brief-rationale.md` says why.
 
 Every slot is required, and every dev-team agent refuses a brief that drops one,
@@ -51,6 +53,66 @@ contract, not only a sending one.
 and write no shell command at any length. The must-omit list in `SKILL.md` is
 the whole of the limit; an earlier stated figure and why it went are in
 `references/brief-rationale.md`.
+
+## Watson and Holmes briefs carry the no-mutation line
+
+The human ruled that no mutation testing of any kind runs, so every Watson and
+Holmes brief carries this exact line as a `Constraints:` item:
+
+```
+- Run no mutation testing of any kind.
+```
+
+Case and the bullet may vary, a leading quote mark, parenthesis or backtick is
+accepted, and a reason may follow the line. No other wording counts, even one
+that says the same thing. The line does not count when except, but, unless or
+other than follows it, in the same item or in any later item of the same
+`Constraints:` block. A quoted line, led by `>`, never counts and never supplies
+a slot. Every `Constraints:` block carries the line, and a sub-bullet under
+another bullet does not count.
+
+Never put mutation, mutants included, or both a removal word and a failure word
+into one item of a judged block. A sub-bullet counts with its parent item. The
+judged blocks are:
+
+- every `Goal:`, `Acceptance:` and `Done when:` block;
+- every repeated `Workdir:`, `Context:` or `Constraints:` block, that is, each
+  block after the first under its label, minus the no-mutation line itself.
+
+The first `Workdir:`, `Context:` and `Constraints:` blocks are not judged for
+this, and every `Constraints:` block is checked for the line. The removal words
+are removed, deleted, reverted, restored, inverted, undone, dropped, disabled
+and commented out, in any form. The failure words are fail, break, broke and
+redden in any form, and go or turn red in any form, with up to three words
+between.
+The rule is strict on purpose: "no existing test fails after the helper is
+removed" is refused too. State what the test covers instead: "a test covers the
+expired entry". An item that must quote such words puts them in backticks,
+which the gate does not read: "a test covers the `Delete failed` message".
+
+The dev-team mod's no-mutation gate (`hooks/mods/spawn.ts`) enforces both
+rules. It refuses a Watson Direct-mode or Holmes Local-mode brief that breaks
+either one, or whose `Constraints:` or `Acceptance:` label it cannot find, and
+names each fix. It reads a label in any case, with Markdown decoration around
+it, such as `**Acceptance**:`. The two machine-built tokens carry no brief, so
+the gate never judges them.
+
+When you quote another brief in `Context:`, lead every quoted line with `>`.
+The gate reads any other line that opens with a label as a real label.
+
+Accepted limits, because the gate matches words and reads no meaning:
+
+- Wording off these lists passes, such as "the guard is gone and the suite
+  is red".
+- Honest wording that happens to hold the words is refused, such as "a test
+  covers the dropdown that failed to load".
+- An honest later `Constraints:` item that holds "but" voids the line, such as
+  "keep the API, but rename freely".
+- A second `Context:` block is judged, so a second one that describes the rule
+  is refused. Merge it into the first, or put the words in backticks.
+- A brief quoted in `Context:` without a leading `>`, as bare lines or in a
+  fenced block, has its labels read as real ones.
+- An asterisk bullet such as `* Goal:` counts as a label.
 
 ## A database limit names the category
 

@@ -86,8 +86,8 @@ fi
 # ── 3. One validation block, in every helper skeleton ─────────────────────────
 VALIDATE='even to undo it after. Validate by running the existing tests in that tree and
 reading them. Write no probe script, copy no repository, change no code, and
-trim no test file. Run mutation testing only through the project'"'"'s own runner
-that mutates in place without editing a file, such as `pest --mutate`. Report a
+trim no test file. Run no mutation testing of any kind: judge test strength by
+reading the tests. Report a
 hole no test covers as a finding that names the missing test.'
 skeletons="$(grep -c '^Checkout (' "$PHASES")"
 blocks="$(python3 -c 'import sys; print(open(sys.argv[1]).read().count(sys.argv[2]))' "$PHASES" "$VALIDATE")"

@@ -72,7 +72,8 @@ Goal: <the outcome, in terms of behavior — one or two sentences>
 Context: <prose: why the task exists, and what the agent cannot derive from
          the working directory. As long as it needs to be.>
 Constraints:
-- <one hard limit, and the reason for it — one per bullet, or "none">
+- <one hard limit, and the reason for it — one per bullet>
+- Run no mutation testing of any kind.
 Acceptance:
 - <AC1: one condition someone other than you can check — one per bullet>
 Done when: <the observable condition that ends the task>
@@ -86,10 +87,14 @@ human picks branches and creates worktrees.
 Index mode is a separate path with no brief: its pipeline creates its own
 branch inside its own scratch clone (step 5), never in the human's tree.
 
-All six slots are required. **`Constraints:` may read "none"**, because a task
-can honestly carry no hard limit beyond what the repo already states.
-**`Context:` may not**, and it carries at least one sentence on why the task
-exists.
+All six slots are required. **`Constraints:` always carries the exact line
+"Run no mutation testing of any kind."**, so it never reads "none": the human
+ruled that no mutation testing runs, and the dev-team mod refuses a brief
+without the line. **`Context:` may not read "none" either**, and it carries at least one
+sentence on why the task exists.
+Never put mutation, mutants included, or both a removal word and a failure
+word into one item of `Goal:`, `Acceptance:` or `Done when:`: the mod refuses
+that brief too.
 
 **`Acceptance:` is the list you grade against.** Grade every fork's options
 against each criterion, as `/develop`'s Decision Protocol says, and close your
