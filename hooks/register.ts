@@ -110,9 +110,9 @@ async function runOf($: EngineInterface, agentId: string | undefined): Promise<R
     const { value: type } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId })
     return isDevTeamType(type) && type !== undefined ? { type, key: agentId } : undefined
   }
-  if ((await $.workbench.callerLane({})) !== 'top-level-agent') return undefined
   const type = await $.env.get('CLAUDE_CODE_AGENT')
-  return isDevTeamType(type) && type !== undefined ? { type, key: 'run' } : undefined
+  if (!isDevTeamType(type) || type === undefined) return undefined
+  return (await $.workbench.callerLane({})) === 'top-level-agent' ? { type, key: 'run' } : undefined
 }
 
 // The type of the loop a spawn happens in: the top-level `--agent` type, or

@@ -612,11 +612,22 @@ describe('verdict guard — wired into tool.call', () => {
     expect(reached(w, MEM('write'))).toBe(1)
   })
 
-  test('when the mod cannot tell which agent called, the call passes and the gap is logged', async ($, on) => {
-    const w = world(on, { lane: () => new Error('lane unknown') })
+  test('when the mod cannot tell which Holmes run called, the call passes and the gap is logged', async ($, on) => {
+    const w = world(on, { lane: () => new Error('lane unknown'), env: { CLAUDE_CODE_AGENT: T('holmes-index') } })
     expect(await denyOf($ as never, MEM('search'), { query: 'x', folder: 'feedback' })).toBeUndefined()
     expect(w.shown.some(line => line.includes('could not tell which agent made a call'))).toBe(true)
   })
+
+  for (const [name, env] of [
+    ['no agent type', {}],
+    ['a type outside the dev-team', { CLAUDE_CODE_AGENT: 'general-purpose' }],
+  ] as const) {
+    test(`a call with ${name} passes quietly when the lane cannot be read`, async ($, on) => {
+      const w = world(on, { lane: () => new Error('lane unknown'), env })
+      expect(await denyOf($ as never, MEM('search'), { query: 'x', folder: 'feedback' })).toBeUndefined()
+      expect(w.shown.some(line => line.includes('could not tell which agent made a call'))).toBe(false)
+    })
+  }
 
   test("another agent's board write is not judged", async ($, on) => {
     const w = world(on, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('watson-index') } })
