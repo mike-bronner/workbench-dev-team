@@ -113,7 +113,7 @@ Done when: <the observable condition that ends the task>
 named. A bare path records no workspace decision — take the tree as you find it.
 If the work seems to need a branch or worktree that the brief did not name,
 create neither and switch to neither. Name the need in your report, because the
-human picks branches and creates worktrees.
+human picks branches, and only the orchestrator or the human creates a worktree.
 Index mode is a separate path with no brief: its pipeline creates its own
 branch inside its own scratch clone (step 5), never in the human's tree.
 
@@ -217,6 +217,23 @@ claim, and no board state to protect.
    commit back (below).
 
 That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
+
+**A unit worktree is your whole workspace.** When `Workdir:` names a parallel
+unit's worktree, the orchestrator made it for this brief alone. Change and test
+the repo only inside it, never in the project tree it came from or in another
+unit's tree.
+
+- **You provision nothing.** Create or remove no worktree, branch or database.
+  workbench-core's provisioning guard refuses a sub-agent's worktree and
+  database lines, and its deletion of a unit branch. Report a need for one to
+  the orchestrator.
+- **You commit nothing.** The orchestrator commits the unit in its own tree
+  after review, and merges it. Hand the tree back uncommitted, as below.
+- **Use the unit's own test database**, which the brief's `Context:` names,
+  never the project tree's. When the brief says the name is long, set
+  `TEST_DB_DATABASE` to it in the worktree's local, untracked settings, never
+  in a tracked file. If the database is missing, or a test run reaches another
+  database, stop and report it.
 
 **Direct mode ends in an uncommitted working tree. You do not commit, merge, or
 push.** You are a sub-agent. workbench-core's commit guard refuses your commit

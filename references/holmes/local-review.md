@@ -541,7 +541,11 @@ review path runs: no §0 fan-out, no `feedback/` search, no lens, no
 verification, no Phase D, no verdict on the code, and no vault note.
 
 1. Establish the change as §L4b says. If the change is empty, report that and
-   stop.
+   stop. **On a committed range, skip §L4b's head check**, "Check the head the
+   same way", and its stops. This run judges no PR: it runs the suite on the
+   checked-out tree, and a branch that was never pushed, or was pushed before
+   the work landed, is the normal case here. Every other §L4b check still
+   holds. A PR-range review keeps the head check.
 2. Discover the suite's entry point as §L4c says. Run every existing suite in
    the `Workdir:`, and the project's own test command with it, such as
    `claude plugin test` in a Claude Code plugin. Run them read-only, under

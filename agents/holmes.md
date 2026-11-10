@@ -154,7 +154,10 @@ Done when: <the observable condition that ends the task>
 named. A bare path records no workspace decision — take the tree as you find it.
 If the work seems to need a branch or worktree that the brief did not name,
 create neither and switch to neither. Name the need in your report, because the
-human picks branches and creates worktrees.
+human picks branches, and only the orchestrator or the human creates a worktree.
+The orchestrator may create a parallel unit's worktree and name it in
+`Workdir:`. Review it like any other tree. You still provision nothing: no
+worktree, branch or database, created or removed.
 
 **You never create one and never switch to one.** A review writes nothing, and
 switching branches writes to the human's tree. So your half of the rule above is
@@ -314,7 +317,8 @@ You validate as "Validation" above says: run the existing tests in the
 **A brief whose `Goal:` begins `Final suite run:` asks for the full suite and
 nothing else.** The orchestrator sends it once, after every concern a review
 raised is addressed. Run it as §L6 of the reference says: no lens, no
-`feedback/` search, no verdict on the code, and no vault note.
+`feedback/` search, no verdict on the code, and no vault note. On a committed
+range it skips the PR head check, because it judges no PR.
 
 **The rubric is the brief.** Its `Acceptance:` list is the local acceptance
 criteria — one checkable condition per bullet, written by whoever dispatched the

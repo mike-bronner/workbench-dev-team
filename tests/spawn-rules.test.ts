@@ -103,6 +103,7 @@ describe('the workspace check — a bare Workdir on a default branch asks for a 
     'Workdir: /tmp/repo (branch: main, Mike chose to work on main)',
     'Workdir: /tmp/repo (branch: fix/x)',
     'Workdir: /tmp/repo (worktree: /tmp/repo-wt)',
+    'Workdir: /Users/tester/Developer/worktrees/repo/decoder (worktree: decoder, branch: unit/decoder)',
   ]) {
     test(`${JSON.stringify(workdir)} passes, and git is not asked`, async ($, on) => {
       const w = world(on, { run: onBranch('main') })
@@ -118,6 +119,26 @@ describe('the workspace check — a bare Workdir on a default branch asks for a 
     const result = (await $.agent.spawn(spawnInput(T('watson'), 'Workdir: /tmp/repo\nfix the parser'))) as Spawned
     expect(result.deny).toContain('onto main, with no branch recorded')
     expect(w.spawned).toEqual([])
+  })
+
+  const UNIT = '/Users/tester/Developer/worktrees/repo/decoder'
+  const byPath =
+    (branches: Record<string, string>) =>
+    (argv: readonly string[]): RunAnswer | undefined =>
+      argv[0] === 'git' && argv[2] in branches ? { exitCode: 0, stdout: `${branches[argv[2]]}\n`, stderr: '' } : undefined
+
+  test('a bare Workdir on a ledger unit worktree passes on its unit branch, while the project tree on main is still refused', async ($, on) => {
+    const w = world(on, { run: byPath({ [UNIT]: 'unit/decoder', '/tmp/repo': 'main' }) })
+    const unit = (await $.agent.spawn(spawnInput(T('watson'), BRIEF.replace('Workdir: /tmp/repo', `Workdir: ${UNIT}`)))) as Spawned
+    expect(unit.deny).toBeUndefined()
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct')])
+    const project = (await $.agent.spawn(spawnInput(T('watson'), BRIEF))) as Spawned
+    expect(project.deny).toContain('onto main, with no branch recorded')
+    expect(w.runs).toEqual([
+      ['git', '-C', UNIT, 'symbolic-ref', '--quiet', '--short', 'HEAD'],
+      ['git', '-C', '/tmp/repo', 'symbolic-ref', '--quiet', '--short', 'HEAD'],
+    ])
+    expect(w.spawned).toHaveLength(1)
   })
 
   test('a feature branch passes', async ($, on) => {

@@ -469,6 +469,15 @@ grep -Fq '| Review a PR with no board item, or on an ungoverned repo | **Holmes*
   || range+=("the team's modes table no longer routes an off-board PR to Holmes Local mode")
 grep -Fq '**Holmes'"'"'s Local mode also reviews a committed range.**' "$ORCH" \
   || range+=("the team's modes no longer says Local mode reviews a committed range")
+l6_flat="$(section '^## §L6' "$LOCAL" | tr '\n' ' ' | tr -s ' ')"
+printf '%s' "$l6_flat" | grep -Fq '**On a committed range, skip §L4b'"'"'s head check**' \
+  || range+=("§L6 no longer skips the PR head check, so a final suite run on a landed, unpushed range stops before the suite")
+printf '%s' "$l6_flat" | grep -Fq 'A PR-range review keeps the head check.' \
+  || range+=("§L6 no longer keeps the head check for a PR-range review")
+for f in "$HOLMES" "$DIR/holmes-local.md"; do
+  grep -Fq 'range it skips the PR head check, because it judges no PR.' "$f" \
+    || range+=("$(basename "$f") no longer says a final suite run on a range skips the PR head check")
+done
 report "range — Local mode reviews a named committed range, never an unwound one" ${range[@]+"${range[@]}"}
 
 echo

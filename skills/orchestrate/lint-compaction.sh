@@ -247,7 +247,9 @@ section|orchestrate|### Passing a gh body
 section|orchestrate|## The brief
 section|orchestrate|### Must omit
 section|orchestrate|### When a brief comes back
-phrase|orchestrate|same-repo units run one at a time, the short unit first.
+phrase|orchestrate|Units that share files run one at a time, the short unit first.
+phrase|orchestrate|land it with `git merge --no-ff` on the feature branch, never a cherry-pick, rebase or reset
+phrase|orchestrate|A merge into the default branch and every push still ask the human.
 phrase|orchestrate|Never merge two units into one brief
 phrase|orchestrate|**New work gets its own dispatch.** Never SendMessage new work to a running agent
 phrase|orchestrate|A brief is an investigation or a bounded change, never both.
@@ -270,6 +272,7 @@ phrase|orchestrate|**Refused** — a slot is missing
 phrase|orchestrate|**Questions** — every slot is there
 phrase|orchestrate|Never start a fresh agent on the old brief
 phrase|orchestrate|A refusal means the rule worked. Report it, then re-dispatch.
+phrase|orchestrate|Never route around a gate — only the human lifts one.
 phrase|orchestrate|or a PR with no board item, reviewed as its committed range.
 phrase|orchestrate|**Holmes** Local mode on the PR branch's committed range
 phrase|orchestrate|range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require
@@ -315,7 +318,8 @@ fi
 section="$(awk '/^## Dispatch in parallel/{f=1;next} f && /^## /{exit} f' "$SKILL" | tr '\n' ' ')"
 for phrase in 'Dispatch every independent unit at once' 'Never serialize out of habit' \
               'Local work has no count cap' 'one Watson per' 'every Index-mode cap stays' \
-              'Never create a worktree'; do
+              'Only for units you dispatched' 'commit each in its own tree' \
+              'remove its worktree and database'; do
   printf '%s' "$section" | grep -Fq "$phrase" || parallel+=("the parallel rule no longer says '$phrase'")
 done
 report "parallel — independent units go out at once, local work has no count cap" ${parallel[@]+"${parallel[@]}"}

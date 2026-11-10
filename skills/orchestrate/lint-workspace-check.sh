@@ -61,9 +61,7 @@ printf '%s' "$section" | grep -Fq 'feature branch already carrying unrelated wor
   || cases+=("no case for a feature branch already carrying somebody else's work")
 printf '%s' "$section" | grep -Fq 'Inside a worktree' \
   || cases+=("no case for a worktree that is not the one meant for this task")
-printf '%s' "$section" | grep -Fq 'dispatch one Watson per worktree' \
-  || cases+=("the two-Watsons worktree rule is not stated here, where its counterweight is")
-report "cases — all three workspace cases, plus the two-Watsons worktree rule" ${cases[@]+"${cases[@]}"}
+report "cases — all three workspace cases" ${cases[@]+"${cases[@]}"}
 
 # Asks, never forbids. The human creates branches and worktrees routinely, so a
 # section that reads as a prohibition is wrong about the policy.
@@ -88,12 +86,13 @@ printf '%s' "$section" | grep -Fq 'A bare path' \
   || slot+=("the bare-path allowance is gone: a Workdir with no branch must stay valid")
 report "slot — the answer is recorded in Workdir:, and a bare path stays valid" ${slot[@]+"${slot[@]}"}
 
-# The Agent tool's worktree isolation is named once, inside the workspace check,
-# and only as a prohibition. Since 2026-10-05 the human creates every worktree,
-# and workbench-core's provisioning guard denies an agent-made one, so a skill
-# that advises passing it sends the orchestrator straight into that deny. A
-# second mention elsewhere is the standing-rule-with-no-answer shape that caused
-# this file in the first place.
+unit=()
+printf '%s' "$section" | grep -Fq "The human picks them,** except a parallel unit's (above)." \
+  || unit+=("the section no longer names the parallel-unit exception beside 'The human picks them'")
+printf '%s' "$section" | grep -Eiq 'the human creates (every |the )?worktrees?' \
+  && unit+=("the section says the human creates worktrees, which the parallel-unit flow no longer needs")
+report "unit — a parallel unit's worktree is the orchestrator's, every other one the human's" ${unit[@]+"${unit[@]}"}
+
 iso_count="$(grep -cF 'isolation: "worktree"' "$SKILL")"
 iso=()
 [ "$iso_count" = 1 ] || iso+=("'isolation: \"worktree\"' appears $iso_count times; want exactly 1, inside the workspace check")

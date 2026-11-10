@@ -52,12 +52,17 @@ mode, Holmes's Local mode, and research. Dispatch as many sub-agents as there
 are independent units. The Index pipeline stays limited: one Watson per
 scheduled tick, and every Index-mode cap stays.
 
-**Same-repo work that could split needs worktrees, and the human creates
-them.** Propose them through the workspace check (below), then dispatch one
-Watson per worktree. Never create a worktree yourself. Until they exist,
-same-repo units run one at a time, the short unit first. Never merge two units
-into one brief: the short one then waits behind the long one. Why:
-`references/brief-rationale.md`.
+**Same-repo work splits into parallel units you provision.** A unit touches only
+its own files and needs no other unit's work. Give each a ledger worktree and
+test database, unasked, and dispatch one Watson per worktree. Units that share
+files run one at a time, the short unit first. Never merge two units into one
+brief: the short one then waits behind the long one. How:
+`references/parallel-units.md`. Why: `references/brief-rationale.md`.
+
+**Only for units you dispatched,** commit each in its own tree after review,
+land it with `git merge --no-ff` on the feature branch, never a cherry-pick,
+rebase or reset, then remove its worktree and database. A merge into the default
+branch and every push still ask the human.
 
 **New work gets its own dispatch.** Never SendMessage new work to a running
 agent: it waits behind that agent's current task. A message to a running agent
@@ -65,9 +70,9 @@ carries only answers or corrections to its own brief.
 
 ## Check the workspace before you dispatch
 
-**Branches and worktrees are wanted. The human picks them.** What is not yours
-is creating a branch unasked, or creating a worktree at all: the human creates
-worktrees.
+**Branches and worktrees are wanted. The human picks them,** except a parallel
+unit's (above). Never pass the Agent tool's `isolation: "worktree"`: the
+provisioning guard denies it.
 Before any dispatch whose work ends in a commit,
 read the target tree (`git -C <workdir> status -sb`, `git worktree list`) and ask.
 
@@ -87,11 +92,6 @@ branches, and its refusal says to ask.
 path, `Workdir: /Users/mike/Developer/foo (branch: fix/retry-backoff)` — so no
 workspace choice is made inside a sub-agent the human never saw. A bare path
 stays valid, and means there was no workspace decision to record.
-
-**Two Watsons on one repo need separate worktrees, and the human creates
-them.** Ask the same way. Once the human has created them, name each in its own
-brief and dispatch one Watson per worktree. Never pass the Agent tool's
-`isolation: "worktree"`: the provisioning guard denies an agent-made worktree.
 
 **A read-only dispatch decides no workspace.** `Explore`, `Plan`, and
 `general-purpose` write nothing, and take the tree as it stands.

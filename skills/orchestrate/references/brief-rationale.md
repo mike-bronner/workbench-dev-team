@@ -44,12 +44,34 @@ carries unrelated work, the failure is stacking this task on somebody's
 half-finished one. Two Watsons need two worktrees because one working tree
 holds one branch, so two runs sharing it overwrite each other's edits.
 
-**Since 2026-10-05 the human creates every worktree.** Mike's rule is "i create
-worktrees, never the agents", because agent-made worktrees leave orphan trees.
-workbench-core's provisioning guard denies the Agent tool's
-`isolation: "worktree"`, so the skill no longer advises it. For two Watsons on
-one repo, the orchestrator proposes the worktrees, the human creates them, and
-one Watson runs in each.
+**Since 2026-11-10 the orchestrator provisions a parallel unit's worktree.**
+From 2026-10-05 Mike's rule was "i create worktrees, never the agents", because
+agent-made worktrees leave orphan trees. That made same-repo units wait on him:
+three independent review-fix units on one pull request ran one after another,
+and the units also shared one test database, so their test runs queued on its
+lock. Mike then asked for units that run in parallel with no human step, "we
+need to get efficient and faster at delivering value", and so reopened his
+2026-09-30 decision to keep the provisioning guard unchanged.
+
+workbench-core answers the orphan-tree risk with a ledger rather than a ban.
+Its provisioning guard records each unit worktree, branch and test database
+that the main session creates, accepts a removal only for what it recorded, and
+lists leftovers at session start. Mike's rules for the flow:
+
+- The orchestrator creates, uses and cleans up only the worktrees of units it
+  dispatched.
+- Each unit gets its own test database, or its test runs queue behind the
+  other units' runs.
+- A sub-agent never commits. So the orchestrator commits each unit in its own
+  tree, after Holmes's review. No other agent writes in that tree, so the
+  commit holds that unit's work and nothing else.
+- Units land as merge commits. Mike forbids cherry-pick, rebase and reset,
+  because he never rewrites history and always adds on top.
+
+The Agent tool's `isolation: "worktree"` and `EnterWorktree` stay refused,
+because the harness picks their place and branch, so the guard cannot record
+them before they run. The steps and the accepted lines are in
+`references/parallel-units.md`.
 
 **Why the answer is recorded in `Workdir:`** rather than in a `Constraints:`
 bullet or a slot of its own: a new slot costs a release of both plugins
@@ -78,8 +100,9 @@ The Index is limited."
 - **The Index pipeline stays bounded on purpose.** Scheduled Dispatch keeps one
   new Watson per tick, and the Index-mode caps stay. Mike keeps scheduled
   throughput bounded deliberately.
-- **Worktrees stay the human's** in both lanes, for the reason in the workspace
-  section above. Same-repo parallel work waits for the worktrees he creates.
+- **Same-repo units get worktrees the orchestrator provisions**, for the reason
+  in the workspace section above. That is local work only: the Index pipeline
+  works in its own scratch clone.
 - **A short unit never waits behind a long one.** On 2026-11-09 two small UI
   edits went by SendMessage to a Watson already running an open-ended
   memory-leak investigation, and waited about 10 minutes behind it. So the

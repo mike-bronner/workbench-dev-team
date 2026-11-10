@@ -8,9 +8,12 @@ need while writing a brief's `Constraints:` and checking it is complete.
 ## The six slots, one by one
 
 **`Workdir:` is the absolute path, and the workspace when there is one to
-state** — the branch or worktree the human agreed to, written beside the path.
-A bare path carries no workspace decision and stays valid, which is most
-dispatches. The workspace check in `SKILL.md` is where that decision gets made.
+state** — the branch or worktree the human agreed to, or the worktree you
+provisioned for a parallel unit, written beside the path as
+`(worktree: <unit>, branch: <unit branch>)`. A bare path carries no workspace
+decision and stays valid, which is most dispatches. The workspace check in
+`SKILL.md` is where that decision gets made. A unit brief's `Context:` also
+names the unit's test database: `references/parallel-units.md`.
 
 **`Goal:` is the one bounded slot: one or two sentences, concise, measurable,
 achievable.** Background that will not fit is not cut, it moves to `Context:`,
