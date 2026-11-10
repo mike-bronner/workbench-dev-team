@@ -260,6 +260,9 @@ phrase|orchestrate|dispatch Holmes on a brief whose `Goal:` begins `Final suite 
 phrase|orchestrate|On an Index-mode PR, CI is that final run, and Holmes adds none.
 phrase|orchestrate|No brief slot asks for a test run outside this timeline
 phrase|orchestrate|Never run the full suite yourself.
+phrase|orchestrate|workbench-core's Full-suite gate enforces this rule
+phrase|orchestrate|Do not route around it: dispatch Holmes on a brief whose `Goal:` begins `Final suite run:`.
+phrase|orchestrate|A deny from the gate means the rule worked.
 phrase|orchestrate|minus any that asks for a test run outside the test timeline
 phrase|orchestrate|body in a quoted heredoc or a file
 phrase|orchestrate|Never write a multi-line body in double quotes
@@ -267,10 +270,18 @@ phrase|orchestrate|**Refused** — a slot is missing
 phrase|orchestrate|**Questions** — every slot is there
 phrase|orchestrate|Never start a fresh agent on the old brief
 phrase|orchestrate|A refusal means the rule worked. Report it, then re-dispatch.
+phrase|orchestrate|or a PR with no board item, reviewed as its committed range.
+phrase|orchestrate|**Holmes** Local mode on the PR branch's committed range
+phrase|orchestrate|range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require
+phrase|orchestrate|Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose
+phrase|orchestrate|Never unwind commits to fake an uncommitted tree
 phrase|develop|the existing tests that cover the files you changed, never the full suite.**
 phrase|develop|rerun only that test, never a wider set
 phrase|develop|**Investigation not converging?** When three hypotheses in a row are ruled out with no confirmed cause, stop.
 EOF
+for gone in 'also through a script' 'One test file, a filter, or one case still runs'; do
+  [ "$(phrase_end "$SKILL" "$gone")" = -1 ] || survive+=("orchestrate: '$gone' restates the Full-suite gate's scope, which the skill names rather than restates")
+done
 report "survive — develop fits inside the line whole, and orchestrate's must-survive sections and pinned phrases end inside it" ${survive[@]+"${survive[@]}"}
 
 # orchestrate's blocks past the line are exactly the listed ones, compared as

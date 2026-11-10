@@ -385,6 +385,92 @@ grep -Fq '**Holmes** Local mode' "$ORCH" \
   || routing+=("the routing table has no row sending local review work to Holmes")
 report "routing — the orchestrate skill offers and routes Local mode" ${routing[@]+"${routing[@]}"}
 
+range=()
+printf '%s' "$localsec" | grep -Fq '**A committed range** — when `Workdir:` names one beside the path' \
+  || range+=("holmes.md no longer names a committed range as a Local-mode target")
+printf '%s' "$localsec" | grep -Fq '**Never unwind commits' \
+  || range+=("holmes.md no longer forbids unwinding commits to fake an uncommitted tree")
+grep -Fq '**A committed range** — when `Workdir:` names one beside the path' "$LOCAL" \
+  || range+=("the reference no longer names a committed range as a Local-mode target")
+l4b="$(section '^## §L4b' "$LOCAL")"
+for cmd in 'git -C <workdir> diff <base>...HEAD' 'git -C <workdir> log --oneline <base>..HEAD' \
+  'git -C <workdir> rev-parse --verify <base>' 'git -C <workdir> ls-remote <remote> refs/heads/<branch>' \
+  'git -C <workdir> rev-parse HEAD' 'cd <workdir> && gh pr view <n> --json headRefOid --jq .headRefOid' \
+  'git -C "<workdir>" config --get "branch.<head>.remote"' 'git -C "<workdir>" config --get "branch.<head>.merge"' \
+  'git -C "<workdir>" ls-remote "<head-remote>" "<head-ref>"'; do
+  printf '%s' "$l4b" | grep -Fq "$cmd" \
+    || range+=("§L4b no longer establishes a committed range with '$cmd'")
+done
+printf '%s' "$l4b" | tr -s ' ' | grep -Fq '**When `Workdir:` names the PR number (`pr: <n>`), compare HEAD with the PR itself.**' \
+  || range+=("§L4b no longer compares HEAD with the PR named by the pr: field")
+grep -Fq 'range: origin/main...HEAD, pr: 15)' "$LOCAL" \
+  || range+=("the reference's target text no longer shows the pr: field")
+for f in "$HOLMES" "$DIR/holmes-local.md"; do
+  grep -Fq 'range: origin/main...HEAD, pr: 15)' "$f" \
+    || range+=("$(basename "$f") no longer shows the pr: field in the Workdir: form")
+done
+printf '%s' "$l4b" | grep -Fq 'refs/pull/<n>/head' \
+  || range+=("§L4b no longer covers a fork PR whose merge ref is refs/pull/<n>/head")
+for f in "$HOLMES" "$DIR/holmes-local.md"; do
+  tr '\n' ' ' < "$f" | grep -Fq 'A committed-range review is the exception: on another branch the range is not the one the sender meant, so report that and stop.' \
+    || range+=("$(basename "$f") no longer stops a range review on the wrong branch")
+done
+printf '%s' "$l4b" | grep -Fq '**They differ, or `ls-remote` fails or prints nothing:** stop.' \
+  || range+=("§L4b no longer stops a range review on a stale base")
+printf '%s' "$l4b" | grep -Fq 'If the base looks stale, say so' \
+  && range+=("§L4b reviews a stale base with a note instead of stopping")
+l4b_flat="$(printf '%s' "$l4b" | tr -s ' ')"
+printf '%s' "$l4b_flat" | grep -Fq '**They differ:** stop. Report a stale head with both SHAs.' \
+  || range+=("§L4b no longer stops a range review at a stale PR head")
+printf '%s' "$l4b_flat" | grep -Fq '**A lookup fails or prints nothing,** or the branch has no configured remote or merge ref: stop.' \
+  || range+=("§L4b no longer stops when the PR head cannot be looked up")
+printf '%s' "$l4b_flat" | grep -Fq 'Ask the sender to name the PR number in `Workdir:` as `pr: <n>`, which needs no tracking' \
+  || range+=("§L4b's lookup stop no longer gives a remedy that changes the outcome")
+printf '%s' "$l4b_flat" | grep -Fq 'ask the sender to update `<base>` and dispatch again' \
+  || range+=("§L4b's stale-base stop has lost its remedy")
+printf '%s' "$l4b_flat" | grep -Fq 'Ask the sender to bring the local branch to the PR'"'"'s current head' \
+  || range+=("§L4b's stale-head stop has lost its remedy")
+printf '%s' "$l4b_flat" | grep -Fq 'ask the sender to restore `gh` access to the repository instead' \
+  || range+=("§L4b's failed gh pr view stop has lost its remedy")
+printf '%s' "$l4b_flat" | grep -Eiq 'prints nothing,?\*\*[^.]*(\. )?[^.]*Go on|as for a PR from a fork|sets that upstream, for a PR from a fork too' \
+  && range+=("§L4b goes on with a head it could not check, or claims gh sets an upstream for fork PRs")
+printf '%s' "$l4b_flat" | grep -Fq 'for-each-ref' \
+  && range+=("§L4b reads the head through a remote-tracking upstream, which a refs/pull fork checkout has not got")
+printf '%s' "$l4b_flat" | grep -Fq 'ls-remote <remote> refs/heads/<head>' \
+  && range+=("§L4b looks the PR head up under its local name on the base's remote")
+first="$(printf '%s' "$l4b_flat" | grep -bo 'confirm you are in it first' | head -1 | cut -d: -f1)"
+basechk="$(printf '%s' "$l4b_flat" | grep -bo 'Check the base against its remote' | head -1 | cut -d: -f1)"
+{ [ -n "$first" ] && [ -n "$basechk" ] && [ "$first" -lt "$basechk" ]; } \
+  || range+=("§L4b no longer confirms the Workdir: branch before the base and head checks")
+printf '%s' "$l4b" | grep -Fq 'With a range, the same holds when the range has no commits' \
+  || range+=("§L4b no longer fails closed on an empty range")
+printf '%s' "$l4b" | grep -Fq 'With no range, if both the diff and the untracked list come back empty' \
+  || range+=("§L4b no longer fails closed on an empty uncommitted tree")
+printf '%s' "$l4b" | grep -Fq 'Never pick a base the brief did not name.' \
+  || range+=("§L4b no longer forbids choosing a base the brief did not name")
+reads="$(awk '/^## §L4b/{s=1;next} s && /^## /{exit} s && /^```/{f=!f;next} s && f' "$LOCAL" \
+  | grep -E '<base>|<remote>|<head|<n>' | sed -e 's/ *#.*$//' -e 's/<workdir>/\/repo/g' -e 's/<base>/origin\/main/g' \
+    -e 's/<remote>/origin/g' -e 's/<branch>/main/g' -e 's/<head-remote>/git@github.com:o\/r.git/g' \
+    -e 's/<head-ref>/refs\/pull\/15\/head/g' -e 's/<head>/fix\/x/g' -e 's/<n>/15/g')"
+[ "$(printf '%s\n' "$reads" | grep -c 'origin\|fix/x\|refs/pull\| 15 ')" -ge 10 ] \
+  || range+=("§L4b's range commands could not be read, so the guard cannot be asked about them")
+if ! refused="$(printf '%s\n' "$reads" | node "$CLASSIFY" 2>&1)"; then
+  range+=("the review guard refuses a range read §L4b documents: $refused")
+fi
+for f in "$HOLMES" "$LOCAL" "$ORCH" "$DIR/holmes-local.md"; do
+  grep -Eiq 'does not review a (committed branch|pull request|PR)|never a PR|Its only target is uncommitted|has no agent path|reviews only (the )?uncommitted|only (target|reviews?) (is )?(the )?uncommitted|uncommitted (working )?tree only|only an uncommitted' "$f" \
+    && range+=("$(basename "$f") still says Local mode reviews only an uncommitted tree")
+done
+grep -Fq '**Holmes** Local mode on the PR branch'"'"'s committed range' "$ORCH" \
+  || range+=("the routing table no longer sends an off-board PR to Holmes Local mode on its range")
+[ "$(grep -Fc 'range: origin/<base>...HEAD, pr: <n>)`' "$ORCH")" -ge 2 ] \
+  || range+=("the routing row or the modes paragraph no longer names the PR number in the Workdir: form")
+grep -Fq '| Review a PR with no board item, or on an ungoverned repo | **Holmes** (Local mode, on the committed range) |' "$ORCH" \
+  || range+=("the team's modes table no longer routes an off-board PR to Holmes Local mode")
+grep -Fq '**Holmes'"'"'s Local mode also reviews a committed range.**' "$ORCH" \
+  || range+=("the team's modes no longer says Local mode reviews a committed range")
+report "range — Local mode reviews a named committed range, never an unwound one" ${range[@]+"${range[@]}"}
+
 echo
 echo "$PASS passed, $FAIL failed"
 [ "$FAIL" -eq 0 ]

@@ -2,7 +2,7 @@
 # format is in that script's header.
 name: holmes-local
 source: holmes
-description: Sherlock Holmes in Local mode only — a six-slot brief in, a prose verdict on the uncommitted working tree out, with no Index call and no GitHub write. Dispatch workbench-dev-team:holmes, which routes a brief here.
+description: Sherlock Holmes in Local mode only — a six-slot brief in, a prose verdict on the uncommitted working tree or the committed range (and PR number) its Workdir: names out, with no Index call and no GitHub write. Dispatch workbench-dev-team:holmes, which routes a brief here.
 tools: Agent, Bash, Read, Grep, Glob, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__write, mcp__plugin_workbench-core_memory__edit, mcp__plugin_workbench-core_memory__search
 
 requires: Agent, Bash, Read, Grep, Glob
@@ -53,7 +53,7 @@ skip: ## Rules — The Index mode
 cut: The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
 cut: Workdir: <absolute path, plus the branch or worktree when one was agreed>
 cut: **You never create one and never switch to one.**
-put: Confirm which branch or worktree you are in, review the tree as you find it, and say plainly in your verdict when it is not the one `Workdir:` named. The mechanics are §L4b of the Local-mode reference.
+put: Confirm which branch or worktree you are in, review the tree as you find it, and say plainly in your verdict when it is not the one `Workdir:` named. A committed-range review is the exception: on another branch the range is not the one the sender meant, so report that and stop. The mechanics are §L4b of the Local-mode reference.
 cut: All six slots are required.
 cut: **A brief missing a required slot is not work you start.**
 cut: **Two fixed-token shapes are exempt from both rules.**

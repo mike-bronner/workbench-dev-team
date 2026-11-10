@@ -16,7 +16,7 @@ you relay — you do not implement, triage, or review in the main context.
 |---|---|---|---|
 | Inspector Lestrade | `workbench-dev-team:lestrade` | Triage — AC + WSJF; blocker sweeps | `Item ID: <n>` (triage one item) **or** `Repo sweep: <owner/repo>` (blocker sweep across a repo's open issues) |
 | Dr. Watson | `workbench-dev-team:watson` | Development | `Item ID: <n>` (board item) **or** the six-slot brief (Direct mode, ad-hoc dev) |
-| Sherlock Holmes | `workbench-dev-team:holmes` | Code review | `Item ID: <n>` (board PR review) **or** the six-slot brief (Local mode, uncommitted working tree) |
+| Sherlock Holmes | `workbench-dev-team:holmes` | Code review | `Item ID: <n>` (board PR review) **or** the six-slot brief (Local mode, uncommitted tree or committed range) |
 
 ## Agent choice — three specialists, and how to tell them apart
 
@@ -31,7 +31,8 @@ you relay — you do not implement, triage, or review in the main context.
 - **Review — Holmes.** The request judges work already written, and the answer is
   a verdict rather than a diff. Index mode when a board item and its PR exist;
   Local mode when the work is still an uncommitted tree, which is how every
-  Watson Direct-mode run comes back.
+  Watson Direct-mode run comes back, or a PR with no board item, reviewed as
+  its committed range.
 
 `/develop` §1 is where the discovery rule lives — don't restate it in a prompt,
 and don't pre-decide any of it. Why the routing turns on skill loading:
@@ -150,7 +151,11 @@ sub-agent's commit and push.
 
 No brief slot asks for a test run outside this timeline, such as "the suite
 passes": not `Acceptance:`, `Done when:`, `Constraints:`, or `Context:`. Never
-run the full suite yourself. Why: `references/brief-rationale.md`.
+run the full suite yourself. workbench-core's Full-suite gate enforces this
+rule in the main session. A deny from the gate means the rule worked. Do not
+route around it: dispatch Holmes on a brief whose `Goal:` begins
+`Final suite run:`.
+Why: `references/brief-rationale.md`.
 
 ## Action routing — Index MCP or gh CLI?
 
@@ -178,13 +183,14 @@ and how to resolve the item ID that Lestrade and Holmes's Index mode need:
 `references/governed-repos.md`. A miss on the fallback scan is inconclusive, so
 ask rather than treat the repo as ungoverned. If the repo is governed but the
 item can't be resolved, **stop and report** — never fall back to `gh` for agent
-work products.
+work products. A PR with no board item at all is not that case: the routing
+table sends it to Holmes Local mode.
 
 ### Routing table
 
 | Request | Governed repo | Ungoverned repo |
 |---|---|---|
-| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review | Wants a GitHub review artifact → review inline, post via `gh pr review` as the user, after confirming. Conversational opinion → verdict in chat, nothing posted. **Unclear which → ask.** Holmes has no path here: Local mode reviews an uncommitted tree, never a PR |
+| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review. No board item → as ungoverned | **Holmes** Local mode on the PR branch's committed range, `Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require: Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose; posting it is the user's action, after confirming. Never unwind commits to fake an uncommitted tree |
 | "review what I've changed" / "review this working tree" | **Holmes** Local mode (the six-slot brief, via the Agent tool); the verdict comes back as prose | same — Local mode makes no board call and no GitHub write, so the repo's governance is irrelevant |
 | "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
@@ -325,15 +331,25 @@ no GitHub write at all, so it is safe on any repo, governed or not. Both agents
 run the off-board mode by default and switch to Index mode only on the
 `Item ID: <n>` token, so a brief needs no mode marker.
 
-**Holmes's Local mode does not review a PR.** Its only target is uncommitted
-work. A pull request on a repo The Index does not govern has no agent path —
-see the routing table above.
+**Holmes's Local mode also reviews a committed range.** A PR on a repo The
+Index does not govern, or a PR with no board item, goes to Holmes Local mode on
+the PR branch's range. First check out the PR at its current head, as
+`gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the
+user as the gates require. A local copy of the branch can be behind the
+author's last push. Holmes checks the head against the PR itself, and he never
+switches branches or moves a ref. Then name the range and the PR number in
+`Workdir:`, as
+`Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`.
+Holmes reviews exactly that range against `Acceptance:`, and a range with no
+change fails closed. Never unwind the commits with `git reset --soft` to make an
+uncommitted tree: name the range.
 
 | The task | Dispatch |
 |---|---|
 | Implement, fix, refactor, add tests, edit docs | **Watson** (Index or Direct mode) |
 | Triage an item, write acceptance criteria | **Lestrade** |
-| Review a PR on a governed repo | **Holmes** (Index mode) |
+| Review a PR with a board item | **Holmes** (Index mode) |
+| Review a PR with no board item, or on an ungoverned repo | **Holmes** (Local mode, on the committed range) |
 | Review uncommitted local work | **Holmes** (Local mode) |
 | Find where something lives, map a codebase | `Explore` |
 | Sketch an approach before any code exists | `Plan` |

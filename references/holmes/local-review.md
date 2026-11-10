@@ -1,15 +1,30 @@
-# Local mode — reviewing an uncommitted working tree
+# Local mode — reviewing an uncommitted tree or a committed range
 
 On-demand detail for `agents/holmes.md`. Sherlock Holmes reads this file when a
 prose brief puts him in **Local mode**, and follows it end to end in place of the
 Index-mode workflow (§1–§6 of the agent prompt). **A brief whose `Goal:` begins
 `Final suite run:` is not a review:** follow §L6 and nothing else.
 
-**What Local mode reviews: the uncommitted working tree in the brief's
-`Workdir:`** — the tracked changes plus the untracked files git would not
-ignore. Nothing else. It does not review a committed branch against a base, and
-it does not review a pull request on a repo The Index does not govern. Those are
-Index mode's job or nobody's.
+**What Local mode reviews: one of two targets, and the brief's `Workdir:`
+names which.**
+
+- **The uncommitted working tree** — the default, when `Workdir:` names no
+  range. The tracked changes plus the untracked files git would not ignore.
+  This is how Watson's Direct-mode work comes back.
+- **A committed range** — when `Workdir:` names one beside the path, as in
+  `Workdir: /repo (branch: fix/x, range: origin/main...HEAD, pr: 15)`. The
+  `pr:` field names the PR number, which §L4b uses to check the head. The
+  range is `<base>...HEAD`: every commit on the checked-out branch since it
+  left the base. This is how a pull request The Index does not track gets a
+  review: a PR on a repo The Index does not govern, or a PR with no board
+  item.
+
+**Never unwind commits to make a committed branch look uncommitted.** A
+`git reset --soft` rewrites the branch under review, and the review guard
+refuses it. Name the range instead.
+
+A pull request with a board item is not a Local-mode target. Index mode
+reviews it and signs the verdict.
 
 **Three hard limits, before anything below** — the same three `agents/holmes.md`
 states, in full here.
@@ -22,7 +37,8 @@ states, in full here.
   directory, not a scratch clone. State the limit as a class, because a roster
   of forbidden spellings rots the moment tooling adds a synonym:
   - **Git is read-only.** `status`, `diff`, `log`, `show`, `ls-files`,
-    `rev-parse`, `blame` and the other reading verbs are yours. **Every other
+    `rev-parse`, `merge-base`, `blame` and the other reading verbs are yours,
+    so a committed range reads as freely as an uncommitted tree. **Every other
     git verb is forbidden** — `restore` and `stash` and `checkout` and `switch`
     and `reset` and `clean` among them. `git restore` is the most destructive
     command available to you here: it discards precisely the uncommitted change
@@ -58,8 +74,8 @@ output.
 |---|---|
 | §0 config line (`fanout`, `lensModel`) | **unchanged** — the mod adds it the same way |
 | §1 fetch the item | **replaced** — the brief is the input; there is no item |
-| §2 find the PR | **replaced** — the target is the working tree in `Workdir:` |
-| §2.5 decision request | **does not apply** — no PR, no Watson blocked-marker |
+| §2 find the PR | **replaced** — the target is the working tree or the range `Workdir:` names (§L4b) |
+| §2.5 decision request | **does not apply** — no board item, so no Watson blocked-marker to answer, even when the range belongs to a PR |
 | §3 strike count | **does not apply** — see §L3 |
 | §4a read the issue and AC | **replaced** — the rubric is the brief (§L4a) |
 | §4a.5 `feedback/` search | **unchanged** — run it before the lenses, search the workdir's repo, and check the change against every rule it confirms |
@@ -123,7 +139,16 @@ No clone, no checkout, no scratch directory. Every lens reviewer and every
 verifier reads the same absolute `Workdir:` path you were given, in place.
 
 Establish the change under review first — it is what `gh pr diff` is in Index
-mode, and it is the map every lens starts from:
+mode, and it is the map every lens starts from. **Which commands establish it
+depends on the target** (see the top of this file).
+
+**If `Workdir:` names a branch or worktree, confirm you are in it first**
+(`git -C <workdir> status -sb`), before any other check below. Do not
+switch to it — switching is a write. With no range, say so in your report
+when you are not in it. With a range, a different branch means the range is
+not the one the sender meant: report it and stop.
+
+**No range in `Workdir:` — the uncommitted working tree:**
 
 ```bash
 git -C <workdir> status --short                       # the shape of the change
@@ -134,14 +159,91 @@ git -C <workdir> ls-files --others --exclude-standard  # untracked files git wou
 Read each untracked file directly — `diff HEAD` never shows one, and a change
 that lives entirely in new files is invisible without this list.
 
-**An empty change is not a review.** If both the diff and the untracked list come
-back empty, there is nothing to review: report that, name the workdir, write no
-vault note, and stop. Fail closed rather than reviewing HEAD as though it were
-the change.
+**A range in `Workdir:`, such as `range: origin/main...HEAD` — the committed
+range.** `<base>` below is the ref before the three dots, `origin/main` here:
 
-**If `Workdir:` names a branch or worktree, confirm you are in it** (`git -C
-<workdir> status -sb`) and say so in your report when you are not. Do not switch
-to it — switching is a write.
+```bash
+git -C <workdir> rev-parse --verify <base>             # the base resolves
+git -C <workdir> log --oneline <base>..HEAD            # the commits in the range
+git -C <workdir> diff --stat <base>...HEAD             # the shape of the change
+git -C <workdir> diff <base>...HEAD                    # the change, from the merge base
+```
+
+The three-dot diff starts at the merge base, so it shows what the branch
+changed and nothing the base gained since. That holds only while the local base
+ref is current. A stale `origin/main` gives a stale merge base, and the diff
+then also shows commits the base already has.
+
+**Check the base against its remote before you review, and move no ref.** When
+the base is a remote-tracking ref, `<remote>/<branch>` such as `origin/main`,
+compare its local tip with the remote's:
+
+```bash
+git -C <workdir> rev-parse --verify <base>                  # the local tip
+git -C <workdir> ls-remote <remote> refs/heads/<branch>     # the remote tip
+```
+
+- **The two SHAs match:** the base is current. Go on.
+- **They differ, or `ls-remote` fails or prints nothing:** stop. Report a stale
+  base, with both SHAs or the error, and ask the sender to update `<base>` and
+  dispatch again. Review nothing, and write no vault note.
+
+Run no `fetch` to fix it: `fetch` moves refs, and the guard refuses it. When the
+base is a local branch or a SHA, the brief named it exactly, so there is no
+remote tip to compare.
+
+**Check the head the same way.** A PR branch that already existed locally can
+be behind the author's last push, and the range would then end at an old head.
+Index mode always reviews the PR's current push, and so must this route.
+`<head>` below is the branch `Workdir:` names, and `<n>` is the PR number its
+`pr: <n>` field names. Read the PR's current head from the first source that
+applies:
+
+**When `Workdir:` names the PR number (`pr: <n>`), compare HEAD with the PR
+itself.** `gh` has no `-C`, so run it in the workdir:
+
+```bash
+git -C <workdir> rev-parse HEAD                             # the local head
+cd <workdir> && gh pr view <n> --json headRefOid --jq .headRefOid
+```
+
+**With no PR number, ask the remote the branch is configured to pull from.**
+`gh pr checkout` writes that pair for every layout. A named remote with
+`refs/heads/<branch>` is one. A fork URL with `refs/pull/<n>/head` is another,
+and it maps to no remote-tracking ref, so read the config itself:
+
+```bash
+git -C "<workdir>" config --get "branch.<head>.remote"     # a remote name or a URL
+git -C "<workdir>" config --get "branch.<head>.merge"      # such as refs/pull/15/head
+git -C "<workdir>" ls-remote "<head-remote>" "<head-ref>"  # the PR head's remote tip
+```
+
+`<head-remote>` and `<head-ref>` are what the two `config` reads print. Compare
+the `ls-remote` SHA with `git rev-parse HEAD`.
+
+- **The two SHAs match:** the head is current. Go on.
+- **They differ:** stop. Report a stale head with both SHAs. Ask the sender to
+  bring the local branch to the PR's current head, such as by running
+  `gh pr checkout <n>` again, which fast-forwards it, or
+  `gh pr checkout <n> --force` after a force-push, and dispatch again.
+- **A lookup fails or prints nothing,** or the branch has no configured remote
+  or merge ref: stop. Report what failed. Ask the sender to name the PR number
+  in `Workdir:` as `pr: <n>`, which needs no tracking, and dispatch again. When
+  `pr: <n>` was already named and `gh pr view` failed, ask the sender to restore
+  `gh` access to the repository instead.
+
+On every stop, review nothing and write no vault note.
+
+Review exactly the range's diff. If `git status --short` also shows uncommitted
+changes, name them in the verdict as outside the range. The covering tests
+(§L4c) run on them too.
+
+**An empty change is not a review.** With no range, if both the diff and the
+untracked list come back empty, there is nothing to review. With a range, the
+same holds when the range has no commits, its diff is empty, or its base does
+not resolve. Report that, name the workdir and the range, write no vault note,
+and stop. Fail closed rather than reviewing HEAD as though it were the change.
+Never pick a base the brief did not name.
 
 ## §L4c — run the tests that cover the change
 
@@ -208,12 +310,13 @@ never to the one it was quoted from.
 |---|---|
 | `Checkout (already prepared, do not re-clone): <checkout path>` | `Working tree (the human's live directory — read only, never modify): <workdir>` |
 | `PR number: <PR_NUM>   Repo: <repo>` | the workdir, and the changed-file list from §L4b |
-| `gh pr diff <PR_NUM>` (the map, and the scope test) | `git -C <workdir> diff HEAD`, plus the untracked-file list |
+| `gh pr diff <PR_NUM>` (the map, and the scope test) | `git -C <workdir> diff HEAD`, plus the untracked-file list; with a range, `git -C <workdir> diff <base>...HEAD` |
 | `Acceptance criteria (verbatim — never amend or reinterpret)` | the brief's `Acceptance:` list, verbatim, under the same instruction |
 
 **The `scope` token stays `in-pr`.** Locally it reads as *on a line the
 uncommitted change added or modified, including any line of a new untracked
-file*; `general` still means code the change left untouched. Keeping the token is
+file*, or with a range, *on a line the range added or modified*; `general`
+still means code the change left untouched. Keeping the token is
 what lets §4e's routing matrix apply with no local fork.
 
 Add one line to **every** sub-agent prompt you dispatch, with no exception. That
@@ -225,10 +328,11 @@ writing code and never names what destroys a working tree:
 
 ```
 This is the human's live working directory, not a scratch clone. Read it, and
-never write to it. Git is read-only for you: status, diff, log, show, and
-ls-files are allowed, and every other git verb is forbidden. That includes
-restore, stash, checkout, switch, reset, and clean -- each one discards the
-uncommitted change you were sent to read. Never change a file's content,
+never write to it. Git is read-only for you: status, diff, log, show,
+merge-base, rev-parse, and ls-files are allowed, and every other git verb is
+forbidden. That includes restore, stash, checkout, switch, reset, clean, and
+fetch -- each one discards uncommitted work or moves the branch or the refs
+you were sent to read. Never change a file's content,
 location, existence, or metadata either: no chmod, no rm, no mv, no truncate,
 and no formatter or linter run with a write flag. That holds even for a moment:
 a file you rename and rename back still changes the tree the human approves, and
@@ -253,7 +357,8 @@ content from here.
 You review the working tree yourself, in place, exactly as a single reviewer:
 
 - **The evidence room is the `Workdir:` path**, established as §L4b describes —
-  `git diff HEAD` plus the untracked-file list, with each new file read directly.
+  `git diff HEAD` plus the untracked-file list, with each new file read
+  directly, or with a range, `git diff <base>...HEAD`.
   There is no checkout to read, and the no-clone rule is not suspended because
   the fan-out is off.
 - **The rubric is the brief's `Acceptance:` list**, verbatim, under §L4a.
@@ -358,9 +463,10 @@ taxonomy (`test-honesty`, `security-hardening`, `fail-open`, `correctness`,
 `doc-drift`, `nitpick`, and `escalation` for a rubric dispute). `ac-not-met`
 reads as *rubric not met*. An approve with no findings is `clean`.
 
-**The path is keyed on what a local review can supply.** There is no PR number,
-so the key is the workdir's basename, the date, the time to the second, and a
-random token.
+**The path is keyed on what a local review can supply.** A local review
+often has no PR number, and a range review's `pr:` field is optional, so the
+key never uses one. It is the workdir's basename, the date, the time to the
+second, and a random token.
 
 **The note gets a name no other note has.** Two reviews can build the same time
 key, and `write` replaces any file already at that path. A read cannot prove a
@@ -397,7 +503,7 @@ mcp__plugin_workbench-core_memory__write(
     summary: "<one line: the verdict and what drove it>"
   },
   content: "## <workdir-basename> · local review · <today>
-- **Target:** uncommitted working tree at `<workdir>` (HEAD `<short-sha>`)
+- **Target:** uncommitted working tree at `<workdir>` (HEAD `<short-sha>`), or range `<base>...HEAD` at `<workdir>` (HEAD `<short-sha>`)
 - **Rubric:** the brief's Acceptance list
 - **Verdict:** approved | changes requested | rubric dispute
 - **Categories:** <category>[, <category>]

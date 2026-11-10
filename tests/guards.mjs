@@ -109,6 +109,13 @@ for (const line of REVIEW_REFUSALS) {
 for (const line of REVIEW_PASSES) check((await reviewRefusal(bash(fill(line)))) === undefined, `passes: ${show(line)}`)
 close()
 
+section('review guard: a refused unwind names the range reads instead')
+const unwind = (await reviewRefusal(bash('git reset --soft origin/main'))) ?? ''
+for (const want of ['`git diff <base>...HEAD`', '`git log <base>..HEAD`', '`git merge-base <base> HEAD`', 'Never unwind commits']) {
+  check(unwind.includes(want), `the refusal names ${want}`)
+}
+close()
+
 section('review guard: paths are judged on the disk')
 for (const [what, call, isRefused] of [
   ['a write through a scratch link into the tree', bash(`touch ${SB}/tmp/link-into-tree/new.txt`), true],

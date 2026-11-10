@@ -759,7 +759,7 @@ export function reviewBash(parse: ShellParse, context: Context): Verdict {
           return {
             finding: {
               action: `\`git ${verb}\``,
-              reason: `\`git ${verb}\` is not one of git's read-only forms, so it is refused wherever it points. \`git restore\`, \`checkout\`, \`switch\`, \`reset\`, \`clean\`, and \`stash\` all discard exactly the uncommitted change a Local-mode review is sent to read.`,
+              reason: `\`git ${verb}\` is not one of git's read-only forms, so it is refused wherever it points. \`git restore\`, \`checkout\`, \`switch\`, \`reset\`, \`clean\`, and \`stash\` all discard uncommitted work or move the branch a Local-mode review is sent to read.`,
             },
           }
         }
@@ -866,6 +866,9 @@ export function refusalOf(finding: Finding, roots: readonly string[]): string {
     'directory, and the uncommitted change in it is the only copy of the work.\n\n' +
     'Read it instead. `git status`, `git diff HEAD`, `git ls-files --others ' +
     '--exclude-standard`, and `git show` are all allowed, and so is the test suite. ' +
+    'A committed range reads the same way: `git diff <base>...HEAD`, `git log ' +
+    '<base>..HEAD`, and `git merge-base <base> HEAD`. Never unwind commits to ' +
+    'review them as an uncommitted tree. ' +
     'Validate by running the existing tests in place and reading them. Write no ' +
     'probe script, copy no repository, and change no code, not even in scratch. ' +
     'Report a hole no test covers as a finding that names the missing test. ' +

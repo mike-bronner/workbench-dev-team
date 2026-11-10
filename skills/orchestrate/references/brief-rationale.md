@@ -111,6 +111,12 @@ suite to check a criterion, puts the slow run back. A vault note from
 hold. So the timeline lives in the skill the orchestrator reads before each
 dispatch, and it filters the criteria copied from intake too.
 
+The skill's prose alone did not hold either. It failed again in dev-team
+0.57.0, and on 2026-11-10 an orchestrator ran the full suite wrapped in a
+script. So workbench-core 0.57.0 added the Full-suite gate, which refuses that
+call in the main session, and the skill names the gate rather than restating
+its rules.
+
 ## Why development goes to a specialist
 
 **Rule it explains:** *Agent choice* in `SKILL.md` — development goes to Watson,
