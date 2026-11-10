@@ -1,28 +1,10 @@
+import type { VerdictLedger as Ledger } from '../../types'
 import { PLUGIN } from './spawn'
 
 export const INDEX_MODE = `${PLUGIN}:holmes-index`
 export const LOCAL_MODE = `${PLUGIN}:holmes-local`
 
-export type Ledger = {
-  seq: number
-  lastAgentAt: number
-  lastGetItemAt: number
-  itemId?: string
-  repo?: string
-  issue?: number
-  status?: string
-  feedbackSearches: number
-  expandable: string[]
-  pr?: number | null
-  reviewed?: 'approve' | 'request_changes'
-  escalated: boolean
-  answered: boolean
-  moved?: string
-  notFound: string[]
-  tokens: string[]
-  times: string[]
-  checkouts: string[]
-}
+export type { Ledger }
 
 export const EMPTY_LEDGER: Ledger = {
   seq: 0,

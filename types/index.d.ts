@@ -46,6 +46,27 @@ export type BoardView = { attemptedAt: number; board?: Board; boardAt?: number; 
 // request's `effort`.
 export type DevTeamEffort = 'low' | 'medium' | 'high' | 'xhigh' | 'max'
 
+export type VerdictLedger = {
+  seq: number
+  lastAgentAt: number
+  lastGetItemAt: number
+  itemId?: string
+  repo?: string
+  issue?: number
+  status?: string
+  feedbackSearches: number
+  expandable: string[]
+  pr?: number | null
+  reviewed?: 'approve' | 'request_changes'
+  escalated: boolean
+  answered: boolean
+  moved?: string
+  notFound: string[]
+  tokens: string[]
+  times: string[]
+  checkouts: string[]
+}
+
 declare module 'claude-code' {
   interface PluginState {
     'workbench-dev-team': {
@@ -68,7 +89,7 @@ declare module 'claude-code' {
       // as scratch is, so the notice comes once per run.
       overBudget: StateFamily<boolean>
       backgroundTasks: StateFamily<{ id: string; output?: string }[]>
-      verdictLedger: StateFamily<import('../hooks/mods/verdict-guard').Ledger>
+      verdictLedger: StateFamily<VerdictLedger>
       // What the runs pane draws: the newest dispatched runs, read from the
       // dispatch logs while the pane is open.
       runs: RunsView
