@@ -60,7 +60,8 @@ the whole of the limit; an earlier stated figure and why it went are in
 ## Watson and Holmes briefs carry the no-mutation line
 
 The human ruled that no mutation testing of any kind runs, so every Watson and
-Holmes brief carries this exact line as a `Constraints:` item:
+Holmes brief carries this exact line as the last item of every `Constraints:`
+block:
 
 ```
 - Run no mutation testing of any kind.
@@ -70,7 +71,8 @@ Case and the bullet may vary, a leading quote mark, parenthesis or backtick is
 accepted, and a reason may follow the line. No other wording counts, even one
 that says the same thing. The line does not count when except, but, unless or
 other than follows it, in the same item or in any later item of the same
-`Constraints:` block. A quoted line, led by `>`, never counts and never supplies
+`Constraints:` block, even when that later item is about something else. So put
+the line last. A quoted line, led by `>`, never counts and never supplies
 a slot. Every `Constraints:` block carries the line, and a sub-bullet under
 another bullet does not count.
 
@@ -96,9 +98,10 @@ which the gate does not read: "a test covers the `Delete failed` message".
 The dev-team mod's no-mutation gate (`hooks/mods/spawn.ts`) enforces both
 rules. It refuses a Watson Direct-mode or Holmes Local-mode brief that breaks
 either one, or whose `Constraints:` or `Acceptance:` label it cannot find, and
-names each fix. It reads a label in any case, with Markdown decoration around
-it, such as `**Acceptance**:`. The two machine-built tokens carry no brief, so
-the gate never judges them.
+names each fix. When a later item voids the line, the refusal quotes that item
+and says to put the line last in its block. It reads a label in any case, with
+Markdown decoration around it, such as `**Acceptance**:`. The two machine-built
+tokens carry no brief, so the gate never judges them.
 
 When you quote another brief in `Context:`, lead every quoted line with `>`.
 The gate reads any other line that opens with a label as a real label.

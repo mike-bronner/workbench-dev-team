@@ -248,9 +248,9 @@ Each slot's full rule, and what a brief must carry:
   may outside Watson and Holmes, and it carries at least one sentence on why
   the task exists. Why: `references/brief-rationale.md`.
 - **`Constraints:`** — a limit on a database names the category, never one
-  activity. Watson and Holmes briefs carry the exact line "Run no mutation
-  testing of any kind." The dev-team mod's no-mutation gate refuses
-  one without it.
+  activity. Watson and Holmes briefs end each block with the exact line "Run
+  no mutation testing of any kind." The dev-team mod's no-mutation gate
+  refuses one without it.
 - **`Acceptance:`** — required. Number the criteria. Each names a result,
   never a method. When this session ran `/workbench-core:intake`, copy its
   criteria here, minus any that asks for a test run outside the test timeline

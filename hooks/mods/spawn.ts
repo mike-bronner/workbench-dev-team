@@ -301,9 +301,9 @@ function isNoMutationLine(item: string): boolean {
   return match !== null && !EXCEPTION.test(text.slice(match[0].length))
 }
 
-function carriesNoMutationLine(items: readonly string[]): boolean {
+function voidingItemsOf(items: readonly string[]): string[] | undefined {
   const at = items.findIndex(isNoMutationLine)
-  return at !== -1 && !items.slice(at + 1).some(item => EXCEPTION.test(item))
+  return at === -1 ? undefined : items.slice(at + 1).filter(item => EXCEPTION.test(item))
 }
 
 const isBanned = (item: string): boolean => {
@@ -311,14 +311,16 @@ const isBanned = (item: string): boolean => {
   return MUTATION.test(prose) || (REMOVAL.test(prose) && FAILURE.test(prose))
 }
 
-export type MutationFindings = { missingSlots: string[]; lacksNoMutationLine: boolean; bannedItems: { slot: string; item: string }[] }
+export type MutationFindings = { missingSlots: string[]; lacksNoMutationLine: boolean; voidingItems: string[]; bannedItems: { slot: string; item: string }[] }
 
 export function mutationFindingsOf(prompt: string): MutationFindings {
   const constraints = blocksOf(prompt, 'Constraints:')
   const criteria = blocksOf(prompt, 'Acceptance:')
+  const voiding = constraints.map(block => voidingItemsOf(block.items))
   return {
     missingSlots: [...(constraints.length === 0 ? ['Constraints:'] : []), ...(criteria.length === 0 ? ['Acceptance:'] : [])],
-    lacksNoMutationLine: constraints.length > 0 && !constraints.every(block => carriesNoMutationLine(block.items)),
+    lacksNoMutationLine: voiding.includes(undefined),
+    voidingItems: voiding.flatMap(items => items ?? []),
     bannedItems: [
       ...BANNED_SLOTS.map(slot => [slot, blocksOf(prompt, slot)] as const),
       ...REPEAT_JUDGED_SLOTS.map(slot => [slot, blocksOf(prompt, slot).slice(1)] as const),
@@ -331,7 +333,12 @@ const quoted = (item: string): string => (item.length > QUOTED_MAX ? `${item.sli
 export function mutationDeny(mode: string, findings: MutationFindings): string {
   const fixes = [
     ...findings.missingSlots.map(slot => `- ${slot} could not be found. Write it as a label at the start of its own line, such as "${slot}".`),
-    ...(findings.lacksNoMutationLine ? [`- A Constraints: block carries no no-mutation line. Add this exact bullet to every Constraints: block: "${NO_MUTATION_LINE}"`] : []),
+    ...(findings.lacksNoMutationLine ? [`- A Constraints: block carries no no-mutation line. Add this exact bullet as the last item of every Constraints: block: "${NO_MUTATION_LINE}"`] : []),
+    ...findings.voidingItems.map(
+      item =>
+        `- The Constraints: item "${quoted(item)}" comes after the no-mutation line and holds except, but, unless or other than, so the gate reads it as an exception and the line does not count. ` +
+        `Put the exact line "${NO_MUTATION_LINE}" last in its Constraints: block, after every other item.`,
+    ),
     ...findings.bannedItems.map(
       ({ slot, item }) =>
         `- ${slot} "${quoted(item)}" mentions mutation, or holds both a removal word and a failure word. Rephrase it to state what the test covers instead, for example "a test covers <the behavior>". ` +
@@ -341,7 +348,7 @@ export function mutationDeny(mode: string, findings: MutationFindings): string {
   return [
     `🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`,
     '',
-    `No-mutation rule (${PLUGIN}). The human ruled out mutation testing of any kind. Every Watson and Holmes brief carries the exact line "${NO_MUTATION_LINE.slice(2)}" in every Constraints: block, with no exception after it. No item in Goal:, Acceptance: or Done when:, or in a repeated Workdir:, Context: or Constraints: block, mentions mutation or says a test fails when something is removed. ` +
+    `No-mutation rule (${PLUGIN}). The human ruled out mutation testing of any kind. Every Watson and Holmes brief carries the exact line "${NO_MUTATION_LINE.slice(2)}" as the last item of every Constraints: block, with no exception after it in that block. No item in Goal:, Acceptance: or Done when:, or in a repeated Workdir:, Context: or Constraints: block, mentions mutation or says a test fails when something is removed. ` +
       'Nothing was spawned. Make each fix below and dispatch again.',
     ...fixes,
   ].join('\n')
@@ -356,5 +363,7 @@ export function mutationRefusalOf(subagentType: string, prompt: string): string 
   const mode = MUTATION_GATED[subagentType]
   if (mode === undefined) return undefined
   const findings = mutationFindingsOf(prompt)
-  return findings.missingSlots.length > 0 || findings.lacksNoMutationLine || findings.bannedItems.length > 0 ? mutationDeny(mode, findings) : undefined
+  return findings.missingSlots.length > 0 || findings.lacksNoMutationLine || findings.voidingItems.length > 0 || findings.bannedItems.length > 0
+    ? mutationDeny(mode, findings)
+    : undefined
 }

@@ -276,7 +276,7 @@ describe('the no-mutation gate, wired into agent.spawn', () => {
       const w = world(on)
       const deny = denyOf(await $.agent.spawn(spawnInput(T(family), withConstraints('Constraints: none'))))
       expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`)
-      expect(deny).toContain('Add this exact bullet to every Constraints: block: "- Run no mutation testing of any kind."')
+      expect(deny).toContain('Add this exact bullet as the last item of every Constraints: block: "- Run no mutation testing of any kind."')
       expect(deny).not.toContain('Acceptance: "')
       expect(w.spawned).toEqual([])
     })
@@ -287,7 +287,7 @@ describe('the no-mutation gate, wired into agent.spawn', () => {
       expect(deny).toContain('- Acceptance: "- AC1: the test fails if the guard is removed"')
       expect(deny).toContain('Rephrase it to state what the test covers instead')
       expect(deny).toContain('put them in backticks, which the gate does not read')
-      expect(deny).not.toContain('Add this exact bullet to every Constraints: block:')
+      expect(deny).not.toContain('Add this exact bullet as the last item of every Constraints: block:')
       expect(w.spawned).toEqual([])
     })
 
@@ -295,9 +295,34 @@ describe('the no-mutation gate, wired into agent.spawn', () => {
       const w = world(on)
       const prompt = withAcceptance('- AC1: the test fails if the guard is removed').replace(`Constraints:\n${NO_LINE}`, 'Constraints: none')
       const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
-      expect(deny).toContain('Add this exact bullet to every Constraints: block:')
+      expect(deny).toContain('Add this exact bullet as the last item of every Constraints: block:')
       expect(deny).toContain('- Acceptance: "- AC1: the test fails if the guard is removed"')
       expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief whose line a later "unless" bullet voids is refused, the refusal quotes that bullet and says to put the line last, and nothing is spawned`, async ($, on) => {
+      const w = world(on)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), withConstraints(`Constraints:\n${NO_LINE}\n- Do not touch the cache unless it is stale.`))))
+      expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`)
+      expect(deny).toContain('- The Constraints: item "- Do not touch the cache unless it is stale." comes after the no-mutation line')
+      expect(deny).toContain('Put the exact line "- Run no mutation testing of any kind." last in its Constraints: block, after every other item.')
+      expect(deny).not.toContain('carries no no-mutation line')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief whose line carries its own exception is refused with the guidance to add the exact line`, async ($, on) => {
+      const w = world(on)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), withConstraints('Constraints:\n- Run no mutation testing of any kind unless asked.'))))
+      expect(deny).toContain('Add this exact bullet as the last item of every Constraints: block: "- Run no mutation testing of any kind."')
+      expect(deny).not.toContain('- The Constraints: item')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief with the line last, after an earlier bullet holding "unless", is spawned`, async ($, on) => {
+      const w = world(on)
+      const result = await $.agent.spawn(spawnInput(T(family), withConstraints(`Constraints:\n- Do not touch the cache unless it is stale.\n${NO_LINE}`)))
+      expect(denyOf(result)).toBeUndefined()
+      expect(w.spawned.map(s => s.subagentType)).toEqual([T(family === 'watson' ? 'watson-direct' : 'holmes-local')])
     })
 
     for (const slot of ['Acceptance:', 'Constraints:'] as const) {

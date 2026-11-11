@@ -323,7 +323,7 @@ describe('mutationFindingsOf — the exact line and the strict ban', () => {
   const NO_LINE = '- Run no mutation testing of any kind.'
   const withConstraints = (lines: string) => BRIEF.replace(`Constraints:\n${NO_LINE}`, lines)
   const withAcceptance = (line: string) => BRIEF.replace('- AC1: the field survives', line)
-  const CLEAN = { missingSlots: [], lacksNoMutationLine: false, bannedItems: [] }
+  const CLEAN = { missingSlots: [], lacksNoMutationLine: false, voidingItems: [], bannedItems: [] }
   const bannedOf = (prompt: string) => mutationFindingsOf(prompt).bannedItems
 
   for (const constraints of [
@@ -360,14 +360,46 @@ describe('mutationFindingsOf — the exact line and the strict ban', () => {
     ['has the line only as a sub-bullet under a parent bullet', withConstraints('Constraints:\n- Keep the public API: callers depend on it.\n  - Run no mutation testing of any kind.')],
     ['lacks the line, though a quoted Constraints: line in Context holds it', withConstraints('Constraints: none').replace('Context: It drops a field.', 'Context: It drops a field.\n> Constraints: Run no mutation testing of any kind.')],
     ['has a second block without the line', `${BRIEF}\nConstraints:\n- Keep the public API.`],
-    ['voids the line with a later "Except" bullet', withConstraints(`Constraints:\n${NO_LINE}\n- Except on the parser.`)],
-    ['voids the line with a later bullet holding "but"', withConstraints(`Constraints:\n${NO_LINE}\n- Keep the API, but a spot check is fine.`)],
     ['has the line only in Context', withConstraints('Constraints: none').replace('Context: It drops a field.', 'Context: It drops a field. Run no mutation testing of any kind.')],
   ] as const) {
     test(`a brief whose Constraints: ${name} lacks the exact line`, () => {
-      expect(mutationFindingsOf(prompt).lacksNoMutationLine).toBe(true)
+      expect(mutationFindingsOf(prompt)).toMatchObject({ lacksNoMutationLine: true, voidingItems: [] })
     })
   }
+
+  for (const [name, prompt, voiding] of [
+    ['a later "Except" bullet', withConstraints(`Constraints:\n${NO_LINE}\n- Except on the parser.`), ['- Except on the parser.']],
+    ['a later bullet holding "but"', withConstraints(`Constraints:\n${NO_LINE}\n- Keep the API, but a spot check is fine.`), ['- Keep the API, but a spot check is fine.']],
+    [
+      'a later, unrelated bullet holding "unless"',
+      withConstraints(`Constraints:\n${NO_LINE}\n- Keep the API stable.\n- Do not touch the cache unless it is stale.`),
+      ['- Do not touch the cache unless it is stale.'],
+    ],
+    [
+      'two later bullets holding "other than" and "except"',
+      withConstraints(`Constraints:\n${NO_LINE}\n- Use no tool other than Pest.\n- Keep the API.\n- Except on Fridays.`),
+      ['- Use no tool other than Pest.', '- Except on Fridays.'],
+    ],
+    ['a later bullet in a second block', `${BRIEF}\nConstraints:\n${NO_LINE}\n- Skip the cache unless asked.`, ['- Skip the cache unless asked.']],
+    [
+      'a later bullet in each of two blocks',
+      `${withConstraints(`Constraints:\n${NO_LINE}\n- Except on the parser.`)}\nConstraints:\n${NO_LINE}\n- Skip the cache unless asked.`,
+      ['- Except on the parser.', '- Skip the cache unless asked.'],
+    ],
+  ] as const) {
+    test(`the exact line followed by ${name} is voided, each voiding bullet is named, and the line is not reported missing`, () => {
+      expect(mutationFindingsOf(prompt)).toEqual({ ...CLEAN, voidingItems: voiding })
+    })
+  }
+
+  test('a block with no line and a block with a voided line report both findings', () => {
+    const prompt = `${BRIEF}\nConstraints:\n- Keep the API.\nConstraints:\n${NO_LINE}\n- Skip the cache unless asked.`
+    expect(mutationFindingsOf(prompt)).toEqual({ ...CLEAN, lacksNoMutationLine: true, voidingItems: ['- Skip the cache unless asked.'] })
+  })
+
+  test('the exact line last, after an earlier bullet holding "unless", is clean', () => {
+    expect(mutationFindingsOf(withConstraints(`Constraints:\n- Do not touch the cache unless it is stale.\n${NO_LINE}`))).toEqual(CLEAN)
+  })
 
   for (const criterion of [
     '- AC1: prove the guard with a mutation check',
@@ -508,12 +540,13 @@ describe('mutationDeny — the refusal text', () => {
     const deny = mutationDeny('Watson Direct-mode', {
       missingSlots: ['Acceptance:'],
       lacksNoMutationLine: true,
+      voidingItems: [],
       bannedItems: [{ slot: 'Done when:', item: long }],
     })
     const lines = deny.split('\n')
     expect(lines[0]).toBe('🛑 Blocked: a Watson Direct-mode dispatch whose brief does not rule out mutation testing.')
     expect(lines).toContain('- Acceptance: could not be found. Write it as a label at the start of its own line, such as "Acceptance:".')
-    expect(lines).toContain('- A Constraints: block carries no no-mutation line. Add this exact bullet to every Constraints: block: "- Run no mutation testing of any kind."')
+    expect(lines).toContain('- A Constraints: block carries no no-mutation line. Add this exact bullet as the last item of every Constraints: block: "- Run no mutation testing of any kind."')
     const banned = lines.find(line => line.startsWith('- Done when: "')) ?? ''
     expect(banned).toContain(`"${long.slice(0, 200)}…"`)
     expect(banned).not.toContain(long)
@@ -523,13 +556,34 @@ describe('mutationDeny — the refusal text', () => {
   for (const [length, ellipsis] of [[200, false], [201, true]] as const) {
     test(`a ${length}-character item is quoted ${ellipsis ? 'cut, with' : 'whole, with no'} ellipsis`, () => {
       const item = `- ${'x'.repeat(length - 2)}`
-      const deny = mutationDeny('Watson Direct-mode', { missingSlots: [], lacksNoMutationLine: false, bannedItems: [{ slot: 'Acceptance:', item }] })
+      const deny = mutationDeny('Watson Direct-mode', { missingSlots: [], lacksNoMutationLine: false, voidingItems: [], bannedItems: [{ slot: 'Acceptance:', item }] })
       expect(deny).toContain(ellipsis ? `"${item.slice(0, 200)}…"` : `"${item}"`)
     })
   }
 
+  test('a voided line names each voiding item and says to put the line last, and never calls the line missing', () => {
+    const long = `- Keep the cache unless ${'x'.repeat(300)}`
+    const deny = mutationDeny('Holmes Local-mode', { missingSlots: [], lacksNoMutationLine: false, voidingItems: ['- Skip it unless asked.', long], bannedItems: [] })
+    const fixes = deny.split('\n').filter(line => line.startsWith('- '))
+    expect(fixes).toEqual([
+      '- The Constraints: item "- Skip it unless asked." comes after the no-mutation line and holds except, but, unless or other than, so the gate reads it as an exception and the line does not count. ' +
+        'Put the exact line "- Run no mutation testing of any kind." last in its Constraints: block, after every other item.',
+      expect.stringContaining(`"${long.slice(0, 200)}…"`),
+    ])
+    expect(deny).not.toContain('carries no no-mutation line')
+  })
+
+  test('a missing line and a voided line give both fixes, the add-the-line fix first', () => {
+    const deny = mutationDeny('Watson Direct-mode', { missingSlots: [], lacksNoMutationLine: true, voidingItems: ['- Skip it unless asked.'], bannedItems: [] })
+    expect(deny.split('\n').filter(line => line.startsWith('- '))).toEqual([
+      '- A Constraints: block carries no no-mutation line. Add this exact bullet as the last item of every Constraints: block: "- Run no mutation testing of any kind."',
+      '- The Constraints: item "- Skip it unless asked." comes after the no-mutation line and holds except, but, unless or other than, so the gate reads it as an exception and the line does not count. ' +
+        'Put the exact line "- Run no mutation testing of any kind." last in its Constraints: block, after every other item.',
+    ])
+  })
+
   test('with nothing found, it holds no fix line', () => {
-    const deny = mutationDeny('Holmes Local-mode', { missingSlots: [], lacksNoMutationLine: false, bannedItems: [] })
+    const deny = mutationDeny('Holmes Local-mode', { missingSlots: [], lacksNoMutationLine: false, voidingItems: [], bannedItems: [] })
     expect(deny.split('\n').filter(line => line.startsWith('- '))).toEqual([])
   })
 })
