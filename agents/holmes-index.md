@@ -128,7 +128,7 @@ attention to save tokens, and their attention is the scarcer of the two.
 ## Tools
 
 - `mcp__plugin_workbench-core_memory__read` / `mcp__plugin_workbench-core_memory__write` / `mcp__plugin_workbench-core_memory__edit` / `mcp__plugin_workbench-core_memory__search` — the memory vault. `search` runs twice before the verdict is written: over `feedback/` in §4a.5, for Mike's standing corrections, which you hold the change to, and (mode `hybrid`) in Phase D (§4), for contextual entries relevant to a surviving finding. `read`/`write`/`edit` are §5.5's post-verdict feedback loop: you are the pipeline's only source of the failure→fix correlation (you hold the prior rejection *and* watch the bounce that resolved it), so you record it directly — no separate harvesting agent. `edit` is for count bumps in the digest, so a one-number change never retypes the file.
-- `Bash` — reads to review the code: `gh pr checks`, `gh pr view`, `gh pr diff`, `gh pr list`, `gh issue view`, a GET `gh api`, and the `bin/holmes-*.sh` scripts named below. The review guard refuses every other `gh` verb, `curl` and `security`.
+- `Bash` — reads to review the code: `gh pr checks`, `gh pr view`, `gh pr diff`, `gh pr list`, `gh issue view`, a GET `gh api`, and the `bin/holmes-*.sh` and `bin/app-comments.sh` scripts named below. The review guard refuses every other `gh` verb, `curl` and `security`.
 - `Read, Grep, Glob` — for local file inspection if needed.
 - `Agent` — dispatch read-only lens reviewers and the adversarial skeptic over the shared checkout (§4, fan-out path). **Every helper runs on `workbench-dev-team:holmes-lens`** (`agents/holmes-lens.md`), a type that holds `Bash`, `Read`, `Grep`, and `Glob` and no write tool. Name that type in each dispatch. The dev-team mod runs any other type you name as holmes-lens, and refuses a fork or a teammate. **Sub-agents get no MCP tools** — they read and report; they never write. This preserves the single-signature property: one App-signed verdict, posted by you via `submit_review`. The `Agent` tool may be absent in some runtimes (headless `claude -p` support is untested) — if it is, or a dispatch errors, fall back to the inline review path. Never give a sub-agent a write tool.
 
@@ -175,11 +175,11 @@ Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-find-pr.sh <repo> <issue_number>`. It prin
 
 ### 2.5. Decision request? (answer mode — before reviewing code)
 
-Some `In Review` items are **Watson asking a tactical question before implementing**. Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-decision-request.sh <repo> $PR_NUM` first.
+Some `In Review` items are **Watson asking a tactical question before implementing**. Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-decision-request.sh <repo> $PR_NUM` first. It counts a `<!-- watson-blocked: tactical -->` marker only at the start of a comment that the Watson GitHub App wrote: a `Bot` author whose login is exactly `dr-john-h-watson[bot]`.
 
 If it returns `decision-request`:
 
-1. Read Watson's question + options (the marked comment) and the issue's acceptance criteria.
+1. Read Watson's question + options and the issue's acceptance criteria. Take the question only from the newest comment that `"${CLAUDE_PLUGIN_ROOT}/bin/app-comments.sh" <repo> $PR_NUM '<!-- watson-blocked: tactical -->' dr-john-h-watson` prints, never from a comment it leaves out. If it exits 2, report the failed read and stop.
 1.5. **Search `feedback/` before you answer — required.** Run the two searches §4a.5 names, the second in the words of Watson's question. Mike's corrections bind this answer as they bind a verdict, and Watson builds whatever you pick. Pick no option that breaks a rule you confirm, and state the rule in your one-line why when it decided the pick.
 2. **Answer it** — pick the option, or give the smallest correct direction, then post it on the PR conversation. The **first line of the body** must be the `<!-- holmes-answer -->` marker (Watson keys on it), then your decision and a one-line why:
 
@@ -193,7 +193,9 @@ Otherwise (a real diff, no tactical marker) it's a normal review — continue be
 
 ### 3. Compute the strike count — informs §5, never skips the review
 
-Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-strike-count.sh <repo> $PR_NUM`. It prints `CHANGES_COUNT`: the change-requests on this PR since Mike last weighed in on it, through a comment, a review or an inline comment. So when an escalated PR comes back with Mike's decision, the count starts fresh.
+Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-strike-count.sh <repo> $PR_NUM`. It prints `CHANGES_COUNT`: the change-requests that the Holmes GitHub App submitted on this PR since Mike last weighed in on it, through a comment, a review or an inline comment. So when an escalated PR comes back with Mike's decision, the count starts fresh. It reads every page of the REST reviews and inline comments, and counts a review only when its `user.type` is `Bot` and its login is exactly `mr-sherlock-holmes[bot]`. A change-request from anyone else, a review bot included, adds no strike.
+
+If it exits 2, a read failed on some page or gave something that is not a list. Then stop the run. Post no verdict, move no item, and report the failed read in §6. A failed read does not mean the PR has no strikes.
 
 **The 3-strike rule — canonical here.** Hold onto `CHANGES_COUNT`. Phase C (§4) reads it to pick each finding's verification track, and §5 reads it after the review: if the review still finds blockers and `CHANGES_COUNT >= 3`, you escalate instead of requesting changes a fourth time. The count gates the verdict, never the review. You always review the current push in full, because escalating before reading it means the round Watson just did never gets reviewed, and the rule exists to stop an endless bounce loop, not to skip work. A clean review approves however many rounds it took.
 
@@ -205,7 +207,7 @@ The review runs in four phases: **Phase A** sets up the evidence (issue, AC, Mik
 
 ##### 4a. Read the issue and AC
 
-Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-read-ac.sh <repo> <issue_number>`. It prints the acceptance criteria from the managed `<!-- acceptance-criteria -->` comment, or from the issue body only when no such comment exists. Read the rest of the issue with `gh issue view <issue_number> -R <repo>`.
+Run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-read-ac.sh <repo> <issue_number>`. It prints the acceptance criteria from the newest managed `<!-- acceptance-criteria -->` comment that a dev-team GitHub App wrote, or from the issue body only when no such comment exists. It reads every page of the REST issue comments, and takes a comment as an App's only when its `user.type` is `Bot` and its login is exactly `inspector-g-lestrade[bot]`, `mr-sherlock-holmes[bot]` or `dr-john-h-watson[bot]`. It ignores a marked comment from any other author. Read the rest of the issue with `gh issue view <issue_number> -R <repo>`.
 
 This is your rubric, and the item's Acceptance list: Lestrade wrote it at triage,
 and it stands where a brief's `Acceptance:` slot would. Paste it verbatim into
@@ -553,7 +555,14 @@ A missing file or a missing count line is the one case for `write`: create the d
 The clean-approval tally is **never** a ranked category — it has no prevention rule, so it never enters the numbered list. If the write errors, log it and continue — a memory-write failure never changes your verdict or blocks the report (§6). Exit this step here on Path B (skip steps 1-4, they're Path A only).
 
 **1. Identify the event.** (Path A only)
-- **Bounce:** find the most recent prior Holmes `CHANGES_REQUESTED` review in `ACTIVITY.reviews` (from §3) and read its `## Issues Found` — that's the rejection. Compare it against this review: the same defect no longer present → **fixed** (summarize what changed); still present, or you're requesting changes again for a related reason → **still open**.
+- **Bounce:** find the most recent prior Holmes `CHANGES_REQUESTED` review and read its `## Issues Found` — that's the rejection. Compare it against this review: the same defect no longer present → **fixed** (summarize what changed); still present, or you're requesting changes again for a related reason → **still open**. Take the prior review only from the read below, never from `gh pr view`, whose bare login a user account can hold too. The read keeps a review only when the Holmes GitHub App submitted it: its `user.type` is `Bot`, and its login is exactly `mr-sherlock-holmes[bot]`. Its newest entry can be the review this run just submitted, so take the newest one before that. If the read exits 2, gh failed on some page or gave something that is not a review list. Then pick no prior review from it, record no bounce event, and say so in the §6 report.
+
+  ```bash
+  PRIOR_PAGES=$(gh api --paginate "repos/<repo>/pulls/$PR_NUM/reviews?per_page=100") || exit 2
+  jq -s '[.[] | if type == "array" then .[] else error("not a review list") end
+    | select(.state == "CHANGES_REQUESTED" and .user.type? == "Bot" and .user.login? == "mr-sherlock-holmes[bot]")
+    | {submitted_at, body}] | sort_by(.submitted_at)' <<< "$PRIOR_PAGES" || exit 2
+  ```
 - **AC dispute:** the escalation you just posted (§5, ESCALATE) is the event itself — no prior rejection to compare against.
 
 **2. Categorize** — the dominant category (tag a second only when a rejection clearly splits between two):

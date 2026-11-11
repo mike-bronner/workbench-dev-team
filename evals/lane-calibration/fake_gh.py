@@ -15,6 +15,7 @@ WRITES = {
 WRITE_GROUPS = {"gist", "secret", "variable", "workflow", "run", "cache", "ruleset", "auth", "config", "alias", "extension", "codespace", "ssh-key", "gpg-key"}
 VALUE_FLAGS = {"-R", "--repo", "--json", "--jq", "-q", "--limit", "-L", "--state", "-s", "--label", "-l", "-X", "--method", "-H", "--header"}
 FIELD_FLAGS = {"-f", "-F", "--field", "--raw-field", "--input"}
+DEV_TEAM_APPS = {"inspector-g-lestrade", "mr-sherlock-holmes", "dr-john-h-watson"}
 
 
 class Refused(Exception):
@@ -102,18 +103,27 @@ def issue_text(issue, with_comments):
     return "\n".join(lines) + "\n"
 
 
+def rest_user(login):
+    if login in DEV_TEAM_APPS:
+        return {"login": login + "[bot]", "type": "Bot"}
+    return {"login": login, "type": "User"}
+
+
 def api(path, flags, repo, data):
     method = str(flag(flags, "-X", "--method", default="GET")).upper()
     if method != "GET" or flags.get("fields"):
         raise Refused(f"gh api {method} with fields")
     parts = path.strip("/").split("?")[0].split("/")
+    if parts[:3] == ["repos", *repo.split("/")] and parts[3:4] == ["contents"]:
+        print(json.dumps({"message": "Not Found", "status": "404"}))
+        return 1
     if parts[:3] != ["repos", *repo.split("/")] or len(parts) < 5 or parts[3] != "issues":
         raise LookupError(f"gh api {path} is not served in this replay")
     issue = find(data.get("github", {}).get("issues", []), parts[4], "issue")
     if len(parts) == 5:
         return emit({"number": issue["number"], "title": issue["title"], "body": issue.get("body"), "state": issue.get("state", "OPEN").lower(), "labels": issue.get("labels", [])}, flags)
     if parts[5:] == ["comments"]:
-        return emit([{"body": c["body"], "user": {"login": c["author"]["login"]}, "created_at": c["createdAt"]} for c in issue.get("comments", [])], flags)
+        return emit([{"body": c["body"], "user": rest_user(c["author"]["login"]), "created_at": c["createdAt"]} for c in issue.get("comments", [])], flags)
     raise LookupError(f"gh api {path} is not served in this replay")
 
 

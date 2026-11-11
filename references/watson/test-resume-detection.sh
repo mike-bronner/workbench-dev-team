@@ -38,8 +38,7 @@ fi
 #                                                    -> $FIXTURE/comments/<n>   (absent => empty thread)
 # A slug is the branch name with `/` replaced by `_`.
 # Both paginated endpoints page at 30, so the stub returns only the first 30 records unless
-# `--paginate` is passed — that is what makes the flag testable rather than decorative. Comment
-# fixtures model one comment per line (a multi-line body simply occupies several lines).
+# `--paginate` is passed — that is what makes the flag testable rather than decorative.
 # $FIXTURE/comments-fail makes the comments read error out, standing in for a failed API call.
 mkdir -p "$WORK/bin"
 cat > "$WORK/bin/gh" <<'STUB'
@@ -47,8 +46,13 @@ cat > "$WORK/bin/gh" <<'STUB'
 slug() { printf '%s' "$1" | tr '/' '_'; }
 case "${1:-}" in
   api)
-    paginate=0
-    for a in "$@"; do [ "$a" = --paginate ] && paginate=1; done
+    paginate=0; jqexpr=
+    prev=
+    for a in "$@"; do
+      [ "$a" = --paginate ] && paginate=1
+      [ "$prev" = --jq ] && jqexpr=$a
+      prev=$a
+    done
     for a in "$@"; do
       case "$a" in
         */branches)
@@ -64,8 +68,10 @@ case "${1:-}" in
           n="${a%/comments}"; n="${n##*/}"            # the issue number out of the URL path
           f="$FIXTURE/comments/$n"
           [ -f "$f" ] || exit 0                       # no comments on this issue yet
-          if [ "$paginate" = 1 ]; then cat "$f"
-          else head -30 "$f"; fi
+          { if [ "$paginate" = 1 ]; then cat "$f"; else head -30 "$f"; fi; } \
+            | jq -c -s '_nwise(30)' | while IFS= read -r page; do
+                if [ -n "$jqexpr" ]; then jq -r "$jqexpr" <<< "$page"; else printf '%s\n' "$page"; fi
+              done
           exit 0 ;;
       esac
     done
@@ -115,11 +121,14 @@ human_commits() {
 }
 # pr <branch> <number> <STATE>
 pr() { printf '%s %s\n' "$2" "$3" > "$CASE/pr/$(printf '%s' "$1" | tr '/' '_')"; }
-# comment <issue> <line> [line…] -> appends one comment body to that issue's thread
-comment() { local n="$1"; shift; printf '%s\n' "$@" >> "$CASE/comments/$n"; }
-# handsoff_comment <issue> <branch> -> the thread already carries Watson's notice for that branch
+comment_by() {
+  local n="$1" user="$2"; shift 2
+  jq -cn --argjson user "$user" --arg body "$(printf '%s\n' "$@")" '{user: $user, body: $body}' >> "$CASE/comments/$n"
+}
+comment() { local n="$1"; shift; comment_by "$n" '{"login":"someone","type":"User"}' "$@"; }
+WATSON_APP='{"login":"dr-john-h-watson[bot]","type":"Bot"}'
 handsoff_comment() {
-  comment "$1" "<!-- watson-hands-off: $2 -->" \
+  comment_by "$1" "${3:-$WATSON_APP}" "<!-- watson-hands-off: $2 -->" \
     "Branch \`$2\` is already open against this issue, and I did not create it."
 }
 # comments_fail -> the comments read errors out
@@ -385,6 +394,18 @@ ISSUE=288; newcase h33
 handsoff_comment 288 fix/288-locale-consistency
 comments_fail
 expect "comments read fails -> post anyway" "POST" "$(run_comment fix/288-locale-consistency)"
+
+for user in '{"login":"someone","type":"User"}' '{"login":"dr-john-h-watson","type":"User"}' \
+  '{"login":"dr-john-h-watson[bot]","type":"User"}' '{"login":"mr-sherlock-holmes[bot]","type":"Bot"}' \
+  '{"login":"dr-john-h-watson-fake[bot]","type":"Bot"}' '{"login":"dr-john-h-watson[bot]"}' null; do
+  ISSUE=288; newcase h34
+  handsoff_comment 288 fix/288-locale-consistency "$user"
+  expect "marker by $user -> post" "POST" "$(run_comment fix/288-locale-consistency)"
+done
+
+ISSUE=288; newcase h35
+comment_by 288 "$WATSON_APP" "Earlier I posted this:" "<!-- watson-hands-off: fix/288-locale-consistency -->"
+expect "marker not on the first line -> post" "POST" "$(run_comment fix/288-locale-consistency)"
 
 echo
 echo "resume-detection + hands-off comment: $pass passed, $fail failed"

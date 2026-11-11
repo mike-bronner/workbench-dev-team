@@ -856,6 +856,18 @@ class FakeGh(unittest.TestCase):
         done = self.gh("api", "repos/o/r/issues/1/comments", "--jq", ".[0].user.login")
         self.assertEqual(done.stdout.strip(), "mike")
 
+    def test_api_comments_carry_the_rest_author_shape_for_users_and_apps(self):
+        data = Path(self.dir.name) / "apps.json"
+        data.write_text(json.dumps({"repo": "o/r", "github": {"issues": [{"number": 3, "title": "Three", "comments": [
+            {"author": {"login": "mike"}, "body": "u", "createdAt": "2026-01-01T00:00:00Z"},
+            {"author": {"login": "inspector-g-lestrade"}, "body": "a", "createdAt": "2026-01-02T00:00:00Z"}]}]}}))
+        done = self.gh("api", "--paginate", "repos/o/r/issues/3/comments?per_page=100", "--jq", "[.[].user]", env=dict(self.env, EVAL_GH_DATA=str(data)))
+        self.assertEqual(json.loads(done.stdout), [{"login": "mike", "type": "User"}, {"login": "inspector-g-lestrade[bot]", "type": "Bot"}])
+
+    def test_api_contents_is_not_found_so_a_replay_holds_no_codeowners(self):
+        done = self.gh("api", "repos/o/r/contents/.github/CODEOWNERS")
+        self.assertEqual((done.returncode, json.loads(done.stdout)["message"]), (1, "Not Found"))
+
     def test_pr_diff_shows_the_fixture_range_for_a_lens_fixture_with_no_issue_data(self):
         repo = Path(self.dir.name) / "repo"
         base, head = make_repo(repo)

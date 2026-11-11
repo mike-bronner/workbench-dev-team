@@ -287,7 +287,7 @@ All "what's pending in each lane" logic lives server-side in The Index's MCP too
 
 - **Inspector Lestrade and Sherlock Holmes** are idempotent within a tick. Status lanes (`null` and `In Review`) act as the serialization.
 - **Dr. Watson** picks from `In Progress` OR `Ready` (In Progress first — that's the resume path for crashed runs). A per-item **board claim** (`claim_item` / `release_item`) is what stops two Watsons stepping on the same item: it is visible, it works across hosts, and `list_development_items` hides a claimed item. Watson releases it on every exit path, success or not, and the tick's stale-claim sweep releases one whose run died first. There is deliberately **no** host-wide lock, so two Watsons on two different items run side by side.
-- **Watson also refuses work that isn't his**, on two independent gates, both fail-closed and both leaving the item's status exactly as it found it. A **status gate** drops any item dispatched outside the `Ready`/`In Progress` lane (or with an unreadable status) — he never moves an item into his own lane to justify working it. A **provenance check** in resume detection means he only ever adopts a branch he created himself, identified by a `Watson-Branch: #<issue>` trailer on its start-of-work commit (PR authorship can't serve: he opens PRs with `gh` under your credentials, so his PRs and yours both read as you). Both gates exist because GitHub Projects' built-in *Pull request linked to issue* workflow flips a linked issue to `In Progress` seconds after **anyone** opens a branch-named PR — including yours, which is how a human's work-in-progress once got commits pushed onto it and, on a branch prefix the old matcher didn't know (`ci/`), got a duplicate PR opened beside it. The hands-off notice is posted once per branch (an `<!-- watson-hands-off: <branch> -->` marker on the issue tells him he has already said it) — that same Projects workflow parks the issue in `In Progress` for the whole life of your PR, so he is dispatched onto it every tick until you close it, and the notice would otherwise repeat every twenty minutes.
+- **Watson also refuses work that isn't his**, on two independent gates, both fail-closed and both leaving the item's status exactly as it found it. A **status gate** drops any item dispatched outside the `Ready`/`In Progress` lane (or with an unreadable status) — he never moves an item into his own lane to justify working it. A **provenance check** in resume detection means he only ever adopts a branch he created himself, identified by a `Watson-Branch: #<issue>` trailer on its start-of-work commit (PR authorship can't serve: he opens PRs with `gh` under your credentials, so his PRs and yours both read as you). Both gates exist because GitHub Projects' built-in *Pull request linked to issue* workflow flips a linked issue to `In Progress` seconds after **anyone** opens a branch-named PR — including yours, which is how a human's work-in-progress once got commits pushed onto it and, on a branch prefix the old matcher didn't know (`ci/`), got a duplicate PR opened beside it. The hands-off notice is posted once per branch (an `<!-- watson-hands-off: <branch> -->` marker on the issue, in a comment the Watson GitHub App wrote, tells him he has already said it) — that same Projects workflow parks the issue in `In Progress` for the whole life of your PR, so he is dispatched onto it every tick until you close it, and the notice would otherwise repeat every twenty minutes.
 
 ### Token cost
 
@@ -423,10 +423,11 @@ this plugin, so these tests cannot read core, and use stand-ins: a plain-line
 shell reader in `tests/world.ts`, and a shared-section placement in
 `tests/placement.ts` that `tests/core-parity.mjs` holds to core. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
-- **`lint-*.sh`** — seventeen scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — eighteen scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
-  `agents/lint-brief-contract.sh`, `agents/lint-criteria-wording.sh`,
+  `agents/lint-brief-contract.sh`, `agents/lint-comment-reads.sh`,
+  `agents/lint-criteria-wording.sh`,
   `agents/lint-gate-refusal.sh`,
   `agents/lint-helper-wait.sh`,
   `agents/lint-holmes-blocking-findings.sh`,

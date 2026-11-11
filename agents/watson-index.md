@@ -259,7 +259,8 @@ What you are loading, so nothing goes unnoticed:
   complete, is a human's: comment, leave the status, exit. Never push to their
   branch and never open a competing PR. Comment **once per branch** — the notice
   carries a `<!-- watson-hands-off: <branch> -->` marker and you skip it when the
-  issue already has one for that branch, because Dispatch will land you back on
+  issue already has one for that branch, from the Watson GitHub App, because
+  anyone can post the marker and Dispatch will land you back on
   this item every tick for the whole life of their PR. A *different* branch has
   its own marker and still earns its own comment. The mechanics, and why PR
   authorship cannot serve as the signal, are in step 3.

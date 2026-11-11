@@ -7,11 +7,15 @@ REPO="${1:-}" PR="${2:-}"
 
 MIKE="${HOLMES_STRIKE_LOGIN:-mikebronner}"
 activity=$(gh pr view "$PR" -R "$REPO" --json comments,reviews) || exit 2
-inline=$(gh api "repos/$REPO/pulls/$PR/comments?per_page=100") || exit 2
+inline=$(gh api --paginate "repos/$REPO/pulls/$PR/comments?per_page=100") || exit 2
+inline=$(jq -s '[.[] | if type == "array" then .[] else error("not a comment list") end]' <<< "$inline") || exit 2
+reviews=$(gh api --paginate "repos/$REPO/pulls/$PR/reviews?per_page=100") || exit 2
 
-jq -rn --argjson a "$activity" --argjson i "$inline" --arg mike "$MIKE" '
+jq -rs --argjson a "$activity" --argjson i "$inline" --arg mike "$MIKE" '
   ([ ($a.comments[] | select(.author.login == $mike) | .createdAt),
      ($a.reviews[]  | select(.author.login == $mike) | .submittedAt),
      ($i[]          | select(.user.login   == $mike) | .created_at) ] | max // "") as $since
-  | [ $a.reviews[] | select(.state == "CHANGES_REQUESTED") | select($since == "" or .submittedAt > $since) ]
-  | length' || exit 2
+  | [ .[] | if type == "array" then .[] else error("not a review list") end
+      | select(.user.type? == "Bot" and .user.login? == "mr-sherlock-holmes[bot]")
+      | select(.state == "CHANGES_REQUESTED") | select($since == "" or .submitted_at > $since) ]
+  | length' <<< "$reviews" || exit 2
