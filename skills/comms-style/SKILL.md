@@ -40,9 +40,9 @@ already has: the issue, the brief, or what an earlier comment said. When a
 true, verified detail does not change what the reader does next, leave it out.
 
 A PR body carries three things: what changed, why, and what a reviewer must
-know before approving. A PR for a tracked issue also carries its
-acceptance-criteria checklist and `Fixes #<n>`, when its pipeline requires
-them. Stop there. Reasoning and rejected alternatives go in the
+know before approving. A PR for a tracked issue also carries `Fixes #<n>`,
+which links the issue that holds its acceptance criteria. The body never
+copies those criteria. Stop there. Reasoning and rejected alternatives go in the
 review wiki, detail about each change goes in the commit messages, and test
 evidence is one line saying which suites pass. No tables of measurements.
 

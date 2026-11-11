@@ -616,8 +616,19 @@ If a template exists, the final body follows **its** structure: read it, fill
 every section honestly (no boilerplate placeholders, no leftover HTML
 comments), pick the best-fitting file when `.github/PULL_REQUEST_TEMPLATE/`
 holds several, and append anything required here that the template lacks a
-slot for — the AC checklist and `Fixes #<issue_number>` are non-negotiable
-(Holmes reviews against the AC; `Fixes` makes the merge close the issue).
+slot for — `Fixes #<issue_number>` is non-negotiable (it links the issue that
+holds the AC, and the merge closes the issue).
+
+Never copy or append the AC into the body, even when the template has no slot
+for them. A copy drifts from the issue. The AC sit in Lestrade's managed
+comment on the issue, the one with `<!-- acceptance-criteria -->` on its first
+line. Tick a met criterion there only through an Index tool, once The Index
+provides one. Never edit that comment with `gh`. Until the tool exists, leave
+its boxes as they are.
+
+A legacy item, triaged before the AC moved to that comment, has no such
+comment. Its AC sit in the issue body's `## Acceptance Criteria` section. Leave
+those boxes as they are, and never edit the body with `gh`.
 
 If no template exists, use this structure:
 
@@ -629,9 +640,6 @@ Implements #<issue_number>
 
 ## Changes
 - [bullet list of what changed]
-
-## Acceptance Criteria
-[copy the AC from the issue, mark completed items with [x]]
 
 ## Test Plan
 - [ ] The existing tests that cover the changed files pass
