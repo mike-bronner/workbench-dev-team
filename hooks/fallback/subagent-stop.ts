@@ -21,7 +21,7 @@ const text = snapshot === undefined ? undefined : readIfAny(snapshot)
 if (text !== undefined && watchesFile !== undefined) {
   const { inFlightOf, stopBlockOf, waitStateFrom, watchesFrom, watchesText } = await import('../mods/helper-wait.ts')
   const state = waitStateFrom(text)
-  if (state !== undefined) {
+  if (state !== undefined && !state.handedBack) {
     const watches = watchesFrom(readIfAny(watchesFile))
     const progress = { helper: (id: string) => state.activity.get(id), outputSize: sizeOf }
     const block = stopBlockOf(agentId, state.agents, state.started, inFlightOf(input.background_tasks), progress, watches)

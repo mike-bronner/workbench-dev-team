@@ -57,7 +57,7 @@ async function watsonRun($: { agent: { spawn: (e: never) => Promise<unknown> } }
 function fallbackOf(w: World, tasks: unknown, watches: Map<string, Watch>): string | undefined {
   const text = w.files.get(SNAPSHOT)
   const state = text === undefined ? undefined : waitStateFrom(text)
-  if (state === undefined) return undefined
+  if (state === undefined || state.handedBack) return undefined
   return stopBlockOf('agent-1', state.agents, state.started, inFlightOf(tasks), { helper: id => state.activity.get(id), outputSize: path => w.sizes.get(path) }, watches)
 }
 
@@ -129,13 +129,14 @@ describe('the helper-wait record the SubagentStop fallback reads', () => {
   test('with no marker, a dev-team agent records its helpers, its commands and their progress at each step', async ($, on) => {
     const w = await watsonRun($, on, [WATSON, HELPER, { id: 'agent-5', type: 'Explore', parentId: 'agent-2' }])
     w.background.push('b1')
-    await $.tool.call(background('sleep 600'))
+    await $.tool.call(background('npm test'))
     await step($, 'agent-9')
     await step($, 'agent-1')
     expect(JSON.parse(w.files.get(SNAPSHOT) ?? 'null')).toEqual({
       agents: [{ id: 'agent-9', type: T('holmes-lens'), status: 'running', description: 'a task', parentId: 'agent-1' }],
       started: [{ id: 'b1', output: '/tasks/b1.output' }],
       activity: [['agent-9', { ticks: 1, inFlight: 0 }]],
+      handedBack: false,
     })
   })
 
@@ -199,21 +200,45 @@ describe('AC2: from the record alone, stopBlockOf answers what the module answer
   test('a background command whose output grows holds every round', async ($, on) => {
     const w = await watsonRun($, on, [WATSON])
     w.background.push('b1')
-    await $.tool.call(background('sleep 600'))
-    expect(await rounds($, w, [inFlight('b1', 'sleep 600')], async round => void w.sizes.set('/tasks/b1.output', round + 1))).toEqual(['held', 'held', 'held', 'held'])
+    await $.tool.call(background('npm test'))
+    expect(await rounds($, w, [inFlight('b1', 'npm test')], async round => void w.sizes.set('/tasks/b1.output', round + 1))).toEqual(['held', 'held', 'held', 'held'])
   })
 
   test('a background command whose output stays the same is released after two holds', async ($, on) => {
     const w = await watsonRun($, on, [WATSON])
     w.background.push('b1')
-    await $.tool.call(background('sleep 600'))
+    await $.tool.call(background('npm test'))
     w.sizes.set('/tasks/b1.output', 5)
-    expect(await rounds($, w, [inFlight('b1', 'sleep 600')], async () => undefined)).toEqual(['held', 'held', 'released', 'ends'])
+    expect(await rounds($, w, [inFlight('b1', 'npm test')], async () => undefined)).toEqual(['held', 'held', 'released', 'ends'])
   })
 
   test('with nothing outstanding, both let the turn end', async ($, on) => {
     const w = await watsonRun($, on, [WATSON, { ...HELPER, status: 'completed' }])
     expect(await rounds($, w, [], async () => undefined)).toEqual(['ends', 'ends', 'ends', 'ends'])
+  })
+
+  test('a background sleep holds nothing in either', async ($, on) => {
+    const w = await watsonRun($, on, [WATSON])
+    w.background.push('b1')
+    await $.tool.call(background('sleep 150'))
+    expect(await rounds($, w, [inFlight('b1', 'sleep 150')], async () => undefined)).toEqual(['ends', 'ends', 'ends', 'ends'])
+  })
+
+  test('after a handback, both let the turn end with a helper outstanding, and both hold again once it resumes', async ($, on) => {
+    const w = await watsonRun($, on, [WATSON, HELPER])
+    w.writeRejects = isMarker
+    const watches = new Map<string, Watch>()
+    await step($ as never, 'agent-1')
+    expect(holds(fallbackOf(w, [], watches))).toBe('held')
+    await $.tool.call({ tool: 'SubagentHandback', tool_use_id: 'toolu_h', message: 'the report', agentId: 'agent-1' } as never)
+    expect(waitStateFrom(w.files.get(SNAPSHOT) ?? '')?.handedBack).toBe(true)
+    for (let attempt = 0; attempt < 3; attempt++) {
+      expect(fallbackOf(w, [], watches)).toBeUndefined()
+      expect(await $.classic.SubagentStop(subagentStop([]))).toEqual({})
+    }
+    await step($ as never, 'agent-1')
+    expect(waitStateFrom(w.files.get(SNAPSHOT) ?? '')?.handedBack).toBe(false)
+    expect(holds(fallbackOf(w, [], watches))).toBe('held')
   })
 })
 
@@ -248,7 +273,9 @@ describe('the readers', () => {
 
   test('a record reads back as it was written, and a malformed one reads as none', () => {
     const snapshot = snapshotOf('a1', [{ id: 'h1', type: 'Explore', status: 'running', parentId: 'a1', description: 'd', name: 'n' }], [{ id: 'b1' }], () => ({ ticks: 2, inFlight: 1 }))
-    expect(waitStateFrom(JSON.stringify(snapshot))).toEqual({ agents: snapshot.agents, started: snapshot.started, activity: new Map([['h1', { ticks: 2, inFlight: 1 }]]) })
+    expect(waitStateFrom(JSON.stringify(snapshot))).toEqual({ agents: snapshot.agents, started: snapshot.started, activity: new Map([['h1', { ticks: 2, inFlight: 1 }]]), handedBack: false })
+    expect(waitStateFrom(JSON.stringify(snapshotOf('a1', [], [], () => undefined, true)))?.handedBack).toBe(true)
+    expect(waitStateFrom(JSON.stringify({ ...snapshot, handedBack: 'yes' }))?.handedBack).toBe(false)
     expect(waitStateFrom('not json')).toBeUndefined()
     expect(waitStateFrom('[]')).toBeUndefined()
     expect(waitStateFrom(JSON.stringify({ ...snapshot, agents: [{ id: 'h1' }] }))).toBeUndefined()
@@ -265,8 +292,8 @@ describe('the readers', () => {
   })
 
   test('in-flight tasks keep the well-formed entries only', () => {
-    expect(inFlightOf([inFlight('b1', 'sleep 1'), { id: 2 }, null, { id: 'b2', description: 'd' }])).toEqual([
-      { id: 'b1', description: 'sleep 1', command: 'sleep 1' },
+    expect(inFlightOf([inFlight('b1', 'npm test'), { id: 2 }, null, { id: 'b2', description: 'd' }])).toEqual([
+      { id: 'b1', description: 'npm test', command: 'npm test' },
       { id: 'b2', description: 'd' },
     ])
     expect(inFlightOf(undefined)).toEqual([])

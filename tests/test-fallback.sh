@@ -61,11 +61,11 @@ write_snapshot() {
 const { snapshotOf } = await import("./hooks/mods/helper-wait.ts")
 const { waitFileOf } = await import("./hooks/mods/fallback.ts")
 const { mkdirSync, writeFileSync } = await import("node:fs")
-const [, home, sid, agents, started, activity] = process.argv
+const [, home, sid, agents, started, activity, handedBack] = process.argv
 const file = waitFileOf(home, sid, "a1", "snapshot")
 mkdirSync(file.slice(0, file.lastIndexOf("/")), { recursive: true })
 const seen = JSON.parse(activity)
-writeFileSync(file, JSON.stringify(snapshotOf("a1", JSON.parse(agents), JSON.parse(started), id => seen[id])))' "$HOME_DIR" "$SID" "$1" "$2" "$3"
+writeFileSync(file, JSON.stringify(snapshotOf("a1", JSON.parse(agents), JSON.parse(started), id => seen[id], handedBack === "handed-back")))' "$HOME_DIR" "$SID" "$1" "$2" "$3" "${4:-}"
 }
 
 expected_outputs() {
@@ -133,18 +133,24 @@ stop_scenario "a helper with a request under way is never stuck" "$HELPER" '[]' 
 stop_scenario "two outstanding helpers are both named, and another agent's is not" "$TWO" '[]' '[]' '[{"activity":{},"sizes":{}}]'
 stop_scenario "a finished helper holds nothing" '[{"id":"h1","type":"Explore","status":"completed","parentId":"a1","description":"done"}]' '[]' '[]' '[{"activity":{},"sizes":{}}]'
 STARTED="[{\"id\":\"b1\",\"output\":\"$SANDBOX/b1.output\"}]"
-TASK='[{"id":"b1","type":"shell","status":"running","description":"sleep 600","command":"sleep 600"}]'
+TASK='[{"id":"b1","type":"shell","status":"running","description":"npm test","command":"npm test"}]'
 stop_scenario "a background command whose output grows holds every time" '[]' "$STARTED" "$TASK" \
   "[{\"activity\":{},\"sizes\":{\"$SANDBOX/b1.output\":1}},{\"activity\":{},\"sizes\":{\"$SANDBOX/b1.output\":2}},{\"activity\":{},\"sizes\":{\"$SANDBOX/b1.output\":3}}]"
 stop_scenario "a background command whose output stays the same is released after two holds" '[]' "$STARTED" "$TASK" \
   "[{\"activity\":{},\"sizes\":{\"$SANDBOX/b1.output\":5}},{\"activity\":{},\"sizes\":{\"$SANDBOX/b1.output\":5}},{\"activity\":{},\"sizes\":{\"$SANDBOX/b1.output\":5}},{\"activity\":{},\"sizes\":{\"$SANDBOX/b1.output\":5}}]"
 stop_scenario "a background command that finished holds nothing" '[]' "$STARTED" '[]' '[{"activity":{},"sizes":{}}]'
-stop_scenario "another loop's background command holds nothing" '[]' '[]' '[{"id":"b2","type":"shell","status":"running","description":"sleep 9","command":"sleep 9"}]' '[{"activity":{},"sizes":{}}]'
+stop_scenario "another loop's background command holds nothing" '[]' '[]' '[{"id":"b2","type":"shell","status":"running","description":"npm run lint","command":"npm run lint"}]' '[{"activity":{},"sizes":{}}]'
 
 fresh
 write_snapshot "$HELPER" '[]' '{}'
 OUT="$(run subagent-stop "$(stop_payload)")"
 case "$OUT" in *'"decision":"block"'*'🛑 Blocked: you cannot end your turn'*'- helper h1 (holmes-lens, running): lens one'*) ok "node F2: the hold is a block decision with the module's reason" ;; *) bad "node F2: the hold is a block decision with the module's reason" "$OUT" ;; esac
+fresh
+write_snapshot "$HELPER" "$STARTED" '{}' handed-back
+check "node F2: after a handback, a live helper and a running command hold nothing" "$(run subagent-stop "$(stop_payload "$TASK")")$(run subagent-stop "$(stop_payload "$TASK")")$(run subagent-stop "$(stop_payload "$TASK")")" ""
+fresh
+write_snapshot '[]' "$STARTED" '{}'
+check "node F2: a background sleep holds nothing" "$(run subagent-stop "$(stop_payload '[{"id":"b1","type":"shell","status":"running","description":"wait","command":"sleep 150"}]')")" ""
 
 fresh
 check "node F2: with no snapshot (no dev-team agent) the turn ends, and nothing is written" "$(run subagent-stop "$(stop_payload)")$([ -e "$(SNAPSHOT_DIR)" ] && echo written)" ""

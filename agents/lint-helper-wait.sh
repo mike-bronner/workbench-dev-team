@@ -19,7 +19,8 @@ check_paragraph() {
     "A sub-agent receives a $helper's notice only during its own tool calls, and nothing wakes it after it ends its turn." \
     'First do any work that does not need' \
     "keep making short tool calls until every $helper has reported" \
-    'Never wait with a long `sleep`' \
+    "Wait for each $helper by its completion notice" \
+    'Never start a background command or a `sleep` just to wait' \
     "never poll a $helper's output file"; do
     [[ $paragraph == *"$phrase"* ]] || missing+=("$phrase")
   done
@@ -38,6 +39,14 @@ if [ -z "$stale" ]; then
   ok "no shipped text tells an agent to end its turn while helpers run"
 else
   while IFS= read -r line; do bad "end-your-turn wording ships: $line"; done <<< "$stale"
+fi
+
+sleepy="$(cd "$ROOT" && grep -rn -i -E 'such as `sleep|`sleep [0-9]+` is fine|wait with a short `sleep' \
+  agents references skills commands scheduled-tasks hooks README.md --include='*.md' --include='*.ts' --include='*.txt' --include='*.recipe' --include='*.json')"
+if [ -z "$sleepy" ]; then
+  ok "no shipped text tells an agent to wait with a sleep"
+else
+  while IFS= read -r line; do bad "sleep-to-wait wording ships: $line"; done <<< "$sleepy"
 fi
 
 echo

@@ -233,7 +233,16 @@ async function waitInputsOf($: EngineInterface, agentId: string) {
   if (!isDevTeamType(type)) return undefined
   const { value: started = [] } = await $.state.get({ plugin: 'workbench-dev-team', key: 'backgroundTasks', id: agentId })
   const agents = await $.agent.list().catch(() => [])
-  return { started, agents }
+  const { value: handedBack } = await $.state.get({ plugin: 'workbench-dev-team', key: 'handedBack', id: agentId })
+  return { started, agents, handedBack: handedBack === true }
+}
+
+async function recordHandback($: EngineInterface, seat: Seat, agentId: string | undefined, handedBack: boolean, activity: ReadonlyMap<string, Activity>): Promise<void> {
+  if (agentId === undefined) return
+  const key = { plugin: 'workbench-dev-team', key: 'handedBack', id: agentId } as const
+  if (((await $.state.get(key)).value ?? false) === handedBack) return
+  await $.state.set(key, handedBack)
+  if (handedBack) await recordWait($, seat, agentId, activity)
 }
 
 async function stopBlock(
@@ -244,7 +253,7 @@ async function stopBlock(
   watches: Map<string, Watch>,
 ): Promise<string | undefined> {
   const inputs = await waitInputsOf($, agentId)
-  if (inputs === undefined) return undefined
+  if (inputs === undefined || inputs.handedBack) return undefined
   const { started, agents } = inputs
   const sizes = new Map<string, number>()
   for (const entry of started) {
@@ -273,7 +282,7 @@ async function recordWait($: EngineInterface, seat: Seat, agentId: string, activ
   const inputs = await waitInputsOf($, agentId)
   if (inputs === undefined) return
   const file = waitFileOf(await $.env.get('HOME'), sessionId, agentId, 'snapshot')
-  if (file !== undefined) await $.fs.write(file, JSON.stringify(snapshotOf(agentId, inputs.agents, inputs.started, id => activity.get(id))))
+  if (file !== undefined) await $.fs.write(file, JSON.stringify(snapshotOf(agentId, inputs.agents, inputs.started, id => activity.get(id), inputs.handedBack)))
 }
 
 async function sweepFallbackFiles($: EngineInterface): Promise<void> {
@@ -765,6 +774,7 @@ export const register: Register = (on, options) => {
     const done = begin(e.agentId)
     try {
       let input = e
+      await recordHandback($, seat, e.agentId, false, activity).catch(() => undefined)
       if (e.agentId !== undefined) {
         const { value: effort } = await $.state.get({ plugin: 'workbench-dev-team', key: 'effort', id: e.agentId })
         if (effort !== undefined) input = { ...e, effort }
@@ -817,6 +827,11 @@ export const register: Register = (on, options) => {
         if (deny !== undefined) return { deny }
         const result = await next(call)
         if (e.tool === 'Bash') await recordStarted($, e.agentId, result).catch(() => undefined)
+        return watch(result)
+      }
+      if ((e.tool as string) === 'SubagentHandback') {
+        const result = await next(e)
+        if (result.deny === undefined && result.isError !== true) await recordHandback($, seat, e.agentId, true, activity).catch(() => undefined)
         return watch(result)
       }
       if (e.tool !== 'Agent') return watch(await next(e))

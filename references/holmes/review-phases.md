@@ -38,15 +38,19 @@ you name as holmes-lens. The model stays `LENS_MODEL`, passed as the dispatch's
 on, in any phase. Never end your turn while a helper has not reported.** A
 sub-agent receives a helper's notice only during its own tool calls, and
 nothing wakes it after it ends its turn. First do any work that does not need
-the helpers' results. Then keep making short tool calls until every helper has
-reported. A short wait such as `sleep 20` is fine, because each call delivers
-the notices that are waiting. Never wait with a long `sleep`, and never poll a
-helper's output file. A `sleep 240` holds every notice back for the whole
-sleep, while the helpers sit done and the human sees them as queued. If your
-`Agent` tool honors `run_in_background: false`, you may also set it on every
-call of a batch, sent in one message, so the batch returns its results
-together. A helper can still run in the background, so keep the short calls
-going until each one has reported.
+the helpers' results. Wait for each helper by its completion notice, and read
+its report from that notice. Then keep making short tool calls until every
+helper has reported, because each call delivers the notices that are waiting.
+Make each call one your review needs, such as a `grep` or a `Read` of a file
+under review. When no such call is left, a quick foreground `date` is enough.
+Never start a background command or a `sleep` just to wait, and never poll a
+helper's output file. A sleep of a plain duration delivers no report, so the
+stop hook never waits for one, and a long one holds every notice back while
+the helpers sit done and the human sees them as queued. If your `Agent` tool honors
+`run_in_background: false`, you may also set it on every call of a batch, sent
+in one message, so the batch returns its results together. A helper can still
+run in the background, so keep the short calls going until each one has
+reported.
 
 ---
 

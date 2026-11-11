@@ -1,6 +1,6 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { STUCK_AFTER, outputOf, stopBlockOf } from '../hooks/mods/helper-wait'
+import { STUCK_AFTER, isTimer, outputOf, stopBlockOf } from '../hooks/mods/helper-wait'
 import type { GuardOptions } from './world'
 import { BRIEF, spawnInput, step, world } from './world'
 
@@ -41,26 +41,27 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
       const result = await $.classic.SubagentStop(subagentStop('agent-1', []))
       expect(result.block).toContain('🛑 Blocked: you cannot end your turn')
       expect(result.block).toContain(`- helper agent-9 (holmes-lens, ${status}): a task`)
-      expect(result.block).toContain('Keep making short tool calls, such as `sleep 20`, until each one reports.')
+      expect(result.block).toContain('Wait for their completion notices.')
+      expect(result.block).toContain('Never start a background command or a `sleep` just to wait.')
     })
   }
 
   test('a background command it started and still in flight refuses the turn end', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('sleep 600', 'agent-1'))
-    const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'sleep 600')]))
-    expect(result.block).toContain('- background command b1: sleep 600')
+    await $.tool.call(background('npm test', 'agent-1'))
+    const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test')]))
+    expect(result.block).toContain('- background command b1: npm test')
   })
 
   test('two background commands it started are both named', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1', 'b2')
-    await $.tool.call(background('sleep 600', 'agent-1'))
-    await $.tool.call(background('sleep 700', 'agent-1'))
-    const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'sleep 600'), inFlight('b2', 'sleep 700')]))
-    expect(result.block).toContain('- background command b1: sleep 600')
-    expect(result.block).toContain('- background command b2: sleep 700')
+    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(background('npm run build', 'agent-1'))
+    const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test'), inFlight('b2', 'npm run build')]))
+    expect(result.block).toContain('- background command b1: npm test')
+    expect(result.block).toContain('- background command b2: npm run build')
   })
 
   test('with nothing outstanding the turn ends normally', async ($, on) => {
@@ -71,15 +72,15 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
   test('a background command that finished no longer holds the turn', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('sleep 600', 'agent-1'))
+    await $.tool.call(background('npm test', 'agent-1'))
     expect(await $.classic.SubagentStop(subagentStop('agent-1', []))).toEqual({})
   })
 
   test("another loop's background command does not hold this agent's turn", async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('sleep 600'))
-    expect(await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'sleep 600')]))).toEqual({})
+    await $.tool.call(background('npm test'))
+    expect(await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test')]))).toEqual({})
   })
 
   test("a finished helper, and another agent's live helper, do not hold the turn", async ($, on) => {
@@ -98,8 +99,8 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
   test('the main session is never blocked, and its background command is not recorded', async ($, on) => {
     const w = await withWatson($, on, { agents: [WATSON, { id: 'agent-9', type: T('holmes-lens') }] })
     w.background.push('b1')
-    await $.tool.call(background('sleep 600'))
-    expect(await $.classic.Stop({ hook_event_name: 'Stop', session_id: 's-1', transcript_path: '/t', cwd: '/tmp/repo', stop_hook_active: false, background_tasks: [inFlight('b1', 'sleep 600')] } as never)).toEqual({})
+    await $.tool.call(background('npm test'))
+    expect(await $.classic.Stop({ hook_event_name: 'Stop', session_id: 's-1', transcript_path: '/t', cwd: '/tmp/repo', stop_hook_active: false, background_tasks: [inFlight('b1', 'npm test')] } as never)).toEqual({})
   })
 
   test('a block from beneath stands as it is', async ($, on) => {
@@ -114,9 +115,9 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
     on('classic.SubagentStop', () => ({}))
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     w.background.push('b1')
-    await $.tool.call(background('sleep 600', 'agent-1'))
-    const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'sleep 600')]))
-    expect(result.block).toContain('- background command b1: sleep 600')
+    await $.tool.call(background('npm test', 'agent-1'))
+    const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test')]))
+    expect(result.block).toContain('- background command b1: npm test')
   })
 })
 
@@ -177,8 +178,8 @@ describe('helper wait — a helper that makes no progress stops holding the turn
   test('no refusal names an action the agent has no tool for', async ($, on) => {
     const w = await withWatson($, on, { agents: [WATSON, LENS()] })
     w.background.push('b1')
-    await $.tool.call(background('sleep 600', 'agent-1'))
-    const block = (await stop($ as never, [inFlight('b1', 'sleep 600')])).block ?? ''
+    await $.tool.call(background('npm test', 'agent-1'))
+    const block = (await stop($ as never, [inFlight('b1', 'npm test')])).block ?? ''
     expect(block).toContain('A helper or background command that makes no progress across two of your attempts to end your turn stops holding it')
     expect(block).not.toMatch(/stop it|TaskStop|kill|timeout/i)
   })
@@ -240,16 +241,16 @@ describe('helper wait — failures let the turn end, and every dev-team mode is 
     on('state.get', async ($, e, next) => (isBroken && e.key === 'backgroundTasks' ? ({ value: 42, version: 1 } as never) : next(e)))
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('sleep 600', 'agent-1'))
-    expect((await stop($ as never, [inFlight('b1', 'sleep 600')])).block).toContain('🛑 Blocked')
+    await $.tool.call(background('npm test', 'agent-1'))
+    expect((await stop($ as never, [inFlight('b1', 'npm test')])).block).toContain('🛑 Blocked')
     isBroken = true
-    expect(await stop($ as never, [inFlight('b1', 'sleep 600')])).toEqual({})
+    expect(await stop($ as never, [inFlight('b1', 'npm test')])).toEqual({})
   })
 
   test('an input with no background_tasks lets the turn end on a command it started', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('sleep 600', 'agent-1'))
+    await $.tool.call(background('npm test', 'agent-1'))
     const { background_tasks: _, ...input } = subagentStop('agent-1', []) as unknown as Record<string, unknown>
     expect(await $.classic.SubagentStop(input as never)).toEqual({})
   })
@@ -266,6 +267,152 @@ describe('helper wait — failures let the turn end, and every dev-team mode is 
       expect((await stop($ as never)).block).toContain('- helper agent-9 (holmes-lens, running)')
     })
   }
+})
+
+const handback = (agentId = 'agent-1') => ({ tool: 'SubagentHandback', tool_use_id: 'toolu_h', message: 'the report', agentId }) as never
+
+describe('helper wait — a background sleep of a plain duration delivers no report, so it never holds the turn', () => {
+  test('a plain background sleep lets the turn end', async ($, on) => {
+    const w = await withWatson($, on)
+    w.background.push('b1')
+    await $.tool.call(background('sleep 150', 'agent-1'))
+    expect(await stop($ as never, [inFlight('b1', 'sleep 150')])).toEqual({})
+  })
+
+  test('a sleep beside a real helper: the helper holds the turn, and the sleep is not named', async ($, on) => {
+    const w = await withWatson($, on, { agents: [WATSON, LENS()] })
+    w.background.push('b1')
+    await $.tool.call(background('sleep 150', 'agent-1'))
+    const block = (await stop($ as never, [inFlight('b1', 'sleep 150')])).block ?? ''
+    expect(block).toContain('- helper agent-9 (holmes-lens, running)')
+    expect(block).not.toContain('b1')
+  })
+
+  test('a sleep beside a real command: the command holds the turn, and the sleep is not named', async ($, on) => {
+    const w = await withWatson($, on)
+    w.background.push('b1', 'b2')
+    await $.tool.call(background('sleep 150', 'agent-1'))
+    await $.tool.call(background('npm test', 'agent-1'))
+    const block = (await stop($ as never, [inFlight('b1', 'sleep 150'), inFlight('b2', 'npm test')])).block ?? ''
+    expect(block).toContain('- background command b2: npm test')
+    expect(block).not.toContain('b1')
+  })
+
+  test('a command that waits and then does real work still holds the turn', async ($, on) => {
+    const w = await withWatson($, on)
+    w.background.push('b1')
+    await $.tool.call(background('sleep 5 && npm test', 'agent-1'))
+    expect((await stop($ as never, [inFlight('b1', 'sleep 5 && npm test')])).block).toContain('- background command b1: sleep 5 && npm test')
+  })
+
+  test('a command line made only of waits and plain words is a timer, and anything else is not', () => {
+    for (const command of ['sleep 150', 'sleep 1.5', 'sleep 2m', 'sleep 20 && date +%T', 'sleep 5; echo done', 'sleep 5 && echo "lens wait over"', 'true && sleep 3', 'sleep 1 && true', 'sleep 1; :', 'sleep 1 && printf done', 'sleep 1\nsleep 2'])
+      expect([command, isTimer(command)]).toEqual([command, true])
+    for (const command of [undefined, '', 'npm test', 'date', 'echo hi', 'sleep 5 && npm test', 'sleep 150 &', 'sleep $DELAY', 'sleep 1 | cat', 'sleep 1 > /tmp/x', 'echo $(whoami); sleep 1', 'sleep `n`', 'sleep 1 && echo waiting for the lens… [+40 chars]', 'sleep', 'sleep infinity', 'sleep 5x', 'sleep 1 && echo hi > /tmp/x', 'sleep 1 && echo hi < /tmp/x', 'sleep 1; echo x | sh', 'sleep 1; echo a & b', 'sleep 1 && echo `id`', 'sleep 1 && echo {a,b}', 'sleep 1 && echo [x]', 'sleep 1 && echo a\\b', 'sleep 1; date >/tmp/x', 'sleep 1 && date +%T extra'])
+      expect([command, isTimer(command)]).toEqual([command, false])
+  })
+})
+
+describe('helper wait — the block text never tells the agent to sleep', () => {
+  test('the hold and the release name no sleep to run, and the hold says how to wait', async ($, on) => {
+    const w = await withWatson($, on, { agents: [WATSON, LENS()] })
+    w.background.push('b1')
+    await $.tool.call(background('npm test', 'agent-1'))
+    const running = [inFlight('b1', 'npm test')]
+    const blocks = [(await stop($ as never, running)).block, (await stop($ as never, running)).block, (await stop($ as never, running)).block]
+    expect(blocks[0]).toContain('🛑 Blocked')
+    expect(blocks[2]).toContain('made no progress')
+    for (const block of blocks) expect(block ?? '').not.toMatch(/`sleep [0-9]|such as `sleep|keep sleeping/i)
+    expect(blocks[0]).toContain('Wait for their completion notices.')
+    expect(blocks[0]).toContain('each tool call delivers the notices that wait for you')
+    expect(blocks[0]).toContain('Never start a background command or a `sleep` just to wait.')
+  })
+})
+
+describe('helper wait — a released item never holds the turn again', () => {
+  test('a released helper holds no attempt after the release, even once it shows progress again', async ($, on) => {
+    await withWatson($, on, { agents: [WATSON, LENS()] })
+    expect((await stop($ as never)).block).toContain('🛑 Blocked')
+    expect((await stop($ as never)).block).toContain('🛑 Blocked')
+    expect((await stop($ as never)).block).toContain('made no progress')
+    for (let attempt = 4; attempt <= 8; attempt++) {
+      expect([attempt, await stop($ as never)]).toEqual([attempt, {}])
+      await step($ as never, 'agent-9')
+    }
+  })
+
+  test('a released command holds no attempt after the release, even once its output grows', async ($, on) => {
+    const w = await withWatson($, on)
+    w.background.push('b1')
+    await $.tool.call(background('npm test', 'agent-1'))
+    const running = [inFlight('b1', 'npm test')]
+    w.sizes.set('/tasks/b1.output', 10)
+    for (let attempt = 1; attempt <= 3; attempt++) expect((await stop($ as never, running)).block).toBeDefined()
+    for (let attempt = 4; attempt <= 8; attempt++) {
+      w.sizes.set('/tasks/b1.output', 10 + attempt)
+      expect([attempt, await stop($ as never, running)]).toEqual([attempt, {}])
+    }
+  })
+
+  test('new work after a release holds the turn on its own, and the released item is not named again', async ($, on) => {
+    const agents = [WATSON, LENS()] as { id: string; type: string; parentId?: string; status?: string }[]
+    await withWatson($, on, { agents })
+    for (let attempt = 1; attempt <= 3; attempt++) await stop($ as never)
+    agents.push({ id: 'agent-8', type: T('holmes-lens'), parentId: 'agent-1', status: 'running' })
+    for (let attempt = 4; attempt <= 6; attempt++) {
+      const block = (await stop($ as never)).block ?? ''
+      expect(block).toContain('- helper agent-8')
+      expect(block).not.toContain('agent-9')
+    }
+    expect(await stop($ as never)).toEqual({})
+  })
+})
+
+describe('helper wait — after the agent hands its report back, the hook never holds its turn end', () => {
+  test('a handback lets the turn end with a helper and a command still outstanding', async ($, on) => {
+    const w = await withWatson($, on, { agents: [WATSON, LENS()] })
+    w.background.push('b1')
+    await $.tool.call(background('npm test', 'agent-1'))
+    const running = [inFlight('b1', 'npm test')]
+    expect((await stop($ as never, running)).block).toContain('🛑 Blocked')
+    await $.tool.call(handback())
+    for (let attempt = 0; attempt < 4; attempt++) expect(await stop($ as never, running)).toEqual({})
+  })
+
+  test('a handback also skips the release notice, which would need another turn', async ($, on) => {
+    await withWatson($, on, { agents: [WATSON, LENS()] })
+    await stop($ as never)
+    await stop($ as never)
+    await $.tool.call(handback())
+    expect(await stop($ as never)).toEqual({})
+  })
+
+  test('a resumed agent is held again from its next model request', async ($, on) => {
+    await withWatson($, on, { agents: [WATSON, LENS()] })
+    await $.tool.call(handback())
+    expect(await stop($ as never)).toEqual({})
+    await step($ as never, 'agent-1')
+    expect((await stop($ as never)).block).toContain('🛑 Blocked')
+  })
+
+  test('a handback that failed does not release the hold', async ($, on) => {
+    const w = await withWatson($, on, { agents: [WATSON, LENS()] })
+    w.agentCall = 'error'
+    await $.tool.call(handback())
+    expect((await stop($ as never)).block).toContain('🛑 Blocked')
+  })
+
+  test('a handback that a hook refused does not release the hold', async ($, on) => {
+    await withWatson($, on, { agents: [WATSON, LENS()], tools: e => (e.tool === 'SubagentHandback' ? ({ deny: 'refused' } as never) : undefined) })
+    await $.tool.call(handback())
+    expect((await stop($ as never)).block).toContain('🛑 Blocked')
+  })
+
+  test("another agent's handback does not release this agent's hold", async ($, on) => {
+    await withWatson($, on, { agents: [WATSON, LENS()] })
+    await $.tool.call(handback('agent-5'))
+    expect((await stop($ as never)).block).toContain('🛑 Blocked')
+  })
 })
 
 const NONE = { helper: () => undefined, outputSize: () => undefined }

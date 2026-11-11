@@ -380,6 +380,8 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   lean-context point of delegating.
 - **Failures surface verbatim.** An agent that errored or hit its budget cap is
   reported as such, with its last reported state. No silent retries.
+- **Liveness comes from the task list and the transcript, never from
+  `ListAgents`:** `references/agent-liveness.md`.
 - **Decisions come home through `AskUserQuestion`.** Watson's `/develop` skill
   returns a meaningful fork as a graded table and a recommendation. Holmes's
   Local mode returns a rubric dispute the same way. A brief can come back with

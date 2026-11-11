@@ -27,9 +27,9 @@ export function outputOf(id: string, text: unknown): string | undefined {
 
 export const watchKey = (agentId: string, itemKey: string): string => `${agentId}\u0000${itemKey}`
 
-export type WaitSnapshot = { agents: Child[]; started: Started[]; activity: [string, Activity][] }
+export type WaitSnapshot = { agents: Child[]; started: Started[]; activity: [string, Activity][]; handedBack: boolean }
 
-export type WaitState = { agents: Child[]; started: Started[]; activity: ReadonlyMap<string, Activity> }
+export type WaitState = { agents: Child[]; started: Started[]; activity: ReadonlyMap<string, Activity>; handedBack: boolean }
 
 const childOf = ({ id, type, status, parentId, name, description }: Child): Child => ({
   id,
@@ -40,7 +40,7 @@ const childOf = ({ id, type, status, parentId, name, description }: Child): Chil
   ...(name === undefined ? {} : { name }),
 })
 
-export function snapshotOf(agentId: string, agents: readonly Child[], started: readonly Started[], activity: (id: string) => Activity | undefined): WaitSnapshot {
+export function snapshotOf(agentId: string, agents: readonly Child[], started: readonly Started[], activity: (id: string) => Activity | undefined, handedBack = false): WaitSnapshot {
   const children = agents.filter(agent => agent.parentId === agentId).map(childOf)
   return {
     agents: children,
@@ -49,6 +49,7 @@ export function snapshotOf(agentId: string, agents: readonly Child[], started: r
       const seen = activity(child.id)
       return seen === undefined ? [] : [[child.id, { ticks: seen.ticks, inFlight: seen.inFlight }] as [string, Activity]]
     }),
+    handedBack,
   }
 }
 
@@ -111,7 +112,7 @@ export function waitStateFrom(text: string): WaitState | undefined {
   const agents = everyOf(raw.agents, asChild)
   const started = everyOf(raw.started, asStarted)
   const activity = pairsOf(raw.activity, asActivity)
-  return agents === undefined || started === undefined || activity === undefined ? undefined : { agents, started, activity }
+  return agents === undefined || started === undefined || activity === undefined ? undefined : { agents, started, activity, handedBack: raw.handedBack === true }
 }
 
 export const watchesFrom = (text: string | undefined): Map<string, Watch> => (text === undefined ? undefined : pairsOf(parsed(text), asWatch)) ?? new Map()
@@ -119,6 +120,14 @@ export const watchesFrom = (text: string | undefined): Map<string, Watch> => (te
 export const watchesText = (watches: ReadonlyMap<string, Watch>): string => JSON.stringify([...watches])
 
 export const inFlightOf = (value: unknown): InFlight[] => (Array.isArray(value) ? value.flatMap(item => asInFlight(item) ?? []) : [])
+
+const WAIT_PART = /^(sleep( +[0-9.]+[smhd]?)+|true|:|date( +\S+)?|(echo|printf)( .*)?)$/
+
+export function isTimer(command: string | undefined): boolean {
+  if (command === undefined) return false
+  const parts = command.split(/&&|\|\||;|\n/).map(part => part.trim()).filter(part => part !== '')
+  return parts.some(part => /^sleep /.test(part)) && parts.every(part => !/[$`<>|&(){}\\[\]]/.test(part) && WAIT_PART.test(part))
+}
 
 type Item = { key: string; line: string; mark: string; isBusy: boolean }
 
@@ -139,7 +148,7 @@ export function stopBlockOf(
     })
   const commands: Item[] = inFlight.flatMap(task => {
     const own = started.find(entry => entry.id === task.id)
-    if (own === undefined) return []
+    if (own === undefined || isTimer(task.command)) return []
     const size = own.output === undefined ? undefined : progress.outputSize(own.output)
     return [{ key: `command:${task.id}`, line: `- background command ${task.id}: ${clip(task.command ?? task.description)}`, mark: String(size), isBusy: false }]
   })
@@ -168,7 +177,8 @@ export function stopBlockOf(
     ...items.map(item => item.line),
     '',
     'A sub-agent that ends its turn is never woken by a notice, so these reports would never reach you.',
-    'Keep making short tool calls, such as `sleep 20`, until each one reports. Each tool call delivers the notices that wait for you.',
+    'Wait for their completion notices. Do the work that does not need their reports, one tool call at a time, because each tool call delivers the notices that wait for you. When no work is left, make one quick foreground call, such as `date`, and look for a new notice after it.',
+    'Never start a background command or a `sleep` just to wait. A sleep of a plain duration delivers no report, so it never holds your turn.',
     'A helper or background command that makes no progress across two of your attempts to end your turn stops holding it, and you are told which one.',
   ].join('\n')
 }
