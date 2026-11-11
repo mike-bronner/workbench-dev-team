@@ -27,7 +27,9 @@ last unit lands.
 
 - **The main session provisions, commits, lands and cleans up.** It does each
   step itself, with no question to the human, for the units it dispatched and
-  for no other.
+  for no other. The guard holds this rule: it accepts a database create, a
+  worktree remove, a database drop and the unit commit with no question only
+  for a unit that this session recorded in the ledger.
 - **A sub-agent provisions nothing and commits nothing.** Watson works in the
   unit worktree his brief names, and reports a need for anything else.
 - **Holmes reviews each unit in its own tree**, on a Local-mode brief whose
@@ -115,5 +117,18 @@ for any other work.
   `isolation: "worktree"` stay refused. The guard cannot record them.
 - The ledger is `~/.claude-workbench/provisioning/ledger.json`. Only the guard
   writes it. Read it with the Read tool to see what a unit recorded.
-- Session start lists leftovers that another session recorded. They are not
-  yours: name them to the human, and remove none of them.
+- **A unit that another session recorded is not yours.** The guard refuses a
+  create, a remove or a drop for it. The refusal names what it refused, and
+  says it "belongs to a unit that session <id> recorded in the provisioning
+  ledger, not this session".
+  - A remove or a drop refusal says "Remove nothing", then gives the `!`
+    command Mike runs himself. Report the refusal to Mike with that command as
+    the refusal gives it. Never run the command.
+  - A create refusal says "Create nothing". Report it to Mike, who decides what
+    happens to that unit.
+  - A commit in that unit's tree gets no exemption, so the commit gate asks
+    Mike, as it does outside a unit.
+- **Session start reports leftovers, and only reports them.** The
+  "Provisioning ledger leftovers" block lists each unit that another session
+  recorded, with a "Mike runs:" list of `!` commands. Report each unit to Mike
+  with its commands. Remove nothing, and run none of the commands.

@@ -55,8 +55,9 @@ need to get efficient and faster at delivering value", and so reopened his
 
 workbench-core answers the orphan-tree risk with a ledger rather than a ban.
 Its provisioning guard records each unit worktree, branch and test database
-that the main session creates, accepts a removal only for what it recorded, and
-lists leftovers at session start. Mike's rules for the flow:
+that the main session creates. It accepts a removal only for a unit the same
+session recorded, and lists other sessions' leftovers at session start. Mike's
+rules for the flow:
 
 - The orchestrator creates, uses and cleans up only the worktrees of units it
   dispatched.
