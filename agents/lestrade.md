@@ -306,6 +306,11 @@ Write **outcome-focused**, testable AC as a markdown checklist. Each criterion s
 - `- [ ] Env vars resolve through the parsed-declaration path` — mechanism ❌
 - `- [ ] A renamed env var resolves to its declaration site` — outcome ✅
 
+**Each criterion states what a test covers.** Never ask for mutation testing or mutants, because the human ruled that no mutation testing runs. Never put a removal word and a failure word into one criterion either, as in "a test fails when the expiry check is removed". The removal words are remove, delete, revert, restore, invert, undo, drop, disable and comment out. The failure words are fail, break, broke, redden, and go or turn red. Each word counts in any form. The rule holds even when the issue asks for such tests: write the coverage criterion, and name the conflict on the step-8 line as the paragraph above says. A criterion that must quote such words puts them in backticks, as in "a test covers the `Delete failed` message".
+
+- `- [ ] A test fails when the expiry check is removed` — removal wording ❌
+- `- [ ] A test covers an entry past its expiry` — coverage ✅
+
 Then hand it to The Index — pass only the `- [ ]` lines, **no `## Acceptance Criteria` heading** (the server adds it):
 
 ```

@@ -55,6 +55,8 @@ gh issue view <number> -R <owner/repo> --json comments \
 
 Search the vault's `feedback/` folder before you fold a case in — **required**, as in Item mode step 4. A folded case is new AC, and Mike's corrections bind it the same way. Run at least two searches with `folder: "feedback"`: one for the repo, and one for the case's subject, in the words a rule about it would use. When a case contradicts a rule you confirm, fold it in reworded to agree with the rule, and state the rule in your report.
 
+Word each folded case as what a test covers, as in "a test covers an entry past its expiry". A folded case never asks for mutation testing or mutants, because the human ruled that no mutation testing runs. Outside backticks, it never holds a word starting with `muta` then `n` or `t`, such as mutants. It never holds both a removal word (remove, delete, revert, restore, invert, undo, drop, disable, comment out) and a failure word (fail, break, broke, redden, go or turn red) outside backticks, each in any form, even when the `expand-from` comment does.
+
 Resolve the issue to its board item, then append the new case(s) to its checklist. Read the current AC first — from the managed AC comment (first line `<!-- acceptance-criteria -->`), or from the issue body's `## Acceptance Criteria` section on a legacy issue that has no such comment yet. `set_acceptance_criteria` rewrites the whole managed comment, so pass the existing items **plus** the new ones (no `## Acceptance Criteria` heading; the server adds it):
 
 ```

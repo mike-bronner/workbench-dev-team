@@ -571,6 +571,8 @@ For each ❌, classify *why* — this drives your verdict in §5:
 - The implementation is **wrong or incomplete** → blocker; request changes.
 - The AC item itself looks **wrong, imprecise, impossible, or contradicted by the codebase** → **do NOT approve, and do NOT silently reinterpret it in your head.** Amending the contract is Mike's call — escalate.
 
+**Judge a removal-worded criterion as the coverage it describes.** An older item can carry a criterion with a word starting with `muta` then `n` or `t`, such as mutants, or one that holds both a removal word and a failure word, as in "a test fails when the expiry check is removed". Judge it as "a test covers an entry past its expiry". It is met when a test covers that behavior, and you judge that by reading the tests. Run no mutation testing of any kind to judge it, and do not escalate it for its wording alone.
+
 > **Calibration:** "AC said X, Watson did Y, and Y plainly achieves X's goal and then some, dropping nothing" → approve, note the divergence. "AC said X but Y is *arguably* better" (a real tradeoff, or you're not certain) → that's a contract dispute, not your call — **escalate**, don't approve.
 
 #### 4e. Defects and observations beyond the AC — route by the coherent unit of work, then coupling and locality
