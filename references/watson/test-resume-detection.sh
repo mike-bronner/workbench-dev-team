@@ -69,7 +69,7 @@ case "${1:-}" in
           f="$FIXTURE/comments/$n"
           [ -f "$f" ] || exit 0                       # no comments on this issue yet
           { if [ "$paginate" = 1 ]; then cat "$f"; else head -30 "$f"; fi; } \
-            | jq -c -s '_nwise(30)' | while IFS= read -r page; do
+            | jq -c -s 'range(0; length; 30) as $i | .[$i:$i+30]' | while IFS= read -r page; do
                 if [ -n "$jqexpr" ]; then jq -r "$jqexpr" <<< "$page"; else printf '%s\n' "$page"; fi
               done
           exit 0 ;;
