@@ -664,9 +664,23 @@ holds the AC, and the merge closes the issue).
 Never copy or append the AC into the body, even when the template has no slot
 for them. A copy drifts from the issue. The AC sit in Lestrade's managed
 comment on the issue, the one with `<!-- acceptance-criteria -->` on its first
-line. Tick a met criterion there only through an Index tool, once The Index
-provides one. Never edit that comment with `gh`. Until the tool exists, leave
-its boxes as they are.
+line. Tick each met criterion there with the Index tick tool. Pass each one by
+its exact text, as GitHub renders it next to the checkbox:
+
+```
+mcp__the-index__tick_acceptance_criteria(agent: "watson", id: <ITEM_ID>, criteria: ["<exact criterion text>", "<exact criterion text>"])
+```
+
+The tool answers with `ticked`, `already_ticked`, and `comment_action`
+(`updated` or `unchanged`). Never edit that comment with `gh`, because it
+belongs to Lestrade's App. The tool is the only path.
+
+If the tool returns an error, it wrote nothing, and the comment is unchanged.
+A criterion text that does not match is one cause. Fix the text and call it
+again once. If it still errors, or the tool is not in your tool list, leave the
+boxes as they are and go on. Quote the error and name the unticked criteria in
+the step 11 report. Never tick them another way. A tick error does not stop the
+run, unlike other MCP write errors.
 
 A legacy item, triaged before the AC moved to that comment, has no such
 comment. Its AC sit in the issue body's `## Acceptance Criteria` section. Leave
@@ -772,3 +786,6 @@ step 5 removes the clone the same way, before the report.
 ✅ implemented #<issue_number> (<repo>) → In Review
    PR: <pr_url> (CI green)
 ```
+
+If the tick tool failed in step 7, add one line that quotes its error and names
+the criteria left unticked.

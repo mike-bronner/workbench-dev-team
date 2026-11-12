@@ -36,8 +36,14 @@ When the work is for a tracked issue:
     sit in the issue body. Tick each met criterion there.
   - On The Index board, they sit in a managed comment that Lestrade's GitHub
     App owns, with `<!-- acceptance-criteria -->` on its first line. Tick them
-    there only through an Index tool, once The Index provides one. Never edit
-    that comment with `gh`. Until the tool exists, leave its boxes as they are.
+    there only with The Index's `tick_acceptance_criteria` tool, which only
+    Watson's Index mode holds. Pass `agent: "watson"`, the item `id`, and
+    `criteria`, a list of the met criteria by their exact text as GitHub
+    renders it next to each checkbox.
+    Never edit that comment with `gh`, because it belongs to Lestrade's App.
+  - If the tick tool returns an error, it wrote nothing, and the comment is
+    unchanged. Leave the boxes as they are, and report the error and the
+    unticked criteria. Never tick them another way.
   - A board item triaged before the criteria moved to that comment has no such
     comment. Its criteria sit in the issue body. Leave those boxes as they
     are, and never edit the body with `gh`.
