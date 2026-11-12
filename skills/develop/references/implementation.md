@@ -61,5 +61,14 @@ the same rule.
   a type signature wrong, update it in the same commit. Stale docs actively
   mislead. For external docs (Notion, Confluence, design specs), flag what
   needs updating even if you can't change them yourself.
+- **Create nothing on your own initiative that you cannot remove yourself.**
+  That covers a container, an image, a toolchain installed outside the project,
+  a process left running, and a file outside the project or a scratch root.
+  What the workflow, the brief or the orchestrator calls for stays allowed, such
+  as a feature branch or a pull request, and so does what the project's own
+  tooling creates and cleans up, such as a test database or the project's own
+  Compose services, each named as §3 of `SKILL.md` says. When the work seems to
+  need something else, take another route. If none exists, hand the need back
+  to the orchestrator, or to the human in a foreground session.
 - **No WebFetch.** Reason from the repo. If you can't, planning missed
   something — go back to §2 of `SKILL.md`.

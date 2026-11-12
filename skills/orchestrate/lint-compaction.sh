@@ -281,6 +281,9 @@ phrase|orchestrate|Never unwind commits to fake an uncommitted tree
 phrase|develop|the existing tests that cover the files you changed, never the full suite.**
 phrase|develop|**Run no mutation testing of any kind.**
 phrase|orchestrate|The dev-team mod's no-mutation gate refuses one without it.
+phrase|orchestrate|A CI-only failure's brief rules out Docker, a VM or a CI-like local environment, and never asks for a local reproduction on another platform.
+phrase|develop|**Create nothing on your own initiative that you cannot remove yourself.**
+phrase|develop|**Never mimic CI or another platform locally** with Docker, a VM or a source build.
 phrase|develop|**Investigation not converging?** When three hypotheses in a row are ruled out with no confirmed cause, stop.
 EOF
 for gone in 'also through a script' 'One test file, a filter, or one case still runs'; do

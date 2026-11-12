@@ -30,6 +30,18 @@ around the part that mattered because nothing told it what the limit protects.
 **A limit on a database names the category, never one activity** — how to word
 it: "A database limit names the category" (below).
 
+**A brief for a CI-only failure rules out a local copy of CI.** Mike's machine
+stays lean, and CI already proves the other platform, so a brief never asks
+Watson to reproduce a Linux or CI failure locally. On 2026-11-12 a brief asked
+for that, and Watson built Docker images its guards then kept it from removing.
+Write the limit like this:
+
+```
+- Do not use Docker, a VM or a source build to mimic CI or another platform
+  locally. CI already proves that platform, and what such a build leaves behind
+  cannot be removed by the agent.
+```
+
 **`Acceptance:` is the list the work is graded against, and it is required.**
 Number the criteria, one per bullet. Each one names a result, never a method,
 and someone other than you can check it without asking. The receiver grades its

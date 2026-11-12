@@ -181,6 +181,10 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
   code, and delete one your change makes wrong rather than rewrite it.
 - **Keep docs in sync.** Update any README or type signature your change makes
   wrong, in the same commit, and flag external docs you can't change.
+- **Create nothing on your own initiative that you cannot remove yourself.**
+  What the workflow, the brief or the orchestrator calls for stays allowed, and
+  so does what the project's own tooling cleans up. Otherwise take another
+  route, or hand the need back.
 - **Start every local service you create under a name of its own**, such as a
   Compose project name, a database name or a port, so it never reuses another
   run's containers, volumes or data. Never delete existing state, such as a
@@ -220,6 +224,10 @@ The tier, test-strength, and doc-drift rules in full: `references/testing.md`.
   your change caused. A failure your change did not cause is out of scope (§2):
   confirm it fails the same way without your change, then report it
   rather than fold a fix in.
+- **Never mimic CI or another platform locally** with Docker, a VM or a source
+  build. Read CI's logs and the tool's changelog, use a version already
+  installed, such as Herd's PHP or mise, or hand the question back to the
+  orchestrator, who can push a small diagnostic so CI answers.
 - **Grep the tree for every symbol or documented claim your diff changed**
   (doc-drift) — code, comments, README, docs — and fix each in the same change.
 - **Run the linter or formatter** if the repo has one (eslint, ruff,

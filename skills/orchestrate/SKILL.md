@@ -104,20 +104,19 @@ Why: `references/brief-rationale.md`.
    true`; the dev-team mod sets it on a dev-team dispatch that leaves it out.
    Set `false` only when the user explicitly wants to wait on a quick result.
 2. **No `model` parameter.** Never pass the Agent tool's `model` to a dev-team
-   agent. The agent's frontmatter carries the configured model, and the
-   alias-only parameter would override it (see "Model and effort" below).
+   agent: its alias overrides the configured model (see "Model and effort"
+   below).
 3. **Every handoff is a brief.** Send the six slots defined below and nothing
-   else — for
-   Watson's Direct mode, Holmes's Local mode, and the read-only `Explore`,
-   `Plan`, and `general-purpose` runs alike. Research is not exempt, and that is
-   the point (why: `references/brief-rationale.md`). Three shapes are exempt:
-   the two machine-built tokens (`Item ID: <n>` and `Repo sweep: <owner/repo>`,
-   between them every Lestrade dispatch and every Holmes Index-mode dispatch),
-   and a specialist's own fan-out, which stays inside the orchestrator boundary
-   rather than crossing it. Read the fan-out exemption as a boundary, never as
-   a list of agents (why: `references/brief-rationale.md`). A Watson or Holmes
-   `Item ID: <n>` run needs no `Acceptance:` slot: the item's acceptance
-   criteria, written by Lestrade at triage, are its Acceptance list.
+   else — for Watson's Direct mode, Holmes's Local mode, and the read-only
+   `Explore`, `Plan`, and `general-purpose` runs alike (why:
+   `references/brief-rationale.md`). Three shapes are exempt: the two
+   machine-built tokens (`Item ID: <n>` and `Repo sweep: <owner/repo>`, between
+   them every Lestrade dispatch and every Holmes Index-mode dispatch), and a
+   specialist's own fan-out, inside the orchestrator boundary. Read the fan-out
+   exemption as a boundary, never as a list of agents (why:
+   `references/brief-rationale.md`). A Watson or Holmes `Item ID: <n>` run
+   needs no `Acceptance:` slot: the item's acceptance criteria, written by
+   Lestrade at triage, are its Acceptance list.
 4. **A Watson Index-mode run goes through the dispatcher.** Dispatch
    `Item ID: <n>` to Watson as usual. The dev-team mod runs
    `~/.claude-workbench/bin/dispatch-agent.sh` in place of the Agent call,
@@ -248,7 +247,9 @@ Each slot's full rule, and what a brief must carry:
   may outside Watson and Holmes, and it carries at least one sentence on why
   the task exists. Why: `references/brief-rationale.md`.
 - **`Constraints:`** — a limit on a database names the category, never one
-  activity. Watson and Holmes briefs end each block with the exact line "Run
+  activity. A CI-only failure's brief rules out Docker, a VM or a CI-like local
+  environment, and never asks for a local reproduction on another platform.
+  Watson and Holmes briefs end each block with the exact line "Run
   no mutation testing of any kind." The dev-team mod's no-mutation gate
   refuses one without it.
 - **`Acceptance:`** — required. Number the criteria. Each names a result,

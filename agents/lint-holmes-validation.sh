@@ -234,6 +234,25 @@ for rel in FILES:
     else:
         ok(f"{rel} states the rule")
 
+CLEANUP_FILES = [
+    "agents/holmes.md",
+    "agents/holmes-local.md",
+    "agents/holmes-index.md",
+    "agents/holmes-lens.md",
+]
+CLEANUP_PHRASES = [
+    "create nothing on your own initiative that you cannot remove yourself",
+    "what the project's own test runner creates and cleans up stays allowed",
+    "never use docker, a vm or a source build to mimic ci or another platform",
+]
+for rel in CLEANUP_FILES:
+    flat = " ".join(open(f"{ROOT}/{rel}", encoding="utf-8").read().replace("*", "").split()).lower()
+    absent = [p for p in CLEANUP_PHRASES if p not in flat]
+    for p in absent:
+        bad(f"{rel} — does not state: {p}")
+    if not absent:
+        ok(f"{rel} states the self-cleanup and no-CI-copy rule")
+
 MUTATION = re.compile(r"\bmutat\w*", re.I)
 shipped = sorted(
     os.path.relpath(os.path.join(d, f), ROOT)

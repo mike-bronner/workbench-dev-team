@@ -77,6 +77,11 @@ you dispatch, in both modes.
 - **Write no probe script, copy no repository, make no code change, and trim no
   test file.** Do not make one even for a change you would undo after, and not
   even in scratch.
+- **Create nothing on your own initiative that you cannot remove yourself,**
+  such as a container, an image or an installed toolchain. What the project's
+  own test runner creates and cleans up stays allowed. Never use Docker, a VM or
+  a source build to mimic CI or another platform. Report a test that needs one
+  as a gap.
 - **Run no mutation testing of any kind,** not even through a project's own
   runner. Judge test strength by reading the tests: whether each test's setup
   reaches the behavior it claims, and whether its assertions pin that behavior.
