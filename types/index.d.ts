@@ -77,9 +77,6 @@ declare module 'claude-code' {
       // by its agentId: set when agent.spawn starts it. The scratch folder, the
       // context budget and the holmes-lens rule read it.
       agentType: StateFamily<string>
-      // Each dev-team agent's scratch folder, keyed by its agentId, or `run`
-      // for the top-level loop of a `claude -p --agent` run: made at its first
-      // bare mktemp, deleted and set to "" when its run completes.
       scratch: StateFamily<string>
       // Every scratch folder the mod made and has not deleted yet. A family
       // cannot be listed, so session.end reads this to delete what each run's

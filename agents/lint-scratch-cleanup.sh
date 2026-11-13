@@ -6,21 +6,6 @@
 # none of the plugin's shell logic. tests/scratch.test.ts holds the mod that
 # carries the rule out.
 #
-# Why: on 2026-09-30 a Holmes lens made a probe copy with a bare `mktemp -d`,
-# which lands in macOS $TMPDIR, and never deleted it. Its delete had been
-# refused, most likely because it named the folder through a variable, and the
-# report told Mike to run `! rm -r` himself. Mike's rule is that scratch lives in
-# the session scratchpad or ~/Developer/scratchpad, one folder per run, and is
-# deleted without the human. Since 2026-10-08 the dev-team mod carries that out
-# (hooks/mods/scratch.ts): it points a dev-team agent's bare mktemp at a folder
-# of its own under a scratch root, and deletes the folder when the run ends.
-# Each agent reads only its own file, so the rule lives in all of them.
-#
-# Checks:
-#   1. Every agents/*.md has a `## Scratch folders` section that names the bare
-#      mktemp, both roots, the mod's delete at the run's end, the touch-only-
-#      your-own rule, the fallback when the mod is not running, the ban on
-#      handing the human a `!` command, and the branches-and-stashes carve-out.
 #   2. No Markdown instruction under agents/ or skills/ makes scratch with a
 #      `<scratch root>` template, except the three shared clones, each of which
 #      its own step deletes: the Watson Index pipeline's, Holmes's Index-mode PR
@@ -53,13 +38,17 @@ for file in "$DIR"/*.md; do
   fi
   missing=()
   for phrase in \
-    'Make every temporary folder with a bare `mktemp -d`' \
-    'The dev-team mod points a bare `mktemp` at a folder of your own under a scratch root' \
+    'The dev-team mod makes a scratch folder of your own when your run starts' \
     'the session scratchpad, or `~/Developer/scratchpad` when the session has none' \
+    'The context you receive at your start names that folder.' \
+    "Make every temporary folder with \`mktemp -d '<your folder>/tmp.XXXXXXXX'\`" \
+    "a temporary file with \`mktemp '<your folder>/tmp.XXXXXXXX'\`" \
+    'The mod refuses a bare `mktemp`' \
     'It deletes that folder when your run ends' \
     'Touch only what your own `mktemp` made.' \
     'Never touch another run'"'"'s folder' \
-    'If `mktemp` prints a path outside both scratch roots, the mod is not running' \
+    "If your start named no folder, the mod's refusal of a bare \`mktemp -d\` names it." \
+    'If a bare `mktemp` is not refused, the mod is not running' \
     'with `rm -rf` and its literal path, as a command of its own' \
     'Never ask the human to delete your scratch, and never hand them a `!` command' \
     'Leave git branches and stashes where they are'; do

@@ -43,7 +43,7 @@ import { BOARD_PANE, RUNS_PANE, boardTree, runsTree } from './mods/panes'
 import type { LogEnd } from './mods/runs'
 import { LOG_DIR, RUNS_REFRESH_MS, endsOf, livePairsOf, markersOf, newestRuns, rowsOf, scanArgv } from './mods/runs'
 import { RULES, isRulesLane, isRulesSubagent, withRules } from './mods/session-rules'
-import { hasBareMktemp, hasLiveChild, isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from './mods/scratch'
+import { hasBareMktemp, hasLiveChild, isDeletable, mktempDeny, prefixOf, rootOf, scratchContextOf, sweepOf } from './mods/scratch'
 import type { CallerLane, ResumedAgent } from './mods/spawn'
 import {
   CONFIG_MODES,
@@ -140,12 +140,14 @@ async function resumedAgentOfKept($: EngineInterface, agentId: string | undefine
 
 // ── Scratch folders ──────────────────────────────────────────────────────────
 
-// The run's scratch folder: the one it has, or a new one under the first
-// scratch root, made with mktemp. Undefined when none can be made.
 async function scratchFolderOf($: EngineInterface, run: Run): Promise<string | undefined> {
   const { value: kept } = await $.state.get({ plugin: 'workbench-dev-team', key: 'scratch', id: run.key })
   if (kept && (await $.fs.exists(kept).catch(() => false))) return kept
   const roots = await $.workbench.scratchRoots()
+  if (kept && isDeletable(kept, roots) && ((await $.process.run(['mkdir', '-m', '700', '--', kept])).exitCode === 0 || (await $.fs.exists(kept).catch(() => false)))) {
+    await recordFolder($, [kept], 'add')
+    return kept
+  }
   const root = rootOf(roots)
   if (root === undefined) return undefined
   const made = await $.process.run(['mktemp', '-d', `${root}/${prefixOf(run.type)}.XXXXXX`])
@@ -186,24 +188,17 @@ async function endSession($: EngineInterface, budget: { remainingMs: number }): 
   if (removed?.exitCode === 0) await recordFolder($, sweep.doomed, 'remove')
 }
 
-// The Bash line with a dev-team agent's bare mktemp pointed at its folder, or
-// the line as written when it has none, or when anything here fails: a mktemp
-// left in $TMPDIR is how the line ran before the mod.
-async function withScratch($: EngineInterface, agentId: string | undefined, line: string): Promise<string> {
-  if (!line.includes('mktemp')) return line
-  try {
-    const before = await $.workbench.parseShell(line)
-    if (!hasBareMktemp(before)) return line
-    const run = await runOf($, agentId)
-    if (run === undefined) return line
-    const folder = await scratchFolderOf($, run)
-    if (folder === undefined) return line
-    const pointed = pointMktemp(line, folder)
-    if (pointed === undefined) return line
-    return readsAsPointed(before, await $.workbench.parseShell(pointed), folder) ? pointed : line
-  } catch {
-    return line
-  }
+async function mktempRefusalOf($: EngineInterface, agentId: string | undefined, line: string): Promise<string | undefined> {
+  if (!line.includes('mktemp')) return undefined
+  const run = await runOf($, agentId).catch(() => undefined)
+  if (run === undefined) return undefined
+  const folder = await scratchFolderOf($, run).catch(() => undefined)
+  return hasBareMktemp(await $.workbench.parseShell(line)) ? mktempDeny(folder) : undefined
+}
+
+async function scratchContextFor($: EngineInterface, run: Run | undefined): Promise<string | undefined> {
+  const folder = run === undefined ? undefined : await scratchFolderOf($, run)
+  return folder === undefined ? undefined : scratchContextOf(folder)
 }
 
 // The end of a turn: the run's scratch folder deleted, unless a child the run
@@ -216,10 +211,10 @@ async function endRun($: EngineInterface, agentId: string | undefined): Promise<
   const key = agentId ?? ((await $.workbench.callerLane({})) === 'top-level-agent' ? 'run' : undefined)
   if (key === undefined) return
   const { value: folder } = await $.state.get({ plugin: 'workbench-dev-team', key: 'scratch', id: key })
-  const agents = folder ? await $.agent.list().catch(() => undefined) : undefined
+  const isMade = folder ? await $.fs.exists(folder).catch(() => true) : false
+  const agents = isMade ? await $.agent.list().catch(() => undefined) : undefined
   if (folder && agents !== undefined && !hasLiveChild(agents, agentId)) {
     if (isDeletable(folder, await $.workbench.scratchRoots())) await $.process.run(['rm', '-rf', '--', folder])
-    await $.state.set({ plugin: 'workbench-dev-team', key: 'scratch', id: key }, '')
     await recordFolder($, [folder], 'remove')
   }
   const holmes = await holmesRunOf($, agentId)
@@ -776,12 +771,13 @@ export const register: Register = (on, options) => {
   on('classic.SubagentStart', async ($, e, next) => {
     await markModRan($, seat, e.session_id, 'subagent-start')
     const result = await next(e)
-    if (!isRulesSubagent(e.agent_type) || !(await isRulesSession($))) return result
-    return { ...result, additionalContext: [...(result.additionalContext ?? []), RULES] }
+    const rules = isRulesSubagent(e.agent_type) && (await isRulesSession($)) ? [RULES] : []
+    const run = isDevTeamType(e.agent_type) ? { type: e.agent_type, key: e.agent_id } : undefined
+    const scratch = await scratchContextFor($, run).catch(() => undefined)
+    const added = [...rules, ...(scratch === undefined ? [] : [scratch])]
+    return added.length === 0 ? result : { ...result, additionalContext: [...(result.additionalContext ?? []), ...added] }
   })
 
-  // The config line for a top-level run of a mode that reads it. Nothing here
-  // calls next, so a failure leaves the prompt as it came.
   on('prompt.submit', async ($, e, next) => {
     let line: string | undefined
     try {
@@ -792,7 +788,11 @@ export const register: Register = (on, options) => {
     } catch {
       line = undefined
     }
-    return next(line === undefined ? e : { ...e, context: [...(e.context ?? []), line] })
+    const scratch = await runOf($, undefined)
+      .then(run => scratchContextFor($, run))
+      .catch(() => undefined)
+    const lines = [line, scratch].filter((added): added is string => added !== undefined)
+    return next(lines.length === 0 ? e : { ...e, context: [...(e.context ?? []), ...lines] })
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -847,10 +847,9 @@ export const register: Register = (on, options) => {
         return result
       }
       if (e.tool === 'Bash' || e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
-        const call = e.tool === 'Bash' && typeof e.command === 'string' ? { ...e, command: await withScratch($, e.agentId, e.command) } : e
-        const deny = await guard($, call)
+        const deny = (await guard($, e)) ?? (e.tool === 'Bash' && typeof e.command === 'string' ? await mktempRefusalOf($, e.agentId, e.command) : undefined)
         if (deny !== undefined) return { deny }
-        const result = await next(call)
+        const result = await next(e)
         if (e.tool === 'Bash') await recordStarted($, e.agentId, result).catch(() => undefined)
         return watch(result)
       }
