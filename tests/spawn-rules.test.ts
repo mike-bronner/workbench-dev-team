@@ -511,6 +511,131 @@ describe('mutationFindingsOf — the exact line and the strict ban', () => {
     expect(findings).toEqual(CLEAN)
   })
 
+  test('a Unit: line after the last Acceptance: item stays out of that item, so a removal word in it pairs with no failure word', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails on bad input').replace('Done when:', 'Unit: 2 of 4, delete the old layout constant. Meets AC1.\nDone when:')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  test('a Unit: line between two items keeps each item whole, and the next line still starts its own item', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails\nUnit: 1 of 2, drop the legacy constant.\n- AC2: it works')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  test('a decorated **Unit:** label after an item ending in "fails" stays out of that item', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails\n**Unit:** 1 of 2, drop the legacy constant.')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  for (const [slot, from, to] of [
+    ['Goal:', 'Goal: Fix the parser.', 'Goal: Fix the parser so the old test fails.\nUnit: 1 of 2, drop the legacy constant.'],
+    ['Done when:', 'Done when: the test passes.', 'Done when: the old test fails.\nUnit: 1 of 2, drop the legacy constant.'],
+  ] as const) {
+    test(`a Unit: line after ${slot} stays out of that slot's text`, () => {
+      expect(mutationFindingsOf(BRIEF.replace(from, to))).toEqual(CLEAN)
+    })
+  }
+
+  test('unbulleted lines after a Unit: line join the Unit item and are judged with it', () => {
+    const prompt = withAcceptance('- AC1: the field survives\nUnit: 2 of 4, delete the old guard\n  and show the test fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: '2 of 4, delete the old guard and show the test fails' }])
+  })
+
+  for (const [name, end] of [
+    ['a sub-bullet', '\n  - and the test fails'],
+    ['a blank line', '\n\nthe test fails'],
+  ] as const) {
+    test(`${name} ends the Unit item, and later text joins the item before the Unit: line again`, () => {
+      const prompt = withAcceptance(`- AC1: the guard is removed\nUnit: 1 of 2, the parser.${end}`)
+      const findings = bannedOf(prompt)
+      expect(findings.map(f => f.slot)).toEqual(['Acceptance:'])
+      expect(findings[0]?.item).not.toContain('Unit')
+    })
+  }
+
+  test('a Unit: line under an empty Acceptance: label, followed by a bullet with a failure word, is clean', () => {
+    const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: 1 of 2, delete the guard\n- AC1: the test fails')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  test('a Unit: line under an empty Acceptance: label that wraps onto a failure word is one banned Unit: item', () => {
+    const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: 1 of 2, drop the guard\n  and the test fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: '1 of 2, drop the guard and the test fails' }])
+  })
+
+  test('two Unit: lines in a row, then a blank line, send later text back to the item before them', () => {
+    const prompt = withAcceptance('- AC1: the guard is removed\nUnit: 1 of 2, the parser.\nUnit: 2 of 2, the lexer.\n\nthe test fails')
+    const findings = bannedOf(prompt)
+    expect(findings).toEqual([{ slot: 'Acceptance:', item: '- AC1: the guard is removed the test fails' }])
+    expect(findings[0]?.item).not.toContain('Unit')
+  })
+
+  test('a removal word in an item and a failure word on the wrapped Unit: line right after it are judged as one pair', () => {
+    const prompt = withAcceptance('- Delete the assertion\nUnit: 1 of 2\n  and the suite fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- Delete the assertion Unit: 1 of 2 and the suite fails' }])
+  })
+
+  test('a removal word in an item and a failure word on a later Unit: line in the same run are judged as one pair', () => {
+    const prompt = withAcceptance('- Delete the assertion\nUnit: 1 of 2\nUnit: and the suite fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- Delete the assertion Unit: 1 of 2 Unit: and the suite fails' }])
+  })
+
+  test('a bullet after the Unit: line ends the run, so its failure word is not paired with the removal word before the Unit: line', () => {
+    expect(mutationFindingsOf(withAcceptance('- Delete the assertion\nUnit: 1 of 2\n- AC2: the suite fails'))).toEqual(CLEAN)
+  })
+
+  test('a failure phrase split across an item and its Unit: line is judged as one pair', () => {
+    const prompt = withAcceptance('- Delete the helper so the test goes\nUnit: red when it is gone')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- Delete the helper so the test goes Unit: red when it is gone' }])
+  })
+
+  test('a failure phrase in an item and a removal word on its Unit: line, the mirror order, is clean', () => {
+    expect(mutationFindingsOf(withAcceptance('- AC1: the test goes\nUnit: red, then drop the helper'))).toEqual(CLEAN)
+  })
+
+  for (const [name, acceptance] of [
+    ['after an item', 'Acceptance:\n- Cover the parser.\nUnit: Delete the stale fixture\nUnit: the suite fails afterwards'],
+    ['under an empty label', 'Acceptance:\nUnit: Delete the stale fixture\nUnit: the suite fails afterwards'],
+  ] as const) {
+    test(`two Unit: lines in a row ${name} that hold the pair between them are judged as one Unit: item`, () => {
+      const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', acceptance)
+      expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: 'Delete the stale fixture the suite fails afterwards' }])
+    })
+  }
+
+  test('a Unit: line under an empty label keeps text after a blank line, so a removal and a failure split by it are judged together', () => {
+    const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: delete x\n\nthe test fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: 'delete x the test fails' }])
+  })
+
+  test('a Unit: line after the no-mutation line goes through the voiding check like a Constraints: item', () => {
+    const unit = 'Unit: 1 of 2, unless the reviewer asks for a stronger check.'
+    expect(mutationFindingsOf(withConstraints(`Constraints:\n${NO_LINE}\n${unit}`))).toEqual({ ...CLEAN, voidingItems: [unit] })
+  })
+
+  test('a label with a no-break space before the colon is not read as a Unit: line', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails\nUnit\u00a0: 1 of 2, drop the legacy constant.')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- AC1: the parser test fails Unit\u00a0: 1 of 2, drop the legacy constant.' }])
+  })
+
+  for (const [name, unit, item] of [
+    ['mentions mutation', 'Unit: 2 of 4, prove it with a mutation check.', '2 of 4, prove it with a mutation check.'],
+    ['holds a removal word and a failure word', '**Unit:** 2 of 4, the test fails if the guard is removed.', '2 of 4, the test fails if the guard is removed.'],
+  ] as const) {
+    test(`a Unit: line that ${name} is judged on its own text, apart from the item before it`, () => {
+      const prompt = BRIEF.replace('Done when:', `${unit}\nDone when:`)
+      expect(mutationFindingsOf(prompt)).toEqual({ ...CLEAN, bannedItems: [{ slot: 'Unit:', item }] })
+    })
+  }
+
+  test('a banned Unit: line inside Context: is still judged', () => {
+    const prompt = BRIEF.replace('Context: It drops a field.', 'Context: It drops a field.\nUnit: 1 of 3, kill every mutant.')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: '1 of 3, kill every mutant.' }])
+  })
+
+  test('a Unit: line inside Constraints: does not end the block, so the no-mutation line after it still counts', () => {
+    expect(mutationFindingsOf(withConstraints(`Constraints:\n- Keep the public API.\nUnit: 1 of 2, the parser.\n${NO_LINE}`))).toEqual(CLEAN)
+  })
+
   for (const [label, end] of [
     ['acceptance:', 'Done when:'],
     ['**Acceptance**:', '**Done when:**'],

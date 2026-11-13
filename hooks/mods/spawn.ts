@@ -234,6 +234,7 @@ export const BRIEF_SLOTS: readonly string[] = ['Workdir:', 'Goal:', 'Context:', 
 
 const escape = (text: string): string => text.replace(/[.*+?^${}()|[\]\\]/gu, '\\$&')
 const LABELS = BRIEF_SLOTS.map(slot => new RegExp(`^[#*_\`\\s]*${escape(slot.slice(0, -1))}[*_\`\\s]*:[*_\`]*`, 'iu'))
+const UNIT = /^[#*_` \t\r\v\f]*Unit[*_` \t\r\v\f]*:[*_`]*/iu
 const labelOf = (slot: string): RegExp => LABELS[BRIEF_SLOTS.indexOf(slot)] ?? /$^/u
 const BULLET = /^(?:[-*+]|\d+[.)]|AC\d+:)\s/iu
 
@@ -243,11 +244,11 @@ function blocksOf(prompt: string, slot: string): Block[] {
   const lines = prompt.split('\n')
   const label = labelOf(slot)
   const blocks: Block[] = []
-  let current: { block: Block; indent: number } | undefined
+  let current: { block: Block; indent: number; target: number; resume: number | undefined } | undefined
   for (const raw of lines) {
     if (label.test(raw)) {
       const head = raw.replace(label, '').trim()
-      current = { block: { head, items: head === '' ? [] : [head] }, indent: Number.POSITIVE_INFINITY }
+      current = { block: { head, items: head === '' ? [] : [head] }, indent: Number.POSITIVE_INFINITY, target: head === '' ? -1 : 0, resume: undefined }
       blocks.push(current.block)
       continue
     }
@@ -255,14 +256,24 @@ function blocksOf(prompt: string, slot: string): Block[] {
       current = undefined
       continue
     }
+    if (current === undefined) continue
     const line = raw.trim()
-    if (current === undefined || line === '') continue
-    const indent = raw.length - raw.trimStart().length
     const { items } = current.block
-    if (items.length === 0 || (BULLET.test(line) && indent <= current.indent)) {
-      items.push(line)
+    if (UNIT.test(raw)) {
+      current.resume ??= current.target
+      current.target = items.push(line) - 1
+      continue
+    }
+    if (current.resume !== undefined && (line === '' || BULLET.test(line))) {
+      if (current.resume !== -1 || line !== '') current.target = current.resume
+      current.resume = undefined
+    }
+    if (line === '') continue
+    const indent = raw.length - raw.trimStart().length
+    if (current.target === -1 || (BULLET.test(line) && indent <= current.indent)) {
+      current.target = items.push(line) - 1
       if (BULLET.test(line)) current.indent = indent
-    } else items[items.length - 1] += ` ${line}`
+    } else items[current.target] += ` ${line}`
   }
   return blocks
 }
@@ -306,9 +317,31 @@ function voidingItemsOf(items: readonly string[]): string[] | undefined {
   return at === -1 ? undefined : items.slice(at + 1).filter(item => EXCEPTION.test(item))
 }
 
+const proseOf = (text: string): string => text.replace(/`[^`]*`/gu, '')
+
 const isBanned = (item: string): boolean => {
-  const prose = item.replace(/`[^`]*`/gu, '')
+  const prose = proseOf(item)
   return MUTATION.test(prose) || (REMOVAL.test(prose) && FAILURE.test(prose))
+}
+
+function unitsAfter(items: readonly string[], at: number): string[] {
+  const rest = items.slice(at + 1)
+  const end = rest.findIndex(next => !UNIT.test(next))
+  return end === -1 ? rest : rest.slice(0, end)
+}
+
+function bannedItemsOf(slot: string, items: readonly string[], isJudged: boolean): { slot: string; item: string }[] {
+  return items.flatMap((item, at) => {
+    if (UNIT.test(item)) {
+      if (at > 0 && UNIT.test(items[at - 1] ?? '')) return []
+      const run = [item, ...unitsAfter(items, at)].map(unit => unit.replace(UNIT, '').trim()).join(' ')
+      return isBanned(run) ? [{ slot: 'Unit:', item: run }] : []
+    }
+    if (!isJudged || isNoMutationLine(item)) return []
+    if (isBanned(item)) return [{ slot, item }]
+    const pair = [item, ...unitsAfter(items, at)].join(' ')
+    return pair !== item && REMOVAL.test(proseOf(item)) && FAILURE.test(proseOf(pair)) ? [{ slot, item: pair }] : []
+  })
 }
 
 export type MutationFindings = { missingSlots: string[]; lacksNoMutationLine: boolean; voidingItems: string[]; bannedItems: { slot: string; item: string }[] }
@@ -322,9 +355,9 @@ export function mutationFindingsOf(prompt: string): MutationFindings {
     lacksNoMutationLine: voiding.includes(undefined),
     voidingItems: voiding.flatMap(items => items ?? []),
     bannedItems: [
-      ...BANNED_SLOTS.map(slot => [slot, blocksOf(prompt, slot)] as const),
-      ...REPEAT_JUDGED_SLOTS.map(slot => [slot, blocksOf(prompt, slot).slice(1)] as const),
-    ].flatMap(([slot, blocks]) => blocks.flatMap(block => block.items.filter(item => !isNoMutationLine(item) && isBanned(item)).map(item => ({ slot, item })))),
+      ...BANNED_SLOTS.map(slot => [slot, blocksOf(prompt, slot), 0] as const),
+      ...REPEAT_JUDGED_SLOTS.map(slot => [slot, blocksOf(prompt, slot), 1] as const),
+    ].flatMap(([slot, blocks, firstJudged]) => blocks.flatMap((block, at) => bannedItemsOf(slot, block.items, at >= firstJudged))),
   }
 }
 
@@ -348,7 +381,7 @@ export function mutationDeny(mode: string, findings: MutationFindings): string {
   return [
     `🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`,
     '',
-    `No-mutation rule (${PLUGIN}). The human ruled out mutation testing of any kind. Every Watson and Holmes brief carries the exact line "${NO_MUTATION_LINE.slice(2)}" as the last item of every Constraints: block, with no exception after it in that block. No item in Goal:, Acceptance: or Done when:, or in a repeated Workdir:, Context: or Constraints: block, mentions mutation or says a test fails when something is removed. ` +
+    `No-mutation rule (${PLUGIN}). The human ruled out mutation testing of any kind. Every Watson and Holmes brief carries the exact line "${NO_MUTATION_LINE.slice(2)}" as the last item of every Constraints: block, with no exception after it in that block. No item in Goal:, Acceptance: or Done when:, in a repeated Workdir:, Context: or Constraints: block, or on a Unit: line in any block, mentions mutation or says a test fails when something is removed. ` +
       'Nothing was spawned. Make each fix below and dispatch again.',
     ...fixes,
   ].join('\n')

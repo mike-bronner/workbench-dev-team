@@ -94,10 +94,13 @@ judged blocks are:
 
 - every `Goal:`, `Acceptance:` and `Done when:` block;
 - every repeated `Workdir:`, `Context:` or `Constraints:` block, that is, each
-  block after the first under its label, minus the no-mutation line itself.
+  block after the first under its label, minus the no-mutation line itself;
+- every `Unit:` line, in any block, with the unbulleted lines that wrap from it.
 
 The first `Workdir:`, `Context:` and `Constraints:` blocks are not judged for
-this, and every `Constraints:` block is checked for the line. The removal words
+this, except for a `Unit:` line in them, and every `Constraints:` block is
+checked for the line. A removal word in an item and a failure word on the
+`Unit:` line right after it count as one pair. The removal words
 are removed, deleted, reverted, restored, inverted, undone, dropped, disabled
 and commented out, in any form. The failure words are fail, break, broke and
 redden in any form, and go or turn red in any form, with up to three words
