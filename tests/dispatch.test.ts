@@ -7,12 +7,28 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import { DIGEST_LABEL, DISPATCH_CONTEXT, digestArgv, digestNoticeOf, dispatchOutcome, indexDispatchOf, isForcedBackground } from '../hooks/mods/dispatch'
 import { BRIEF, HOME, spawnInput, world } from './world'
+import type { World } from './world'
 
 const T = (name: string) => `workbench-dev-team:${name}`
 const DISPATCHER = `${HOME}/.claude-workbench/bin/dispatch-agent.sh`
 
 const agentCall = (subagentType: string, prompt: string, extra: Record<string, unknown> = {}) =>
   ({ tool: 'Agent', tool_use_id: 'toolu_1', description: 'a task', prompt, subagent_type: subagentType, ...extra }) as never
+
+type Engine = { tool: { call: (e: never) => Promise<unknown> }; agent: { spawn: (e: never) => Promise<unknown> } }
+
+async function dispatch($: Engine, w: World, call: Record<string, unknown>): Promise<void> {
+  let release: () => void = () => undefined
+  const released = new Promise<void>(resolve => (release = resolve))
+  const reached = new Promise<void>(resolve => (w.hold = { reached: resolve, released }))
+  const answer = $.tool.call(call as never)
+  await reached
+  const extra = { tool_use_id: call.tool_use_id, background: call.run_in_background === true, ...(call.model === undefined ? {} : { model: call.model }) }
+  await $.agent.spawn(spawnInput(String(call.subagent_type), String(call.prompt), extra))
+  release()
+  await answer
+  w.hold = undefined
+}
 
 type Answer = { deny?: string; result?: { status?: string; content?: { text: string }[] }; context?: string[] }
 
@@ -132,37 +148,92 @@ describe('Index-mode Watson — the dispatcher runs in place of the Agent call',
 })
 
 describe('background by default — a main-session dev-team dispatch', () => {
+  const ROUTED: Record<string, string> = { watson: 'watson-direct', holmes: 'holmes-local', lestrade: 'lestrade', 'holmes-local': 'holmes-local' }
   for (const type of ['watson', 'holmes', 'lestrade', 'holmes-local']) {
-    test(`${type} with no run_in_background runs in the background`, async ($, on) => {
+    test(`${type} with no run_in_background spawns in the background, and the call reaches the engine as the model wrote it`, async ($, on) => {
       const w = world(on)
-      await $.tool.call(agentCall(T(type), BRIEF))
-      expect(w.calls.map(c => c.run_in_background)).toEqual([true])
+      const call = agentCall(T(type), BRIEF)
+      await dispatch($ as never, w, call)
+      expect(w.calls).toEqual([call])
+      expect(w.backgrounds).toEqual([true])
+      expect(w.spawned.map(s => [s.subagentType, s.model])).toEqual([[T(ROUTED[type] ?? ''), 'claude-opus-5-5[1m]']])
     })
   }
 
-  test('a call that asked for the foreground stays in the foreground', async ($, on) => {
+  test('the spawn keeps the type, prompt and model a direct spawn of the same brief gets', async ($, on) => {
     const w = world(on)
-    await $.tool.call(agentCall(T('watson'), BRIEF, { run_in_background: false }))
+    for (const type of ['watson', 'holmes', 'lestrade']) {
+      await dispatch($ as never, w, agentCall(T(type), BRIEF, { tool_use_id: `toolu_call_${type}` }))
+      await $.agent.spawn(spawnInput(T(type), BRIEF))
+    }
+    const [watsonCall, watsonDirect, holmesCall, holmesDirect, lestradeCall, lestradeDirect] = w.spawned
+    expect(watsonCall).toEqual(watsonDirect)
+    expect(holmesCall).toEqual(holmesDirect)
+    expect(lestradeCall).toEqual(lestradeDirect)
+    expect(holmesCall?.prompt).not.toBe(BRIEF)
+  })
+
+  test('a call that asked for the foreground spawns in the foreground', async ($, on) => {
+    const w = world(on)
+    await dispatch($ as never, w, agentCall(T('watson'), BRIEF, { run_in_background: false }))
     expect(w.calls.map(c => c.run_in_background)).toEqual([false])
+    expect(w.backgrounds).toEqual([false])
   })
 
   test('a call that asked for the background stays there', async ($, on) => {
     const w = world(on)
-    await $.tool.call(agentCall(T('holmes'), BRIEF, { run_in_background: true }))
+    await dispatch($ as never, w, agentCall(T('holmes'), BRIEF, { run_in_background: true }))
     expect(w.calls.map(c => c.run_in_background)).toEqual([true])
+    expect(w.backgrounds).toEqual([true])
   })
 
   test('a generic agent, and holmes-lens, are left as the call set them', async ($, on) => {
     const w = world(on)
-    await $.tool.call(agentCall('general-purpose', BRIEF))
-    await $.tool.call(agentCall(T('holmes-lens'), BRIEF))
+    await dispatch($ as never, w, agentCall('general-purpose', BRIEF))
+    await dispatch($ as never, w, agentCall(T('holmes-lens'), BRIEF, { tool_use_id: 'toolu_2' }))
     expect(w.calls.map(c => c.run_in_background)).toEqual([undefined, undefined])
+    expect(w.backgrounds).toEqual([false, false])
   })
 
   test("a sub-agent's dev-team dispatch is left as the call set it", async ($, on) => {
     const w = world(on)
-    await $.tool.call(agentCall(T('holmes'), BRIEF, { agentId: 'agent-3' }))
+    await dispatch($ as never, w, agentCall(T('holmes'), BRIEF, { agentId: 'agent-3' }))
     expect(w.calls.map(c => c.run_in_background)).toEqual([undefined])
+    expect(w.backgrounds).toEqual([false])
+  })
+
+  test('the mark ends with its call, so a later spawn under the same id is not put in the background', async ($, on) => {
+    const w = world(on)
+    await dispatch($ as never, w, agentCall(T('watson'), BRIEF))
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF, { tool_use_id: 'toolu_1', background: false }))
+    expect(w.backgrounds).toEqual([true, false])
+  })
+
+  test('a spawn under another id, while a marked call is in flight, runs in the foreground', async ($, on) => {
+    const w = world(on)
+    let release: () => void = () => undefined
+    const released = new Promise<void>(resolve => (release = resolve))
+    const reached = new Promise<void>(resolve => (w.hold = { reached: resolve, released }))
+    const answer = $.tool.call(agentCall(T('watson'), BRIEF))
+    await reached
+    await $.agent.spawn(spawnInput(T('holmes'), BRIEF, { tool_use_id: 'toolu_other', background: false }))
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF, { tool_use_id: 'toolu_1', background: false }))
+    release()
+    await answer
+    expect(w.backgrounds).toEqual([false, true])
+  })
+
+  test('a marked call that throws leaves no mark, so a spawn under its id runs in the foreground', async ($, on) => {
+    const w = world(on)
+    w.agentCall = 'throw'
+    const thrown = await $.tool.call(agentCall(T('watson'), BRIEF)).then(
+      () => false,
+      () => true,
+    )
+    expect(thrown).toBe(true)
+    expect(w.calls.map(c => c.tool_use_id)).toContain('toolu_1')
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF, { tool_use_id: 'toolu_1', background: false }))
+    expect(w.backgrounds).toEqual([false])
   })
 })
 
