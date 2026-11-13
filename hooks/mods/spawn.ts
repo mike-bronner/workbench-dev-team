@@ -240,15 +240,37 @@ const BULLET = /^(?:[-*+]|\d+[.)]|AC\d+:)\s/iu
 
 type Block = { head: string; items: string[] }
 
+type Builder = { block: Block; indent: number; target: number; resume: number | undefined }
+
+const builderOf = (head: string): Builder => ({ block: { head, items: head === '' ? [] : [head] }, indent: Number.POSITIVE_INFINITY, target: head === '' ? -1 : 0, resume: undefined })
+
+function addLine(current: Builder, raw: string): void {
+  const line = raw.trim()
+  const { items } = current.block
+  if (UNIT.test(raw)) {
+    current.resume ??= current.target
+    current.target = items.push(line) - 1
+    return
+  }
+  if (current.resume !== undefined && (line === '' || BULLET.test(line))) {
+    if (current.resume !== -1 || line !== '') current.target = current.resume
+    current.resume = undefined
+  }
+  if (line === '') return
+  const indent = raw.length - raw.trimStart().length
+  if (current.target === -1 || (BULLET.test(line) && indent <= current.indent)) {
+    current.target = items.push(line) - 1
+    if (BULLET.test(line)) current.indent = indent
+  } else items[current.target] += ` ${line}`
+}
+
 function blocksOf(prompt: string, slot: string): Block[] {
-  const lines = prompt.split('\n')
   const label = labelOf(slot)
   const blocks: Block[] = []
-  let current: { block: Block; indent: number; target: number; resume: number | undefined } | undefined
-  for (const raw of lines) {
+  let current: Builder | undefined
+  for (const raw of prompt.split('\n')) {
     if (label.test(raw)) {
-      const head = raw.replace(label, '').trim()
-      current = { block: { head, items: head === '' ? [] : [head] }, indent: Number.POSITIVE_INFINITY, target: head === '' ? -1 : 0, resume: undefined }
+      current = builderOf(raw.replace(label, '').trim())
       blocks.push(current.block)
       continue
     }
@@ -256,26 +278,22 @@ function blocksOf(prompt: string, slot: string): Block[] {
       current = undefined
       continue
     }
-    if (current === undefined) continue
-    const line = raw.trim()
-    const { items } = current.block
-    if (UNIT.test(raw)) {
-      current.resume ??= current.target
-      current.target = items.push(line) - 1
-      continue
-    }
-    if (current.resume !== undefined && (line === '' || BULLET.test(line))) {
-      if (current.resume !== -1 || line !== '') current.target = current.resume
-      current.resume = undefined
-    }
-    if (line === '') continue
-    const indent = raw.length - raw.trimStart().length
-    if (current.target === -1 || (BULLET.test(line) && indent <= current.indent)) {
-      current.target = items.push(line) - 1
-      if (BULLET.test(line)) current.indent = indent
-    } else items[current.target] += ` ${line}`
+    if (current !== undefined) addLine(current, raw)
   }
   return blocks
+}
+
+function messageItemsOf(message: string): string[] {
+  const current = builderOf('')
+  let isAfterBlank = false
+  for (const raw of message.split('\n')) {
+    const isBlank = raw.trim() === ''
+    const isUnderBullet = BULLET.test(current.block.items[current.target] ?? '') && raw.length - raw.trimStart().length > current.indent
+    if (isAfterBlank && !isBlank && !isUnderBullet) current.target = -1
+    isAfterBlank = isBlank
+    addLine(current, raw)
+  }
+  return current.block.items
 }
 
 export function missingSlotsOf(prompt: string): string[] {
@@ -306,11 +324,18 @@ const BANNED_SLOTS: readonly string[] = ['Goal:', 'Acceptance:', 'Done when:']
 const REPEAT_JUDGED_SLOTS: readonly string[] = ['Workdir:', 'Context:', 'Constraints:']
 const QUOTED_MAX = 200
 
-function isNoMutationLine(item: string): boolean {
+function afterNoMutationLine(item: string): string | undefined {
   const text = item.replace(LEAD, '').replace(/^\d+[.)]/u, '').replace(LEAD, '')
   const match = NO_MUTATION.exec(text)
-  return match !== null && !EXCEPTION.test(text.slice(match[0].length))
+  return match === null ? undefined : text.slice(match[0].length)
 }
+
+function isNoMutationLine(item: string): boolean {
+  const rest = afterNoMutationLine(item)
+  return rest !== undefined && !EXCEPTION.test(rest)
+}
+
+const judgedTextOf = (item: string): string => (isNoMutationLine(item) ? (afterNoMutationLine(item) ?? '') : item)
 
 function voidingItemsOf(items: readonly string[]): string[] | undefined {
   const at = items.findIndex(isNoMutationLine)
@@ -337,10 +362,11 @@ function bannedItemsOf(slot: string, items: readonly string[], isJudged: boolean
       const run = [item, ...unitsAfter(items, at)].map(unit => unit.replace(UNIT, '').trim()).join(' ')
       return isBanned(run) ? [{ slot: 'Unit:', item: run }] : []
     }
-    if (!isJudged || isNoMutationLine(item)) return []
-    if (isBanned(item)) return [{ slot, item }]
-    const pair = [item, ...unitsAfter(items, at)].join(' ')
-    return pair !== item && REMOVAL.test(proseOf(item)) && FAILURE.test(proseOf(pair)) ? [{ slot, item: pair }] : []
+    if (!isJudged) return []
+    const text = judgedTextOf(item)
+    if (isBanned(text)) return [{ slot, item }]
+    const units = unitsAfter(items, at)
+    return units.length > 0 && REMOVAL.test(proseOf(text)) && FAILURE.test(proseOf([text, ...units].join(' '))) ? [{ slot, item: [item, ...units].join(' ') }] : []
   })
 }
 
@@ -399,4 +425,53 @@ export function mutationRefusalOf(subagentType: string, prompt: string): string 
   return findings.missingSlots.length > 0 || findings.lacksNoMutationLine || findings.voidingItems.length > 0 || findings.bannedItems.length > 0
     ? mutationDeny(mode, findings)
     : undefined
+}
+
+export type ResumeFindings = { voidingItems: string[]; bannedItems: string[] }
+
+export function resumeFindingsOf(message: string): ResumeFindings {
+  return {
+    voidingItems: blocksOf(message, 'Constraints:').flatMap(block => voidingItemsOf(block.items) ?? []),
+    bannedItems: bannedItemsOf('', messageItemsOf(message), true).map(({ item }) => item),
+  }
+}
+
+export type ResumedAgent = 'Watson' | 'Holmes' | 'Watson or Holmes'
+
+export function resumedAgentOf(subagentType: string | undefined): ResumedAgent | undefined {
+  const family = familyOf(subagentType)
+  return family === 'watson' ? 'Watson' : family === 'holmes' ? 'Holmes' : undefined
+}
+
+export const resumedAgentOfRead = (read: Promise<string | undefined>, fallback: string | undefined): Promise<ResumedAgent | undefined> =>
+  read.then(
+    value => resumedAgentOf(value ?? fallback),
+    (): ResumedAgent => 'Watson or Holmes',
+  )
+
+export function resumeDeny(agent: ResumedAgent, findings: ResumeFindings): string {
+  const fixes = [
+    ...findings.bannedItems.map(
+      item =>
+        `- The item "${quoted(item)}" mentions mutation, or holds both a removal word and a failure word. Rephrase it to state what the test covers instead. ` +
+        'If it must quote such words, put them in backticks, which the gate does not read.',
+    ),
+    ...findings.voidingItems.map(
+      item => `- The Constraints: item "${quoted(item)}" comes after the no-mutation line and holds except, but, unless or other than, so the gate reads it as an exception to the line. Remove it, or move it above the line.`,
+    ),
+  ]
+  return [
+    `🛑 Blocked: a message to a ${agent} that does not rule out mutation testing.`,
+    '',
+    `No-mutation rule (${PLUGIN}). The human ruled out mutation testing of any kind. The message was not delivered, and no agent resumed. ` +
+      "A message to a Watson or Holmes carries a correction to the agent's own brief, which keeps its no-mutation line, so it needs no Constraints: or Acceptance: block. " +
+      'No item of it may mention mutation or say a test fails when something is removed, and it may add no exception to the no-mutation line. Make each fix below and send the message again.',
+    ...fixes,
+  ].join('\n')
+}
+
+export function resumeRefusalOf(agent: ResumedAgent | undefined, message: string): string | undefined {
+  if (agent === undefined) return undefined
+  const findings = resumeFindingsOf(message)
+  return findings.bannedItems.length > 0 || findings.voidingItems.length > 0 ? resumeDeny(agent, findings) : undefined
 }

@@ -170,7 +170,7 @@ export type GuardOptions = {
   roots?: string[]
   // What $.agent.list() answers: each loop's id, type and parent. An Error rejects.
   // A loop's status is running unless the entry names one.
-  agents?: { id: string; type: string; parentId?: string; status?: string }[] | Error
+  agents?: { id: string; type: string; parentId?: string; status?: string; name?: string; teammateId?: string }[] | Error
   // What $.session.cwd() answers.
   cwd?: string
   sessionId?: string
