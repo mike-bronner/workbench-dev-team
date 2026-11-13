@@ -21,7 +21,8 @@ which exists so `Goal:` never has to carry it. Why `Goal:` is bounded:
 `references/brief-rationale.md`.
 
 **`Context:` is unbounded.** It is prose, it may run as long as the reasoning
-runs, and no length figure applies to it or to the brief as a whole.
+runs, and no length figure applies to it. How much work the brief asks for is
+a separate rule: one unit (below).
 
 **`Constraints:` is bullets, one limit per bullet, each carrying its own
 reason.** A constraint without its reason gets obeyed literally and defeated in
@@ -64,10 +65,20 @@ Every slot is required, and every dev-team agent refuses a brief that drops one,
 naming what is missing (`agents/*.md`, the brief contract) — this is a receiving
 contract, not only a sending one.
 
-**There is no length limit.** Write the reasoning at whatever length it takes,
-and write no shell command at any length. The must-omit list in `SKILL.md` is
-the whole of the limit; an earlier stated figure and why it went are in
-`references/brief-rationale.md`.
+**There is no length limit on the reasoning in `Context:`.** Write it at
+whatever length it takes, and write no shell command at any length. The
+must-omit list in `SKILL.md` is the whole of that limit. An earlier stated
+figure, and why it went, are in `references/brief-rationale.md`.
+
+**That freedom does not cover how much work one brief asks for.** One brief
+delivers one unit: the smallest step of the task, cut before the first
+dispatch (`references/parallel-units.md`).
+
+**`Unit:` names that step. It is optional, and never a seventh slot.** It goes
+on a line of its own, such as `Unit: 2 of 4, the focus ring. Meets AC3, AC4.`:
+the unit's place in the task, what it delivers, and the criteria it meets. The
+full criteria list may stay in `Acceptance:` for context. A brief with no
+`Unit:` line stays valid.
 
 ## Watson and Holmes briefs carry the no-mutation line
 

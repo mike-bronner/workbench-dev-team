@@ -8,6 +8,19 @@ steps and the exact lines workbench-core's provisioning guard accepts.
 provisioning ledger (commit 7ef2854). An older core refuses every create, and
 same-repo units then run one at a time.
 
+## Cut the task into units first
+
+Before the first dispatch, cut the task into its smallest units. A unit is one
+step that one brief delivers, with its own criteria and its own files. When
+`/workbench-core:intake` ended with a unit list, start from it: each unit there
+carries its criteria, its files, and whether it runs in parallel or in order.
+Otherwise cut the units yourself from the criteria.
+
+Dispatch each unit on its own brief. Its `Unit:` line names the step and the
+criteria it meets, such as `Unit: 2 of 4, the focus ring. Meets AC3, AC4.`, and
+`Acceptance:` may keep the whole task's criteria for context. This holds for
+every task, one repo or many. The rest of this file covers same-repo units.
+
 ## When work splits into units
 
 Same-repo work splits into parallel units when each unit:
