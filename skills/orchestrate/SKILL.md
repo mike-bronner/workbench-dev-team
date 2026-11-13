@@ -370,13 +370,17 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 
 ```
 🕵️ Roster
-| Agent | Task | Agent ID | Status |
-|---|---|---|---|
-| Watson | retry logic fix (foo) | a1b2… | 🔄 running |
-| Watson | API docs (bar) | c3d4… | ✅ PR #42 opened |
-| Holmes | review item 17 | e5f6… | 🔄 running |
+| Agent | Task | Agent ID | Started | Status |
+|---|---|---|---|---|
+| Watson | retry logic fix (foo) | a1b2… | 14:02 | 🔄 running, 6 min |
+| Watson | API docs (bar) | c3d4… | 13:40 | ✅ PR #42 opened |
+| Holmes | review item 17 | e5f6… | 13:31 | 🔄 running, 37 min |
 ```
 
+- **Every running unit shows its age.** `Started` holds its start time, and
+  its status gives the minutes it has run, so a unit far past the usual length
+  stands out. Read the start time from the task list and the transcript, never
+  from `ListAgents`: `references/agent-liveness.md`.
 - **The human sees only your reply text.** Every hand-back, peer message,
   task notification, and tool output is invisible to them. So restate in the
   reply what a decision or a finding needs from a hand-back: the options with
