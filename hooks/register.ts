@@ -44,7 +44,7 @@ import type { LogEnd } from './mods/runs'
 import { LOG_DIR, RUNS_REFRESH_MS, endsOf, livePairsOf, markersOf, newestRuns, rowsOf, scanArgv } from './mods/runs'
 import { RULES, isRulesLane, isRulesSubagent, withRules } from './mods/session-rules'
 import { hasBareMktemp, hasLiveChild, isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from './mods/scratch'
-import type { CallerLane } from './mods/spawn'
+import type { CallerLane, ResumedAgent } from './mods/spawn'
 import {
   CONFIG_MODES,
   DEFAULT_BRANCHES,
@@ -62,6 +62,9 @@ import {
   missingSlotsOf,
   modeTypeOf,
   mutationRefusalOf,
+  resumeRefusalOf,
+  resumedAgentOf,
+  resumedAgentOfRead,
   spawnFailedDeny,
   withConfigLine,
   workdirOf,
@@ -125,6 +128,14 @@ async function spawnerTypeOf($: EngineInterface, parentAgentId: string | undefin
   if (kept !== undefined) return kept
   const agents = await $.agent.list().catch(() => undefined)
   return agents?.find(agent => agent.id === parentAgentId)?.type
+}
+
+async function resumedAgentOfKept($: EngineInterface, agentId: string | undefined, fallback: string | undefined): Promise<ResumedAgent | undefined> {
+  if (agentId === undefined) return resumedAgentOf(fallback)
+  return resumedAgentOfRead(
+    $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId }).then(({ value }) => value),
+    fallback,
+  )
 }
 
 // ── Scratch folders ──────────────────────────────────────────────────────────
@@ -674,7 +685,19 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on('session.send', async ($, e, next) => {
+    if (resumeRefusalOf('Watson or Holmes', e.text) === undefined) return next(e)
+    const agents = await $.agent.list().catch(() => undefined)
+    const to = agents?.find(agent => agent.id === e.to || agent.name === e.to || agent.teammateId === e.to)
+    const refusal = resumeRefusalOf(agents === undefined ? 'Watson or Holmes' : await resumedAgentOfKept($, to?.id, to?.type), e.text)
+    return refusal === undefined ? next(e) : { isDelivered: false, reason: refusal }
+  })
+
   on('agent.spawn', async ($, e, next) => {
+    if (e.resume !== undefined) {
+      const refusal = resumeRefusalOf(await resumedAgentOfKept($, e.resume.agentId, e.subagentType), e.prompt)
+      return refusal === undefined ? next(e) : { deny: refusal }
+    }
     const isModel = next.origin.plugin === 'engine'
     const isGatedCall = isModel && (await gated($, e.parentAgentId))
 

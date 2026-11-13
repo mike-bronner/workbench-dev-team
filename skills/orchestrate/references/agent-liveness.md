@@ -30,3 +30,13 @@ only when the orchestrator stopped it with `TaskStop`.
   few entries. If its hand-back already reached you, stop it with `TaskStop`.
   If not, report it to the human as stuck, with its last entry, and ask before
   you stop it.
+
+## A queued SendMessage is not proof of delivery
+
+When the agent is about to finish, SendMessage can answer that the message is
+queued for its next tool round. If the agent finishes first, Claude Code tries
+to resume it with the message. If that resume fails, Claude Code drops the
+message and shows only the human a short notice. You get no result and no
+notification. So never trust a queued result alone. If no report arrives,
+check the agent's transcript, as above. When it shows no resume after your
+message, tell the human, and send the message again or dispatch a new agent.

@@ -105,8 +105,11 @@ judged blocks are:
 
 - every `Goal:`, `Acceptance:` and `Done when:` block;
 - every repeated `Workdir:`, `Context:` or `Constraints:` block, that is, each
-  block after the first under its label, minus the no-mutation line itself;
+  block after the first under its label;
 - every `Unit:` line, in any block, with the unbulleted lines that wrap from it.
+
+In a judged block, the gate judges the text that follows the no-mutation line
+in its item, and skips only the line itself.
 
 The first `Workdir:`, `Context:` and `Constraints:` blocks are not judged for
 this, except for a `Unit:` line in them, and every `Constraints:` block is
@@ -128,6 +131,16 @@ names each fix. When a later item voids the line, the refusal quotes that item
 and says to put the line last in its block. It reads a label in any case, with
 Markdown decoration around it, such as `**Acceptance**:`. The two machine-built
 tokens carry no brief, so the gate never judges them.
+
+A message to a Watson or Holmes, such as a SendMessage correction that resumes
+an agent that has finished, is not a brief. The agent keeps its own brief and
+its line, so the gate asks the message for no slot. It splits the message into
+items as it splits a block, a bullet with the lines that wrap from it, and
+judges each item under the ban above. In a message, a blank line also ends an
+item, unless the next line is indented under the open bullet. So two
+paragraphs are two items, and so are a bullet and a paragraph after it. It
+also refuses a `Constraints:` item in the message that voids the line. The refusal says that the message was not
+delivered and that no agent resumed.
 
 When you quote another brief in `Context:`, lead every quoted line with `>`.
 The gate reads any other line that opens with a label as a real label.
