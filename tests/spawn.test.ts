@@ -325,6 +325,61 @@ describe('the no-mutation gate, wired into agent.spawn', () => {
       expect(w.spawned.map(s => s.subagentType)).toEqual([T(family === 'watson' ? 'watson-direct' : 'holmes-local')])
     })
 
+    test(`a ${family} brief whose last item ends in "fails" and whose Unit: line names a delete is spawned`, async ($, on) => {
+      const w = world(on)
+      const prompt = withAcceptance('- AC1: the parser test fails').replace('Done when:', 'Unit: 2 of 4, delete the old layout constant. Meets AC1.\nDone when:')
+      const result = await $.agent.spawn(spawnInput(T(family), prompt))
+      expect(denyOf(result)).toBeUndefined()
+      expect(w.spawned.map(s => s.subagentType)).toEqual([T(family === 'watson' ? 'watson-direct' : 'holmes-local')])
+    })
+
+    test(`a ${family} brief whose Unit: line holds a removal word and a failure word is refused, and the refusal quotes that line alone`, async ($, on) => {
+      const w = world(on)
+      const prompt = BRIEF.replace('Done when:', 'Unit: 2 of 4, the test fails if the guard is removed.\nDone when:')
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+      expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`)
+      expect(deny).toContain('- Unit: "2 of 4, the test fails if the guard is removed." mentions mutation')
+      expect(deny).not.toContain('- Acceptance: "')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief whose Unit: line voids the no-mutation line with "unless" is refused, and nothing is spawned`, async ($, on) => {
+      const w = world(on)
+      const prompt = withConstraints(`Constraints:\n${NO_LINE}\nUnit: 1 of 2, unless the reviewer asks for a stronger check.`)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+      expect(deny).toContain('- The Constraints: item "Unit: 1 of 2, unless the reviewer asks for a stronger check." comes after the no-mutation line')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief whose Unit: line wraps onto a line with a failure word is refused, quoting both lines as one Unit item`, async ($, on) => {
+      const w = world(on)
+      const prompt = withAcceptance('- AC1: the field survives\nUnit: 2 of 4, delete the old guard\n  and show the test fails')
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+      expect(deny).toContain('- Unit: "2 of 4, delete the old guard and show the test fails" mentions mutation')
+      expect(w.spawned).toEqual([])
+    })
+
+    for (const [name, prompt, quote] of [
+      [
+        'a removal word in an item and a failure word wrapped from the Unit: line after it',
+        withAcceptance('- Delete the assertion\nUnit: 1 of 2\n  and the suite fails'),
+        '- Acceptance: "- Delete the assertion Unit: 1 of 2 and the suite fails" mentions mutation',
+      ],
+      [
+        'a removal word on a Unit: line under an empty label and a failure word after a blank line',
+        BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: delete x\n\nthe test fails'),
+        '- Unit: "delete x the test fails" mentions mutation',
+      ],
+    ] as const) {
+      test(`a ${family} brief with ${name} is refused, the refusal quotes the joined text, and nothing is spawned`, async ($, on) => {
+        const w = world(on)
+        const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+        expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`)
+        expect(deny).toContain(quote)
+        expect(w.spawned).toEqual([])
+      })
+    }
+
     for (const slot of ['Acceptance:', 'Constraints:'] as const) {
       test(`a ${family} brief with no findable ${slot} slot is refused for that slot, and nothing is spawned`, async ($, on) => {
         const w = world(on)
