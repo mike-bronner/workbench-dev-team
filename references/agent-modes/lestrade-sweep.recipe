@@ -11,7 +11,7 @@ requires: Bash, Read
 section: # Inspector Lestrade — Triage Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
-section: ## Scratch folders — a bare `mktemp`, deleted when your run ends
+section: ## Scratch folders — a template in your own folder, deleted when your run ends
 section: ## Input contract
 skip: ### Routing by the token
 skip: ### Item mode input

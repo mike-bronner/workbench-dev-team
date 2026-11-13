@@ -1,6 +1,6 @@
 #!/usr/bin/env node
 import { judgeWrites, refusalOf, reviewBash, reviewEdit } from '../hooks/mods/review-guard.ts'
-import { hasBareMktemp, pointMktemp, readsAsPointed } from '../hooks/mods/scratch.ts'
+import { hasBareMktemp } from '../hooks/mods/scratch.ts'
 import { coreRoot, fromCore } from './core-root.mjs'
 import { REVIEW_PASSES, REVIEW_REFUSALS } from './guard-cases.ts'
 
@@ -151,48 +151,52 @@ check(named.includes('Validate by running the existing tests in place and readin
 check(!/runs on a copy|probe copy/.test(named), 'the refusal never offers a copy')
 close()
 
-section("scratch: a dev-team agent's bare mktemp is pointed at its folder")
+section("scratch: a dev-team agent's bare mktemp is found on the real reader")
 const FOLDER = '/scratch/session/watson-direct.abc123'
-const TEMPLATE = `'${FOLDER}/tmp.XXXXXXXX'`
-const pointed = line => {
-  if (!line.includes('mktemp')) return line
-  const before = parseShell(line)
-  if (!hasBareMktemp(before)) return line
-  const after = pointMktemp(line, FOLDER)
-  if (after === undefined) return line
-  return readsAsPointed(before, parseShell(after), FOLDER) ? after : line
-}
-for (const [line, want] of [
-  ['mktemp -d', `mktemp -d ${TEMPLATE}`],
-  ['mktemp', `mktemp ${TEMPLATE}`],
-  ['mktemp -dq', `mktemp -dq ${TEMPLATE}`],
-  ['mktemp -d   # prints <checkout path>', `mktemp -d '${FOLDER}/tmp.XXXXXXXX'   # prints <checkout path>`],
-  ['mktemp -d # a\necho b', `mktemp -d '${FOLDER}/tmp.XXXXXXXX' # a\necho b`],
-  ['D=$(mktemp -d) && cd "$D"', `D=$(mktemp -d ${TEMPLATE}) && cd "$D"`],
-  ['cp -R src "$(mktemp -d)"', `cp -R src "$(mktemp -d ${TEMPLATE})"`],
-  ['A=$(mktemp -d); B=$(mktemp)', `A=$(mktemp -d ${TEMPLATE}); B=$(mktemp ${TEMPLATE})`],
-]) {
-  check(pointed(line) === want, `pointed: ${show(line)}`)
-}
+const isBare = line => hasBareMktemp(parseShell(line))
 for (const line of [
-  'mktemp -d -t probe',
-  'mktemp -d /scratch/session/x.XXXXXX',
-  'mktemp -p /tmp',
-  'echo "run mktemp -d; then cd"',
+  'mktemp -d',
+  'mktemp',
+  'mktemp -dq',
+  'mktemp -d   # prints <checkout path>',
+  'mktemp -d # a\necho b',
+  'D=$(mktemp -d) && cd "$D"',
+  'cp -R src "$(mktemp -d)"',
+  'A=$(mktemp -d); B=$(mktemp)',
   'mktemp -d && echo "then mktemp -d; done"',
-  "cat <<'EOF'\nmktemp -d\nEOF",
   'env mktemp -d',
   'TMPDIR=/x mktemp -d',
   'if mktemp -d; then :; fi',
+  'mktemp -d -t probe',
+  'mktemp -tprobe',
+  'mktemp --directory',
+  'mktemp --tmpdir',
+  'mktemp -d --tmpdir',
+  'mktemp --tmpdir=',
+  "mktemp -p ''",
+  'mktemp -d --',
+  'mktemp -d -p',
+  'mktemp --tmpdir probe.XXXXXX',
+]) {
+  check(isBare(line), `bare: ${show(line)}`)
+}
+for (const line of [
+  `mktemp -d '${FOLDER}/tmp.XXXXXXXX'`,
+  `mktemp '${FOLDER}/tmp.XXXXXXXX'`,
+  `D=$(mktemp -d '${FOLDER}/tmp.XXXXXXXX') && cd "$D"`,
+  'mktemp -d /scratch/session/x.XXXXXX',
+  'mktemp -p /tmp',
+  'mktemp -d --tmpdir=/tmp',
+  'mktemp -dp/tmp',
+  `mktemp -d -- '${FOLDER}/tmp.XXXXXXXX'`,
+  'mktemp -d --suffix=.x',
+  'echo "run mktemp -d; then cd"',
+  'echo "a; mktemp -d; b"',
+  "cat <<'EOF'\nmktemp -d\nEOF",
   'git status',
 ]) {
-  check(pointed(line) === line, `runs as written: ${show(line)}`)
+  check(!isBare(line), `not bare: ${show(line)}`)
 }
-const echoed = 'echo "a; mktemp -d; b"'
-check(pointMktemp(echoed, FOLDER) !== undefined && !readsAsPointed(parseShell(echoed), parseShell(pointMktemp(echoed, FOLDER) ?? ''), FOLDER), 'a quoted mktemp the text match reaches does not read back as pointed')
-const mixed = 'mktemp -d && echo "then mktemp -d; done"'
-check(!readsAsPointed(parseShell(mixed), parseShell(pointMktemp(mixed, FOLDER) ?? ''), FOLDER), 'a real mktemp beside a quoted one is left as written')
-check(readsAsPointed(parseShell('mktemp -d'), parseShell(pointMktemp('mktemp -d', FOLDER) ?? ''), FOLDER), 'a plain bare mktemp reads back as pointed')
 close()
 
 console.log()

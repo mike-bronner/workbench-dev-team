@@ -366,6 +366,7 @@ function defaultRun(w: World, argv: readonly string[]): RunAnswer {
     w.made.add(folder)
     return { exitCode: 0, stdout: `${folder}\n`, stderr: '' }
   }
+  if (argv[0] === 'mkdir') w.made.add(argv[argv.length - 1] ?? '')
   if (argv[0] === 'rm') for (const path of argv.slice(argv.indexOf('--') + 1)) w.made.delete(path)
   return { exitCode: 0, stdout: '', stderr: '' }
 }
