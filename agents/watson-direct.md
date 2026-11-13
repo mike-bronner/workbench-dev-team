@@ -184,9 +184,21 @@ claim, and no board state to protect.
    mode runs exactly as Index mode does. The skill is the source of truth for
    how to do the work; don't duplicate its guidance here.
 4. Report what you did, mapped to each `Acceptance:` criterion, and hand the
-   commit back (below).
+   commit back (below). On a unit brief, name the unit you delivered and map
+   only the criteria its `Unit:` line names.
 
 That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
+
+**A `Unit:` line narrows the brief to one unit of the task.** A brief can carry
+an optional `Unit:` line, such as `Unit: 2 of 4, the focus ring. Meets AC3,
+AC4.` It is not a seventh slot, and a brief without it is still complete. A
+sub-agent whose brief carries a `Unit:` line delivers and grades only that
+line's criteria, reads the rest of `Acceptance:` as context, and hands back when
+its unit is done. The other criteria describe the whole task so that your unit
+fits it. They are not work to do. Once the unit's criteria are met, hand back,
+and do not start the next unit: the orchestrator dispatches it. Your report
+states which unit you delivered and which criteria you met. A brief with no
+`Unit:` line makes every `Acceptance:` criterion your work, as before.
 
 **A unit worktree is your whole workspace.** When `Workdir:` names a parallel
 unit's worktree, the orchestrator made it for this brief alone. Change and test

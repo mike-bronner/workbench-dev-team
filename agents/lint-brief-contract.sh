@@ -226,6 +226,31 @@ else
   fail_file "watson — the investigation stop is gone" "${stop_problems[@]}"
 fi
 
+unit_problems=()
+for unit_file in "$DIR/watson.md" "$DIR/watson-direct.md"; do
+  unit_section="$(awk '/^## Direct mode/{f=1} f && /^## / && !/^## Direct mode/{exit} f{print}' "$unit_file" | tr '\n' ' ' | tr -s ' ')"
+  for phrase in \
+    "A sub-agent whose brief carries a \`Unit:\` line delivers and grades only that line's criteria, reads the rest of \`Acceptance:\` as context, and hands back when its unit is done." \
+    "They are not work to do." \
+    "do not start the next unit" \
+    "Your report states which unit you delivered and which criteria you met." \
+    "It is not a seventh slot" \
+    "A brief with no \`Unit:\` line makes every \`Acceptance:\` criterion your work, as before."; do
+    printf '%s' "$unit_section" | grep -Fq "$phrase" \
+      || unit_problems+=("$(basename "$unit_file") — the Direct mode section lost: $phrase")
+  done
+done
+printf '%s' "$protocol" | grep -Fq "or only the criteria its \`Unit:\` line names" \
+  || unit_problems+=("develop — the Decision Protocol no longer narrows a unit brief's grading to the Unit: line's criteria")
+awk '/^## The brief contract/{f=1} f && /^```$/{n++} f && n==1{print} n==2{exit}' "$DIR/watson.md" | grep -q '^Unit:' \
+  && unit_problems+=("watson — the brief template carries Unit: as a slot")
+if [ ${#unit_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ watson — a Unit: line narrows Direct mode to that unit's criteria, and stays optional"
+else
+  fail_file "watson — the unit rule is gone" "${unit_problems[@]}"
+fi
+
 # The working-context budget, on every agent file. Checked per file rather than
 # per agent name for the same reason the brief contract is: a fourth agent
 # inherits the rule by being an agents/*.md, and the suite reddens on the one
