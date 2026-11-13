@@ -128,10 +128,12 @@ export type World = {
   files: Map<string, string>
   // Each spawn that reached the engine: its type, model and prompt.
   spawned: { subagentType: string; model?: string; prompt: string }[]
+  backgrounds: boolean[]
+  hold?: { reached: () => void; released: Promise<void> }
   // Each model request that reached the engine: its loop and effort.
   steps: { agentId?: string; effort?: unknown }[]
   // What the engine answers to an Agent call.
-  agentCall: 'ok' | 'error'
+  agentCall: 'ok' | 'error' | 'throw'
   nextAgentId: number
   // Each tool call that reached the engine: its tool and command or path.
   ran: string[]
@@ -219,6 +221,7 @@ export function world(
     isOn: options.isOn ?? true,
     files: new Map(options.config === undefined ? [] : [[CONFIG_PATH, options.config]]),
     spawned: [],
+    backgrounds: [],
     steps: [],
     agentCall: 'ok',
     nextAgentId: 1,
@@ -318,6 +321,7 @@ export function world(
 
   on('agent.spawn', async ($, e) => {
     w.spawned.push({ subagentType: e.subagentType, model: e.model, prompt: e.prompt })
+    w.backgrounds.push(e.background)
     return { model: e.model ?? 'inherit', agentId: `agent-${w.nextAgentId++}` }
   })
 
@@ -337,6 +341,11 @@ export function world(
     w.ran.push(`${input.tool}: ${String(input.command ?? input.file_path ?? input.notebook_path ?? '')}`)
     w.calls.push({ ...(e as Record<string, unknown>) })
     if (w.agentCall === 'error') return { isError: true, result: 'boom', text: 'boom' } as never
+    if (w.agentCall === 'throw' && input.tool === 'Agent') throw new Error('boom')
+    if (w.hold !== undefined && input.tool === 'Agent') {
+      w.hold.reached()
+      await w.hold.released
+    }
     const answered = options.tools?.(e as Record<string, unknown>)
     if (answered !== undefined) return answered as never
     const backgroundTaskId = input.tool === 'Bash' ? w.background.shift() : undefined

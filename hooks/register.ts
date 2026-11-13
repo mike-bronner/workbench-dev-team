@@ -643,6 +643,7 @@ export const register: Register = (on, options) => {
   }
 
   const seat: Seat = {}
+  const backgrounded = new Set<string>()
 
   on('session.start', async ($, e, next) => {
     void sweepFallbackFiles($).catch(() => undefined)
@@ -726,7 +727,8 @@ export const register: Register = (on, options) => {
     const mutationRefusal = routed === undefined ? undefined : mutationRefusalOf(routed.subagentType, routed.prompt)
     if (mutationRefusal !== undefined) return { deny: mutationRefusal }
     if (routed?.subagentType === DIGEST_MODE) routed = { ...routed, prompt: await withDigestNotice($, routed.prompt) }
-    const spawned = routed ?? input
+    const routedOrInput = routed ?? input
+    const spawned = backgrounded.has(e.tool_use_id) ? { ...routedOrInput, background: true } : routedOrInput
     const result = await next(spawned)
     if (result.agentId !== undefined) {
       if (routed !== undefined && knobs.effort !== undefined) {
@@ -836,7 +838,6 @@ export const register: Register = (on, options) => {
       }
       if (e.tool !== 'Agent') return watch(await next(e))
       const isModel = next.origin.plugin === 'engine'
-      let call = e
       if (isModel) {
         // A set agentId is a sub-agent's call, whatever callerLane says, so a
         // sub-agent never reaches the dispatcher. Only a call with no agentId
@@ -845,10 +846,14 @@ export const register: Register = (on, options) => {
         if (isMain) {
           const itemId = indexDispatchOf(e.subagent_type, e.prompt)
           if (itemId !== undefined) return runDispatcher($, itemId, e.prompt)
-          if (isForcedBackground(e.subagent_type, e.run_in_background)) call = { ...e, run_in_background: true }
+          if (isForcedBackground(e.subagent_type, e.run_in_background)) backgrounded.add(e.tool_use_id)
         }
       }
-      return watch(await next(call))
+      try {
+        return watch(await next(e))
+      } finally {
+        backgrounded.delete(e.tool_use_id)
+      }
     } finally {
       done()
     }
