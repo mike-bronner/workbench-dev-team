@@ -129,6 +129,36 @@ export function isTimer(command: string | undefined): boolean {
   return parts.some(part => /^sleep /.test(part)) && parts.every(part => !/[$`<>|&(){}\\[\]]/.test(part) && WAIT_PART.test(part))
 }
 
+export type CommandState = { id: string; pids?: string[] }
+
+export const holdersArgv = (output: string): string[] => ['lsof', '-t', '-w', '--', output]
+
+export function pidsOf(answer: { exitCode: number | null; stdout: string; stderr: string } | undefined): string[] | undefined {
+  if (answer === undefined) return undefined
+  const pids = answer.stdout.split(/\s+/).filter(word => word !== '')
+  if (answer.exitCode === 0 && pids.length > 0 && pids.every(pid => /^[0-9]+$/.test(pid))) return pids
+  return answer.exitCode === 1 && pids.length === 0 && answer.stderr.trim() === '' ? [] : undefined
+}
+
+export function handbackRefusalOf(agentId: string, states: readonly CommandState[], refusedOnce: Set<string>): string | undefined {
+  const live = states.filter(state => state.pids !== undefined && state.pids.length > 0)
+  const unsure = states.filter(state => state.pids === undefined && !refusedOnce.has(watchKey(agentId, state.id)))
+  for (const state of unsure) refusedOnce.add(watchKey(agentId, state.id))
+  if (live.length === 0 && unsure.length === 0) return undefined
+  return [
+    '🛑 Refused: you cannot hand back while a background command you started may still be running.',
+    '',
+    'workbench-dev-team. A hand-back ends your run, and a command that still runs keeps the run open with nothing left to close it.',
+    ...live.map(state => `- background command ${state.id}: still running as process ${(state.pids ?? []).join(', ')}`),
+    ...unsure.map(state => `- background command ${state.id}: the mod cannot tell whether it still runs`),
+    '',
+    'Wait for its completion notice: each tool call delivers the notices that wait for you. Or stop it with `kill` and its process ids in a foreground Bash call.',
+    "If the command's completion notice already arrived, a process it left behind still holds the run open: stop the listed processes with `kill` rather than wait.",
+    'Then call SubagentHandback again with your report.',
+    ...(unsure.length > 0 ? ['A command the mod cannot check refuses one hand-back only, so if you know it ended, hand back again.'] : []),
+  ].join('\n')
+}
+
 type Item = { key: string; line: string; mark: string; isBusy: boolean }
 
 export function stopBlockOf(
