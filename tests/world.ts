@@ -178,6 +178,7 @@ export type GuardOptions = {
   disk?: Record<string, Entry>
   // Makes parseShell reject.
   parseFails?: boolean
+  reader?: (line: string) => ShellParse
   // Answers $.process.run. Return undefined to take the default: git exits
   // 128 (not a repository), mktemp makes `<template with XXXXXX as abc123>`,
   // and anything else exits 0 with no output.
@@ -254,7 +255,7 @@ export function world(
         scratchRoots: async () => (w.rootsFail ? Promise.reject(new Error('no roots')) : (options.roots ?? [])),
         orchestratorIsOn: async () => answer(w.isOn),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
-        parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : readPlain(line)),
+        parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : (options.reader ?? readPlain)(line)),
       },
     } as never
   })

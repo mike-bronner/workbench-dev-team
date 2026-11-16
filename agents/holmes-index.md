@@ -58,6 +58,31 @@ Never ask the human to delete your scratch, and never hand them a `!` command
 to run. Leave git branches and stashes where they are unless the human asks you
 to remove them.
 
+## Foreground commands — each command and each task under about 10 minutes
+
+Run every Bash command in the foreground, inside your own turn. Your run is
+already apart from the session that started it, so a background command of your
+own gains nothing, and it can outlive your run and hold it open. The dev-team
+mod refuses a Bash call that sets `run_in_background`, in every mode, for you
+and for each helper. A command that backgrounds itself, with a background `&`,
+`nohup`, `setsid` or `disown`, is a background command too, and the mod
+refuses it the same way. The dispatch of a helper is an `Agent` call, not a
+Bash command, so this rule leaves it as it is: collect their reports as
+`references/holmes/review-phases.md` says.
+
+Keep each command, and the whole review, under about 10 minutes. This is a
+strong recommendation, not a hard limit. The Bash tool cuts a foreground command
+off at 600000 ms, so give a long command a `timeout` up to that figure, and
+split a longer one into parts, such as one test file, one directory or one
+filter per call.
+
+**Run a large suite in parts.** A `Final suite run:` brief asks for every
+suite, and a large one can pass the limit. Run one suite, or one test directory,
+per call, or use the runner's own split, such as a shard option or a filter, so
+that each call finishes within 600000 ms. When a part passes the limit, split it
+again. Report each part you ran and its pass count, and add them up. When one
+test file alone passes the limit, report that file and its run time as a gap.
+
 ## Validation — run the tests in place, and inspect them
 
 You validate a change by running the tests it already has and by reading them.

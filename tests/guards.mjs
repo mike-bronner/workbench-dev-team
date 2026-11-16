@@ -1,5 +1,6 @@
 #!/usr/bin/env node
 import { judgeWrites, refusalOf, reviewBash, reviewEdit } from '../hooks/mods/review-guard.ts'
+import { backgroundsItself, probeLinesOf } from '../hooks/mods/helper-wait.ts'
 import { hasBareMktemp } from '../hooks/mods/scratch.ts'
 import { coreRoot, fromCore } from './core-root.mjs'
 import { REVIEW_PASSES, REVIEW_REFUSALS } from './guard-cases.ts'
@@ -196,6 +197,62 @@ for (const line of [
   'git status',
 ]) {
   check(!isBare(line), `not bare: ${show(line)}`)
+}
+close()
+
+section("foreground: a dev-team agent's shell-level background is found on the real reader")
+const backgrounds = line =>
+  backgroundsItself(
+    parseShell(line),
+    probeLinesOf(line).map(probe => ({ separator: parseShell(probe.separator), statement: parseShell(probe.statement) })),
+  )
+for (const line of [
+  'npm test &',
+  'npm test &   ',
+  'npm test & echo started',
+  'npm test&',
+  'npm test > out.log 2>&1 &',
+  '(npm test &)',
+  'cd /repo && npm test &',
+  'npm test &\necho next',
+  'nohup npm test',
+  'nohup npm test > out.log 2>&1',
+  'NODE_ENV=test nohup npm test',
+  'setsid npm test',
+  'npm test & disown',
+  'disown -a',
+  'echo "x" && nohup npm test',
+  'X=$(nohup npm test)',
+  'echo ${x//&/and} &',
+  'echo "it\'s ${HOME}" & echo next',
+  "echo '${' & echo next",
+]) {
+  check(backgrounds(line), `backgrounds: ${show(line)}`)
+}
+for (const line of [
+  'npm test',
+  'npm test && npm run lint',
+  'npm test || true',
+  'npm test 2>&1',
+  'npm test >&2',
+  'npm test &> out.log',
+  'npm test &>> out.log',
+  'npm test |& tee out.log',
+  'echo "a & b"',
+  "echo 'a & b'",
+  'echo a\\&b',
+  'echo nohup setsid disown',
+  'git log --grep "nohup & setsid"',
+  'npm test # tom & jerry',
+  "cat <<'EOF'\nnohup x &\nEOF",
+  "grep -E 'a&b' file",
+  'curl "https://x.test/?a=1&b=2"',
+  'echo ${x//&/and}',
+  'out=${v/a/&}',
+  'echo "${x//&/and}"',
+  'echo ${x:-${y//&/and}}',
+]) {
+  check(!backgrounds(line), `foreground: ${show(line)}`)
 }
 close()
 
