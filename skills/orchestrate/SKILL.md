@@ -62,10 +62,10 @@ brief: the short one then waits behind the long one. How:
 `references/parallel-units.md`. Why: `references/brief-rationale.md`.
 
 **Only for units you dispatched,** commit each in its own tree after review,
-land it with `git merge --no-ff` on the feature branch, never a cherry-pick,
-rebase or reset, then remove its worktree and database. If the repo has an
-origin to production code, ask before each unit commit and each unit merge, one
-question each. A merge into the default branch and every push still ask the
+unasked, land it with `git merge --no-ff` on the feature branch, never a
+cherry-pick, rebase or reset, then remove its worktree and database. Ask before
+each landing, one question each. A catch-up merge that brings a branch up to
+date runs unasked. A merge into the default branch and every push still ask the
 human.
 
 **New work gets its own dispatch.** Never SendMessage new work to a running

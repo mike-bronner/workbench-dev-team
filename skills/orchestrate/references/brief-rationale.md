@@ -66,10 +66,13 @@ rules for the flow:
 - A sub-agent never commits. So the orchestrator commits each unit in its own
   tree, after Holmes's review. No other agent writes in that tree, so the
   commit holds that unit's work and nothing else.
-- A unit from a repo with an origin to production code asks before its commit
-  and before its merge. Mike, 2026-11-16: "if a ledger-unit has an origin to
-  the production repo or code, then it should ask." Eleven units had landed on
-  a shared feature branch with no question, and he never approved them.
+- A unit commits with no question, and asks before it lands on another branch.
+  Eleven units had once landed on a shared feature branch with no question, so
+  on 2026-11-16 Mike first asked for a question before each unit commit too.
+  He reversed that part the same day: "there is no point in gating commits for
+  changes I cannot see on the current branch." The landing is where the work
+  becomes visible, so the question sits there. A catch-up merge that brings a
+  branch up to date lands no unit, and asks nothing.
 - Units land as merge commits. Mike forbids cherry-pick, rebase and reset,
   because he never rewrites history and always adds on top.
 

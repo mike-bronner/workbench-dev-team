@@ -53,32 +53,29 @@ last unit lands.
   cleans up with no question to the human. The guard holds this rule: it
   accepts a database create, a worktree remove and a database drop with no
   question only for a unit that this session recorded in the ledger.
-- **A unit from a repo with an origin to production code asks before it
-  commits and before it lands.** See "Production origin" below. Only a unit
-  from a repo with no such origin commits and lands with no question.
+- **A unit commits with no question, and asks before it lands.** See "What
+  asks the human" below.
 - **A sub-agent provisions nothing and commits nothing.** Watson works in the
   unit worktree his brief names, and reports a need for anything else.
 - **Holmes reviews each unit in its own tree**, on a Local-mode brief whose
   `Workdir:` is the unit worktree.
 
-## Production origin
+## What asks the human
 
-Mike's rule, from 2026-11-16: "if a ledger-unit has an origin to the
-production repo or code, then it should ask." A unit cut from such a repo is
-not a throwaway, so its commit and its merge each need the human's pick.
+Mike's rule, from 2026-11-16: "there is no point in gating commits for changes
+I cannot see on the current branch." A unit's commit stays in its own tree, so
+the question comes when the unit lands on another branch.
 
-- **Check the origin before the first unit's add.** Run
-  `git -C <project folder> remote get-url origin`. Any remote named `origin`,
-  wherever it points, is an origin to production code. workbench-core's
-  commit gate uses the same definition.
-- **When you cannot read the remote, treat the repo as production.** Only a
-  repo that git confirms has no remote named `origin` keeps the free path.
-- **Ask before each step, one `AskUserQuestion` each.** Before the commit,
-  name the unit tree, its branch and the message. After the commit lands, ask
-  about the merge, and name the unit branch and the branch it lands on.
-  workbench-core's commit gate decides what each answer allows.
-- **A repo with no such origin keeps the free path.** Its unit commit and its
-  merge onto the feature branch need no question.
+- **Commit the unit with no question.** A commit in its ledger worktree runs
+  free, whatever the repo's remotes.
+- **Ask before each landing, one `AskUserQuestion` each.** A local merge or
+  pull that lands a unit branch asks, from any source and with any options,
+  a fast-forward included. Name the unit branch and the branch it lands on.
+  workbench-core's commit gate decides what the answer allows.
+- **A catch-up merge runs with no question.** A merge that brings a branch up
+  to date, such as `git merge origin/main`, lands no unit. Mike updates
+  branches with `git merge`.
+- **Every push and every pull request still asks**, as before.
 
 ## Names
 
@@ -125,15 +122,13 @@ goes to the guard's ordinary rules, which refuse it.
    goes back to that unit's Watson, and the review repeats.
 5. **Commit the unit after Holmes's review.** Run `git -C <path> add -A` on its
    own line, then `git -C <path> commit -m <message>` or `-F <file>`, with HEAD
-   on the unit branch. In a repo with an origin to production code, ask before
-   the commit, as "Production origin" says. Otherwise the commit needs no
-   question. Never `cd <path> &&`, and never `git -c`.
+   on the unit branch. The commit needs no question. Never `cd <path> &&`, and
+   never `git -c`.
 6. **Land the unit with a merge commit.** In the project folder, on the
-   feature branch, run `git merge --no-ff <unit branch>`. In a repo with an
-   origin to production code, ask before the merge, as "Production origin"
-   says. Otherwise the merge needs no question. Never cherry-pick,
-   rebase or reset a unit onto the branch. A merge that stops on a conflict
-   means the units were not independent: stop, and ask the human.
+   feature branch, ask the human first, as "What asks the human" says, then
+   run `git merge --no-ff <unit branch>`. Never cherry-pick, rebase or reset a
+   unit onto the branch. A merge that stops on a conflict means the units were
+   not independent: stop, and ask the human.
 7. **Clean up the unit once it lands.**
    - `git worktree remove <path>`, with the same path as the add and without
      `--force`.
