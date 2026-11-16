@@ -711,6 +711,22 @@ describe("the unit rule reads workbench-core's criteria count", () => {
     expect(check.read).toEqual([])
   })
 
+  test('a brief-shaped check with no criteria count refuses the dispatch as one the spawn rules could not judge', async ($, on) => {
+    const check = { read: [] as string[], briefCheck: (prompt: string) => (check.read.push(prompt), { isComplete: true, missing: [], shape: 'brief' }) }
+    const w = world(on, { briefCheck: check.briefCheck })
+    const result = (await $.agent.spawn(spawnInput(T('watson'), BRIEF))) as { deny?: string }
+    expect(check.read).toEqual([BRIEF])
+    expect(w.spawned).toEqual([])
+    expect(result.deny?.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch the dev-team spawn rules could not judge.')
+  })
+
+  test('a Watson brief within the limit passes on the default stand-in, which reports a criteria count as the pinned core does', async ($, on) => {
+    const w = world(on)
+    const result = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    expect(result).toMatchObject({ agentId: 'agent-1' })
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct')])
+  })
+
   test('a check that fails refuses the dispatch as one the spawn rules could not judge', async ($, on) => {
     const w = world(on, { briefCheck: () => new Error('core failed') })
     const result = (await $.agent.spawn(spawnInput(T('watson'), SEVEN))) as { deny?: string }

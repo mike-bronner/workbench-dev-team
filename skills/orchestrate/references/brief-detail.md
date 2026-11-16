@@ -82,6 +82,8 @@ full criteria list may stay in `Acceptance:` for context. A brief with no
 Direct-mode brief that carries more than 6 criteria and no `Unit:` line, by
 workbench-core's count: one per top-level list item, or one per line when
 `Acceptance:` holds no list. Holmes briefs and dispatch tokens are exempt.
+If core's check gives a Watson Direct brief no count, the mod refuses the
+dispatch as one it could not judge.
 
 ## Watson and Holmes briefs carry the no-mutation line
 
