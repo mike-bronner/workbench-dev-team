@@ -139,37 +139,10 @@ export const BACKGROUND_HINT = /&|nohup|setsid|disown/i
 
 export type Probe<T> = { separator: T; statement: T }
 
-export function probeLinesOf(line: string): Probe<string>[] {
-  const probes: Probe<string>[] = []
-  let quote: string | undefined
-  let depth = 0
-  for (let i = 0; i < line.length; i++) {
-    const c = line[i]
-    if (quote === "'") {
-      if (c === "'") quote = undefined
-      continue
-    }
-    if (c === '\\') {
-      i++
-      continue
-    }
-    if (c === '$' && line[i + 1] === '{') {
-      depth++
-      i++
-      continue
-    }
-    if (depth > 0) {
-      if (c === '{') depth++
-      else if (c === '}') depth--
-      continue
-    }
-    if (c === '"') quote = quote === '"' ? undefined : '"'
-    else if (c === "'" && quote === undefined) quote = "'"
-    if (c !== '&' || /[&|<>;]/.test(line[i - 1] ?? '') || /[&>]/.test(line[i + 1] ?? '')) continue
-    probes.push({ separator: `${line.slice(0, i)};${line.slice(i + 1)}`, statement: `${line.slice(0, i)};:;${line.slice(i + 1)}` })
-  }
-  return probes
-}
+export const probeLinesOf = (line: string): Probe<string>[] =>
+  line.split('').flatMap((c, i) =>
+    c !== '&' || /[&|<>;]/.test(line[i - 1] ?? '') || /[&>]/.test(line[i + 1] ?? '') ? [] : [{ separator: `${line.slice(0, i)};${line.slice(i + 1)}`, statement: `${line.slice(0, i)};:;${line.slice(i + 1)}` }],
+  )
 
 const isSameReading = (a: ShellParse, b: ShellParse): boolean => JSON.stringify(a) === JSON.stringify(b)
 
