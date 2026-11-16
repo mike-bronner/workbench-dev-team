@@ -184,6 +184,7 @@ export type GuardOptions = {
   // and anything else exits 0 with no output.
   run?: (argv: readonly string[]) => RunAnswer | undefined
   tools?: (input: Record<string, unknown>) => { text?: string; isError?: boolean; result?: unknown } | undefined
+  briefCheck?: (prompt: string) => Record<string, unknown> | Error
 }
 
 // Where `path` lands on `disk`, every link followed, or undefined when it
@@ -256,6 +257,7 @@ export function world(
         orchestratorIsOn: async () => answer(w.isOn),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
         parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : (options.reader ?? readPlain)(line)),
+        briefCheck: async (prompt: string) => answer(options.briefCheck?.(prompt) ?? { isComplete: true, missing: [], shape: 'brief' }),
       },
     } as never
   })

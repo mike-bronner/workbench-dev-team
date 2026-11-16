@@ -664,3 +664,57 @@ describe('a message to a Watson or Holmes — a resume, or a send, is judged on 
     expect(w.spawned).toHaveLength(1)
   })
 })
+
+describe("the unit rule reads workbench-core's criteria count", () => {
+  const SEVEN = BRIEF.replace('- AC1: the field survives', ['1', '2', '3', '4', '5', '6', '7'].map(n => `- AC${n}: the field survives case ${n}`).join('\n'))
+  const counted = (check: Record<string, unknown>) => {
+    const read: string[] = []
+    return { read, briefCheck: (prompt: string) => (read.push(prompt), { isComplete: true, missing: [], shape: 'brief', ...check }) }
+  }
+
+  for (const [caller, extra] of [
+    ['the main session', {}],
+    ['a sub-agent', { parentAgentId: 'agent-parent' }],
+  ] as const) {
+    test(`a Watson brief with 7 criteria and no unit from ${caller} is refused, and the refusal says how it counted and how to cut a unit`, async ($, on) => {
+      const check = counted({ criteria: 7 })
+      const w = world(on, { briefCheck: check.briefCheck })
+      const result = (await $.agent.spawn(spawnInput(T('watson'), SEVEN, extra))) as { deny?: string }
+      expect(w.spawned).toEqual([])
+      expect(check.read).toEqual([SEVEN])
+      const deny = result.deny ?? ''
+      expect(deny.split('\n')[0]).toBe('🛑 Blocked: a Watson Direct-mode dispatch whose brief carries 7 acceptance criteria and names no unit.')
+      expect(deny).toContain('Unit rule (workbench-dev-team).')
+      expect(deny).toContain('one per top-level list item, or one per non-blank line when the slot holds no list')
+      expect(deny).toContain('"Unit: 2 of 4, the focus ring. Meets AC3, AC4."')
+      expect(deny).toContain('Write each criterion as a bullet')
+    })
+  }
+
+  test('a Watson brief with a unit passes after core reads it, and a Holmes brief passes with no read', async ($, on) => {
+    const check = counted({ criteria: 7, unit: '1 of 2, the parser. Meets AC1, AC2.' })
+    const w = world(on, { briefCheck: check.briefCheck })
+    const prompt = `${SEVEN}\nUnit: 1 of 2, the parser. Meets AC1, AC2.`
+    const result = await $.agent.spawn(spawnInput(T('watson'), prompt))
+    expect(result).toMatchObject({ agentId: 'agent-1' })
+    expect(check.read).toEqual([prompt])
+    await $.agent.spawn(spawnInput(T('holmes'), SEVEN))
+    expect(check.read).toEqual([prompt])
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct'), T('holmes-local')])
+  })
+
+  test('an Item ID token goes through, even on a check that reports 7 criteria', async ($, on) => {
+    const check = counted({ criteria: 7 })
+    const w = world(on, { briefCheck: check.briefCheck })
+    await $.agent.spawn(spawnInput(T('watson'), 'Item ID: 42'))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-index')])
+    expect(check.read).toEqual([])
+  })
+
+  test('a check that fails refuses the dispatch as one the spawn rules could not judge', async ($, on) => {
+    const w = world(on, { briefCheck: () => new Error('core failed') })
+    const result = (await $.agent.spawn(spawnInput(T('watson'), SEVEN))) as { deny?: string }
+    expect(w.spawned).toEqual([])
+    expect(result.deny?.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch the dev-team spawn rules could not judge.')
+  })
+})

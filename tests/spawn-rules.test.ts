@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { configLineOf, configTextOf, isGated, isHolmesMode, knobsOf, lensSpawnOf, mutationDeny, mutationFindingsOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
+import { configLineOf, configTextOf, isGated, isHolmesMode, knobsOf, lensSpawnOf, mutationDeny, mutationFindingsOf, unitDeny, unitRefusalOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
 import type { RunAnswer } from './world'
 import { BRIEF, spawnInput, world } from './world'
 
@@ -710,5 +710,43 @@ describe('mutationDeny — the refusal text', () => {
   test('with nothing found, it holds no fix line', () => {
     const deny = mutationDeny('Holmes Local-mode', { missingSlots: [], lacksNoMutationLine: false, voidingItems: [], bannedItems: [] })
     expect(deny.split('\n').filter(line => line.startsWith('- '))).toEqual([])
+  })
+})
+
+describe("unitRefusalOf — the unit rule on workbench-core's count", () => {
+  const brief = (check: Record<string, unknown>) => ({ shape: 'brief', ...check })
+  for (const [label, type, check, isRefused] of [
+    ['criteria 7 and no unit', T('watson-direct'), brief({ criteria: 7 }), true],
+    ['criteria 6 and no unit', T('watson-direct'), brief({ criteria: 6 }), false],
+    ['criteria 7 and a unit', T('watson-direct'), brief({ criteria: 7, unit: '1 of 2, the parser. Meets AC1.' }), false],
+    ['criteria 7 and an empty unit', T('watson-direct'), brief({ criteria: 7, unit: '' }), false],
+    ['criteria 7 on an item-id shape', T('watson-direct'), { shape: 'item-id', criteria: 7 }, false],
+    ['criteria 7 on a repo-sweep shape', T('watson-direct'), { shape: 'repo-sweep', criteria: 7 }, false],
+    ['criteria 7 on a blank shape', T('watson-direct'), { shape: 'blank', criteria: 7 }, false],
+    ['no criteria field', T('watson-direct'), brief({}), false],
+    ['a non-numeric criteria', T('watson-direct'), brief({ criteria: '7' }), false],
+    ['criteria 7 and no unit', T('holmes'), brief({ criteria: 7 }), false],
+    ['criteria 7 and no unit', T('holmes-local'), brief({ criteria: 7 }), false],
+    ['criteria 7 and no unit', T('holmes-index'), brief({ criteria: 7 }), false],
+    ['criteria 7 and no unit', T('watson-index'), brief({ criteria: 7 }), false],
+    ['criteria 7 and no unit', T('watson'), brief({ criteria: 7 }), false],
+  ] as const) {
+    test(`${label} on ${type} is ${isRefused ? 'refused' : 'let through'}`, () => {
+      const refusal = unitRefusalOf(type, check as never)
+      if (isRefused) expect(refusal).toBe(unitDeny(7))
+      else expect(refusal).toBeUndefined()
+    })
+  }
+
+  test('the deny states the count, how core read it, and both fixes', () => {
+    expect(unitDeny(9).split('\n')).toEqual([
+      '🛑 Blocked: a Watson Direct-mode dispatch whose brief carries 9 acceptance criteria and names no unit.',
+      '',
+      'Unit rule (workbench-dev-team). A Watson brief with more than 6 acceptance criteria delivers one unit of the work per dispatch, named on a Unit: line. ' +
+        'workbench-core counted 9 criteria in Acceptance:, one per top-level list item, or one per non-blank line when the slot holds no list. ' +
+        'Nothing was spawned. Make one fix below and dispatch again.',
+      '- Cut the work into units of at most 6 criteria. Keep the full list for context if it helps, and add a Unit: line that names the one step this dispatch delivers and the criteria it meets, such as "Unit: 2 of 4, the focus ring. Meets AC3, AC4."',
+      '- If Acceptance: is prose wrapped over several lines, each line counts as one criterion. Write each criterion as a bullet, so it counts once.',
+    ])
   })
 })

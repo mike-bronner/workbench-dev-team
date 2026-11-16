@@ -427,6 +427,29 @@ export function mutationRefusalOf(subagentType: string, prompt: string): string 
     : undefined
 }
 
+export const UNIT_CRITERIA_LIMIT = 6
+
+export const UNIT_GATED = `${PLUGIN}:watson-direct`
+
+export type UnitCheck = { shape: string; criteria?: number; unit?: string }
+
+export function unitDeny(criteria: number): string {
+  return [
+    `🛑 Blocked: a Watson Direct-mode dispatch whose brief carries ${criteria} acceptance criteria and names no unit.`,
+    '',
+    `Unit rule (${PLUGIN}). A Watson brief with more than ${UNIT_CRITERIA_LIMIT} acceptance criteria delivers one unit of the work per dispatch, named on a Unit: line. ` +
+      `workbench-core counted ${criteria} criteria in Acceptance:, one per top-level list item, or one per non-blank line when the slot holds no list. ` +
+      'Nothing was spawned. Make one fix below and dispatch again.',
+    `- Cut the work into units of at most ${UNIT_CRITERIA_LIMIT} criteria. Keep the full list for context if it helps, and add a Unit: line that names the one step this dispatch delivers and the criteria it meets, such as "Unit: 2 of 4, the focus ring. Meets AC3, AC4."`,
+    '- If Acceptance: is prose wrapped over several lines, each line counts as one criterion. Write each criterion as a bullet, so it counts once.',
+  ].join('\n')
+}
+
+export function unitRefusalOf(subagentType: string, check: UnitCheck): string | undefined {
+  if (subagentType !== UNIT_GATED || check.shape !== 'brief' || check.unit !== undefined) return undefined
+  return typeof check.criteria === 'number' && check.criteria > UNIT_CRITERIA_LIMIT ? unitDeny(check.criteria) : undefined
+}
+
 export type ResumeFindings = { voidingItems: string[]; bannedItems: string[] }
 
 export function resumeFindingsOf(message: string): ResumeFindings {
