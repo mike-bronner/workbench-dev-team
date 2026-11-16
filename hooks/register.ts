@@ -35,7 +35,7 @@ import {
 } from './mods/dispatch'
 import type { ModHook } from './mods/fallback'
 import { markerOf, sweepArgvsOf, waitFileOf } from './mods/fallback'
-import { outputOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
+import { handbackRefusalOf, holdersArgv, outputOf, pidsOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
 import type { Activity, Watch } from './mods/helper-wait'
 import type { Disk, ShellParse } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
@@ -249,6 +249,21 @@ async function recordHandback($: EngineInterface, seat: Seat, agentId: string | 
   if (((await $.state.get(key)).value ?? false) === handedBack) return
   await $.state.set(key, handedBack)
   if (handedBack) await recordWait($, seat, agentId, activity)
+}
+
+async function handbackRefusal($: EngineInterface, agentId: string | undefined, refusedOnce: Set<string>): Promise<string | undefined> {
+  if (agentId === undefined) return undefined
+  const { value: type } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId })
+  if (!isDevTeamType(type)) return undefined
+  const { value: started = [] } = await $.state.get({ plugin: 'workbench-dev-team', key: 'backgroundTasks', id: agentId })
+  const states = await Promise.all(
+    started.map(async entry => {
+      const answer = entry.output === undefined ? undefined : await $.process.run(holdersArgv(entry.output), { timeoutMs: 10_000 }).catch(() => undefined)
+      const pids = pidsOf(answer)
+      return pids === undefined ? { id: entry.id } : { id: entry.id, pids }
+    }),
+  )
+  return handbackRefusalOf(agentId, states, refusedOnce)
 }
 
 async function stopBlock(
@@ -650,6 +665,7 @@ export const register: Register = (on, options) => {
 
   const seat: Seat = {}
   const backgrounded = new Set<string>()
+  const refusedOnce = new Set<string>()
 
   on('session.start', async ($, e, next) => {
     void sweepFallbackFiles($).catch(() => undefined)
@@ -854,6 +870,8 @@ export const register: Register = (on, options) => {
         return watch(result)
       }
       if ((e.tool as string) === 'SubagentHandback') {
+        const refusal = await handbackRefusal($, e.agentId, refusedOnce)
+        if (refusal !== undefined) return { deny: refusal }
         const result = await next(e)
         if (result.deny === undefined && result.isError !== true) await recordHandback($, seat, e.agentId, true, activity).catch(() => undefined)
         return watch(result)
