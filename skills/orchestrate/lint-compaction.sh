@@ -249,6 +249,7 @@ section|orchestrate|### Must omit
 section|orchestrate|### When a brief comes back
 phrase|orchestrate|Units that share files run one at a time, the short unit first.
 phrase|orchestrate|land it with `git merge --no-ff` on the feature branch, never a cherry-pick, rebase or reset
+phrase|orchestrate|If the repo has an origin to production code, ask before each unit commit and each unit merge, one question each.
 phrase|orchestrate|A merge into the default branch and every push still ask the human.
 phrase|orchestrate|Never merge two units into one brief
 phrase|orchestrate|**Cut the task into its smallest units before the first dispatch,** one brief per unit

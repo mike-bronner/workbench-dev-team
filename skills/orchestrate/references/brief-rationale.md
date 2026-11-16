@@ -66,6 +66,10 @@ rules for the flow:
 - A sub-agent never commits. So the orchestrator commits each unit in its own
   tree, after Holmes's review. No other agent writes in that tree, so the
   commit holds that unit's work and nothing else.
+- A unit from a repo with an origin to production code asks before its commit
+  and before its merge. Mike, 2026-11-16: "if a ledger-unit has an origin to
+  the production repo or code, then it should ask." Eleven units had landed on
+  a shared feature branch with no question, and he never approved them.
 - Units land as merge commits. Mike forbids cherry-pick, rebase and reset,
   because he never rewrites history and always adds on top.
 

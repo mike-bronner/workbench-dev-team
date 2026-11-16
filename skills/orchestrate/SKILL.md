@@ -63,8 +63,10 @@ brief: the short one then waits behind the long one. How:
 
 **Only for units you dispatched,** commit each in its own tree after review,
 land it with `git merge --no-ff` on the feature branch, never a cherry-pick,
-rebase or reset, then remove its worktree and database. A merge into the default
-branch and every push still ask the human.
+rebase or reset, then remove its worktree and database. If the repo has an
+origin to production code, ask before each unit commit and each unit merge, one
+question each. A merge into the default branch and every push still ask the
+human.
 
 **New work gets its own dispatch.** Never SendMessage new work to a running
 agent: it waits behind that agent's current task. A message to a running agent
@@ -188,8 +190,8 @@ table sends it to Holmes Local mode.
 
 | Request | Governed repo | Ungoverned repo |
 |---|---|---|
-| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review. No board item → as ungoverned | **Holmes** Local mode on the PR branch's committed range, `Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require: Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose; posting it is the user's action, after confirming. Never unwind commits to fake an uncommitted tree |
-| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the six-slot brief, via the Agent tool); the verdict comes back as prose | same — Local mode makes no board call and no GitHub write, so the repo's governance is irrelevant |
+| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review. No board item → as ungoverned | **Holmes** Local mode on the PR branch's committed range, `Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require: Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose. Never unwind commits to fake an uncommitted tree |
+| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the six-slot brief, via the Agent tool); the verdict comes back as prose | same |
 | "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
 | "implement / fix / build X" | Item exists → **Watson** Index mode, through the dispatcher (Dispatch protocol, step 4), never the Agent tool. No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the six-slot brief, via the Agent tool; the diff comes back uncommitted) |
