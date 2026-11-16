@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { configLineOf, configTextOf, isGated, isHolmesMode, knobsOf, lensSpawnOf, mutationDeny, mutationFindingsOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
+import { configLineOf, configTextOf, isGated, isHolmesMode, knobsOf, lensSpawnOf, mutationDeny, mutationFindingsOf, spawnFailedDeny, unitDeny, unitRefusalOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
 import type { RunAnswer } from './world'
 import { BRIEF, spawnInput, world } from './world'
 
@@ -511,6 +511,131 @@ describe('mutationFindingsOf — the exact line and the strict ban', () => {
     expect(findings).toEqual(CLEAN)
   })
 
+  test('a Unit: line after the last Acceptance: item stays out of that item, so a removal word in it pairs with no failure word', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails on bad input').replace('Done when:', 'Unit: 2 of 4, delete the old layout constant. Meets AC1.\nDone when:')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  test('a Unit: line between two items keeps each item whole, and the next line still starts its own item', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails\nUnit: 1 of 2, drop the legacy constant.\n- AC2: it works')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  test('a decorated **Unit:** label after an item ending in "fails" stays out of that item', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails\n**Unit:** 1 of 2, drop the legacy constant.')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  for (const [slot, from, to] of [
+    ['Goal:', 'Goal: Fix the parser.', 'Goal: Fix the parser so the old test fails.\nUnit: 1 of 2, drop the legacy constant.'],
+    ['Done when:', 'Done when: the test passes.', 'Done when: the old test fails.\nUnit: 1 of 2, drop the legacy constant.'],
+  ] as const) {
+    test(`a Unit: line after ${slot} stays out of that slot's text`, () => {
+      expect(mutationFindingsOf(BRIEF.replace(from, to))).toEqual(CLEAN)
+    })
+  }
+
+  test('unbulleted lines after a Unit: line join the Unit item and are judged with it', () => {
+    const prompt = withAcceptance('- AC1: the field survives\nUnit: 2 of 4, delete the old guard\n  and show the test fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: '2 of 4, delete the old guard and show the test fails' }])
+  })
+
+  for (const [name, end] of [
+    ['a sub-bullet', '\n  - and the test fails'],
+    ['a blank line', '\n\nthe test fails'],
+  ] as const) {
+    test(`${name} ends the Unit item, and later text joins the item before the Unit: line again`, () => {
+      const prompt = withAcceptance(`- AC1: the guard is removed\nUnit: 1 of 2, the parser.${end}`)
+      const findings = bannedOf(prompt)
+      expect(findings.map(f => f.slot)).toEqual(['Acceptance:'])
+      expect(findings[0]?.item).not.toContain('Unit')
+    })
+  }
+
+  test('a Unit: line under an empty Acceptance: label, followed by a bullet with a failure word, is clean', () => {
+    const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: 1 of 2, delete the guard\n- AC1: the test fails')
+    expect(mutationFindingsOf(prompt)).toEqual(CLEAN)
+  })
+
+  test('a Unit: line under an empty Acceptance: label that wraps onto a failure word is one banned Unit: item', () => {
+    const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: 1 of 2, drop the guard\n  and the test fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: '1 of 2, drop the guard and the test fails' }])
+  })
+
+  test('two Unit: lines in a row, then a blank line, send later text back to the item before them', () => {
+    const prompt = withAcceptance('- AC1: the guard is removed\nUnit: 1 of 2, the parser.\nUnit: 2 of 2, the lexer.\n\nthe test fails')
+    const findings = bannedOf(prompt)
+    expect(findings).toEqual([{ slot: 'Acceptance:', item: '- AC1: the guard is removed the test fails' }])
+    expect(findings[0]?.item).not.toContain('Unit')
+  })
+
+  test('a removal word in an item and a failure word on the wrapped Unit: line right after it are judged as one pair', () => {
+    const prompt = withAcceptance('- Delete the assertion\nUnit: 1 of 2\n  and the suite fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- Delete the assertion Unit: 1 of 2 and the suite fails' }])
+  })
+
+  test('a removal word in an item and a failure word on a later Unit: line in the same run are judged as one pair', () => {
+    const prompt = withAcceptance('- Delete the assertion\nUnit: 1 of 2\nUnit: and the suite fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- Delete the assertion Unit: 1 of 2 Unit: and the suite fails' }])
+  })
+
+  test('a bullet after the Unit: line ends the run, so its failure word is not paired with the removal word before the Unit: line', () => {
+    expect(mutationFindingsOf(withAcceptance('- Delete the assertion\nUnit: 1 of 2\n- AC2: the suite fails'))).toEqual(CLEAN)
+  })
+
+  test('a failure phrase split across an item and its Unit: line is judged as one pair', () => {
+    const prompt = withAcceptance('- Delete the helper so the test goes\nUnit: red when it is gone')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- Delete the helper so the test goes Unit: red when it is gone' }])
+  })
+
+  test('a failure phrase in an item and a removal word on its Unit: line, the mirror order, is clean', () => {
+    expect(mutationFindingsOf(withAcceptance('- AC1: the test goes\nUnit: red, then drop the helper'))).toEqual(CLEAN)
+  })
+
+  for (const [name, acceptance] of [
+    ['after an item', 'Acceptance:\n- Cover the parser.\nUnit: Delete the stale fixture\nUnit: the suite fails afterwards'],
+    ['under an empty label', 'Acceptance:\nUnit: Delete the stale fixture\nUnit: the suite fails afterwards'],
+  ] as const) {
+    test(`two Unit: lines in a row ${name} that hold the pair between them are judged as one Unit: item`, () => {
+      const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', acceptance)
+      expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: 'Delete the stale fixture the suite fails afterwards' }])
+    })
+  }
+
+  test('a Unit: line under an empty label keeps text after a blank line, so a removal and a failure split by it are judged together', () => {
+    const prompt = BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: delete x\n\nthe test fails')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: 'delete x the test fails' }])
+  })
+
+  test('a Unit: line after the no-mutation line goes through the voiding check like a Constraints: item', () => {
+    const unit = 'Unit: 1 of 2, unless the reviewer asks for a stronger check.'
+    expect(mutationFindingsOf(withConstraints(`Constraints:\n${NO_LINE}\n${unit}`))).toEqual({ ...CLEAN, voidingItems: [unit] })
+  })
+
+  test('a label with a no-break space before the colon is not read as a Unit: line', () => {
+    const prompt = withAcceptance('- AC1: the parser test fails\nUnit\u00a0: 1 of 2, drop the legacy constant.')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Acceptance:', item: '- AC1: the parser test fails Unit\u00a0: 1 of 2, drop the legacy constant.' }])
+  })
+
+  for (const [name, unit, item] of [
+    ['mentions mutation', 'Unit: 2 of 4, prove it with a mutation check.', '2 of 4, prove it with a mutation check.'],
+    ['holds a removal word and a failure word', '**Unit:** 2 of 4, the test fails if the guard is removed.', '2 of 4, the test fails if the guard is removed.'],
+  ] as const) {
+    test(`a Unit: line that ${name} is judged on its own text, apart from the item before it`, () => {
+      const prompt = BRIEF.replace('Done when:', `${unit}\nDone when:`)
+      expect(mutationFindingsOf(prompt)).toEqual({ ...CLEAN, bannedItems: [{ slot: 'Unit:', item }] })
+    })
+  }
+
+  test('a banned Unit: line inside Context: is still judged', () => {
+    const prompt = BRIEF.replace('Context: It drops a field.', 'Context: It drops a field.\nUnit: 1 of 3, kill every mutant.')
+    expect(bannedOf(prompt)).toEqual([{ slot: 'Unit:', item: '1 of 3, kill every mutant.' }])
+  })
+
+  test('a Unit: line inside Constraints: does not end the block, so the no-mutation line after it still counts', () => {
+    expect(mutationFindingsOf(withConstraints(`Constraints:\n- Keep the public API.\nUnit: 1 of 2, the parser.\n${NO_LINE}`))).toEqual(CLEAN)
+  })
+
   for (const [label, end] of [
     ['acceptance:', 'Done when:'],
     ['**Acceptance**:', '**Done when:**'],
@@ -585,5 +710,47 @@ describe('mutationDeny — the refusal text', () => {
   test('with nothing found, it holds no fix line', () => {
     const deny = mutationDeny('Holmes Local-mode', { missingSlots: [], lacksNoMutationLine: false, voidingItems: [], bannedItems: [] })
     expect(deny.split('\n').filter(line => line.startsWith('- '))).toEqual([])
+  })
+})
+
+describe("unitRefusalOf — the unit rule on workbench-core's count", () => {
+  const brief = (check: Record<string, unknown>) => ({ shape: 'brief', ...check })
+  for (const [label, type, check, refusal] of [
+    ['criteria 7 and no unit', T('watson-direct'), brief({ criteria: 7 }), 'unit'],
+    ['criteria 6 and no unit', T('watson-direct'), brief({ criteria: 6 }), undefined],
+    ['criteria 7 and a unit', T('watson-direct'), brief({ criteria: 7, unit: '1 of 2, the parser. Meets AC1.' }), undefined],
+    ['criteria 7 and an empty unit', T('watson-direct'), brief({ criteria: 7, unit: '' }), undefined],
+    ['criteria 7 on an item-id shape', T('watson-direct'), { shape: 'item-id', criteria: 7 }, undefined],
+    ['criteria 7 on a repo-sweep shape', T('watson-direct'), { shape: 'repo-sweep', criteria: 7 }, undefined],
+    ['criteria 7 on a blank shape', T('watson-direct'), { shape: 'blank', criteria: 7 }, undefined],
+    ['no criteria on an item-id shape', T('watson-direct'), { shape: 'item-id' }, undefined],
+    ['no criteria on a blank shape', T('watson-direct'), { shape: 'blank' }, undefined],
+    ['no criteria field', T('watson-direct'), brief({}), 'fault'],
+    ['no criteria field and a unit', T('watson-direct'), brief({ unit: '1 of 2, the parser. Meets AC1.' }), 'fault'],
+    ['a non-numeric criteria', T('watson-direct'), brief({ criteria: '7' }), 'fault'],
+    ['a fractional criteria', T('watson-direct'), brief({ criteria: 7.5 }), 'fault'],
+    ['a NaN criteria', T('watson-direct'), brief({ criteria: Number.NaN }), 'fault'],
+    ['no criteria field', T('holmes-local'), brief({}), undefined],
+    ['criteria 7 and no unit', T('holmes'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('holmes-local'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('holmes-index'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('watson-index'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('watson'), brief({ criteria: 7 }), undefined],
+  ] as const) {
+    test(`${label} on ${type} is ${refusal === undefined ? 'let through' : refusal === 'unit' ? 'refused by the unit rule' : 'refused as a check core broke'}`, () => {
+      expect(unitRefusalOf(type, check as never)).toBe(refusal === undefined ? undefined : refusal === 'unit' ? unitDeny(7) : spawnFailedDeny())
+    })
+  }
+
+  test('the deny states the count, how core read it, and both fixes', () => {
+    expect(unitDeny(9).split('\n')).toEqual([
+      '🛑 Blocked: a Watson Direct-mode dispatch whose brief carries 9 acceptance criteria and names no unit.',
+      '',
+      'Unit rule (workbench-dev-team). A Watson brief with more than 6 acceptance criteria delivers one unit of the work per dispatch, named on a Unit: line. ' +
+        'workbench-core counted 9 criteria in Acceptance:, one per top-level list item, or one per non-blank line when the slot holds no list. ' +
+        'Nothing was spawned. Make one fix below and dispatch again.',
+      '- Cut the work into units of at most 6 criteria. Keep the full list for context if it helps, and add a Unit: line that names the one step this dispatch delivers and the criteria it meets, such as "Unit: 2 of 4, the focus ring. Meets AC3, AC4."',
+      '- If Acceptance: is prose wrapped over several lines, each line counts as one criterion. Write each criterion as a bullet, so it counts once.',
+    ])
   })
 })

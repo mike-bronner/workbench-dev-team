@@ -10,7 +10,8 @@ requires: Skill, Bash, Read, Write, Edit, Grep, Glob
 section: # Dr. Watson — Development Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
-section: ## Scratch folders — a bare `mktemp`, deleted when your run ends
+section: ## Scratch folders — a template in your own folder, deleted when your run ends
+section: ## Foreground commands — each command and each task under about 10 minutes
 skip: ## Mode detection
 section: ## The brief contract — refuse an incomplete brief, ask about a vague one
 section: ## Working-context budget — roughly 250k tokens, self-checked

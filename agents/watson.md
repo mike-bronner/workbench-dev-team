@@ -37,14 +37,17 @@ Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
 
-## Scratch folders — a bare `mktemp`, deleted when your run ends
+## Scratch folders — a template in your own folder, deleted when your run ends
 
-Make every temporary folder with a bare `mktemp -d`, and a temporary file with
-a bare `mktemp`. That covers a clone, a probe copy, and a place for
-intermediate output. The dev-team mod points a bare `mktemp` at a folder of
-your own under a scratch root: the session scratchpad, or
-`~/Developer/scratchpad` when the session has none. It deletes that folder when
-your run ends, so you delete nothing.
+The dev-team mod makes a scratch folder of your own when your run starts, under
+a scratch root: the session scratchpad, or `~/Developer/scratchpad` when the
+session has none. The context you receive at your start names that folder. Make
+every temporary folder with `mktemp -d '<your folder>/tmp.XXXXXXXX'`, and a
+temporary file with `mktemp '<your folder>/tmp.XXXXXXXX'`, with the folder's
+path written out in full. That covers a clone, a probe copy, and a place for
+intermediate output. The mod refuses a bare `mktemp`, which lands in `$TMPDIR`,
+and its refusal names your folder. It deletes that folder when your run ends,
+so you delete nothing.
 
 The Index pipeline's clone is the one exception: its step spells out a
 scratch-root template, and its clean-up step deletes the clone. Follow those
@@ -52,13 +55,32 @@ steps as written.
 
 Write the path `mktemp` printed out in full in every later command. Touch only
 what your own `mktemp` made. Never touch another run's folder or the scratch
-root itself. If `mktemp` prints a path outside both scratch roots, the mod is
-not running: report that as a defect, and before you report, delete the folder
+root itself. If your start named no folder, the mod's refusal of a bare
+`mktemp -d` names it. If a bare `mktemp` is not refused, the mod is not
+running: report that as a defect, and before you report, delete what it made
 with `rm -rf` and its literal path, as a command of its own.
 
 Never ask the human to delete your scratch, and never hand them a `!` command
 to run. Leave git branches and stashes where they are unless the human asks you
 to remove them.
+
+## Foreground commands — each command and each task under about 10 minutes
+
+Run every Bash command in the foreground, inside your own turn. Your run is
+already apart from the session that started it, so a background command of your
+own gains nothing, and it can outlive your run and hold it open. The dev-team
+mod refuses a Bash call that sets `run_in_background`, in every mode, and
+the same call from any sub-agent you spawn.
+A command that backgrounds itself, with a background `&`, `nohup`, `setsid`
+or `disown`, is a background command too, and the mod refuses it the same way.
+
+Keep each command, and the whole task, under about 10 minutes. This is a strong
+recommendation, not a hard limit. The Bash tool cuts a foreground command off
+at 600000 ms, so give a long command a `timeout` up to that figure, and split a
+longer one into parts, such as one test file, one directory or one filter per
+call. Run the narrowest tests that prove the change. When the task looks longer
+than about 10 minutes, do it, and name in your report the smaller units it
+could have been cut into.
 
 ## Mode detection
 
@@ -214,9 +236,21 @@ claim, and no board state to protect.
    mode runs exactly as Index mode does. The skill is the source of truth for
    how to do the work; don't duplicate its guidance here.
 4. Report what you did, mapped to each `Acceptance:` criterion, and hand the
-   commit back (below).
+   commit back (below). On a unit brief, name the unit you delivered and map
+   only the criteria its `Unit:` line names.
 
 That's it. Direct mode is a thin sub-agent wrapper around `/develop`.
+
+**A `Unit:` line narrows the brief to one unit of the task.** A brief can carry
+an optional `Unit:` line, such as `Unit: 2 of 4, the focus ring. Meets AC3,
+AC4.` It is not a seventh slot, and a brief without it is still complete. A
+sub-agent whose brief carries a `Unit:` line delivers and grades only that
+line's criteria, reads the rest of `Acceptance:` as context, and hands back when
+its unit is done. The other criteria describe the whole task so that your unit
+fits it. They are not work to do. Once the unit's criteria are met, hand back,
+and do not start the next unit: the orchestrator dispatches it. Your report
+states which unit you delivered and which criteria you met. A brief with no
+`Unit:` line makes every `Acceptance:` criterion your work, as before.
 
 **A unit worktree is your whole workspace.** When `Workdir:` names a parallel
 unit's worktree, the orchestrator made it for this brief alone. Change and test

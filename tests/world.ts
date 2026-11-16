@@ -128,10 +128,12 @@ export type World = {
   files: Map<string, string>
   // Each spawn that reached the engine: its type, model and prompt.
   spawned: { subagentType: string; model?: string; prompt: string }[]
+  backgrounds: boolean[]
+  hold?: { reached: () => void; released: Promise<void> }
   // Each model request that reached the engine: its loop and effort.
   steps: { agentId?: string; effort?: unknown }[]
   // What the engine answers to an Agent call.
-  agentCall: 'ok' | 'error'
+  agentCall: 'ok' | 'error' | 'throw'
   nextAgentId: number
   // Each tool call that reached the engine: its tool and command or path.
   ran: string[]
@@ -168,7 +170,7 @@ export type GuardOptions = {
   roots?: string[]
   // What $.agent.list() answers: each loop's id, type and parent. An Error rejects.
   // A loop's status is running unless the entry names one.
-  agents?: { id: string; type: string; parentId?: string; status?: string }[] | Error
+  agents?: { id: string; type: string; parentId?: string; status?: string; name?: string; teammateId?: string }[] | Error
   // What $.session.cwd() answers.
   cwd?: string
   sessionId?: string
@@ -176,11 +178,13 @@ export type GuardOptions = {
   disk?: Record<string, Entry>
   // Makes parseShell reject.
   parseFails?: boolean
+  reader?: (line: string) => ShellParse
   // Answers $.process.run. Return undefined to take the default: git exits
   // 128 (not a repository), mktemp makes `<template with XXXXXX as abc123>`,
   // and anything else exits 0 with no output.
   run?: (argv: readonly string[]) => RunAnswer | undefined
   tools?: (input: Record<string, unknown>) => { text?: string; isError?: boolean; result?: unknown } | undefined
+  briefCheck?: (prompt: string) => Record<string, unknown> | Error
 }
 
 // Where `path` lands on `disk`, every link followed, or undefined when it
@@ -219,6 +223,7 @@ export function world(
     isOn: options.isOn ?? true,
     files: new Map(options.config === undefined ? [] : [[CONFIG_PATH, options.config]]),
     spawned: [],
+    backgrounds: [],
     steps: [],
     agentCall: 'ok',
     nextAgentId: 1,
@@ -251,7 +256,8 @@ export function world(
         scratchRoots: async () => (w.rootsFail ? Promise.reject(new Error('no roots')) : (options.roots ?? [])),
         orchestratorIsOn: async () => answer(w.isOn),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
-        parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : readPlain(line)),
+        parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : (options.reader ?? readPlain)(line)),
+        briefCheck: async (prompt: string) => answer(options.briefCheck?.(prompt) ?? { isComplete: true, missing: [], shape: 'brief', criteria: 1 }),
       },
     } as never
   })
@@ -318,6 +324,7 @@ export function world(
 
   on('agent.spawn', async ($, e) => {
     w.spawned.push({ subagentType: e.subagentType, model: e.model, prompt: e.prompt })
+    w.backgrounds.push(e.background)
     return { model: e.model ?? 'inherit', agentId: `agent-${w.nextAgentId++}` }
   })
 
@@ -337,6 +344,11 @@ export function world(
     w.ran.push(`${input.tool}: ${String(input.command ?? input.file_path ?? input.notebook_path ?? '')}`)
     w.calls.push({ ...(e as Record<string, unknown>) })
     if (w.agentCall === 'error') return { isError: true, result: 'boom', text: 'boom' } as never
+    if (w.agentCall === 'throw' && input.tool === 'Agent') throw new Error('boom')
+    if (w.hold !== undefined && input.tool === 'Agent') {
+      w.hold.reached()
+      await w.hold.released
+    }
     const answered = options.tools?.(e as Record<string, unknown>)
     if (answered !== undefined) return answered as never
     const backgroundTaskId = input.tool === 'Bash' ? w.background.shift() : undefined
@@ -357,6 +369,7 @@ function defaultRun(w: World, argv: readonly string[]): RunAnswer {
     w.made.add(folder)
     return { exitCode: 0, stdout: `${folder}\n`, stderr: '' }
   }
+  if (argv[0] === 'mkdir') w.made.add(argv[argv.length - 1] ?? '')
   if (argv[0] === 'rm') for (const path of argv.slice(argv.indexOf('--') + 1)) w.made.delete(path)
   return { exitCode: 0, stdout: '', stderr: '' }
 }

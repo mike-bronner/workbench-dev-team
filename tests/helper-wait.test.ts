@@ -1,15 +1,15 @@
 import { describe, expect, test } from 'claude-code/testing'
 
-import { STUCK_AFTER, isTimer, outputOf, stopBlockOf } from '../hooks/mods/helper-wait'
-import type { GuardOptions } from './world'
+import { STUCK_AFTER, handbackRefusalOf, holdersArgv, isTimer, outputOf, pidsOf, stopBlockOf } from '../hooks/mods/helper-wait'
+import type { GuardOptions, RunAnswer } from './world'
 import { BRIEF, spawnInput, step, world } from './world'
 
 const T = (name: string) => `workbench-dev-team:${name}`
 
 const WATSON = { id: 'agent-1', type: T('watson-direct') }
 
-const background = (command: string, agentId?: string) =>
-  ({ tool: 'Bash', tool_use_id: 'toolu_1', description: 'd', command, run_in_background: true, ...(agentId === undefined ? {} : { agentId }) }) as never
+const taskIdBash = (command: string, agentId?: string) =>
+  ({ tool: 'Bash', tool_use_id: 'toolu_1', description: 'd', command, ...(agentId === undefined ? {} : { agentId }) }) as never
 
 const inFlight = (id: string, command: string) => ({ id, type: 'shell', status: 'running', description: command, command })
 
@@ -46,19 +46,19 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
     })
   }
 
-  test('a background command it started and still in flight refuses the turn end', async ($, on) => {
+  test('a task-id command it started and still in flight refuses the turn end', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test')]))
     expect(result.block).toContain('- background command b1: npm test')
   })
 
-  test('two background commands it started are both named', async ($, on) => {
+  test('two task-id commands it started are both named', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1', 'b2')
-    await $.tool.call(background('npm test', 'agent-1'))
-    await $.tool.call(background('npm run build', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm run build', 'agent-1'))
     const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test'), inFlight('b2', 'npm run build')]))
     expect(result.block).toContain('- background command b1: npm test')
     expect(result.block).toContain('- background command b2: npm run build')
@@ -69,17 +69,17 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
     expect(await $.classic.SubagentStop(subagentStop('agent-1', []))).toEqual({})
   })
 
-  test('a background command that finished no longer holds the turn', async ($, on) => {
+  test('a task-id command that finished no longer holds the turn', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     expect(await $.classic.SubagentStop(subagentStop('agent-1', []))).toEqual({})
   })
 
-  test("another loop's background command does not hold this agent's turn", async ($, on) => {
+  test("another loop's task-id command does not hold this agent's turn", async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('npm test'))
+    await $.tool.call(taskIdBash('npm test'))
     expect(await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test')]))).toEqual({})
   })
 
@@ -96,10 +96,10 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
     expect(await $.classic.SubagentStop(subagentStop('agent-3', []))).toEqual({})
   })
 
-  test('the main session is never blocked, and its background command is not recorded', async ($, on) => {
+  test('the main session is never blocked, and its task-id command is not recorded', async ($, on) => {
     const w = await withWatson($, on, { agents: [WATSON, { id: 'agent-9', type: T('holmes-lens') }] })
     w.background.push('b1')
-    await $.tool.call(background('npm test'))
+    await $.tool.call(taskIdBash('npm test'))
     expect(await $.classic.Stop({ hook_event_name: 'Stop', session_id: 's-1', transcript_path: '/t', cwd: '/tmp/repo', stop_hook_active: false, background_tasks: [inFlight('b1', 'npm test')] } as never)).toEqual({})
   })
 
@@ -110,12 +110,12 @@ describe('helper wait — a dev-team sub-agent cannot end its turn while work it
     expect(await $.classic.SubagentStop(subagentStop('agent-1', []))).toEqual({ block: 'BENEATH' })
   })
 
-  test('an agent list that cannot be read still holds the turn for a background command', async ($, on) => {
+  test('an agent list that cannot be read still holds the turn for a task-id command', async ($, on) => {
     const w = world(on, { agents: new Error('no list') })
     on('classic.SubagentStop', () => ({}))
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const result = await $.classic.SubagentStop(subagentStop('agent-1', [inFlight('b1', 'npm test')]))
     expect(result.block).toContain('- background command b1: npm test')
   })
@@ -178,7 +178,7 @@ describe('helper wait — a helper that makes no progress stops holding the turn
   test('no refusal names an action the agent has no tool for', async ($, on) => {
     const w = await withWatson($, on, { agents: [WATSON, LENS()] })
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const block = (await stop($ as never, [inFlight('b1', 'npm test')])).block ?? ''
     expect(block).toContain('A helper or background command that makes no progress across two of your attempts to end your turn stops holding it')
     expect(block).not.toMatch(/stop it|TaskStop|kill|timeout/i)
@@ -187,11 +187,15 @@ describe('helper wait — a helper that makes no progress stops holding the turn
 
 const OUTPUT = '/tasks/b1.output'
 
-describe('helper wait — a background command whose output stops growing stops holding the turn', () => {
+const LIVE: RunAnswer = { exitCode: 0, stdout: '4242\n4243\n', stderr: '' }
+
+const ENDED: RunAnswer = { exitCode: 1, stdout: '', stderr: '' }
+
+describe('helper wait — a task-id command whose output stops growing stops holding the turn', () => {
   async function withCommand($: never, on: Parameters<typeof world>[0]) {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await ($ as { tool: { call: (e: never) => Promise<unknown> } }).tool.call(background('tail -f /var/log/x', 'agent-1'))
+    await ($ as { tool: { call: (e: never) => Promise<unknown> } }).tool.call(taskIdBash('tail -f /var/log/x', 'agent-1'))
     return w
   }
   const running = [inFlight('b1', 'tail -f /var/log/x')]
@@ -227,7 +231,7 @@ describe('helper wait — a background command whose output stops growing stops 
   test('a quiet helper is not released while a command beside it still writes output', async ($, on) => {
     const w = await withWatson($, on, { agents: [WATSON, LENS()] })
     w.background.push('b1')
-    await $.tool.call(background('tail -f /var/log/x', 'agent-1'))
+    await $.tool.call(taskIdBash('tail -f /var/log/x', 'agent-1'))
     for (let round = 0; round < 4; round++) {
       w.sizes.set(OUTPUT, round)
       expect((await stop($ as never, running)).block).toContain('🛑 Blocked')
@@ -241,7 +245,7 @@ describe('helper wait — failures let the turn end, and every dev-team mode is 
     on('state.get', async ($, e, next) => (isBroken && e.key === 'backgroundTasks' ? ({ value: 42, version: 1 } as never) : next(e)))
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     expect((await stop($ as never, [inFlight('b1', 'npm test')])).block).toContain('🛑 Blocked')
     isBroken = true
     expect(await stop($ as never, [inFlight('b1', 'npm test')])).toEqual({})
@@ -250,7 +254,7 @@ describe('helper wait — failures let the turn end, and every dev-team mode is 
   test('an input with no background_tasks lets the turn end on a command it started', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const { background_tasks: _, ...input } = subagentStop('agent-1', []) as unknown as Record<string, unknown>
     expect(await $.classic.SubagentStop(input as never)).toEqual({})
   })
@@ -275,14 +279,14 @@ describe('helper wait — a background sleep of a plain duration delivers no rep
   test('a plain background sleep lets the turn end', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('sleep 150', 'agent-1'))
+    await $.tool.call(taskIdBash('sleep 150', 'agent-1'))
     expect(await stop($ as never, [inFlight('b1', 'sleep 150')])).toEqual({})
   })
 
   test('a sleep beside a real helper: the helper holds the turn, and the sleep is not named', async ($, on) => {
     const w = await withWatson($, on, { agents: [WATSON, LENS()] })
     w.background.push('b1')
-    await $.tool.call(background('sleep 150', 'agent-1'))
+    await $.tool.call(taskIdBash('sleep 150', 'agent-1'))
     const block = (await stop($ as never, [inFlight('b1', 'sleep 150')])).block ?? ''
     expect(block).toContain('- helper agent-9 (holmes-lens, running)')
     expect(block).not.toContain('b1')
@@ -291,8 +295,8 @@ describe('helper wait — a background sleep of a plain duration delivers no rep
   test('a sleep beside a real command: the command holds the turn, and the sleep is not named', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1', 'b2')
-    await $.tool.call(background('sleep 150', 'agent-1'))
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('sleep 150', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const block = (await stop($ as never, [inFlight('b1', 'sleep 150'), inFlight('b2', 'npm test')])).block ?? ''
     expect(block).toContain('- background command b2: npm test')
     expect(block).not.toContain('b1')
@@ -301,7 +305,7 @@ describe('helper wait — a background sleep of a plain duration delivers no rep
   test('a command that waits and then does real work still holds the turn', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('sleep 5 && npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('sleep 5 && npm test', 'agent-1'))
     expect((await stop($ as never, [inFlight('b1', 'sleep 5 && npm test')])).block).toContain('- background command b1: sleep 5 && npm test')
   })
 
@@ -317,7 +321,7 @@ describe('helper wait — the block text never tells the agent to sleep', () => 
   test('the hold and the release name no sleep to run, and the hold says how to wait', async ($, on) => {
     const w = await withWatson($, on, { agents: [WATSON, LENS()] })
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const running = [inFlight('b1', 'npm test')]
     const blocks = [(await stop($ as never, running)).block, (await stop($ as never, running)).block, (await stop($ as never, running)).block]
     expect(blocks[0]).toContain('🛑 Blocked')
@@ -344,7 +348,7 @@ describe('helper wait — a released item never holds the turn again', () => {
   test('a released command holds no attempt after the release, even once its output grows', async ($, on) => {
     const w = await withWatson($, on)
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const running = [inFlight('b1', 'npm test')]
     w.sizes.set('/tasks/b1.output', 10)
     for (let attempt = 1; attempt <= 3; attempt++) expect((await stop($ as never, running)).block).toBeDefined()
@@ -370,9 +374,9 @@ describe('helper wait — a released item never holds the turn again', () => {
 
 describe('helper wait — after the agent hands its report back, the hook never holds its turn end', () => {
   test('a handback lets the turn end with a helper and a command still outstanding', async ($, on) => {
-    const w = await withWatson($, on, { agents: [WATSON, LENS()] })
+    const w = await withWatson($, on, { agents: [WATSON, LENS()], run: argv => (argv[0] === 'lsof' ? ENDED : undefined) })
     w.background.push('b1')
-    await $.tool.call(background('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
     const running = [inFlight('b1', 'npm test')]
     expect((await stop($ as never, running)).block).toContain('🛑 Blocked')
     await $.tool.call(handback())
@@ -415,6 +419,173 @@ describe('helper wait — after the agent hands its report back, the hook never 
   })
 })
 
+const handbacks = (w: { calls: Record<string, unknown>[] }) => w.calls.filter(call => call.tool === 'SubagentHandback').length
+
+const holders = (answers: Record<string, RunAnswer>) => (argv: readonly string[]) => (argv[0] === 'lsof' ? answers[argv[argv.length - 1] ?? ''] : undefined)
+
+describe('helper wait — a dev-team sub-agent cannot hand back while a task-id command it started still runs', () => {
+  test('a running command refuses the hand-back, names its processes, and says to wait or stop it, then hand back again', async ($, on) => {
+    const w = await withWatson($, on, { run: holders({ [OUTPUT]: LIVE }) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    const result = (await $.tool.call(handback())) as { deny?: string }
+    expect(result.deny).toContain('🛑 Refused: you cannot hand back while a background command you started may still be running.')
+    expect(result.deny).toContain('- background command b1: still running as process 4242, 4243')
+    expect(result.deny).toContain('Wait for its completion notice')
+    expect(result.deny).toContain('stop it with `kill` and its process ids')
+    expect(result.deny).toContain('Then call SubagentHandback again with your report.')
+    expect(result.deny).not.toMatch(/`sleep [0-9]|such as `sleep|TaskStop/i)
+    expect(handbacks(w)).toBe(0)
+    expect(w.runs.filter(argv => argv[0] === 'lsof')).toEqual([holdersArgv(OUTPUT)])
+  })
+
+  test('the refusal holds on every attempt while the command runs, and leaves the turn-end hold in place', async ($, on) => {
+    const w = await withWatson($, on, { run: holders({ [OUTPUT]: LIVE }) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    for (let attempt = 0; attempt < 4; attempt++) expect(((await $.tool.call(handback())) as { deny?: string }).deny).toContain('- background command b1')
+    expect(handbacks(w)).toBe(0)
+    expect((await stop($ as never, [inFlight('b1', 'npm test')])).block).toContain('🛑 Blocked')
+  })
+
+  test('once the command ends, the same hand-back goes through', async ($, on) => {
+    const answers: Record<string, RunAnswer> = { [OUTPUT]: LIVE }
+    const w = await withWatson($, on, { run: holders(answers) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toBeDefined()
+    answers[OUTPUT] = ENDED
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toBeUndefined()
+    expect(handbacks(w)).toBe(1)
+  })
+
+  test('a background sleep still running refuses the hand-back, because it holds the run open just the same', async ($, on) => {
+    const w = await withWatson($, on, { run: holders({ [OUTPUT]: LIVE }) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('sleep 150', 'agent-1'))
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toContain('- background command b1: still running')
+    expect(handbacks(w)).toBe(0)
+  })
+
+  test('a hand-back with no task-id command goes through as before, and runs no check', async ($, on) => {
+    const w = await withWatson($, on)
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toBeUndefined()
+    expect(handbacks(w)).toBe(1)
+    expect(w.runs.filter(argv => argv[0] === 'lsof')).toEqual([])
+  })
+
+  test('only the running command of two is named', async ($, on) => {
+    const w = await withWatson($, on, { run: holders({ [OUTPUT]: ENDED, '/tasks/b2.output': LIVE }) })
+    w.background.push('b1', 'b2')
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm run build', 'agent-1'))
+    const deny = ((await $.tool.call(handback())) as { deny?: string }).deny ?? ''
+    expect(deny).toContain('- background command b2: still running')
+    expect(deny).not.toContain('b1')
+  })
+
+  test("another agent's running command does not refuse this agent's hand-back", async ($, on) => {
+    const w = await withWatson($, on, { run: holders({ [OUTPUT]: LIVE }) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('npm test', 'agent-5'))
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toBeUndefined()
+    expect(handbacks(w)).toBe(1)
+  })
+
+  test('a sub-agent outside the dev-team hands back with a running command', async ($, on) => {
+    const w = world(on, { agents: [{ id: 'agent-3', type: 'general-purpose' }], run: holders({ [OUTPUT]: LIVE }) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('npm test', 'agent-3'))
+    expect(((await $.tool.call(handback('agent-3'))) as { deny?: string }).deny).toBeUndefined()
+    expect(handbacks(w)).toBe(1)
+  })
+
+  for (const [type, prompt, extra] of [
+    ['holmes', BRIEF, {}],
+    ['lestrade', 'Item ID: 42', {}],
+    ['holmes-lens', 'lens prompt', { parentAgentId: 'agent-h' }],
+  ] as const) {
+    test(`${type} cannot hand back with a running command`, async ($, on) => {
+      const w = world(on, { agents: [{ id: 'agent-1', type: T(type) }], run: holders({ [OUTPUT]: LIVE }) })
+      await $.agent.spawn(spawnInput(T(type), prompt, extra))
+      w.background.push('b1')
+      await $.tool.call(taskIdBash('npm test', 'agent-1'))
+      expect(((await $.tool.call(handback())) as { deny?: string }).deny).toContain('- background command b1: still running')
+      expect(handbacks(w)).toBe(0)
+    })
+  }
+
+  for (const [name, answer] of [
+    ['lsof cannot run', new Error('no lsof')],
+    ['lsof reports an error', { exitCode: 1, stdout: '', stderr: 'lsof: status error' }],
+    ['lsof answers no process and a success', { exitCode: 0, stdout: '', stderr: '' }],
+  ] as const) {
+    test(`a command the mod cannot check (${name}) refuses one hand-back, and the next goes through`, async ($, on) => {
+      const w = await withWatson($, on, { run: holders({ [OUTPUT]: answer }) })
+      w.background.push('b1')
+      await $.tool.call(taskIdBash('npm test', 'agent-1'))
+      const deny = ((await $.tool.call(handback())) as { deny?: string }).deny ?? ''
+      expect(deny).toContain('- background command b1: the mod cannot tell whether it still runs')
+      expect(deny).toContain('refuses one hand-back only')
+      expect(((await $.tool.call(handback())) as { deny?: string }).deny).toBeUndefined()
+      expect(handbacks(w)).toBe(1)
+    })
+  }
+
+  test('a command with no output path cannot be checked, so it refuses one hand-back', async ($, on) => {
+    const w = await withWatson($, on, { tools: e => (e.tool === 'Bash' ? { result: { backgroundTaskId: 'b1' }, text: 'Command running in background with ID: b1.' } : undefined) })
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toContain('- background command b1: the mod cannot tell')
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toBeUndefined()
+    expect(w.runs.filter(argv => argv[0] === 'lsof')).toEqual([])
+  })
+
+  test('a running command beside one with no output path: both are named once, and the hand-back goes through once the running one ends', async ($, on) => {
+    const answers: Record<string, RunAnswer> = { [OUTPUT]: LIVE }
+    const texts: Record<string, string> = {
+      b1: `Command running in background with ID: b1. Output is being written to: ${OUTPUT}. You will be notified when it completes.`,
+      b2: 'Command running in background with ID: b2.',
+    }
+    const ids = ['b1', 'b2']
+    const w = await withWatson($, on, {
+      run: holders(answers),
+      tools: e => {
+        if (e.tool !== 'Bash') return undefined
+        const id = ids.shift() ?? ''
+        return { result: { backgroundTaskId: id }, text: texts[id] }
+      },
+    })
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    await $.tool.call(taskIdBash('npm run build', 'agent-1'))
+    const deny = ((await $.tool.call(handback())) as { deny?: string }).deny ?? ''
+    expect(deny).toContain('- background command b1: still running as process 4242, 4243')
+    expect(deny).toContain('- background command b2: the mod cannot tell whether it still runs')
+    expect(deny).toContain('A command the mod cannot check refuses one hand-back only')
+    answers[OUTPUT] = ENDED
+    expect(((await $.tool.call(handback())) as { deny?: string }).deny).toBeUndefined()
+    expect(handbacks(w)).toBe(1)
+  })
+
+  test('the refusal tells the agent to kill the processes when the completion notice already came', async ($, on) => {
+    const w = await withWatson($, on, { run: holders({ [OUTPUT]: LIVE }) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    const deny = ((await $.tool.call(handback())) as { deny?: string }).deny ?? ''
+    expect(deny).toContain("If the command's completion notice already arrived, a process it left behind still holds the run open: stop the listed processes with `kill` rather than wait.")
+  })
+
+  test('the refusal leaves the call as it was: nothing reaches the engine, and the next attempt carries the same input', async ($, on) => {
+    const answers: Record<string, RunAnswer> = { [OUTPUT]: LIVE }
+    const w = await withWatson($, on, { run: holders(answers) })
+    w.background.push('b1')
+    await $.tool.call(taskIdBash('npm test', 'agent-1'))
+    await $.tool.call(handback())
+    answers[OUTPUT] = ENDED
+    await $.tool.call(handback())
+    expect(w.calls.filter(call => call.tool === 'SubagentHandback')).toEqual([{ tool: 'SubagentHandback', tool_use_id: 'toolu_h', message: 'the report', agentId: 'agent-1' }])
+  })
+})
+
 const NONE = { helper: () => undefined, outputSize: () => undefined }
 
 describe('helper wait — the pure functions', () => {
@@ -433,6 +604,26 @@ describe('helper wait — the pure functions', () => {
     expect(stopBlockOf(...args)).toContain('🛑 Blocked')
     expect(stopBlockOf(...args)).toContain('made no progress')
     expect(stopBlockOf(...args)).toBeUndefined()
+  })
+
+  test('the holders of an output file read as running, ended, or unknown', () => {
+    expect(pidsOf({ exitCode: 0, stdout: '4242\n4243\n', stderr: '' })).toEqual(['4242', '4243'])
+    expect(pidsOf({ exitCode: 1, stdout: '', stderr: '' })).toEqual([])
+    expect(pidsOf({ exitCode: 1, stdout: '', stderr: 'lsof: status error' })).toBeUndefined()
+    expect(pidsOf({ exitCode: 0, stdout: '', stderr: '' })).toBeUndefined()
+    expect(pidsOf({ exitCode: 0, stdout: 'zsh 4242', stderr: '' })).toBeUndefined()
+    expect(pidsOf({ exitCode: 2, stdout: '', stderr: '' })).toBeUndefined()
+    expect(pidsOf({ exitCode: null, stdout: '', stderr: '' })).toBeUndefined()
+    expect(pidsOf(undefined)).toBeUndefined()
+  })
+
+  test('the hand-back refusal: none for ended commands, every time for running ones, once for unknown ones', () => {
+    const refusedOnce = new Set<string>()
+    expect(handbackRefusalOf('a', [{ id: 'b1', pids: [] }], refusedOnce)).toBeUndefined()
+    for (let attempt = 0; attempt < 3; attempt++) expect(handbackRefusalOf('a', [{ id: 'b1', pids: ['7'] }], refusedOnce)).toContain('- background command b1: still running as process 7')
+    expect(handbackRefusalOf('a', [{ id: 'b2' }], refusedOnce)).toContain('- background command b2: the mod cannot tell')
+    expect(handbackRefusalOf('a', [{ id: 'b2' }], refusedOnce)).toBeUndefined()
+    expect(handbackRefusalOf('c', [{ id: 'b2' }], refusedOnce)).toContain('- background command b2')
   })
 
   test('a long command is clipped to 120 characters', () => {

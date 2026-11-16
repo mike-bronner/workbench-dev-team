@@ -35,7 +35,7 @@ import {
 } from './mods/dispatch'
 import type { ModHook } from './mods/fallback'
 import { markerOf, sweepArgvsOf, waitFileOf } from './mods/fallback'
-import { outputOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
+import { BACKGROUND_HINT, backgroundDeny, backgroundsItself, handbackRefusalOf, holdersArgv, isBackgroundAsked, outputOf, pidsOf, probeLinesOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
 import type { Activity, Watch } from './mods/helper-wait'
 import type { Disk, ShellParse } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
@@ -43,11 +43,12 @@ import { BOARD_PANE, RUNS_PANE, boardTree, runsTree } from './mods/panes'
 import type { LogEnd } from './mods/runs'
 import { LOG_DIR, RUNS_REFRESH_MS, endsOf, livePairsOf, markersOf, newestRuns, rowsOf, scanArgv } from './mods/runs'
 import { RULES, isRulesLane, isRulesSubagent, withRules } from './mods/session-rules'
-import { hasBareMktemp, hasLiveChild, isDeletable, pointMktemp, prefixOf, readsAsPointed, rootOf, sweepOf } from './mods/scratch'
-import type { CallerLane } from './mods/spawn'
+import { hasBareMktemp, hasLiveChild, isDeletable, mktempDeny, prefixOf, rootOf, scratchContextOf, sweepOf } from './mods/scratch'
+import type { CallerLane, ResumedAgent } from './mods/spawn'
 import {
   CONFIG_MODES,
   DEFAULT_BRANCHES,
+  UNIT_GATED,
   branchDeny,
   branchUnreadDeny,
   briefDeny,
@@ -62,7 +63,11 @@ import {
   missingSlotsOf,
   modeTypeOf,
   mutationRefusalOf,
+  resumeRefusalOf,
+  resumedAgentOf,
+  resumedAgentOfRead,
   spawnFailedDeny,
+  unitRefusalOf,
   withConfigLine,
   workdirOf,
 } from './mods/spawn'
@@ -116,6 +121,35 @@ async function runOf($: EngineInterface, agentId: string | undefined): Promise<R
   return (await $.workbench.callerLane({})) === 'top-level-agent' ? { type, key: 'run' } : undefined
 }
 
+async function descendantRunOf($: EngineInterface, agentId: string): Promise<Run | undefined> {
+  const agents = await $.agent.list()
+  const self = agents.find(agent => agent.id === agentId)
+  if (self === undefined) return undefined
+  const seen = new Set([agentId])
+  for (let id = self.parentId; ; ) {
+    if (id === undefined) return isDevTeamType(await $.env.get('CLAUDE_CODE_AGENT')) ? { type: self.type, key: agentId } : undefined
+    if (seen.has(id)) return undefined
+    seen.add(id)
+    const { value: kept } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id })
+    const parent = agents.find(agent => agent.id === id)
+    if (isDevTeamType(kept ?? parent?.type)) return { type: self.type, key: agentId }
+    if (parent === undefined) return undefined
+    id = parent.parentId
+  }
+}
+
+async function runOrDescendantOf($: EngineInterface, agentId: string | undefined): Promise<Run | undefined> {
+  const run = await runOf($, agentId)
+  return run !== undefined || agentId === undefined ? run : descendantRunOf($, agentId)
+}
+
+async function namesDevTeam($: EngineInterface, agentId: string | undefined): Promise<boolean> {
+  if (isDevTeamType(await $.env.get('CLAUDE_CODE_AGENT').catch(() => undefined))) return true
+  if (agentId === undefined) return false
+  const kept = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId }).catch(() => undefined)
+  return isDevTeamType(kept?.value)
+}
+
 // The type of the loop a spawn happens in: the top-level `--agent` type, or
 // none, for a main-loop spawn; the type the mod kept, or the one
 // $.agent.list() gives, for a sub-agent's. Undefined when it cannot be told.
@@ -127,14 +161,24 @@ async function spawnerTypeOf($: EngineInterface, parentAgentId: string | undefin
   return agents?.find(agent => agent.id === parentAgentId)?.type
 }
 
+async function resumedAgentOfKept($: EngineInterface, agentId: string | undefined, fallback: string | undefined): Promise<ResumedAgent | undefined> {
+  if (agentId === undefined) return resumedAgentOf(fallback)
+  return resumedAgentOfRead(
+    $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId }).then(({ value }) => value),
+    fallback,
+  )
+}
+
 // ── Scratch folders ──────────────────────────────────────────────────────────
 
-// The run's scratch folder: the one it has, or a new one under the first
-// scratch root, made with mktemp. Undefined when none can be made.
 async function scratchFolderOf($: EngineInterface, run: Run): Promise<string | undefined> {
   const { value: kept } = await $.state.get({ plugin: 'workbench-dev-team', key: 'scratch', id: run.key })
   if (kept && (await $.fs.exists(kept).catch(() => false))) return kept
   const roots = await $.workbench.scratchRoots()
+  if (kept && isDeletable(kept, roots) && ((await $.process.run(['mkdir', '-m', '700', '--', kept])).exitCode === 0 || (await $.fs.exists(kept).catch(() => false)))) {
+    await recordFolder($, [kept], 'add')
+    return kept
+  }
   const root = rootOf(roots)
   if (root === undefined) return undefined
   const made = await $.process.run(['mktemp', '-d', `${root}/${prefixOf(run.type)}.XXXXXX`])
@@ -175,24 +219,34 @@ async function endSession($: EngineInterface, budget: { remainingMs: number }): 
   if (removed?.exitCode === 0) await recordFolder($, sweep.doomed, 'remove')
 }
 
-// The Bash line with a dev-team agent's bare mktemp pointed at its folder, or
-// the line as written when it has none, or when anything here fails: a mktemp
-// left in $TMPDIR is how the line ran before the mod.
-async function withScratch($: EngineInterface, agentId: string | undefined, line: string): Promise<string> {
-  if (!line.includes('mktemp')) return line
-  try {
-    const before = await $.workbench.parseShell(line)
-    if (!hasBareMktemp(before)) return line
-    const run = await runOf($, agentId)
-    if (run === undefined) return line
-    const folder = await scratchFolderOf($, run)
-    if (folder === undefined) return line
-    const pointed = pointMktemp(line, folder)
-    if (pointed === undefined) return line
-    return readsAsPointed(before, await $.workbench.parseShell(pointed), folder) ? pointed : line
-  } catch {
-    return line
-  }
+async function backgroundsItselfOf($: EngineInterface, line: string, parse: ShellParse): Promise<boolean> {
+  const probes = await Promise.all(
+    probeLinesOf(line).map(async probe => ({ separator: await $.workbench.parseShell(probe.separator), statement: await $.workbench.parseShell(probe.statement) })),
+  )
+  return backgroundsItself(parse, probes)
+}
+
+async function bashRefusalOf($: EngineInterface, call: { agentId?: string; command?: unknown; run_in_background?: unknown }): Promise<string | undefined> {
+  const line = typeof call.command === 'string' ? call.command : ''
+  const isAsked = isBackgroundAsked(call.run_in_background)
+  const isHinted = BACKGROUND_HINT.test(line)
+  const isMktemp = line.includes('mktemp')
+  if (!isAsked && !isHinted && !isMktemp) return undefined
+  const run = await runOrDescendantOf($, call.agentId).then(
+    found => ({ found }),
+    () => undefined,
+  )
+  if (run === undefined ? !(await namesDevTeam($, call.agentId)) : run.found === undefined) return undefined
+  if (isAsked) return backgroundDeny
+  const folder = isMktemp && run?.found !== undefined ? await scratchFolderOf($, run.found).catch(() => undefined) : undefined
+  const parse = await $.workbench.parseShell(line)
+  if (isHinted && (await backgroundsItselfOf($, line, parse))) return backgroundDeny
+  return isMktemp && run?.found !== undefined && hasBareMktemp(parse) ? mktempDeny(folder) : undefined
+}
+
+async function scratchContextFor($: EngineInterface, run: Run | undefined): Promise<string | undefined> {
+  const folder = run === undefined ? undefined : await scratchFolderOf($, run)
+  return folder === undefined ? undefined : scratchContextOf(folder)
 }
 
 // The end of a turn: the run's scratch folder deleted, unless a child the run
@@ -205,10 +259,10 @@ async function endRun($: EngineInterface, agentId: string | undefined): Promise<
   const key = agentId ?? ((await $.workbench.callerLane({})) === 'top-level-agent' ? 'run' : undefined)
   if (key === undefined) return
   const { value: folder } = await $.state.get({ plugin: 'workbench-dev-team', key: 'scratch', id: key })
-  const agents = folder ? await $.agent.list().catch(() => undefined) : undefined
+  const isMade = folder ? await $.fs.exists(folder).catch(() => true) : false
+  const agents = isMade ? await $.agent.list().catch(() => undefined) : undefined
   if (folder && agents !== undefined && !hasLiveChild(agents, agentId)) {
     if (isDeletable(folder, await $.workbench.scratchRoots())) await $.process.run(['rm', '-rf', '--', folder])
-    await $.state.set({ plugin: 'workbench-dev-team', key: 'scratch', id: key }, '')
     await recordFolder($, [folder], 'remove')
   }
   const holmes = await holmesRunOf($, agentId)
@@ -243,6 +297,21 @@ async function recordHandback($: EngineInterface, seat: Seat, agentId: string | 
   if (((await $.state.get(key)).value ?? false) === handedBack) return
   await $.state.set(key, handedBack)
   if (handedBack) await recordWait($, seat, agentId, activity)
+}
+
+async function handbackRefusal($: EngineInterface, agentId: string | undefined, refusedOnce: Set<string>): Promise<string | undefined> {
+  if (agentId === undefined) return undefined
+  const { value: type } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId })
+  if (!isDevTeamType(type)) return undefined
+  const { value: started = [] } = await $.state.get({ plugin: 'workbench-dev-team', key: 'backgroundTasks', id: agentId })
+  const states = await Promise.all(
+    started.map(async entry => {
+      const answer = entry.output === undefined ? undefined : await $.process.run(holdersArgv(entry.output), { timeoutMs: 10_000 }).catch(() => undefined)
+      const pids = pidsOf(answer)
+      return pids === undefined ? { id: entry.id } : { id: entry.id, pids }
+    }),
+  )
+  return handbackRefusalOf(agentId, states, refusedOnce)
 }
 
 async function stopBlock(
@@ -643,6 +712,8 @@ export const register: Register = (on, options) => {
   }
 
   const seat: Seat = {}
+  const backgrounded = new Set<string>()
+  const refusedOnce = new Set<string>()
 
   on('session.start', async ($, e, next) => {
     void sweepFallbackFiles($).catch(() => undefined)
@@ -673,7 +744,19 @@ export const register: Register = (on, options) => {
     return next(e)
   })
 
+  on('session.send', async ($, e, next) => {
+    if (resumeRefusalOf('Watson or Holmes', e.text) === undefined) return next(e)
+    const agents = await $.agent.list().catch(() => undefined)
+    const to = agents?.find(agent => agent.id === e.to || agent.name === e.to || agent.teammateId === e.to)
+    const refusal = resumeRefusalOf(agents === undefined ? 'Watson or Holmes' : await resumedAgentOfKept($, to?.id, to?.type), e.text)
+    return refusal === undefined ? next(e) : { isDelivered: false, reason: refusal }
+  })
+
   on('agent.spawn', async ($, e, next) => {
+    if (e.resume !== undefined) {
+      const refusal = resumeRefusalOf(await resumedAgentOfKept($, e.resume.agentId, e.subagentType), e.prompt)
+      return refusal === undefined ? next(e) : { deny: refusal }
+    }
     const isModel = next.origin.plugin === 'engine'
     const isGatedCall = isModel && (await gated($, e.parentAgentId))
 
@@ -725,8 +808,13 @@ export const register: Register = (on, options) => {
     }
     const mutationRefusal = routed === undefined ? undefined : mutationRefusalOf(routed.subagentType, routed.prompt)
     if (mutationRefusal !== undefined) return { deny: mutationRefusal }
+    if (routed?.subagentType === UNIT_GATED) {
+      const unitRefusal = unitRefusalOf(routed.subagentType, await $.workbench.briefCheck(routed.prompt))
+      if (unitRefusal !== undefined) return { deny: unitRefusal }
+    }
     if (routed?.subagentType === DIGEST_MODE) routed = { ...routed, prompt: await withDigestNotice($, routed.prompt) }
-    const spawned = routed ?? input
+    const routedOrInput = routed ?? input
+    const spawned = backgrounded.has(e.tool_use_id) ? { ...routedOrInput, background: true } : routedOrInput
     const result = await next(spawned)
     if (result.agentId !== undefined) {
       if (routed !== undefined && knobs.effort !== undefined) {
@@ -751,12 +839,13 @@ export const register: Register = (on, options) => {
   on('classic.SubagentStart', async ($, e, next) => {
     await markModRan($, seat, e.session_id, 'subagent-start')
     const result = await next(e)
-    if (!isRulesSubagent(e.agent_type) || !(await isRulesSession($))) return result
-    return { ...result, additionalContext: [...(result.additionalContext ?? []), RULES] }
+    const rules = isRulesSubagent(e.agent_type) && (await isRulesSession($)) ? [RULES] : []
+    const run = isDevTeamType(e.agent_type) ? { type: e.agent_type, key: e.agent_id } : undefined
+    const scratch = await scratchContextFor($, run).catch(() => undefined)
+    const added = [...rules, ...(scratch === undefined ? [] : [scratch])]
+    return added.length === 0 ? result : { ...result, additionalContext: [...(result.additionalContext ?? []), ...added] }
   })
 
-  // The config line for a top-level run of a mode that reads it. Nothing here
-  // calls next, so a failure leaves the prompt as it came.
   on('prompt.submit', async ($, e, next) => {
     let line: string | undefined
     try {
@@ -767,7 +856,11 @@ export const register: Register = (on, options) => {
     } catch {
       line = undefined
     }
-    return next(line === undefined ? e : { ...e, context: [...(e.context ?? []), line] })
+    const scratch = await runOf($, undefined)
+      .then(run => scratchContextFor($, run))
+      .catch(() => undefined)
+    const lines = [line, scratch].filter((added): added is string => added !== undefined)
+    return next(lines.length === 0 ? e : { ...e, context: [...(e.context ?? []), ...lines] })
   })
 
   on('turn.step', async function* ($, e, next) {
@@ -822,21 +915,21 @@ export const register: Register = (on, options) => {
         return result
       }
       if (e.tool === 'Bash' || e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
-        const call = e.tool === 'Bash' && typeof e.command === 'string' ? { ...e, command: await withScratch($, e.agentId, e.command) } : e
-        const deny = await guard($, call)
+        const deny = (await guard($, e)) ?? (e.tool === 'Bash' ? await bashRefusalOf($, e as { agentId?: string; command?: unknown; run_in_background?: unknown }) : undefined)
         if (deny !== undefined) return { deny }
-        const result = await next(call)
+        const result = await next(e)
         if (e.tool === 'Bash') await recordStarted($, e.agentId, result).catch(() => undefined)
         return watch(result)
       }
       if ((e.tool as string) === 'SubagentHandback') {
+        const refusal = await handbackRefusal($, e.agentId, refusedOnce)
+        if (refusal !== undefined) return { deny: refusal }
         const result = await next(e)
         if (result.deny === undefined && result.isError !== true) await recordHandback($, seat, e.agentId, true, activity).catch(() => undefined)
         return watch(result)
       }
       if (e.tool !== 'Agent') return watch(await next(e))
       const isModel = next.origin.plugin === 'engine'
-      let call = e
       if (isModel) {
         // A set agentId is a sub-agent's call, whatever callerLane says, so a
         // sub-agent never reaches the dispatcher. Only a call with no agentId
@@ -845,10 +938,14 @@ export const register: Register = (on, options) => {
         if (isMain) {
           const itemId = indexDispatchOf(e.subagent_type, e.prompt)
           if (itemId !== undefined) return runDispatcher($, itemId, e.prompt)
-          if (isForcedBackground(e.subagent_type, e.run_in_background)) call = { ...e, run_in_background: true }
+          if (isForcedBackground(e.subagent_type, e.run_in_background)) backgrounded.add(e.tool_use_id)
         }
       }
-      return watch(await next(call))
+      try {
+        return watch(await next(e))
+      } finally {
+        backgrounded.delete(e.tool_use_id)
+      }
     } finally {
       done()
     }

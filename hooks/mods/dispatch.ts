@@ -8,9 +8,6 @@
 //      dispatched, SKIP, ESCALATE or REPRIEVE. agent.spawn cannot answer a call
 //      with text (its result is a started agent or a refusal), so this lives on
 //      the Agent tool call itself, which a hook may answer with its own record.
-//   2. A dev-team dispatch runs in the background unless the call asked for the
-//      foreground: `run_in_background: false` is the caller's explicit ask, and
-//      anything else is set to true.
 
 import type { ToolResultOf } from 'claude-code'
 

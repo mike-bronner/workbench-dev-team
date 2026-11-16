@@ -38,8 +38,9 @@ and restates only the minimum a run needs when intake is absent.
 
 **The criteria you grade against depend on your lane.** In a foreground session
 they are the ones in your intake block. As a sub-agent they are the brief's
-`Acceptance:` list. In the scheduled pipeline they are the item's acceptance
-criteria, written by Lestrade at triage.
+`Acceptance:` list, or only the criteria its `Unit:` line names. In the
+scheduled pipeline they are the item's acceptance criteria, written by Lestrade
+at triage.
 
 **What counts as a fork** (both lists in full:
 `references/decision-protocol.md`):

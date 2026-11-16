@@ -21,7 +21,8 @@ which exists so `Goal:` never has to carry it. Why `Goal:` is bounded:
 `references/brief-rationale.md`.
 
 **`Context:` is unbounded.** It is prose, it may run as long as the reasoning
-runs, and no length figure applies to it or to the brief as a whole.
+runs, and no length figure applies to it. How much work the brief asks for is
+a separate rule: one unit (below).
 
 **`Constraints:` is bullets, one limit per bullet, each carrying its own
 reason.** A constraint without its reason gets obeyed literally and defeated in
@@ -64,10 +65,25 @@ Every slot is required, and every dev-team agent refuses a brief that drops one,
 naming what is missing (`agents/*.md`, the brief contract) — this is a receiving
 contract, not only a sending one.
 
-**There is no length limit.** Write the reasoning at whatever length it takes,
-and write no shell command at any length. The must-omit list in `SKILL.md` is
-the whole of the limit; an earlier stated figure and why it went are in
-`references/brief-rationale.md`.
+**There is no length limit on the reasoning in `Context:`.** Write it at
+whatever length it takes, and write no shell command at any length. The
+must-omit list in `SKILL.md` is the whole of that limit. An earlier stated
+figure, and why it went, are in `references/brief-rationale.md`.
+
+**That freedom does not cover how much work one brief asks for.** One brief
+delivers one unit: the smallest step of the task, cut before the first
+dispatch (`references/parallel-units.md`).
+
+**`Unit:` names that step. It is optional, and never a seventh slot.** It goes
+on a line of its own, such as `Unit: 2 of 4, the focus ring. Meets AC3, AC4.`:
+the unit's place in the task, what it delivers, and the criteria it meets. The
+full criteria list may stay in `Acceptance:` for context. A brief with no
+`Unit:` line stays valid, with one exception. The mod refuses a Watson
+Direct-mode brief that carries more than 6 criteria and no `Unit:` line, by
+workbench-core's count: one per top-level list item, or one per line when
+`Acceptance:` holds no list. Holmes briefs and dispatch tokens are exempt.
+If core's check gives a Watson Direct brief no count, the mod refuses the
+dispatch as one it could not judge.
 
 ## Watson and Holmes briefs carry the no-mutation line
 
@@ -94,10 +110,16 @@ judged blocks are:
 
 - every `Goal:`, `Acceptance:` and `Done when:` block;
 - every repeated `Workdir:`, `Context:` or `Constraints:` block, that is, each
-  block after the first under its label, minus the no-mutation line itself.
+  block after the first under its label;
+- every `Unit:` line, in any block, with the unbulleted lines that wrap from it.
+
+In a judged block, the gate judges the text that follows the no-mutation line
+in its item, and skips only the line itself.
 
 The first `Workdir:`, `Context:` and `Constraints:` blocks are not judged for
-this, and every `Constraints:` block is checked for the line. The removal words
+this, except for a `Unit:` line in them, and every `Constraints:` block is
+checked for the line. A removal word in an item and a failure word on the
+`Unit:` line right after it count as one pair. The removal words
 are removed, deleted, reverted, restored, inverted, undone, dropped, disabled
 and commented out, in any form. The failure words are fail, break, broke and
 redden in any form, and go or turn red in any form, with up to three words
@@ -114,6 +136,16 @@ names each fix. When a later item voids the line, the refusal quotes that item
 and says to put the line last in its block. It reads a label in any case, with
 Markdown decoration around it, such as `**Acceptance**:`. The two machine-built
 tokens carry no brief, so the gate never judges them.
+
+A message to a Watson or Holmes, such as a SendMessage correction that resumes
+an agent that has finished, is not a brief. The agent keeps its own brief and
+its line, so the gate asks the message for no slot. It splits the message into
+items as it splits a block, a bullet with the lines that wrap from it, and
+judges each item under the ban above. In a message, a blank line also ends an
+item, unless the next line is indented under the open bullet. So two
+paragraphs are two items, and so are a bullet and a paragraph after it. It
+also refuses a `Constraints:` item in the message that voids the line. The refusal says that the message was not
+delivered and that no agent resumed.
 
 When you quote another brief in `Context:`, lead every quoted line with `>`.
 The gate reads any other line that opens with a label as a real label.

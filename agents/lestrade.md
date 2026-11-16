@@ -35,14 +35,17 @@ Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
 
-## Scratch folders — a bare `mktemp`, deleted when your run ends
+## Scratch folders — a template in your own folder, deleted when your run ends
 
-Make every temporary folder with a bare `mktemp -d`, and a temporary file with
-a bare `mktemp`. That covers a clone, a probe copy, and a place for
-intermediate output. The dev-team mod points a bare `mktemp` at a folder of
-your own under a scratch root: the session scratchpad, or
-`~/Developer/scratchpad` when the session has none. It deletes that folder when
-your run ends, so you delete nothing.
+The dev-team mod makes a scratch folder of your own when your run starts, under
+a scratch root: the session scratchpad, or `~/Developer/scratchpad` when the
+session has none. The context you receive at your start names that folder. Make
+every temporary folder with `mktemp -d '<your folder>/tmp.XXXXXXXX'`, and a
+temporary file with `mktemp '<your folder>/tmp.XXXXXXXX'`, with the folder's
+path written out in full. That covers a clone, a probe copy, and a place for
+intermediate output. The mod refuses a bare `mktemp`, which lands in `$TMPDIR`,
+and its refusal names your folder. It deletes that folder when your run ends,
+so you delete nothing.
 
 The Item-mode clone (step 3) is the one exception: the step spells out a
 scratch-root template and deletes the clone itself. Follow that step as
@@ -50,13 +53,30 @@ written.
 
 Write the path `mktemp` printed out in full in every later command. Touch only
 what your own `mktemp` made. Never touch another run's folder or the scratch
-root itself. If `mktemp` prints a path outside both scratch roots, the mod is
-not running: report that as a defect, and before you report, delete the folder
+root itself. If your start named no folder, the mod's refusal of a bare
+`mktemp -d` names it. If a bare `mktemp` is not refused, the mod is not
+running: report that as a defect, and before you report, delete what it made
 with `rm -rf` and its literal path, as a command of its own.
 
 Never ask the human to delete your scratch, and never hand them a `!` command
 to run. Leave git branches and stashes where they are unless the human asks you
 to remove them.
+
+## Foreground commands — each command and each task under about 10 minutes
+
+Run every Bash command in the foreground, inside your own turn. Your run is
+already apart from the session that started it, so a background command of your
+own gains nothing, and it can outlive your run and hold it open. The dev-team
+mod refuses a Bash call that sets `run_in_background`, in every mode, and
+the same call from the lens sub-agents of Item mode.
+A command that backgrounds itself, with a background `&`, `nohup`, `setsid`
+or `disown`, is a background command too, and the mod refuses it the same way.
+
+Keep each command, and the whole triage or sweep, under about 10 minutes. This
+is a strong recommendation, not a hard limit. The Bash tool cuts a foreground
+command off at 600000 ms, so give a long command a `timeout` up to that figure,
+and split a longer one into parts, such as one repository, one page of results
+or one filter per call.
 
 ## Input contract
 

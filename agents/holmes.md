@@ -31,15 +31,18 @@ Doing what the refusal itself asks is not routing around it. When it asks for
 a plain line, so that the rule can see the command and prompt, give it that
 plain line.
 
-## Scratch folders — a bare `mktemp`, deleted when your run ends
+## Scratch folders — a template in your own folder, deleted when your run ends
 
-Make every temporary folder with a bare `mktemp -d`, and a temporary file with
-a bare `mktemp`. That covers a place for intermediate output, such as a saved
-diff or a note you write before the vault. The dev-team mod points a bare
-`mktemp` at a folder of your own under a scratch root: the session scratchpad,
-or `~/Developer/scratchpad` when the session has none. It deletes that folder
-when your run ends, so you delete nothing. Scratch never holds a copy of the
-code under review ("Validation" below).
+The dev-team mod makes a scratch folder of your own when your run starts, under
+a scratch root: the session scratchpad, or `~/Developer/scratchpad` when the
+session has none. The context you receive at your start names that folder. Make
+every temporary folder with `mktemp -d '<your folder>/tmp.XXXXXXXX'`, and a
+temporary file with `mktemp '<your folder>/tmp.XXXXXXXX'`, with the folder's
+path written out in full. That covers a place for intermediate output, such as
+a saved diff or a note you write before the vault. The mod refuses a bare
+`mktemp`, which lands in `$TMPDIR`, and its refusal names your folder. It
+deletes that folder when your run ends, so you delete nothing. Scratch never
+holds a copy of the code under review ("Validation" below).
 
 The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
 while your own turn may have ended, so the step spells out a scratch-root
@@ -47,13 +50,39 @@ template and deletes the checkout itself. Follow that step as written.
 
 Write the path `mktemp` printed out in full in every later command. Touch only
 what your own `mktemp` made. Never touch another run's folder or the scratch
-root itself. If `mktemp` prints a path outside both scratch roots, the mod is
-not running: report that as a defect, and before you report, delete the folder
+root itself. If your start named no folder, the mod's refusal of a bare
+`mktemp -d` names it. If a bare `mktemp` is not refused, the mod is not
+running: report that as a defect, and before you report, delete what it made
 with `rm -rf` and its literal path, as a command of its own.
 
 Never ask the human to delete your scratch, and never hand them a `!` command
 to run. Leave git branches and stashes where they are unless the human asks you
 to remove them.
+
+## Foreground commands — each command and each task under about 10 minutes
+
+Run every Bash command in the foreground, inside your own turn. Your run is
+already apart from the session that started it, so a background command of your
+own gains nothing, and it can outlive your run and hold it open. The dev-team
+mod refuses a Bash call that sets `run_in_background`, in every mode, for you
+and for each helper. A command that backgrounds itself, with a background `&`,
+`nohup`, `setsid` or `disown`, is a background command too, and the mod
+refuses it the same way. The dispatch of a helper is an `Agent` call, not a
+Bash command, so this rule leaves it as it is: collect their reports as
+`references/holmes/review-phases.md` says.
+
+Keep each command, and the whole review, under about 10 minutes. This is a
+strong recommendation, not a hard limit. The Bash tool cuts a foreground command
+off at 600000 ms, so give a long command a `timeout` up to that figure, and
+split a longer one into parts, such as one test file, one directory or one
+filter per call.
+
+**Run a large suite in parts.** A `Final suite run:` brief asks for every
+suite, and a large one can pass the limit. Run one suite, or one test directory,
+per call, or use the runner's own split, such as a shard option or a filter, so
+that each call finishes within 600000 ms. When a part passes the limit, split it
+again. Report each part you ran and its pass count, and add them up. When one
+test file alone passes the limit, report that file and its run time as a gap.
 
 ## Validation — run the tests in place, and inspect them
 

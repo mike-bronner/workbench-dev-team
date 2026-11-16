@@ -14,7 +14,7 @@ you relay — you do not implement, triage, or review in the main context.
 
 | Agent | `subagent_type` | Role | Input contract |
 |---|---|---|---|
-| Inspector Lestrade | `workbench-dev-team:lestrade` | Triage — AC + WSJF; blocker sweeps | `Item ID: <n>` (triage one item) **or** `Repo sweep: <owner/repo>` (blocker sweep across a repo's open issues) |
+| Inspector Lestrade | `workbench-dev-team:lestrade` | Triage — AC + WSJF; blocker sweeps | `Item ID: <n>` (triage one item) **or** `Repo sweep: <owner/repo>` (a repo's blocker sweep) |
 | Dr. Watson | `workbench-dev-team:watson` | Development | `Item ID: <n>` (board item) **or** the six-slot brief (Direct mode, ad-hoc dev) |
 | Sherlock Holmes | `workbench-dev-team:holmes` | Code review | `Item ID: <n>` (board PR review) **or** the six-slot brief (Local mode, uncommitted tree or committed range) |
 
@@ -22,10 +22,9 @@ you relay — you do not implement, triage, or review in the main context.
 
 **Three destinations, and the shape of the request names which one.**
 
-- **Development — Watson.** The request ends in a changed file. Code, tests,
-  config, docs, migrations, a one-line fix — all of it, Index mode with a board
-  item and Direct mode without one. Never `general-purpose` for work that
-  produces a diff.
+- **Development — Watson.** The request ends in a changed file: code, tests,
+  config, docs, a one-line fix, in Index mode or Direct mode. Never
+  `general-purpose` for work that produces a diff.
 - **Triage — Lestrade.** The request is about an item nobody has specified yet:
   write the acceptance criteria, score it, size it, find what blocks it.
 - **Review — Holmes.** The request judges work already written, and the answer is
@@ -34,14 +33,17 @@ you relay — you do not implement, triage, or review in the main context.
   Watson Direct-mode run comes back, or a PR with no board item, reviewed as
   its committed range.
 
-`/develop` §1 is where the discovery rule lives — don't restate it in a prompt,
-and don't pre-decide any of it. Why the routing turns on skill loading:
+`/develop` §1 holds the discovery rule. Never restate or pre-decide it in a
+prompt. Why the routing turns on skill loading:
 `references/brief-rationale.md`.
 
 **Read-only dispatches stay generic, and should.** `Explore`, `Plan`, and
 `general-purpose` are the right call whenever nothing gets written.
 
 ## Dispatch in parallel — every independent unit at once
+
+**Cut the task into its smallest units before the first dispatch,** one brief
+per unit, starting from intake's unit list when there is one.
 
 **Dispatch every independent unit at once, in one message.** Units in
 different repos or in files that do not overlap are independent, and so are
@@ -61,8 +63,10 @@ brief: the short one then waits behind the long one. How:
 
 **Only for units you dispatched,** commit each in its own tree after review,
 land it with `git merge --no-ff` on the feature branch, never a cherry-pick,
-rebase or reset, then remove its worktree and database. A merge into the default
-branch and every push still ask the human.
+rebase or reset, then remove its worktree and database. If the repo has an
+origin to production code, ask before each unit commit and each unit merge, one
+question each. A merge into the default branch and every push still ask the
+human.
 
 **New work gets its own dispatch.** Never SendMessage new work to a running
 agent: it waits behind that agent's current task. A message to a running agent
@@ -106,7 +110,7 @@ Why: `references/brief-rationale.md`.
 2. **No `model` parameter.** Never pass the Agent tool's `model` to a dev-team
    agent: its alias overrides the configured model (see "Model and effort"
    below).
-3. **Every handoff is a brief.** Send the six slots defined below and nothing
+3. **Every handoff is a brief.** Send the brief defined below and nothing
    else — for Watson's Direct mode, Holmes's Local mode, and the read-only
    `Explore`, `Plan`, and `general-purpose` runs alike (why:
    `references/brief-rationale.md`). Three shapes are exempt: the two
@@ -149,17 +153,15 @@ sub-agent's commit and push.
 - On an Index-mode PR, CI is that final run, and Holmes adds none.
 
 No brief slot asks for a test run outside this timeline, such as "the suite
-passes": not `Acceptance:`, `Done when:`, `Constraints:`, or `Context:`. Never
-run the full suite yourself. workbench-core's Full-suite gate enforces this
-rule in the main session. A deny from the gate means the rule worked. Do not
-route around it: dispatch Holmes on a brief whose `Goal:` begins
-`Final suite run:`.
+passes". Never run the full suite yourself. workbench-core's Full-suite gate
+enforces this rule in the main session. A deny from the gate means the rule
+worked. Do not route around it: dispatch Holmes on a brief whose `Goal:`
+begins `Final suite run:`.
 Why: `references/brief-rationale.md`.
 
 ## Action routing — Index MCP or gh CLI?
 
-When the user asks for a GitHub action (review, comment, merge, triage, fix),
-two questions decide the path. Answer them in order.
+Two questions, in order, decide the path for a GitHub action the user asks for.
 
 ### 1. Whose voice does the action carry?
 
@@ -168,12 +170,11 @@ two questions decide the path. Answer them in order.
   agent's GitHub App. They go through a dispatched agent and its MCP write
   tools. Never produce them with `gh`. Why: `references/brief-rationale.md`.
 - **The user's own actions** — comments they dictate, merges they order — are
-  theirs, executed directly with `gh` under their identity, on any repo. You
-  are the secretary here, not an agent.
+  theirs, executed directly with `gh` under their identity, on any repo.
 - **Neither, when nothing reaches GitHub.** A Holmes Local-mode verdict is prose
-  returned to this conversation, so it carries no GitHub voice and needs no
-  routing decision. Posting one anywhere is the user's own action, and only
-  after they have seen the exact content and said so.
+  returned to this conversation, so it carries no GitHub voice. Posting one
+  anywhere is the user's own action, and only after they have seen the exact
+  content and said so.
 
 ### 2. Is the repo governed by The Index?
 
@@ -189,13 +190,13 @@ table sends it to Holmes Local mode.
 
 | Request | Governed repo | Ungoverned repo |
 |---|---|---|
-| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review. No board item → as ungoverned | **Holmes** Local mode on the PR branch's committed range, `Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require: Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose; posting it is the user's action, after confirming. Never unwind commits to fake an uncommitted tree |
-| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the six-slot brief, via the Agent tool); the verdict comes back as prose | same — Local mode makes no board call and no GitHub write, so the repo's governance is irrelevant |
+| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review. No board item → as ungoverned | **Holmes** Local mode on the PR branch's committed range, `Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require: Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose. Never unwind commits to fake an uncommitted tree |
+| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the six-slot brief, via the Agent tool); the verdict comes back as prose | same |
 | "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
 | "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
 | "implement / fix / build X" | Item exists → **Watson** Index mode, through the dispatcher (Dispatch protocol, step 4), never the Agent tool. No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the six-slot brief, via the Agent tool; the diff comes back uncommitted) |
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
-| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated to an agent (Holmes never merges; the MCP has no merge tool; workbench-core's commit guard refuses a sub-agent's or the pipeline's `gh pr merge`). Board status follows via webhook | same |
+| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated: the MCP has no merge tool, and workbench-core's commit guard refuses a sub-agent's or the pipeline's `gh pr merge`. Board status follows via webhook | same |
 | "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
 
 **Every "ask" and "confirm" in this table goes through `AskUserQuestion`,**
@@ -211,16 +212,16 @@ multi-line body in double quotes: the shell runs its backticks.
 
 ## The brief — six slots, on every handoff
 
-A dispatch prompt is a **brief**, not a script. It states an outcome, the
-reasoning behind it, and the limits on reaching it. It does not describe how the
-work is done.
+A dispatch prompt is a **brief**, not a script: an outcome, the reasoning behind
+it, and the limits on reaching it, never how the work is done.
 
-Every handoff uses it, read-only research included. Three shapes are exempt:
-the two machine-built tokens, and a specialist's own fan-out, inside the
-orchestrator boundary. The full rule: Dispatch protocol, step 3.
+Every handoff uses it, read-only research included, except the machine-built
+tokens and a specialist's own fan-out, inside the orchestrator boundary:
+Dispatch protocol, step 3.
 
 Fill these six slots, in this order, under the names given, and send nothing
-else. No mode marker: see "The team's modes" (below).
+else but an optional `Unit:` line. No mode marker: see "The team's modes"
+(below).
 
 ```
 Workdir: <absolute path, plus the branch or worktree when one was agreed>
@@ -233,6 +234,7 @@ Constraints:
 Acceptance:
 - AC1: <one condition someone other than you can check without asking>
 - AC2: <one per bullet>
+Unit: <optional: this dispatch's one step>
 Done when: <the observable condition that ends the task>
 ```
 
@@ -257,13 +259,18 @@ Each slot's full rule, and what a brief must carry:
   criteria here, minus any that asks for a test run outside the test timeline
   (above). Why: `references/brief-rationale.md`. The no-mutation ban on
   its items: `references/brief-detail.md`.
+- **`Unit:`** — optional, never a slot:
+  `Unit: 2 of 4, the focus ring. Meets AC3, AC4.` The full criteria list may
+  stay in `Acceptance:` for context.
 - **`Done when:`** — where the task stops, such as the change handed back
   uncommitted, not what the result must satisfy.
 
 Every slot is required, and every dev-team agent refuses a brief that drops one.
-**There is no length limit:** write the reasoning at whatever length it takes,
-and write no shell command at any length. The must-omit list below is the whole
-of the limit (why: `references/brief-rationale.md`).
+**There is no length limit on the reasoning in `Context:`:** write it at
+whatever length it takes, and write no shell command at any length. The
+must-omit list below is the whole of that limit (why:
+`references/brief-rationale.md`). It does not cover how much work one brief
+asks for: that is one unit (above).
 
 ### Must omit — the sub-agent decides these by reading the repo
 
@@ -278,13 +285,12 @@ of the limit (why: `references/brief-rationale.md`).
   standalone script", "a one-off", "a quick Python check". The repo answers
   both questions. The incident: `references/brief-rationale.md`.
 
-`Context:` is reasoning, never instruction. A step list does not become
-acceptable by moving under it, and neither does a shell command.
+`Context:` is reasoning, never instruction: a step list or a shell command
+stays banned there too.
 
 ### When a brief comes back
 
-An agent hands a brief back for two different reasons, and they need different
-answers from you.
+An agent hands a brief back for one of two reasons.
 
 - **Refused** — a slot is missing. The agent names it and does no work. Fill the
   slot, re-dispatch.
@@ -366,13 +372,17 @@ notifications arrive, reprint it when the user asks "where do things stand?":
 
 ```
 🕵️ Roster
-| Agent | Task | Agent ID | Status |
-|---|---|---|---|
-| Watson | retry logic fix (foo) | a1b2… | 🔄 running |
-| Watson | API docs (bar) | c3d4… | ✅ PR #42 opened |
-| Holmes | review item 17 | e5f6… | 🔄 running |
+| Agent | Task | Agent ID | Started | Status |
+|---|---|---|---|---|
+| Watson | retry logic fix (foo) | a1b2… | 14:02 | 🔄 running, 6 min |
+| Watson | API docs (bar) | c3d4… | 13:40 | ✅ PR #42 opened |
+| Holmes | review item 17 | e5f6… | 13:31 | 🔄 running, 37 min |
 ```
 
+- **Every running unit shows its age.** `Started` holds its start time, and
+  its status gives the minutes it has run, so a unit far past the usual length
+  stands out. Read the start time from the task list and the transcript, never
+  from `ListAgents`: `references/agent-liveness.md`.
 - **The human sees only your reply text.** Every hand-back, peer message,
   task notification, and tool output is invisible to them. So restate in the
   reply what a decision or a finding needs from a hand-back: the options with

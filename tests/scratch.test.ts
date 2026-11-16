@@ -1,10 +1,6 @@
-// hooks/register.ts with hooks/mods/scratch.ts: a dev-team agent's bare mktemp
-// lands in a folder of its own under a scratch root, and the folder is deleted
-// when the agent's run completes.
-
 import { describe, expect, test } from 'claude-code/testing'
 
-import { isDeletable, pointMktemp, prefixOf, rootOf, sweepOf } from '../hooks/mods/scratch'
+import { isDeletable, mktempDeny, prefixOf, rootOf, scratchContextOf, sweepOf } from '../hooks/mods/scratch'
 import type { GuardOptions } from './world'
 import { BRIEF, complete, endSession, spawnInput, world } from './world'
 
@@ -16,6 +12,13 @@ const TEMPLATE = `'${FOLDER}/tmp.XXXXXXXX'`
 const bash = (command: string, agentId?: string) =>
   ({ tool: 'Bash', tool_use_id: 'toolu_1', description: 'd', command, ...(agentId === undefined ? {} : { agentId }) }) as never
 
+const subagentStart = (agentType: string, agentId = 'agent-1') =>
+  ({ session_id: 's-1', transcript_path: '/t', cwd: '/repo', hook_event_name: 'SubagentStart', agent_id: agentId, agent_type: agentType }) as never
+
+const beneath = (on: Parameters<typeof world>[0]) => on('classic.SubagentStart', () => ({ additionalContext: ['BENEATH'] }) as never)
+
+const submit = { text: 'Item ID: 5', wait: false, origin: { kind: 'composer' } } as never
+
 // A world with a Watson started from the main session, as agent-1.
 async function withWatson($: { agent: { spawn: (e: never) => Promise<unknown> } }, on: Parameters<typeof world>[0], options: GuardOptions = {}) {
   const w = world(on, { roots: ROOTS, agents: [{ id: 'agent-1', type: T('watson-direct') }], ...options })
@@ -23,57 +26,59 @@ async function withWatson($: { agent: { spawn: (e: never) => Promise<unknown> } 
   return w
 }
 
-describe('scratch — a bare mktemp lands in the agent\'s own folder', () => {
-  for (const [line, pointed] of [
-    ['mktemp -d', `mktemp -d ${TEMPLATE}`],
-    ['mktemp', `mktemp ${TEMPLATE}`],
-    ['mktemp -dq', `mktemp -dq ${TEMPLATE}`],
-    ['mktemp -d && ls', `mktemp -d ${TEMPLATE} && ls`],
-  ] as const) {
-    test(`${JSON.stringify(line)} is pointed at the folder`, async ($, on) => {
+describe('scratch — no Bash call reaches the engine changed', () => {
+  for (const line of [`mktemp -d ${TEMPLATE}`, `mktemp ${TEMPLATE}`, 'git status', 'mktemp -d /scratch/session/x.XXXXXX && ls']) {
+    test(`a dev-team agent's ${JSON.stringify(line)} reaches the engine as the model wrote it`, async ($, on) => {
       const w = await withWatson($, on)
-      await $.tool.call(bash(line, 'agent-1'))
-      expect(w.ran).toEqual([`Bash: ${pointed}`])
+      const call = { tool: 'Bash', tool_use_id: 'toolu_1', description: 'd', command: line, agentId: 'agent-1' }
+      await $.tool.call(call as never)
+      expect(w.calls).toEqual([call])
+    })
+  }
+})
+
+describe('scratch — a bare mktemp is refused, and the refusal names the folder', () => {
+  for (const line of ['mktemp -d', 'mktemp', 'mktemp -dq', 'mktemp -d && ls', 'mktemp -d -t probe', 'mktemp -tprobe', 'TMPDIR=/x mktemp -d', 'mktemp --directory', 'mktemp --tmpdir', 'mktemp -d --tmpdir', 'mktemp --tmpdir=', "mktemp -p ''", 'mktemp -d --', 'mktemp -d && echo "then mktemp -d; done"']) {
+    test(`${JSON.stringify(line)} is refused with the folder and the template form`, async ($, on) => {
+      const w = await withWatson($, on)
+      const answer = (await $.tool.call(bash(line, 'agent-1'))) as { deny?: string }
+      expect(answer.deny).toBe(mktempDeny(FOLDER))
+      expect(answer.deny).toContain(`mktemp -d ${TEMPLATE}`)
+      expect(answer.deny).toContain(`mktemp ${TEMPLATE}`)
+      expect(w.ran).toEqual([])
       expect(w.runs.filter(argv => argv[0] === 'mktemp')).toEqual([['mktemp', '-d', '/scratch/session/watson-direct.XXXXXX']])
     })
   }
 
-  test('a second mktemp in the same run reuses the folder', async ($, on) => {
+  test('a templated mktemp into the folder passes, and the folder is made only once', async ($, on) => {
     const w = await withWatson($, on)
     await $.tool.call(bash('mktemp -d', 'agent-1'))
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual([`Bash: mktemp -d ${TEMPLATE}`, `Bash: mktemp -d ${TEMPLATE}`])
+    await $.tool.call(bash(`mktemp -d ${TEMPLATE}`, 'agent-1'))
+    await $.tool.call(bash(`mktemp ${TEMPLATE}`, 'agent-1'))
+    expect(w.ran).toEqual([`Bash: mktemp -d ${TEMPLATE}`, `Bash: mktemp ${TEMPLATE}`])
     expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(1)
   })
 
-  test('holmes-lens gets a folder of its own, named for it', async ($, on) => {
-    const w = world(on, { roots: ROOTS })
+  test('holmes-lens is refused with a folder of its own, named for it', async ($, on) => {
+    world(on, { roots: ROOTS })
     await $.agent.spawn(spawnInput(T('holmes-lens'), 'lens prompt', { parentAgentId: 'agent-x' }))
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual([`Bash: mktemp -d '/scratch/session/holmes-lens.abc123/tmp.XXXXXXXX'`])
+    const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toBe(mktempDeny('/scratch/session/holmes-lens.abc123'))
   })
 
-  test('the top-level loop of a dev-team --agent run is pointed too', async ($, on) => {
-    const w = world(on, { roots: ROOTS, lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('watson-index') } })
-    await $.tool.call(bash('mktemp -d'))
-    expect(w.ran).toEqual([`Bash: mktemp -d '/scratch/session/watson-index.abc123/tmp.XXXXXXXX'`])
+  test('the top-level loop of a dev-team --agent run is refused too', async ($, on) => {
+    world(on, { roots: ROOTS, lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('watson-index') } })
+    const answer = (await $.tool.call(bash('mktemp -d'))) as { deny?: string }
+    expect(answer.deny).toBe(mktempDeny('/scratch/session/watson-index.abc123'))
   })
 
   test('with no session scratchpad the folder goes in ~/Developer/scratchpad, never in ~/.claude/plans', async ($, on) => {
-    const w = await withWatson($, on, { roots: ROOTS.slice(1) })
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual([`Bash: mktemp -d '/Users/tester/Developer/scratchpad/watson-direct.abc123/tmp.XXXXXXXX'`])
+    await withWatson($, on, { roots: ROOTS.slice(1) })
+    const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toBe(mktempDeny('/Users/tester/Developer/scratchpad/watson-direct.abc123'))
   })
 
-  for (const line of [
-    'mktemp -d -t probe',
-    'mktemp -d /scratch/session/x.XXXXXX',
-    'mktemp -p /tmp',
-    'echo "run mktemp -d; then cd"',
-    'mktemp -d && echo "then mktemp -d; done"',
-    'TMPDIR=/x mktemp -d',
-    'git status',
-  ]) {
+  for (const line of ['mktemp -d /scratch/session/x.XXXXXX', 'mktemp -p /tmp', 'echo "run mktemp -d; then cd"', 'git status']) {
     test(`${JSON.stringify(line)} runs as written`, async ($, on) => {
       const w = await withWatson($, on)
       await $.tool.call(bash(line, 'agent-1'))
@@ -81,63 +86,243 @@ describe('scratch — a bare mktemp lands in the agent\'s own folder', () => {
     })
   }
 
-  test("the main session's mktemp runs as written", async ($, on) => {
+  test("the main session's mktemp runs as written, and no folder is made", async ($, on) => {
     const w = world(on, { roots: ROOTS })
     await $.tool.call(bash('mktemp -d'))
     expect(w.ran).toEqual(['Bash: mktemp -d'])
     expect(w.runs).toEqual([])
   })
 
-  test("a generic sub-agent's mktemp runs as written", async ($, on) => {
+  test("a generic sub-agent's mktemp runs as written, and no folder is made", async ($, on) => {
     const w = world(on, { roots: ROOTS })
     await $.agent.spawn(spawnInput('general-purpose', BRIEF))
     await $.tool.call(bash('mktemp -d', 'agent-1'))
     expect(w.ran).toEqual(['Bash: mktemp -d'])
+    expect(w.runs).toEqual([])
   })
 
-  test('with no scratch root, the line runs as written', async ($, on) => {
-    const w = await withWatson($, on, { roots: [] })
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual(['Bash: mktemp -d'])
+  for (const [label, options] of [
+    ['with no scratch root', { roots: [] }],
+    ['when mktemp fails to make the folder', { run: (argv: readonly string[]) => (argv[0] === 'mktemp' ? { exitCode: 1, stdout: '', stderr: 'mktemp: failed' } : undefined) }],
+    ['when mktemp cannot run', { run: (argv: readonly string[]) => (argv[0] === 'mktemp' ? new Error('spawn failed') : undefined) }],
+    ['when mktemp prints a folder outside the roots', { run: (argv: readonly string[]) => (argv[0] === 'mktemp' ? { exitCode: 0, stdout: '/elsewhere/x\n', stderr: '' } : undefined) }],
+  ] as const) {
+    test(`${label}, a bare mktemp is still refused, and the refusal names the scratch roots`, async ($, on) => {
+      const w = await withWatson($, on, options as GuardOptions)
+      const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+      expect(answer.deny).toBe(mktempDeny(undefined))
+      expect(answer.deny).toContain('~/Developer/scratchpad')
+      expect(w.ran).toEqual([])
+    })
+  }
+
+  test('a line the shell reader cannot read is refused, never run unjudged', async ($, on) => {
+    const w = await withWatson($, on, { parseFails: true })
+    const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toBeDefined()
+    expect(w.ran).toEqual([])
   })
 
-  test('a folder mktemp fails to make leaves the line as written', async ($, on) => {
-    const w = await withWatson($, on, { run: argv => (argv[0] === 'mktemp' ? { exitCode: 1, stdout: '', stderr: 'mktemp: failed' } : undefined) })
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual(['Bash: mktemp -d'])
-  })
-
-  test('a mktemp that cannot run leaves the line as written', async ($, on) => {
-    const w = await withWatson($, on, { run: argv => (argv[0] === 'mktemp' ? new Error('spawn failed') : undefined) })
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual(['Bash: mktemp -d'])
-  })
-
-  test('a folder mktemp printed outside the roots is not used', async ($, on) => {
-    const w = await withWatson($, on, { run: argv => (argv[0] === 'mktemp' ? { exitCode: 0, stdout: '/elsewhere/x\n', stderr: '' } : undefined) })
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual(['Bash: mktemp -d'])
-  })
-
-  test('the review guard judges the pointed line', async ($, on) => {
+  test('the review guard refuses before the mktemp rule does', async ($, on) => {
     const w = world(on, { roots: ROOTS, cwd: '/repo', agents: [{ id: 'agent-1', type: T('holmes-local') }] })
     await $.agent.spawn(spawnInput(T('holmes'), BRIEF))
     const answer = (await $.tool.call(bash('mktemp -d && chmod 644 /repo/README.md', 'agent-1'))) as { deny?: string }
     expect(answer.deny).toContain('A Holmes reviewer')
-    expect(w.runs.filter(argv => argv[0] === 'mktemp')).toEqual([['mktemp', '-d', '/scratch/session/holmes-local.XXXXXX']])
     expect(w.ran).toEqual([])
   })
 })
 
+describe('scratch — each dev-team agent gets its folder at its start', () => {
+  for (const type of ['watson-direct', 'holmes-local', 'holmes-lens', 'lestrade-item']) {
+    test(`a ${type} start makes the folder and names it in the context`, async ($, on) => {
+      const w = world(on, { roots: ROOTS })
+      beneath(on)
+      const folder = `/scratch/session/${type}.abc123`
+      const result = (await $.classic.SubagentStart(subagentStart(T(type)))) as { additionalContext?: string[] }
+      expect(result.additionalContext).toContain(scratchContextOf(folder))
+      expect(scratchContextOf(folder)).toContain(`mktemp -d '${folder}/tmp.XXXXXXXX'`)
+      expect(w.made.has(folder)).toBe(true)
+    })
+  }
+
+  test('the folder named at the start is the one the refusal names, made once', async ($, on) => {
+    const w = world(on, { roots: ROOTS, agents: [{ id: 'agent-1', type: T('watson-direct') }] })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    const result = (await $.classic.SubagentStart(subagentStart(T('watson-direct')))) as { additionalContext?: string[] }
+    expect(result.additionalContext).toContain(scratchContextOf(FOLDER))
+    const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toBe(mktempDeny(FOLDER))
+    await $.tool.call(bash(`mktemp -d ${TEMPLATE}`, 'agent-1'))
+    expect(w.ran).toEqual([`Bash: mktemp -d ${TEMPLATE}`])
+    expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(1)
+  })
+
+  test('a generic sub-agent gets no folder and no scratch context', async ($, on) => {
+    const w = world(on, { roots: ROOTS })
+    beneath(on)
+    const result = (await $.classic.SubagentStart(subagentStart('general-purpose'))) as { additionalContext?: string[] }
+    expect((result.additionalContext ?? []).some(line => line.includes('scratch folder for this run'))).toBe(false)
+    expect(w.runs).toEqual([])
+  })
+
+  test('with no scratch root the start adds no scratch context', async ($, on) => {
+    world(on, { roots: [] })
+    beneath(on)
+    const result = (await $.classic.SubagentStart(subagentStart(T('watson-direct')))) as { additionalContext?: string[] }
+    expect((result.additionalContext ?? []).some(line => line.includes('scratch folder for this run'))).toBe(false)
+  })
+
+  test('the folder made at the start is removed when the run ends', async ($, on) => {
+    const w = world(on, { roots: ROOTS, agents: [{ id: 'agent-1', type: T('watson-direct') }] })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.classic.SubagentStart(subagentStart(T('watson-direct')))
+    await complete($ as never, 'agent-1')
+    expect(w.runs.filter(argv => argv[0] === 'rm')).toEqual([['rm', '-rf', '--', FOLDER]])
+    expect(w.made.has(FOLDER)).toBe(false)
+  })
+
+  test('a top-level dev-team run gets its folder as context on its prompt', async ($, on) => {
+    const w = world(on, { roots: ROOTS, lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('watson-index') } })
+    const seen: { context?: string[] }[] = []
+    on('prompt.submit', async ($, e) => {
+      seen.push(e as never)
+      return { text: '' } as never
+    })
+    await $.prompt.submit(submit)
+    expect(seen[0]?.context).toEqual([scratchContextOf('/scratch/session/watson-index.abc123')])
+    expect(w.made.has('/scratch/session/watson-index.abc123')).toBe(true)
+  })
+
+  test('the main session gets no scratch context on its prompt, and no folder', async ($, on) => {
+    const w = world(on, { roots: ROOTS })
+    const seen: { context?: string[] }[] = []
+    on('prompt.submit', async ($, e) => {
+      seen.push(e as never)
+      return { text: '' } as never
+    })
+    await $.prompt.submit(submit)
+    expect(seen[0]?.context).toBeUndefined()
+    expect(w.runs).toEqual([])
+  })
+
+  test('a resumed run finds its folder again at the same path, and its end removes it again', async ($, on) => {
+    const w = world(on, { roots: ROOTS, agents: [{ id: 'agent-1', type: T('watson-direct') }] })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.classic.SubagentStart(subagentStart(T('watson-direct')))
+    await complete($ as never, 'agent-1')
+    expect(w.made.has(FOLDER)).toBe(false)
+    await $.tool.call(bash(`mktemp -d ${TEMPLATE}`, 'agent-1'))
+    expect(w.runs.filter(argv => argv[0] === 'mkdir')).toEqual([['mkdir', '-m', '700', '--', FOLDER]])
+    expect(w.ran).toEqual([`Bash: mktemp -d ${TEMPLATE}`])
+    await complete($ as never, 'agent-1')
+    expect(w.runs.filter(argv => argv[0] === 'rm')).toEqual([['rm', '-rf', '--', FOLDER], ['rm', '-rf', '--', FOLDER]])
+    expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(1)
+  })
+
+  test('a resumed run whose mkdir fails gets a new folder, and every later refusal names that one', async ($, on) => {
+    const NEW = '/scratch/session/watson-direct.def456'
+    let made = 0
+    const w = world(on, {
+      roots: ROOTS,
+      agents: [{ id: 'agent-1', type: T('watson-direct') }],
+      run: argv => {
+        if (argv[0] === 'mkdir') return { exitCode: 1, stdout: '', stderr: 'mkdir: Permission denied' }
+        if (argv[0] !== 'mktemp') return undefined
+        const folder = made++ === 0 ? FOLDER : NEW
+        w.made.add(folder)
+        return { exitCode: 0, stdout: `${folder}\n`, stderr: '' }
+      },
+    })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.classic.SubagentStart(subagentStart(T('watson-direct')))
+    await complete($ as never, 'agent-1')
+    const first = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    const second = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(w.runs.filter(argv => argv[0] === 'mkdir')).toEqual([['mkdir', '-m', '700', '--', FOLDER]])
+    expect(first.deny).toBe(mktempDeny(NEW))
+    expect(second.deny).toBe(mktempDeny(NEW))
+    expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(2)
+  })
+
+  test('a kept folder no longer under a scratch root is never made again with mkdir', async ($, on) => {
+    const roots = [...ROOTS]
+    const w = world(on, { roots, agents: [{ id: 'agent-1', type: T('watson-direct') }] })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.classic.SubagentStart(subagentStart(T('watson-direct')))
+    w.made.delete(FOLDER)
+    roots.splice(0, roots.length, '/other')
+    const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(w.runs.filter(argv => argv[0] === 'mkdir')).toEqual([])
+    expect(answer.deny).toBe(mktempDeny('/other/watson-direct.abc123'))
+  })
+
+  test('a folder another call made between the check and the mkdir is shared, not replaced', async ($, on) => {
+    const w = world(on, {
+      roots: ROOTS,
+      agents: [{ id: 'agent-1', type: T('watson-direct') }],
+      run: argv => {
+        if (argv[0] !== 'mkdir') return undefined
+        w.made.add(FOLDER)
+        return { exitCode: 1, stdout: '', stderr: 'mkdir: File exists' }
+      },
+    })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.classic.SubagentStart(subagentStart(T('watson-direct')))
+    await complete($ as never, 'agent-1')
+    const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toBe(mktempDeny(FOLDER))
+    expect(w.runs.filter(argv => argv[0] === 'mkdir').length).toBe(1)
+    expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(1)
+  })
+
+  test('two parallel calls after a resume share one folder', async ($, on) => {
+    const w = world(on, {
+      roots: ROOTS,
+      agents: [{ id: 'agent-1', type: T('watson-direct') }],
+      run: argv => {
+        if (argv[0] !== 'mkdir') return undefined
+        const isTaken = w.made.has(FOLDER)
+        w.made.add(FOLDER)
+        return isTaken ? { exitCode: 1, stdout: '', stderr: 'mkdir: File exists' } : { exitCode: 0, stdout: '', stderr: '' }
+      },
+    })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.classic.SubagentStart(subagentStart(T('watson-direct')))
+    await complete($ as never, 'agent-1')
+    const answers = (await Promise.all([$.tool.call(bash('mktemp -d', 'agent-1')), $.tool.call(bash('mktemp', 'agent-1'))])) as { deny?: string }[]
+    expect(answers.map(answer => answer.deny)).toEqual([mktempDeny(FOLDER), mktempDeny(FOLDER)])
+    expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(1)
+  })
+
+  test('a turn that ends after the folder was already removed runs no second rm', async ($, on) => {
+    const w = world(on, { roots: ROOTS, agents: [{ id: 'agent-1', type: T('watson-direct') }] })
+    beneath(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    await $.classic.SubagentStart(subagentStart(T('watson-direct')))
+    await complete($ as never, 'agent-1')
+    await complete($ as never, 'agent-1')
+    expect(w.runs.filter(argv => argv[0] === 'rm').length).toBe(1)
+  })
+})
+
 describe('scratch — the folder is deleted when the run completes', () => {
-  test("the agent's folder is removed at its run's end, and the next run makes a new one", async ($, on) => {
+  test("the agent's folder is removed at its run's end, and the next run makes it again at the same path", async ($, on) => {
     const w = await withWatson($, on)
     await $.tool.call(bash('mktemp -d', 'agent-1'))
     await complete($ as never, 'agent-1')
     expect(w.runs.filter(argv => argv[0] === 'rm')).toEqual([['rm', '-rf', '--', FOLDER]])
     expect(w.made.has(FOLDER)).toBe(false)
-    await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(2)
+    const answer = (await $.tool.call(bash('mktemp -d', 'agent-1'))) as { deny?: string }
+    expect(answer.deny).toBe(mktempDeny(FOLDER))
+    expect(w.made.has(FOLDER)).toBe(true)
+    expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(1)
   })
 
   test("another loop's end removes nothing", async ($, on) => {
@@ -169,7 +354,7 @@ describe('scratch — the folder is deleted when the run completes', () => {
     const w = world(on, { roots })
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
     await $.tool.call(bash('mktemp -d', 'agent-1'))
-    expect(w.ran).toEqual([`Bash: mktemp -d ${TEMPLATE}`])
+    expect(w.made.has(FOLDER)).toBe(true)
     roots.splice(0, roots.length, '/other')
     await complete($ as never, 'agent-1')
     expect(w.runs.filter(argv => argv[0] === 'rm')).toEqual([])
@@ -208,7 +393,7 @@ describe('scratch — no folder is deleted while a child of its run is live', ()
     agents[1] = { ...agents[1]!, status: 'completed' }
     await complete($ as never, 'agent-2') // the helper's own end
     expect(rms(w)).toEqual([])
-    await $.tool.call(bash('mktemp -d', 'agent-1')) // the second turn
+    await $.tool.call(bash(`mktemp -d '${kept}/tmp.XXXXXXXX'`, 'agent-1')) // the second turn
     expect(w.ran.at(-1)).toBe(`Bash: mktemp -d '${kept}/tmp.XXXXXXXX'`)
     expect(w.runs.filter(argv => argv[0] === 'mktemp').length).toBe(1)
     await complete($ as never, 'agent-1') // the second turn ends with no live child
@@ -275,7 +460,11 @@ describe('scratch — the session end deletes every folder still recorded', () =
     const w = world(on, {
       roots: ROOTS,
       agents,
-      run: argv => (argv[0] === 'mktemp' ? { exitCode: 0, stdout: `/scratch/session/run.${++made}\n`, stderr: '' } : undefined),
+      run: argv => {
+        if (argv[0] !== 'mktemp') return undefined
+        w.made.add(`/scratch/session/run.${++made}`)
+        return { exitCode: 0, stdout: `/scratch/session/run.${made}\n`, stderr: '' }
+      },
     })
     await $.agent.spawn(spawnInput(T('watson'), BRIEF)) // agent-1
     await $.agent.spawn(spawnInput(T('holmes'), BRIEF)) // agent-2
@@ -401,11 +590,6 @@ describe('scratch — the session end deletes every folder still recorded', () =
 })
 
 describe('scratch — the pure rules', () => {
-  test('a folder with a quote or a space is never pointed at', () => {
-    expect(pointMktemp('mktemp -d', "/scratch/it's")).toBeUndefined()
-    expect(pointMktemp('mktemp -d', '/scratch/a b')).toBeUndefined()
-  })
-
   test('rootOf skips ~/.claude/plans, and isDeletable refuses a root and anything outside', () => {
     expect(rootOf(['/Users/t/.claude/plans', '/Users/t/Developer/scratchpad'])).toBe('/Users/t/Developer/scratchpad')
     expect(rootOf([])).toBeUndefined()

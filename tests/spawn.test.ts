@@ -1,6 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
+import { resumeRefusalOf, resumedAgentOfRead } from '../hooks/mods/spawn'
 import { BRIEF, spawnInput, step, world } from './world'
 
 const T = (name: string) => `workbench-dev-team:${name}`
@@ -325,6 +326,61 @@ describe('the no-mutation gate, wired into agent.spawn', () => {
       expect(w.spawned.map(s => s.subagentType)).toEqual([T(family === 'watson' ? 'watson-direct' : 'holmes-local')])
     })
 
+    test(`a ${family} brief whose last item ends in "fails" and whose Unit: line names a delete is spawned`, async ($, on) => {
+      const w = world(on)
+      const prompt = withAcceptance('- AC1: the parser test fails').replace('Done when:', 'Unit: 2 of 4, delete the old layout constant. Meets AC1.\nDone when:')
+      const result = await $.agent.spawn(spawnInput(T(family), prompt))
+      expect(denyOf(result)).toBeUndefined()
+      expect(w.spawned.map(s => s.subagentType)).toEqual([T(family === 'watson' ? 'watson-direct' : 'holmes-local')])
+    })
+
+    test(`a ${family} brief whose Unit: line holds a removal word and a failure word is refused, and the refusal quotes that line alone`, async ($, on) => {
+      const w = world(on)
+      const prompt = BRIEF.replace('Done when:', 'Unit: 2 of 4, the test fails if the guard is removed.\nDone when:')
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+      expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`)
+      expect(deny).toContain('- Unit: "2 of 4, the test fails if the guard is removed." mentions mutation')
+      expect(deny).not.toContain('- Acceptance: "')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief whose Unit: line voids the no-mutation line with "unless" is refused, and nothing is spawned`, async ($, on) => {
+      const w = world(on)
+      const prompt = withConstraints(`Constraints:\n${NO_LINE}\nUnit: 1 of 2, unless the reviewer asks for a stronger check.`)
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+      expect(deny).toContain('- The Constraints: item "Unit: 1 of 2, unless the reviewer asks for a stronger check." comes after the no-mutation line')
+      expect(w.spawned).toEqual([])
+    })
+
+    test(`a ${family} brief whose Unit: line wraps onto a line with a failure word is refused, quoting both lines as one Unit item`, async ($, on) => {
+      const w = world(on)
+      const prompt = withAcceptance('- AC1: the field survives\nUnit: 2 of 4, delete the old guard\n  and show the test fails')
+      const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+      expect(deny).toContain('- Unit: "2 of 4, delete the old guard and show the test fails" mentions mutation')
+      expect(w.spawned).toEqual([])
+    })
+
+    for (const [name, prompt, quote] of [
+      [
+        'a removal word in an item and a failure word wrapped from the Unit: line after it',
+        withAcceptance('- Delete the assertion\nUnit: 1 of 2\n  and the suite fails'),
+        '- Acceptance: "- Delete the assertion Unit: 1 of 2 and the suite fails" mentions mutation',
+      ],
+      [
+        'a removal word on a Unit: line under an empty label and a failure word after a blank line',
+        BRIEF.replace('Acceptance:\n- AC1: the field survives', 'Acceptance:\nUnit: delete x\n\nthe test fails'),
+        '- Unit: "delete x the test fails" mentions mutation',
+      ],
+    ] as const) {
+      test(`a ${family} brief with ${name} is refused, the refusal quotes the joined text, and nothing is spawned`, async ($, on) => {
+        const w = world(on)
+        const deny = denyOf(await $.agent.spawn(spawnInput(T(family), prompt)))
+        expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a ${mode} dispatch whose brief does not rule out mutation testing.`)
+        expect(deny).toContain(quote)
+        expect(w.spawned).toEqual([])
+      })
+    }
+
     for (const slot of ['Acceptance:', 'Constraints:'] as const) {
       test(`a ${family} brief with no findable ${slot} slot is refused for that slot, and nothing is spawned`, async ($, on) => {
         const w = world(on)
@@ -404,5 +460,277 @@ describe('the no-mutation gate, wired into agent.spawn', () => {
     const result = await $.agent.spawn(spawnInput(T('lestrade'), prompt))
     expect(denyOf(result)).toBeUndefined()
     expect(w.spawned.map(s => s.subagentType)).toEqual([T('lestrade')])
+  })
+})
+
+describe('a message to a Watson or Holmes — a resume, or a send, is judged on its own text', () => {
+  const CORRECTION = 'One correction to your brief: rename the helper to parseField.'
+  const denyOf = (result: unknown) => (result as { deny?: string }).deny
+  const resume = (type: string, prompt: string, agentId = 'agent-1') => spawnInput(type, prompt, { resume: { agentId } })
+  const HEAD = 'that does not rule out mutation testing.'
+  const NOT_RESUMED = 'The message was not delivered, and no agent resumed.'
+
+  for (const [family, mode, token] of [
+    ['watson', 'watson-direct', BRIEF],
+    ['holmes', 'holmes-local', BRIEF],
+    ['watson', 'watson-index', 'Item ID: 42'],
+    ['holmes', 'holmes-index', 'Item ID: 42'],
+  ] as const) {
+    test(`a resume of a ${mode} with a short correction and no Constraints: or Acceptance: block runs, unchanged, though a fresh spawn of that text is refused`, async ($, on) => {
+      const w = world(on, { run: () => ({ exitCode: 0, stdout: 'dispatched\n', stderr: '' }) })
+      await $.agent.spawn(spawnInput(T(family), token))
+      const fresh = denyOf(await $.agent.spawn(spawnInput(T(family), CORRECTION)))
+      expect(fresh).toContain('Constraints:')
+      const resumed = await $.agent.spawn(resume(T(mode), CORRECTION))
+      expect(denyOf(resumed)).toBeUndefined()
+      expect(w.spawned.slice(1)).toEqual([{ subagentType: T(mode), model: undefined, prompt: CORRECTION }])
+    })
+  }
+
+  test('a resume that restates the no-mutation line runs', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    const result = await $.agent.spawn(resume(T('watson-direct'), `${CORRECTION}\n- Run no mutation testing of any kind.`))
+    expect(denyOf(result)).toBeUndefined()
+    expect(w.spawned).toHaveLength(2)
+  })
+
+  for (const [label, message, quoted] of [
+    ['a line that mentions mutation', `${CORRECTION}\nThen run a mutation pass on the parser.`, `${CORRECTION} Then run a mutation pass on the parser.`],
+    ['a line with a removal word and a failure word', 'Check that the test fails when the guard is removed.', 'Check that the test fails when the guard is removed.'],
+    ['a removal word and a failure word on two lines in a row', 'Delete the guard\nand watch the parser test go red.', 'Delete the guard and watch the parser test go red.'],
+  ] as const) {
+    for (const [family, mode, agent] of [
+      ['watson', 'watson-direct', 'Watson'],
+      ['holmes', 'holmes-local', 'Holmes'],
+    ] as const) {
+      test(`a resume of a ${mode} with ${label} is refused, the refusal quotes its item and says nothing resumed`, async ($, on) => {
+        const w = world(on)
+        await $.agent.spawn(spawnInput(T(family), BRIEF))
+        const deny = denyOf(await $.agent.spawn(resume(T(mode), message)))
+        expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a message to a ${agent} ${HEAD}`)
+        expect(deny).toContain(NOT_RESUMED)
+        expect(deny).toContain(`- The item "${quoted}" mentions mutation`)
+        expect(w.spawned).toHaveLength(1)
+      })
+    }
+  }
+
+  test('a resume whose Constraints: block puts an exception after the no-mutation line is refused, and the refusal quotes the item', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    const deny = denyOf(await $.agent.spawn(resume(T('watson-direct'), `${CORRECTION}\nConstraints:\n- Run no mutation testing of any kind.\n- Keep the cache unless it is stale.`)))
+    expect(deny).toContain(NOT_RESUMED)
+    expect(deny).toContain('- The Constraints: item "- Keep the cache unless it is stale." comes after the no-mutation line')
+    expect(deny).not.toContain('- The item "')
+    expect(w.spawned).toHaveLength(1)
+  })
+
+  const AFTER_LINE = 'Run no mutation testing of any kind. Then delete the guard and confirm the test fails.'
+
+  for (const [label, message, quoted] of [
+    ['text after the ban sentence on its line', AFTER_LINE, AFTER_LINE],
+    ['a bullet wrapped over three lines', `${CORRECTION}\n- Remove the guard clause\n  from the handler so that\n  the parser test fails.`, '- Remove the guard clause from the handler so that the parser test fails.'],
+    ['a bullet split by a blank line', '- Remove the guard clause\n\n  so the parser test fails.', '- Remove the guard clause so the parser test fails.'],
+  ] as const) {
+    test(`a resume with ${label} is refused, and the refusal quotes the whole item`, async ($, on) => {
+      const w = world(on)
+      await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+      const deny = denyOf(await $.agent.spawn(resume(T('watson-direct'), message)))
+      expect(deny).toContain(NOT_RESUMED)
+      expect(deny).toContain(`- The item "${quoted}" mentions mutation`)
+      expect(w.spawned).toHaveLength(1)
+    })
+  }
+
+  test('a resume with two separate bullets, one with a removal word and one with a failure word, runs', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    const result = await $.agent.spawn(resume(T('watson-direct'), `${CORRECTION}\n- Remove the stale cache\n- the build fails on CI`))
+    expect(denyOf(result)).toBeUndefined()
+    expect(w.spawned).toHaveLength(2)
+  })
+
+  for (const [label, message] of [
+    ['two prose paragraphs', 'Remove the stale import.\n\nCI failed on the lint step.'],
+    ['a bullet, a blank line, then a paragraph', '- Delete the stale comment at x.ts:4\n\nThe CI run fails on Linux.'],
+  ] as const) {
+    test(`a resume with ${label} judges each as its own item, and runs`, async ($, on) => {
+      const w = world(on)
+      await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+      expect(denyOf(await $.agent.spawn(resume(T('watson-direct'), message)))).toBeUndefined()
+      expect(w.spawned).toHaveLength(2)
+    })
+  }
+
+  test('a rejected read of the kept type is taken as a Watson or Holmes, so a banned resume is still refused', async () => {
+    const agent = await resumedAgentOfRead(Promise.reject(new Error('state unreadable')), 'general-purpose')
+    expect(agent).toBe('Watson or Holmes')
+    expect(resumeRefusalOf(agent, 'Run a mutation pass.')?.split('\n')[0]).toBe(`🛑 Blocked: a message to a Watson or Holmes ${HEAD}`)
+    expect(resumeRefusalOf(await resumedAgentOfRead(Promise.resolve(undefined), 'general-purpose'), 'Run a mutation pass.')).toBeUndefined()
+  })
+
+  test('a fresh brief whose Acceptance: item puts text after the ban sentence is judged on that text, and refused', async ($, on) => {
+    const w = world(on)
+    const deny = denyOf(await $.agent.spawn(spawnInput(T('watson'), BRIEF.replace('- AC1: the field survives', `- ${AFTER_LINE}`))))
+    expect(deny).toContain(`- Acceptance: "- ${AFTER_LINE}" mentions mutation`)
+    expect(w.spawned).toEqual([])
+  })
+
+  test('a resume the mod has no kept type for is judged by the type it carries', async ($, on) => {
+    const w = world(on)
+    const deny = denyOf(await $.agent.spawn(resume(T('holmes-index'), 'Run a mutation pass.', 'agent-elsewhere')))
+    expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a message to a Holmes ${HEAD}`)
+    expect(w.spawned).toEqual([])
+  })
+
+  test('the kept type wins over the type the resume carries', async ($, on) => {
+    const w = world(on)
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    const deny = denyOf(await $.agent.spawn(resume('general-purpose', 'Run a mutation pass.')))
+    expect(deny?.split('\n')[0]).toBe(`🛑 Blocked: a message to a Watson ${HEAD}`)
+    expect(w.spawned).toHaveLength(1)
+  })
+
+  test('a resume of an agent outside Watson and Holmes is not judged', async ($, on) => {
+    const w = world(on)
+    for (const type of ['general-purpose', T('lestrade')]) {
+      expect(denyOf(await $.agent.spawn(resume(type, 'Run a mutation pass.', `agent-${type}`)))).toBeUndefined()
+    }
+    expect(w.spawned).toHaveLength(2)
+  })
+
+  type Sent = { isDelivered: boolean; reason?: string }
+  const sendWorld = (on: Plugin['on'], agents: Parameters<typeof world>[1]['agents']) => {
+    const w = world(on, { agents })
+    const sent: string[] = []
+    on('session.send', async ($, e) => {
+      sent.push(e.text)
+      return { isDelivered: true }
+    })
+    return { w, sent }
+  }
+  const FINISHED = [
+    { id: 'agent-w', type: T('watson-direct'), status: 'completed', name: 'fixer', teammateId: 'fixer@crew' },
+    { id: 'agent-h', type: T('holmes-local'), status: 'completed' },
+    { id: 'agent-g', type: 'general-purpose', status: 'completed', name: 'helper' },
+  ]
+
+  for (const [to, agent] of [
+    ['agent-w', 'Watson'],
+    ['fixer', 'Watson'],
+    ['fixer@crew', 'Watson'],
+    ['agent-h', 'Holmes'],
+  ] as const) {
+    test(`a banned correction sent to the finished ${agent} at "${to}" is refused before it is queued, and the sender reads that nothing resumed`, async ($, on) => {
+      const { sent } = sendWorld(on, FINISHED)
+      const answer = (await $.session.send({ to, text: 'Check that the test fails when the guard is removed.' })) as Sent
+      expect(answer.isDelivered).toBe(false)
+      expect(answer.reason?.split('\n')[0]).toBe(`🛑 Blocked: a message to a ${agent} ${HEAD}`)
+      expect(answer.reason).toContain(NOT_RESUMED)
+      expect(sent).toEqual([])
+    })
+  }
+
+  test('a short correction sent to a finished Watson is delivered', async ($, on) => {
+    const { sent } = sendWorld(on, FINISHED)
+    const answer = (await $.session.send({ to: 'fixer', text: CORRECTION })) as Sent
+    expect(answer.isDelivered).toBe(true)
+    expect(sent).toEqual([CORRECTION])
+  })
+
+  test('a banned message to an agent outside Watson and Holmes, or to an address no agent holds, is delivered', async ($, on) => {
+    const { sent } = sendWorld(on, FINISHED)
+    for (const to of ['helper', 'other-session']) {
+      expect(((await $.session.send({ to, text: 'Run a mutation pass.' })) as Sent).isDelivered).toBe(true)
+    }
+    expect(sent).toHaveLength(2)
+  })
+
+  test('a banned message is refused when the agent list cannot be read', async ($, on) => {
+    const { sent } = sendWorld(on, new Error('list unreadable'))
+    const answer = (await $.session.send({ to: 'fixer', text: 'Run a mutation pass.' })) as Sent
+    expect(answer.isDelivered).toBe(false)
+    expect(answer.reason?.split('\n')[0]).toBe(`🛑 Blocked: a message to a Watson or Holmes ${HEAD}`)
+    expect(sent).toEqual([])
+  })
+
+  test('a send to a Watson the mod started is judged by its kept type when the list names another', async ($, on) => {
+    const { w, sent } = sendWorld(on, [{ id: 'agent-1', type: 'general-purpose', status: 'completed' }])
+    await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    const answer = (await $.session.send({ to: 'agent-1', text: 'Run a mutation pass.' })) as Sent
+    expect(answer.isDelivered).toBe(false)
+    expect(sent).toEqual([])
+    expect(w.spawned).toHaveLength(1)
+  })
+})
+
+describe("the unit rule reads workbench-core's criteria count", () => {
+  const SEVEN = BRIEF.replace('- AC1: the field survives', ['1', '2', '3', '4', '5', '6', '7'].map(n => `- AC${n}: the field survives case ${n}`).join('\n'))
+  const counted = (check: Record<string, unknown>) => {
+    const read: string[] = []
+    return { read, briefCheck: (prompt: string) => (read.push(prompt), { isComplete: true, missing: [], shape: 'brief', ...check }) }
+  }
+
+  for (const [caller, extra] of [
+    ['the main session', {}],
+    ['a sub-agent', { parentAgentId: 'agent-parent' }],
+  ] as const) {
+    test(`a Watson brief with 7 criteria and no unit from ${caller} is refused, and the refusal says how it counted and how to cut a unit`, async ($, on) => {
+      const check = counted({ criteria: 7 })
+      const w = world(on, { briefCheck: check.briefCheck })
+      const result = (await $.agent.spawn(spawnInput(T('watson'), SEVEN, extra))) as { deny?: string }
+      expect(w.spawned).toEqual([])
+      expect(check.read).toEqual([SEVEN])
+      const deny = result.deny ?? ''
+      expect(deny.split('\n')[0]).toBe('🛑 Blocked: a Watson Direct-mode dispatch whose brief carries 7 acceptance criteria and names no unit.')
+      expect(deny).toContain('Unit rule (workbench-dev-team).')
+      expect(deny).toContain('one per top-level list item, or one per non-blank line when the slot holds no list')
+      expect(deny).toContain('"Unit: 2 of 4, the focus ring. Meets AC3, AC4."')
+      expect(deny).toContain('Write each criterion as a bullet')
+    })
+  }
+
+  test('a Watson brief with a unit passes after core reads it, and a Holmes brief passes with no read', async ($, on) => {
+    const check = counted({ criteria: 7, unit: '1 of 2, the parser. Meets AC1, AC2.' })
+    const w = world(on, { briefCheck: check.briefCheck })
+    const prompt = `${SEVEN}\nUnit: 1 of 2, the parser. Meets AC1, AC2.`
+    const result = await $.agent.spawn(spawnInput(T('watson'), prompt))
+    expect(result).toMatchObject({ agentId: 'agent-1' })
+    expect(check.read).toEqual([prompt])
+    await $.agent.spawn(spawnInput(T('holmes'), SEVEN))
+    expect(check.read).toEqual([prompt])
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct'), T('holmes-local')])
+  })
+
+  test('an Item ID token goes through, even on a check that reports 7 criteria', async ($, on) => {
+    const check = counted({ criteria: 7 })
+    const w = world(on, { briefCheck: check.briefCheck })
+    await $.agent.spawn(spawnInput(T('watson'), 'Item ID: 42'))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-index')])
+    expect(check.read).toEqual([])
+  })
+
+  test('a brief-shaped check with no criteria count refuses the dispatch as one the spawn rules could not judge', async ($, on) => {
+    const check = { read: [] as string[], briefCheck: (prompt: string) => (check.read.push(prompt), { isComplete: true, missing: [], shape: 'brief' }) }
+    const w = world(on, { briefCheck: check.briefCheck })
+    const result = (await $.agent.spawn(spawnInput(T('watson'), BRIEF))) as { deny?: string }
+    expect(check.read).toEqual([BRIEF])
+    expect(w.spawned).toEqual([])
+    expect(result.deny?.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch the dev-team spawn rules could not judge.')
+  })
+
+  test('a Watson brief within the limit passes on the default stand-in, which reports a criteria count as the pinned core does', async ($, on) => {
+    const w = world(on)
+    const result = await $.agent.spawn(spawnInput(T('watson'), BRIEF))
+    expect(result).toMatchObject({ agentId: 'agent-1' })
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('watson-direct')])
+  })
+
+  test('a check that fails refuses the dispatch as one the spawn rules could not judge', async ($, on) => {
+    const w = world(on, { briefCheck: () => new Error('core failed') })
+    const result = (await $.agent.spawn(spawnInput(T('watson'), SEVEN))) as { deny?: string }
+    expect(w.spawned).toEqual([])
+    expect(result.deny?.split('\n')[0]).toBe('🛑 Blocked: an Agent dispatch the dev-team spawn rules could not judge.')
   })
 })

@@ -249,8 +249,14 @@ section|orchestrate|### Must omit
 section|orchestrate|### When a brief comes back
 phrase|orchestrate|Units that share files run one at a time, the short unit first.
 phrase|orchestrate|land it with `git merge --no-ff` on the feature branch, never a cherry-pick, rebase or reset
+phrase|orchestrate|If the repo has an origin to production code, ask before each unit commit and each unit merge, one question each.
 phrase|orchestrate|A merge into the default branch and every push still ask the human.
 phrase|orchestrate|Never merge two units into one brief
+phrase|orchestrate|**Cut the task into its smallest units before the first dispatch,** one brief per unit
+phrase|orchestrate|Unit: <optional: this dispatch's one step>
+phrase|orchestrate|`Unit: 2 of 4, the focus ring. Meets AC3, AC4.` The full criteria list may stay in `Acceptance:` for context.
+phrase|orchestrate|There is no length limit on the reasoning in `Context:`
+phrase|orchestrate|It does not cover how much work one brief asks for
 phrase|orchestrate|**New work gets its own dispatch.** Never SendMessage new work to a running agent
 phrase|orchestrate|A brief is an investigation or a bounded change, never both.
 phrase|orchestrate|A first line of `SKIP`

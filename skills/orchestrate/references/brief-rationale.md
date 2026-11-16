@@ -66,6 +66,10 @@ rules for the flow:
 - A sub-agent never commits. So the orchestrator commits each unit in its own
   tree, after Holmes's review. No other agent writes in that tree, so the
   commit holds that unit's work and nothing else.
+- A unit from a repo with an origin to production code asks before its commit
+  and before its merge. Mike, 2026-11-16: "if a ledger-unit has an origin to
+  the production repo or code, then it should ask." Eleven units had landed on
+  a shared feature branch with no question, and he never approved them.
 - Units land as merge commits. Mike forbids cherry-pick, rebase and reset,
   because he never rewrites history and always adds on top.
 
@@ -225,8 +229,16 @@ not.
 
 ## Why no length limit is stated on the brief
 
-**Rule it explains:** the brief has no stated length limit; the must-omit list
-carries that job alone.
+**Rule it explains:** the reasoning in a brief's `Context:` has no stated
+length limit; the must-omit list carries that job alone.
+
+**It never covered how much work one brief asks for.** The sentence "There is
+no length limit" was read as permission to load one brief with a whole feature.
+A brief that carried 17 criteria ran far longer than any brief with 6 or fewer,
+which all finished in 10 minutes or less. So the orchestrator cuts the task
+into its smallest units first, and each brief delivers one, named on its
+`Unit:` line. The criteria list may stay long: it is context, and the `Unit:`
+line says which criteria this dispatch meets.
 
 Earlier versions of this template stated one, and it was measuring the wrong
 thing. Length was only ever a proxy for prescriptiveness, and a poor one: prose

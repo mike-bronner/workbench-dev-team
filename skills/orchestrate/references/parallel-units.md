@@ -8,6 +8,29 @@ steps and the exact lines workbench-core's provisioning guard accepts.
 provisioning ledger (commit 7ef2854). An older core refuses every create, and
 same-repo units then run one at a time.
 
+## Cut the task into units first
+
+Before the first dispatch, cut the task into its smallest units. A unit is one
+step that one brief delivers, with its own criteria and its own files. When
+`/workbench-core:intake` ended with a unit list, start from it: each unit there
+carries its criteria, its files, and whether it runs in parallel or in order.
+Otherwise cut the units yourself from the criteria.
+
+Dispatch each unit on its own brief. Its `Unit:` line names the step and the
+criteria it meets, such as `Unit: 2 of 4, the focus ring. Meets AC3, AC4.`, and
+`Acceptance:` may keep the whole task's criteria for context. This holds for
+every task, one repo or many. The rest of this file covers same-repo units.
+
+**Size each dispatched task to finish within about 10 minutes.** This is a
+strong recommendation, not a hard limit, and it holds for every dispatch,
+a review and a final suite run included. A dev-team agent runs every Bash
+command in the foreground, inside its own turn: the dev-team mod refuses its
+`run_in_background`, and the Bash tool cuts a foreground command off at
+600000 ms. So never ask an agent for a background command. When a task looks
+longer, cut it smaller: fewer criteria, fewer files, or a narrower test run.
+When the task holds a run that may pass 10 minutes, such as a large suite,
+say in the brief how to split it into parts that each finish within the limit.
+
 ## When work splits into units
 
 Same-repo work splits into parallel units when each unit:
@@ -26,14 +49,36 @@ last unit lands.
 ## Who does what
 
 - **The main session provisions, commits, lands and cleans up.** It does each
-  step itself, with no question to the human, for the units it dispatched and
-  for no other. The guard holds this rule: it accepts a database create, a
-  worktree remove, a database drop and the unit commit with no question only
-  for a unit that this session recorded in the ledger.
+  step itself, for the units it dispatched and for no other. It provisions and
+  cleans up with no question to the human. The guard holds this rule: it
+  accepts a database create, a worktree remove and a database drop with no
+  question only for a unit that this session recorded in the ledger.
+- **A unit from a repo with an origin to production code asks before it
+  commits and before it lands.** See "Production origin" below. Only a unit
+  from a repo with no such origin commits and lands with no question.
 - **A sub-agent provisions nothing and commits nothing.** Watson works in the
   unit worktree his brief names, and reports a need for anything else.
 - **Holmes reviews each unit in its own tree**, on a Local-mode brief whose
   `Workdir:` is the unit worktree.
+
+## Production origin
+
+Mike's rule, from 2026-11-16: "if a ledger-unit has an origin to the
+production repo or code, then it should ask." A unit cut from such a repo is
+not a throwaway, so its commit and its merge each need the human's pick.
+
+- **Check the origin before the first unit's add.** Run
+  `git -C <project folder> remote get-url origin`. Any remote named `origin`,
+  wherever it points, is an origin to production code. workbench-core's
+  commit gate uses the same definition.
+- **When you cannot read the remote, treat the repo as production.** Only a
+  repo that git confirms has no remote named `origin` keeps the free path.
+- **Ask before each step, one `AskUserQuestion` each.** Before the commit,
+  name the unit tree, its branch and the message. After the commit lands, ask
+  about the merge, and name the unit branch and the branch it lands on.
+  workbench-core's commit gate decides what each answer allows.
+- **A repo with no such origin keeps the free path.** Its unit commit and its
+  merge onto the feature branch need no question.
 
 ## Names
 
@@ -80,13 +125,15 @@ goes to the guard's ordinary rules, which refuse it.
    goes back to that unit's Watson, and the review repeats.
 5. **Commit the unit after Holmes's review.** Run `git -C <path> add -A` on its
    own line, then `git -C <path> commit -m <message>` or `-F <file>`, with HEAD
-   on the unit branch. The commit needs no question. Never `cd <path> &&`, and
-   never `git -c`.
+   on the unit branch. In a repo with an origin to production code, ask before
+   the commit, as "Production origin" says. Otherwise the commit needs no
+   question. Never `cd <path> &&`, and never `git -c`.
 6. **Land the unit with a merge commit.** In the project folder, on the
-   feature branch, run `git merge --no-ff <unit branch>`. It needs no
-   question. Never cherry-pick, rebase or reset a unit onto the branch. A merge
-   that stops on a conflict means the units were not independent: stop, and ask
-   the human.
+   feature branch, run `git merge --no-ff <unit branch>`. In a repo with an
+   origin to production code, ask before the merge, as "Production origin"
+   says. Otherwise the merge needs no question. Never cherry-pick,
+   rebase or reset a unit onto the branch. A merge that stops on a conflict
+   means the units were not independent: stop, and ask the human.
 7. **Clean up the unit once it lands.**
    - `git worktree remove <path>`, with the same path as the add and without
      `--force`.
@@ -103,8 +150,7 @@ goes to the guard's ordinary rules, which refuse it.
    `Workdir: <project folder> (branch: <feature branch>, range: <base>...HEAD)`.
    Holmes reviews nothing in this run. He runs the full suite on the feature
    branch, and he skips the PR head check, because the run judges no PR.
-   The unit commits and merges needed no question. Ask the push question only
-   after this run comes back green.
+   Ask the push question only after this run comes back green.
 
 A merge into the default branch and every push still ask the human, as they do
 for any other work.

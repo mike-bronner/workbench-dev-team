@@ -1,67 +1,46 @@
-// Each dev-team agent's own scratch folder, as pure functions. hooks/register.ts
-// holds the hooks: tool.call points a bare mktemp at the folder, turn.complete
-// deletes the folder when the agent's run ends with no live child, and
-// session.end deletes every folder still recorded.
-//
-// A bare mktemp is one with no template and no directory option (`mktemp`,
-// `mktemp -d`, `mktemp -dq`), which lands in $TMPDIR, outside every scratch
-// root, and outlives the run. The rewrite adds a template inside the agent's
-// folder, so the folder holds every temporary file and folder the run made.
-//
-// Only a dev-team agent's line is pointed: a sub-agent of a dev-team type
-// (holmes-lens included), and the top-level loop of a `claude -p --agent` run
-// of one. The main session and every other agent keep mktemp as they wrote it.
-//
-// The rewrite is checked, never trusted. The line is read again after it, and
-// the rewrite stands only when every statement reads exactly as before, apart
-// from each bare mktemp gaining the one template word. Anything else (a mktemp
-// the text match missed, or one it found inside a quoted string or a heredoc)
-// leaves the line as it was written, which is how it ran before the mod.
-
 import type { ShellParse, Statement } from './review-guard'
 
-// mktemp's no-value options. -t, -p and --tmpdir name a directory, so a line
-// with any of them is not bare.
-const FLAGS = /^-[dqu]+$/
+const FLAGS = /^-[dqu]+$|^--(directory|quiet|dry-run)$/
+const VALUED = /^-[dqu]*([tp])(.*)$/
 
-export const isBareMktemp = (statement: Statement): boolean =>
-  statement.name === 'mktemp' &&
-  statement.nameAt === 0 &&
-  statement.wrappers.length === 0 &&
-  statement.assignments.length === 0 &&
-  statement.args.every(arg => FLAGS.test(arg))
+export function isBareMktemp(statement: Statement): boolean {
+  if (statement.name !== 'mktemp') return false
+  const { args } = statement
+  const templates: string[] = []
+  let folder: string | undefined
+  for (let i = 0; i < args.length; i++) {
+    const arg = args[i] ?? ''
+    const valued = VALUED.exec(arg)
+    if (arg === '--') {
+      templates.push(...args.slice(i + 1))
+      break
+    }
+    if (arg === '--tmpdir') folder = ''
+    else if (arg.startsWith('--tmpdir=')) folder = arg.slice('--tmpdir='.length)
+    else if (FLAGS.test(arg)) continue
+    else if (valued !== null) {
+      const value = valued[2] === '' ? (args[++i] ?? '') : (valued[2] ?? '')
+      if (valued[1] === 'p') folder = value
+    } else if (arg.startsWith('-')) return false
+    else templates.push(arg)
+  }
+  if (templates.length === 0) return !folder
+  return folder === '' && templates.some(template => !template.startsWith('/'))
+}
 
 export const hasBareMktemp = (parse: ShellParse): boolean => parse.statements.some(isBareMktemp)
 
-// The template a bare mktemp gains: the folder, quoted, and mktemp's X run.
 export const templateOf = (folder: string): string => `${folder}/tmp.XXXXXXXX`
 
-// A bare mktemp in the text: the name at a command boundary, its no-value
-// options, and then the end of the command, or a `#` comment after a space.
-const BARE = /(^|[\s;&|(`])mktemp((?:[ \t]+-[dqu]+)*)(?=[ \t]*(?:$|[;&|)`\n])|[ \t]+#)/gm
+export const scratchContextOf = (folder: string): string =>
+  `Your scratch folder for this run is ${folder}. Make a temporary folder with \`mktemp -d '${templateOf(folder)}'\`, and a temporary file with \`mktemp '${templateOf(folder)}'\`. The dev-team mod refuses a bare \`mktemp\`, and deletes this folder when your run ends.`
 
-// A folder the rewrite can quote: an absolute path of plain characters.
+export const mktempDeny = (folder: string | undefined): string =>
+  folder === undefined
+    ? 'A bare `mktemp` lands in $TMPDIR, outside every scratch root, so the dev-team mod refuses it. The mod could not make a scratch folder for this run. Make the folder with an explicit template under the session scratchpad or ~/Developer/scratchpad, such as `mktemp -d \'<root>/tmp.XXXXXXXX\'`, and delete it before you report, with `rm -rf` and its literal path, as a command of its own.'
+    : `A bare \`mktemp\` lands in $TMPDIR, outside your scratch folder, so the dev-team mod refuses it. Your scratch folder is ${folder}. Make a temporary folder with \`mktemp -d '${templateOf(folder)}'\`, and a temporary file with \`mktemp '${templateOf(folder)}'\`. The mod deletes the folder when your run ends.`
+
 const PLAIN_PATH = /^\/[A-Za-z0-9._@+\/-]+$/
-
-// The line with every bare mktemp the text match finds pointed at `folder`, or
-// undefined when there is nothing to point or the folder cannot be quoted.
-// The caller reads the result again and keeps it only when readsAsPointed.
-export function pointMktemp(line: string, folder: string): string | undefined {
-  if (!PLAIN_PATH.test(folder)) return undefined
-  const rewritten = line.replace(BARE, (_, lead: string, flags: string) => `${lead}mktemp${flags} '${templateOf(folder)}'`)
-  return rewritten === line ? undefined : rewritten
-}
-
-// Whether the rewritten line reads exactly as the line did, apart from each
-// bare mktemp gaining the template word: the same statements, the same words,
-// redirects, heredocs and unknowns, in the same order.
-export function readsAsPointed(before: ShellParse, after: ShellParse, folder: string): boolean {
-  const template = templateOf(folder)
-  if (!hasBareMktemp(before) || JSON.stringify(after.unknowns) !== JSON.stringify(before.unknowns)) return false
-  if (after.statements.length !== before.statements.length) return false
-  const expected = before.statements.map(s => (isBareMktemp(s) ? { ...s, words: [...s.words, template], args: [...s.args, template] } : s))
-  return after.statements.every((s, i) => JSON.stringify(s) === JSON.stringify(expected[i]))
-}
 
 // The scratch root an agent's folder goes in: the first of core's roots that
 // is not ~/.claude/plans, so the session scratchpad when there is one, and
