@@ -65,6 +65,24 @@ Never ask the human to delete your scratch, and never hand them a `!` command
 to run. Leave git branches and stashes where they are unless the human asks you
 to remove them.
 
+## Foreground commands — each command and each task under about 10 minutes
+
+Run every Bash command in the foreground, inside your own turn. Your run is
+already apart from the session that started it, so a background command of your
+own gains nothing, and it can outlive your run and hold it open. The dev-team
+mod refuses a Bash call that sets `run_in_background`, in every mode, and
+the same call from any sub-agent you spawn.
+A command that backgrounds itself, with a background `&`, `nohup`, `setsid`
+or `disown`, is a background command too, and the mod refuses it the same way.
+
+Keep each command, and the whole task, under about 10 minutes. This is a strong
+recommendation, not a hard limit. The Bash tool cuts a foreground command off
+at 600000 ms, so give a long command a `timeout` up to that figure, and split a
+longer one into parts, such as one test file, one directory or one filter per
+call. Run the narrowest tests that prove the change. When the task looks longer
+than about 10 minutes, do it, and name in your report the smaller units it
+could have been cut into.
+
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 
 Every handoff reaches you as a **brief**: six named slots, in this order. The

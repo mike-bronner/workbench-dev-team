@@ -1,3 +1,5 @@
+import type { ShellParse } from './review-guard'
+
 export type Child = { id: string; type: string; status: string; parentId?: string; name?: string; description: string }
 
 export type InFlight = { id: string; command?: string; description: string }
@@ -128,6 +130,61 @@ export function isTimer(command: string | undefined): boolean {
   const parts = command.split(/&&|\|\||;|\n/).map(part => part.trim()).filter(part => part !== '')
   return parts.some(part => /^sleep /.test(part)) && parts.every(part => !/[$`<>|&(){}\\[\]]/.test(part) && WAIT_PART.test(part))
 }
+
+export const isBackgroundAsked = (value: unknown): boolean => value !== undefined && value !== false && value !== 'false'
+
+const SELF_BACKGROUND: ReadonlySet<string> = new Set(['nohup', 'setsid', 'disown'])
+
+export const BACKGROUND_HINT = /&|nohup|setsid|disown/i
+
+export type Probe<T> = { separator: T; statement: T }
+
+export function probeLinesOf(line: string): Probe<string>[] {
+  const probes: Probe<string>[] = []
+  let quote: string | undefined
+  let depth = 0
+  for (let i = 0; i < line.length; i++) {
+    const c = line[i]
+    if (quote === "'") {
+      if (c === "'") quote = undefined
+      continue
+    }
+    if (c === '\\') {
+      i++
+      continue
+    }
+    if (c === '$' && line[i + 1] === '{') {
+      depth++
+      i++
+      continue
+    }
+    if (depth > 0) {
+      if (c === '{') depth++
+      else if (c === '}') depth--
+      continue
+    }
+    if (c === '"') quote = quote === '"' ? undefined : '"'
+    else if (c === "'" && quote === undefined) quote = "'"
+    if (c !== '&' || /[&|<>;]/.test(line[i - 1] ?? '') || /[&>]/.test(line[i + 1] ?? '')) continue
+    probes.push({ separator: `${line.slice(0, i)};${line.slice(i + 1)}`, statement: `${line.slice(0, i)};:;${line.slice(i + 1)}` })
+  }
+  return probes
+}
+
+const isSameReading = (a: ShellParse, b: ShellParse): boolean => JSON.stringify(a) === JSON.stringify(b)
+
+export function backgroundsItself(parse: ShellParse, probes: readonly Probe<ShellParse>[]): boolean {
+  if (parse.statements.some(s => SELF_BACKGROUND.has(s.name) || s.wrappers.some(wrapper => SELF_BACKGROUND.has(wrapper)))) return true
+  return probes.some(probe => isSameReading(probe.separator, parse) && !isSameReading(probe.statement, parse))
+}
+
+export const backgroundDeny = [
+  '🛑 Refused: a dev-team agent runs every Bash command in the foreground, so the dev-team mod refuses `run_in_background`, a background `&`, `nohup`, `setsid` and `disown`.',
+  '',
+  'workbench-dev-team. Your run is already apart from the session that started it, so a background command of your own gains nothing, and it can outlive your run and hold it open.',
+  'Run the command again in the foreground, with none of those, and set `timeout` up to 600000 ms, the foreground limit.',
+  'If the command needs longer than that, split it into parts that each finish within the limit, such as one test file, one directory or one filter per call.',
+].join('\n')
 
 export type CommandState = { id: string; pids?: string[] }
 

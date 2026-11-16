@@ -32,7 +32,7 @@ const subagentStop = (tasks: ReturnType<typeof inFlight>[]) =>
     agent_type: T('watson-direct'),
     background_tasks: tasks,
   }) as never
-const background = (command: string) => ({ tool: 'Bash', tool_use_id: 'toolu_1', description: 'd', command, run_in_background: true, agentId: 'agent-1' }) as never
+const taskIdBash = (command: string) => ({ tool: 'Bash', tool_use_id: 'toolu_1', description: 'd', command, agentId: 'agent-1' }) as never
 
 function engine(on: On, options: GuardOptions = {}): { w: World; seen: string[] } {
   const w = world(on, options)
@@ -129,7 +129,7 @@ describe('the helper-wait record the SubagentStop fallback reads', () => {
   test('with no marker, a dev-team agent records its helpers, its commands and their progress at each step', async ($, on) => {
     const w = await watsonRun($, on, [WATSON, HELPER, { id: 'agent-5', type: 'Explore', parentId: 'agent-2' }])
     w.background.push('b1')
-    await $.tool.call(background('npm test'))
+    await $.tool.call(taskIdBash('npm test'))
     await step($, 'agent-9')
     await step($, 'agent-1')
     expect(JSON.parse(w.files.get(SNAPSHOT) ?? 'null')).toEqual({
@@ -197,17 +197,17 @@ describe('AC2: from the record alone, stopBlockOf answers what the module answer
     expect(await rounds($, w, [], () => step($, 'agent-9'))).toEqual(['held', 'held', 'held', 'held'])
   })
 
-  test('a background command whose output grows holds every round', async ($, on) => {
+  test('a task-id command whose output grows holds every round', async ($, on) => {
     const w = await watsonRun($, on, [WATSON])
     w.background.push('b1')
-    await $.tool.call(background('npm test'))
+    await $.tool.call(taskIdBash('npm test'))
     expect(await rounds($, w, [inFlight('b1', 'npm test')], async round => void w.sizes.set('/tasks/b1.output', round + 1))).toEqual(['held', 'held', 'held', 'held'])
   })
 
-  test('a background command whose output stays the same is released after two holds', async ($, on) => {
+  test('a task-id command whose output stays the same is released after two holds', async ($, on) => {
     const w = await watsonRun($, on, [WATSON])
     w.background.push('b1')
-    await $.tool.call(background('npm test'))
+    await $.tool.call(taskIdBash('npm test'))
     w.sizes.set('/tasks/b1.output', 5)
     expect(await rounds($, w, [inFlight('b1', 'npm test')], async () => undefined)).toEqual(['held', 'held', 'released', 'ends'])
   })
@@ -220,7 +220,7 @@ describe('AC2: from the record alone, stopBlockOf answers what the module answer
   test('a background sleep holds nothing in either', async ($, on) => {
     const w = await watsonRun($, on, [WATSON])
     w.background.push('b1')
-    await $.tool.call(background('sleep 150'))
+    await $.tool.call(taskIdBash('sleep 150'))
     expect(await rounds($, w, [inFlight('b1', 'sleep 150')], async () => undefined)).toEqual(['ends', 'ends', 'ends', 'ends'])
   })
 

@@ -21,6 +21,16 @@ criteria it meets, such as `Unit: 2 of 4, the focus ring. Meets AC3, AC4.`, and
 `Acceptance:` may keep the whole task's criteria for context. This holds for
 every task, one repo or many. The rest of this file covers same-repo units.
 
+**Size each dispatched task to finish within about 10 minutes.** This is a
+strong recommendation, not a hard limit, and it holds for every dispatch,
+a review and a final suite run included. A dev-team agent runs every Bash
+command in the foreground, inside its own turn: the dev-team mod refuses its
+`run_in_background`, and the Bash tool cuts a foreground command off at
+600000 ms. So never ask an agent for a background command. When a task looks
+longer, cut it smaller: fewer criteria, fewer files, or a narrower test run.
+When the task holds a run that may pass 10 minutes, such as a large suite,
+say in the brief how to split it into parts that each finish within the limit.
+
 ## When work splits into units
 
 Same-repo work splits into parallel units when each unit:

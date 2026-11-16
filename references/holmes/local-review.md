@@ -549,7 +549,10 @@ verification, no Phase D, no verdict on the code, and no vault note.
 2. Discover the suite's entry point as §L4c says. Run every existing suite in
    the `Workdir:`, and the project's own test command with it, such as
    `claude plugin test` in a Claude Code plugin. Run them read-only, under
-   §L4c's limits.
+   §L4c's limits. Run each call in the foreground, within 600000 ms. Run a
+   large suite in parts, one suite, one test directory or one shard per call,
+   and report each part's pass count, as "Foreground commands" in
+   `agents/holmes.md` says.
 3. Report the result to the dispatching session, as prose, in one of three
    forms:
 

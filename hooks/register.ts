@@ -35,7 +35,7 @@ import {
 } from './mods/dispatch'
 import type { ModHook } from './mods/fallback'
 import { markerOf, sweepArgvsOf, waitFileOf } from './mods/fallback'
-import { handbackRefusalOf, holdersArgv, outputOf, pidsOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
+import { BACKGROUND_HINT, backgroundDeny, backgroundsItself, handbackRefusalOf, holdersArgv, isBackgroundAsked, outputOf, pidsOf, probeLinesOf, snapshotOf, stopBlockOf, withStarted } from './mods/helper-wait'
 import type { Activity, Watch } from './mods/helper-wait'
 import type { Disk, ShellParse } from './mods/review-guard'
 import { isReviewerType, judgeWrites, refusalOf, reviewBash, reviewEdit } from './mods/review-guard'
@@ -119,6 +119,35 @@ async function runOf($: EngineInterface, agentId: string | undefined): Promise<R
   return (await $.workbench.callerLane({})) === 'top-level-agent' ? { type, key: 'run' } : undefined
 }
 
+async function descendantRunOf($: EngineInterface, agentId: string): Promise<Run | undefined> {
+  const agents = await $.agent.list()
+  const self = agents.find(agent => agent.id === agentId)
+  if (self === undefined) return undefined
+  const seen = new Set([agentId])
+  for (let id = self.parentId; ; ) {
+    if (id === undefined) return isDevTeamType(await $.env.get('CLAUDE_CODE_AGENT')) ? { type: self.type, key: agentId } : undefined
+    if (seen.has(id)) return undefined
+    seen.add(id)
+    const { value: kept } = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id })
+    const parent = agents.find(agent => agent.id === id)
+    if (isDevTeamType(kept ?? parent?.type)) return { type: self.type, key: agentId }
+    if (parent === undefined) return undefined
+    id = parent.parentId
+  }
+}
+
+async function runOrDescendantOf($: EngineInterface, agentId: string | undefined): Promise<Run | undefined> {
+  const run = await runOf($, agentId)
+  return run !== undefined || agentId === undefined ? run : descendantRunOf($, agentId)
+}
+
+async function namesDevTeam($: EngineInterface, agentId: string | undefined): Promise<boolean> {
+  if (isDevTeamType(await $.env.get('CLAUDE_CODE_AGENT').catch(() => undefined))) return true
+  if (agentId === undefined) return false
+  const kept = await $.state.get({ plugin: 'workbench-dev-team', key: 'agentType', id: agentId }).catch(() => undefined)
+  return isDevTeamType(kept?.value)
+}
+
 // The type of the loop a spawn happens in: the top-level `--agent` type, or
 // none, for a main-loop spawn; the type the mod kept, or the one
 // $.agent.list() gives, for a sub-agent's. Undefined when it cannot be told.
@@ -188,12 +217,29 @@ async function endSession($: EngineInterface, budget: { remainingMs: number }): 
   if (removed?.exitCode === 0) await recordFolder($, sweep.doomed, 'remove')
 }
 
-async function mktempRefusalOf($: EngineInterface, agentId: string | undefined, line: string): Promise<string | undefined> {
-  if (!line.includes('mktemp')) return undefined
-  const run = await runOf($, agentId).catch(() => undefined)
-  if (run === undefined) return undefined
-  const folder = await scratchFolderOf($, run).catch(() => undefined)
-  return hasBareMktemp(await $.workbench.parseShell(line)) ? mktempDeny(folder) : undefined
+async function backgroundsItselfOf($: EngineInterface, line: string, parse: ShellParse): Promise<boolean> {
+  const probes = await Promise.all(
+    probeLinesOf(line).map(async probe => ({ separator: await $.workbench.parseShell(probe.separator), statement: await $.workbench.parseShell(probe.statement) })),
+  )
+  return backgroundsItself(parse, probes)
+}
+
+async function bashRefusalOf($: EngineInterface, call: { agentId?: string; command?: unknown; run_in_background?: unknown }): Promise<string | undefined> {
+  const line = typeof call.command === 'string' ? call.command : ''
+  const isAsked = isBackgroundAsked(call.run_in_background)
+  const isHinted = BACKGROUND_HINT.test(line)
+  const isMktemp = line.includes('mktemp')
+  if (!isAsked && !isHinted && !isMktemp) return undefined
+  const run = await runOrDescendantOf($, call.agentId).then(
+    found => ({ found }),
+    () => undefined,
+  )
+  if (run === undefined ? !(await namesDevTeam($, call.agentId)) : run.found === undefined) return undefined
+  if (isAsked) return backgroundDeny
+  const folder = isMktemp && run?.found !== undefined ? await scratchFolderOf($, run.found).catch(() => undefined) : undefined
+  const parse = await $.workbench.parseShell(line)
+  if (isHinted && (await backgroundsItselfOf($, line, parse))) return backgroundDeny
+  return isMktemp && run?.found !== undefined && hasBareMktemp(parse) ? mktempDeny(folder) : undefined
 }
 
 async function scratchContextFor($: EngineInterface, run: Run | undefined): Promise<string | undefined> {
@@ -863,7 +909,7 @@ export const register: Register = (on, options) => {
         return result
       }
       if (e.tool === 'Bash' || e.tool === 'Edit' || e.tool === 'Write' || e.tool === 'NotebookEdit') {
-        const deny = (await guard($, e)) ?? (e.tool === 'Bash' && typeof e.command === 'string' ? await mktempRefusalOf($, e.agentId, e.command) : undefined)
+        const deny = (await guard($, e)) ?? (e.tool === 'Bash' ? await bashRefusalOf($, e as { agentId?: string; command?: unknown; run_in_background?: unknown }) : undefined)
         if (deny !== undefined) return { deny }
         const result = await next(e)
         if (e.tool === 'Bash') await recordStarted($, e.agentId, result).catch(() => undefined)

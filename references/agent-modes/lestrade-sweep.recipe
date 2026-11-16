@@ -12,6 +12,7 @@ section: # Inspector Lestrade — Triage Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
 section: ## Scratch folders — a template in your own folder, deleted when your run ends
+section: ## Foreground commands — each command and each task under about 10 minutes
 section: ## Input contract
 skip: ### Routing by the token
 skip: ### Item mode input

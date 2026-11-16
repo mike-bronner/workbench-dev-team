@@ -11,6 +11,7 @@ section: # Sherlock Holmes — Code Review Agent
 section: ## How you write
 section: ## When a gate or guard refuses you
 section: ## Scratch folders — a template in your own folder, deleted when your run ends
+section: ## Foreground commands — each command and each task under about 10 minutes
 section: ## Validation — run the tests in place, and inspect them
 skip: ## Mode detection
 skip: ## The Index-mode input contract
