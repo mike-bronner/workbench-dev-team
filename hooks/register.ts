@@ -48,6 +48,7 @@ import type { CallerLane, ResumedAgent } from './mods/spawn'
 import {
   CONFIG_MODES,
   DEFAULT_BRANCHES,
+  UNIT_GATED,
   branchDeny,
   branchUnreadDeny,
   briefDeny,
@@ -66,6 +67,7 @@ import {
   resumedAgentOf,
   resumedAgentOfRead,
   spawnFailedDeny,
+  unitRefusalOf,
   withConfigLine,
   workdirOf,
 } from './mods/spawn'
@@ -806,6 +808,10 @@ export const register: Register = (on, options) => {
     }
     const mutationRefusal = routed === undefined ? undefined : mutationRefusalOf(routed.subagentType, routed.prompt)
     if (mutationRefusal !== undefined) return { deny: mutationRefusal }
+    if (routed?.subagentType === UNIT_GATED) {
+      const unitRefusal = unitRefusalOf(routed.subagentType, await $.workbench.briefCheck(routed.prompt))
+      if (unitRefusal !== undefined) return { deny: unitRefusal }
+    }
     if (routed?.subagentType === DIGEST_MODE) routed = { ...routed, prompt: await withDigestNotice($, routed.prompt) }
     const routedOrInput = routed ?? input
     const spawned = backgrounded.has(e.tool_use_id) ? { ...routedOrInput, background: true } : routedOrInput

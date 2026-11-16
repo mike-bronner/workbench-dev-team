@@ -78,7 +78,10 @@ dispatch (`references/parallel-units.md`).
 on a line of its own, such as `Unit: 2 of 4, the focus ring. Meets AC3, AC4.`:
 the unit's place in the task, what it delivers, and the criteria it meets. The
 full criteria list may stay in `Acceptance:` for context. A brief with no
-`Unit:` line stays valid.
+`Unit:` line stays valid, with one exception. The mod refuses a Watson
+Direct-mode brief that carries more than 6 criteria and no `Unit:` line, by
+workbench-core's count: one per top-level list item, or one per line when
+`Acceptance:` holds no list. Holmes briefs and dispatch tokens are exempt.
 
 ## Watson and Holmes briefs carry the no-mutation line
 
