@@ -257,7 +257,7 @@ export function world(
         orchestratorIsOn: async () => answer(w.isOn),
         callerLane: async (args: { agentId?: string }) => answer(w.lane(args.agentId)),
         parseShell: async (line: string) => (options.parseFails ? Promise.reject(new Error('unreadable')) : (options.reader ?? readPlain)(line)),
-        briefCheck: async (prompt: string) => answer(options.briefCheck?.(prompt) ?? { isComplete: true, missing: [], shape: 'brief' }),
+        briefCheck: async (prompt: string) => answer(options.briefCheck?.(prompt) ?? { isComplete: true, missing: [], shape: 'brief', criteria: 1 }),
       },
     } as never
   })

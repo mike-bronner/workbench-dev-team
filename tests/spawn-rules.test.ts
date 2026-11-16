@@ -1,7 +1,7 @@
 import { describe, expect, test } from 'claude-code/testing'
 import type { Plugin } from 'claude-code/testing'
 
-import { configLineOf, configTextOf, isGated, isHolmesMode, knobsOf, lensSpawnOf, mutationDeny, mutationFindingsOf, unitDeny, unitRefusalOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
+import { configLineOf, configTextOf, isGated, isHolmesMode, knobsOf, lensSpawnOf, mutationDeny, mutationFindingsOf, spawnFailedDeny, unitDeny, unitRefusalOf, withConfigLine, workdirOf } from '../hooks/mods/spawn'
 import type { RunAnswer } from './world'
 import { BRIEF, spawnInput, world } from './world'
 
@@ -715,26 +715,30 @@ describe('mutationDeny — the refusal text', () => {
 
 describe("unitRefusalOf — the unit rule on workbench-core's count", () => {
   const brief = (check: Record<string, unknown>) => ({ shape: 'brief', ...check })
-  for (const [label, type, check, isRefused] of [
-    ['criteria 7 and no unit', T('watson-direct'), brief({ criteria: 7 }), true],
-    ['criteria 6 and no unit', T('watson-direct'), brief({ criteria: 6 }), false],
-    ['criteria 7 and a unit', T('watson-direct'), brief({ criteria: 7, unit: '1 of 2, the parser. Meets AC1.' }), false],
-    ['criteria 7 and an empty unit', T('watson-direct'), brief({ criteria: 7, unit: '' }), false],
-    ['criteria 7 on an item-id shape', T('watson-direct'), { shape: 'item-id', criteria: 7 }, false],
-    ['criteria 7 on a repo-sweep shape', T('watson-direct'), { shape: 'repo-sweep', criteria: 7 }, false],
-    ['criteria 7 on a blank shape', T('watson-direct'), { shape: 'blank', criteria: 7 }, false],
-    ['no criteria field', T('watson-direct'), brief({}), false],
-    ['a non-numeric criteria', T('watson-direct'), brief({ criteria: '7' }), false],
-    ['criteria 7 and no unit', T('holmes'), brief({ criteria: 7 }), false],
-    ['criteria 7 and no unit', T('holmes-local'), brief({ criteria: 7 }), false],
-    ['criteria 7 and no unit', T('holmes-index'), brief({ criteria: 7 }), false],
-    ['criteria 7 and no unit', T('watson-index'), brief({ criteria: 7 }), false],
-    ['criteria 7 and no unit', T('watson'), brief({ criteria: 7 }), false],
+  for (const [label, type, check, refusal] of [
+    ['criteria 7 and no unit', T('watson-direct'), brief({ criteria: 7 }), 'unit'],
+    ['criteria 6 and no unit', T('watson-direct'), brief({ criteria: 6 }), undefined],
+    ['criteria 7 and a unit', T('watson-direct'), brief({ criteria: 7, unit: '1 of 2, the parser. Meets AC1.' }), undefined],
+    ['criteria 7 and an empty unit', T('watson-direct'), brief({ criteria: 7, unit: '' }), undefined],
+    ['criteria 7 on an item-id shape', T('watson-direct'), { shape: 'item-id', criteria: 7 }, undefined],
+    ['criteria 7 on a repo-sweep shape', T('watson-direct'), { shape: 'repo-sweep', criteria: 7 }, undefined],
+    ['criteria 7 on a blank shape', T('watson-direct'), { shape: 'blank', criteria: 7 }, undefined],
+    ['no criteria on an item-id shape', T('watson-direct'), { shape: 'item-id' }, undefined],
+    ['no criteria on a blank shape', T('watson-direct'), { shape: 'blank' }, undefined],
+    ['no criteria field', T('watson-direct'), brief({}), 'fault'],
+    ['no criteria field and a unit', T('watson-direct'), brief({ unit: '1 of 2, the parser. Meets AC1.' }), 'fault'],
+    ['a non-numeric criteria', T('watson-direct'), brief({ criteria: '7' }), 'fault'],
+    ['a fractional criteria', T('watson-direct'), brief({ criteria: 7.5 }), 'fault'],
+    ['a NaN criteria', T('watson-direct'), brief({ criteria: Number.NaN }), 'fault'],
+    ['no criteria field', T('holmes-local'), brief({}), undefined],
+    ['criteria 7 and no unit', T('holmes'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('holmes-local'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('holmes-index'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('watson-index'), brief({ criteria: 7 }), undefined],
+    ['criteria 7 and no unit', T('watson'), brief({ criteria: 7 }), undefined],
   ] as const) {
-    test(`${label} on ${type} is ${isRefused ? 'refused' : 'let through'}`, () => {
-      const refusal = unitRefusalOf(type, check as never)
-      if (isRefused) expect(refusal).toBe(unitDeny(7))
-      else expect(refusal).toBeUndefined()
+    test(`${label} on ${type} is ${refusal === undefined ? 'let through' : refusal === 'unit' ? 'refused by the unit rule' : 'refused as a check core broke'}`, () => {
+      expect(unitRefusalOf(type, check as never)).toBe(refusal === undefined ? undefined : refusal === 'unit' ? unitDeny(7) : spawnFailedDeny())
     })
   }
 

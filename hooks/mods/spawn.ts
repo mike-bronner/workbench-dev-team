@@ -446,8 +446,9 @@ export function unitDeny(criteria: number): string {
 }
 
 export function unitRefusalOf(subagentType: string, check: UnitCheck): string | undefined {
-  if (subagentType !== UNIT_GATED || check.shape !== 'brief' || check.unit !== undefined) return undefined
-  return typeof check.criteria === 'number' && check.criteria > UNIT_CRITERIA_LIMIT ? unitDeny(check.criteria) : undefined
+  if (subagentType !== UNIT_GATED || check.shape !== 'brief') return undefined
+  if (typeof check.criteria !== 'number' || !Number.isInteger(check.criteria)) return spawnFailedDeny()
+  return check.unit === undefined && check.criteria > UNIT_CRITERIA_LIMIT ? unitDeny(check.criteria) : undefined
 }
 
 export type ResumeFindings = { voidingItems: string[]; bannedItems: string[] }
