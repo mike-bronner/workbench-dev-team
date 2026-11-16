@@ -247,12 +247,12 @@ for (const line of [
   "cat <<'EOF'\nnohup x &\nEOF",
   "grep -E 'a&b' file",
   'curl "https://x.test/?a=1&b=2"',
-  'echo ${x//&/and}',
-  'out=${v/a/&}',
   'echo "${x//&/and}"',
-  'echo ${x:-${y//&/and}}',
 ]) {
   check(!backgrounds(line), `foreground: ${show(line)}`)
+}
+for (const line of ['echo ${x//&/and}', 'out=${v/a/&}', 'echo ${x:-${y//&/and}}']) {
+  check(backgrounds(line), `refused until core's reader reads \${...} (fix/shell-parameter-expansion), then move to foreground: ${show(line)}`)
 }
 close()
 

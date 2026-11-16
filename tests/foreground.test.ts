@@ -252,11 +252,14 @@ describe('foreground — the pure rule', () => {
     expect([undefined, false, 'false'].map(isBackgroundAsked)).toEqual([false, false, false])
   })
 
-  test('probeLinesOf skips an & inside ${...}, and still probes one after it', () => {
-    expect(probeLinesOf('echo ${x//&/and}')).toEqual([])
-    expect(probeLinesOf('out=${v/a/&}')).toEqual([])
-    expect(probeLinesOf('echo ${x:-${y//&/and}}')).toEqual([])
-    expect(probeLinesOf('echo ${x//&/and} &')).toEqual([{ separator: 'echo ${x//&/and} ;', statement: 'echo ${x//&/and} ;:;' }])
-    expect(probeLinesOf("echo '${' & b")).toEqual([{ separator: "echo '${' ; b", statement: "echo '${' ;:; b" }])
+  test("probeLinesOf probes every lone &, inside ${...} and quotes too, and leaves the reading to core's reader", () => {
+    expect(probeLinesOf('echo ${x//&/and}')).toEqual([{ separator: 'echo ${x//;/and}', statement: 'echo ${x//;:;/and}' }])
+    expect(probeLinesOf('out=${v/a/&}')).toEqual([{ separator: 'out=${v/a/;}', statement: 'out=${v/a/;:;}' }])
+    expect(probeLinesOf("echo 'a & b'")).toEqual([{ separator: "echo 'a ; b'", statement: "echo 'a ;:; b'" }])
+    expect(probeLinesOf('echo ${x//&/and} &')).toEqual([
+      { separator: 'echo ${x//;/and} &', statement: 'echo ${x//;:;/and} &' },
+      { separator: 'echo ${x//&/and} ;', statement: 'echo ${x//&/and} ;:;' },
+    ])
+    expect(probeLinesOf('a && b 2>&1 &> f |& c >& d &>> e')).toEqual([])
   })
 })
