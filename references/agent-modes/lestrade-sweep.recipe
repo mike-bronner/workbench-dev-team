@@ -35,6 +35,7 @@ skip: ### 1. Fetch the item
 skip: ### 2. Read the issue
 skip: ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
 skip: ### 3. Inspect the codebase
+skip: ### 3.5. Check for prior work — escalate an issue that already shipped, duplicates another, or goes against an ADR
 skip: ### 4. Generate acceptance criteria
 skip: ### 4.5. Right-size to the coherent unit of work — widen within one PR, escalate beyond it
 skip: ### 4.6. Adversarially verify the acceptance criteria

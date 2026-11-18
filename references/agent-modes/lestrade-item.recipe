@@ -37,6 +37,7 @@ section: ### 1. Fetch the item
 section: ### 2. Read the issue
 section: ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
 section: ### 3. Inspect the codebase
+section: ### 3.5. Check for prior work — escalate an issue that already shipped, duplicates another, or goes against an ADR
 section: ### 4. Generate acceptance criteria
 section: ### 4.5. Right-size to the coherent unit of work — widen within one PR, escalate beyond it
 section: ### 4.6. Adversarially verify the acceptance criteria

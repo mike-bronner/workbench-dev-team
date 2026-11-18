@@ -104,7 +104,7 @@ for rel in ("agents/lestrade.md", "agents/lestrade-item.md"):
     move = section(text, MOVE)
     where = f"{rel} step 7"
     require(where, move, [
-        "**Normal case → Backlog**, when step 4.5 raised no Tier-1 flag and step 4.7 found no rule:",
+        "**Normal case → Backlog**, when step 3.5 found no match, step 4.5 raised no Tier-1 flag and step 4.7 found no rule:",
         "If step 4.7 found a needs-a-human rule → Escalated.",
         "The item now carries its AC and a WSJF score",
         "<!-- lestrade-needs-a-human -->",
@@ -117,8 +117,13 @@ for rel in ("agents/lestrade.md", "agents/lestrade-item.md"):
         "Give two or more options",
         "Stop here, unless step 4.7 also found a rule (below).",
         "post both comments, then move the item once.",
+        "**Check every move's response.** If `ok` is not `true`, read the error, fix it, and retry the move",
+        "skip a match or a rule only when Mike answered its comment",
     ])
     comment = move[move.find("<!-- lestrade-needs-a-human -->"):]
+    require(f"{where} needs-a-human comment", comment, [
+        "Reply on this issue with your option number. Moving the item back without a reply does not record a decision.",
+    ])
     order = [comment.find(k) for k in ("**Question:**", "**Options:**", "**Recommendation:**", "**Why:**")]
     if -1 not in order and order == sorted(order):
         ok(f"{where} orders Question, Options, Recommendation, Why")
@@ -135,7 +140,8 @@ for rel in ("agents/lestrade.md", "agents/lestrade-item.md"):
         bad(f"{where} — does not run step 4.7 before its Backlog move")
     require(where, sharpen, [
         "against only the criteria the sharpen added or widened",
-        "Skip a rule that an earlier needs-a-human comment from the Lestrade App already named",
+        "Skip a rule that an earlier needs-a-human comment from the Lestrade App already named, only when Mike answered that comment, as step 3.5 defines an answered comment",
+        "A comment Mike never answered proves nothing, because its move to `Escalated` may never have landed.",
         "\"${CLAUDE_PLUGIN_ROOT}/bin/app-comments.sh\" <repo> <issue_number> '<!-- lestrade-needs-a-human -->' inspector-g-lestrade",
         "escalate through step 7",
     ])
