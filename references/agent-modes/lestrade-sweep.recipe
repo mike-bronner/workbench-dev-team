@@ -38,9 +38,10 @@ skip: ### 3. Inspect the codebase
 skip: ### 4. Generate acceptance criteria
 skip: ### 4.5. Right-size to the coherent unit of work — widen within one PR, escalate beyond it
 skip: ### 4.6. Adversarially verify the acceptance criteria
+skip: ### 4.7. Check the needs-a-human rules — escalate a decision Mike owns
 skip: ### 5. Score WSJF fields (select an option by rank)
 skip: ### 6. Write the scores
-skip: ### 7. Move to Backlog — or escalate an oversized coherent unit
+skip: ### 7. Move to Backlog — or escalate a decision Mike owns
 skip: ### 8. Report
 skip: ## Rules (Item mode)
 section: ## Sweep mode — blocker links + consolidation

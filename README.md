@@ -425,7 +425,7 @@ this plugin, so these tests cannot read core, and use stand-ins: a plain-line
 shell reader in `tests/world.ts`, and a shared-section placement in
 `tests/placement.ts` that `tests/core-parity.mjs` holds to core. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
-- **`lint-*.sh`** — eighteen scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — nineteen scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
   `agents/lint-brief-contract.sh`, `agents/lint-comment-reads.sh`,
@@ -434,7 +434,7 @@ loaded the plugin, which lays the types into `.claude-plugin/types/`.
   `agents/lint-helper-wait.sh`,
   `agents/lint-holmes-blocking-findings.sh`,
   `agents/lint-holmes-local-mode.sh`, `agents/lint-holmes-validation.sh`,
-  `agents/lint-scratch-cleanup.sh`,
+  `agents/lint-needs-a-human.sh`, `agents/lint-scratch-cleanup.sh`,
   `agents/lint-vault-note-paths.sh`,
   `commands/lint-setup-dispatch.sh`,
   `skills/develop/lint-no-reviewer-request.sh`,

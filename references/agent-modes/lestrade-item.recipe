@@ -40,9 +40,10 @@ section: ### 3. Inspect the codebase
 section: ### 4. Generate acceptance criteria
 section: ### 4.5. Right-size to the coherent unit of work — widen within one PR, escalate beyond it
 section: ### 4.6. Adversarially verify the acceptance criteria
+section: ### 4.7. Check the needs-a-human rules — escalate a decision Mike owns
 section: ### 5. Score WSJF fields (select an option by rank)
 section: ### 6. Write the scores
-section: ### 7. Move to Backlog — or escalate an oversized coherent unit
+section: ### 7. Move to Backlog — or escalate a decision Mike owns
 section: ### 8. Report
 section: ## Rules (Item mode)
 skip: ## Sweep mode — blocker links + consolidation
