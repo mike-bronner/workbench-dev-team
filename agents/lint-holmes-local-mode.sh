@@ -67,7 +67,7 @@ ROOT="$(cd "$DIR/.." && pwd)"
 HOLMES="$DIR/holmes.md"
 LOCAL="$ROOT/references/holmes/local-review.md"
 PHASES="$ROOT/references/holmes/review-phases.md"
-ORCH="$ROOT/skills/orchestrate/SKILL.md"
+ORCH=("$ROOT/skills/orchestrate/SKILL.md" "$ROOT/skills/orchestrate-github/SKILL.md" "$ROOT/skills/orchestrate-modes/SKILL.md")
 GUARD="$ROOT/hooks/mods/review-guard.ts"
 CLASSIFY="$ROOT/tests/review-classify.mjs"
 PASS=0
@@ -88,7 +88,7 @@ report() {
   fi
 }
 
-for f in "$HOLMES" "$LOCAL" "$PHASES" "$ORCH" "$GUARD" "$CLASSIFY"; do
+for f in "$HOLMES" "$LOCAL" "$PHASES" "${ORCH[@]}" "$GUARD" "$CLASSIFY"; do
   [ -f "$f" ] || { echo "  ❌ missing file: $f"; exit 1; }
 done
 
@@ -375,13 +375,13 @@ report "modes — holmes-local carries the limits, holmes-index the board path" 
 # This is the file an orchestrating session reads before choosing an agent. A
 # stale "Index mode only" there means the new mode is never dispatched at all.
 routing=()
-grep -Fq '**Index mode only**' "$ORCH" \
+grep -Fq '**Index mode only**' "${ORCH[@]}" \
   && routing+=("the team table still calls Holmes Index-mode only")
-grep -Fq 'Lestrade and Holmes are coupled to The Index board' "$ORCH" \
+grep -Fq 'Lestrade and Holmes are coupled to The Index board' "${ORCH[@]}" \
   && routing+=("the skill still says Holmes is board-coupled")
-grep -F 'workbench-dev-team:holmes' "$ORCH" | grep -Fq 'Local mode' \
+grep -hF 'workbench-dev-team:holmes' "${ORCH[@]}" | grep -Fq 'Local mode' \
   || routing+=("the team table's Holmes row does not offer Local mode")
-grep -Fq '**Holmes** Local mode' "$ORCH" \
+grep -Fq '**Holmes** Local mode' "${ORCH[@]}" \
   || routing+=("the routing table has no row sending local review work to Holmes")
 report "routing — the orchestrate skill offers and routes Local mode" ${routing[@]+"${routing[@]}"}
 
@@ -457,17 +457,17 @@ reads="$(awk '/^## §L4b/{s=1;next} s && /^## /{exit} s && /^```/{f=!f;next} s &
 if ! refused="$(printf '%s\n' "$reads" | node "$CLASSIFY" 2>&1)"; then
   range+=("the review guard refuses a range read §L4b documents: $refused")
 fi
-for f in "$HOLMES" "$LOCAL" "$ORCH" "$DIR/holmes-local.md"; do
+for f in "$HOLMES" "$LOCAL" "${ORCH[@]}" "$DIR/holmes-local.md"; do
   grep -Eiq 'does not review a (committed branch|pull request|PR)|never a PR|Its only target is uncommitted|has no agent path|reviews only (the )?uncommitted|only (target|reviews?) (is )?(the )?uncommitted|uncommitted (working )?tree only|only an uncommitted' "$f" \
     && range+=("$(basename "$f") still says Local mode reviews only an uncommitted tree")
 done
-grep -Fq '**Holmes** Local mode on the PR branch'"'"'s committed range' "$ORCH" \
+grep -Fq '**Holmes** Local mode on the PR branch'"'"'s committed range' "${ORCH[@]}" \
   || range+=("the routing table no longer sends an off-board PR to Holmes Local mode on its range")
-[ "$(grep -Fc 'range: origin/<base>...HEAD, pr: <n>)`' "$ORCH")" -ge 2 ] \
+[ "$(cat "${ORCH[@]}" | grep -Fc 'range: origin/<base>...HEAD, pr: <n>)`')" -ge 2 ] \
   || range+=("the routing row or the modes paragraph no longer names the PR number in the Workdir: form")
-grep -Fq '| Review a PR with no board item, or on an ungoverned repo | **Holmes** (Local mode, on the committed range) |' "$ORCH" \
+grep -Fq '| Review a PR with no board item, or on an ungoverned repo | **Holmes** (Local mode, on the committed range) |' "${ORCH[@]}" \
   || range+=("the team's modes table no longer routes an off-board PR to Holmes Local mode")
-grep -Fq '**Holmes'"'"'s Local mode also reviews a committed range.**' "$ORCH" \
+grep -Fq '**Holmes'"'"'s Local mode also reviews a committed range.**' "${ORCH[@]}" \
   || range+=("the team's modes no longer says Local mode reviews a committed range")
 l6_flat="$(section '^## §L6' "$LOCAL" | tr '\n' ' ' | tr -s ' ')"
 printf '%s' "$l6_flat" | grep -Fq '**On a committed range, skip §L4b'"'"'s head check**' \

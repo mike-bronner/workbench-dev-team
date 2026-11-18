@@ -1,6 +1,6 @@
 ---
 name: orchestrate
-description: Run the dev team (Lestrade, Watson, Holmes) as background sub-agents. Holds the agent routing, the six-slot brief every handoff uses, and GitHub action routing. Read it before picking any sub-agent.
+description: Run the dev team (Lestrade, Watson, Holmes) as background sub-agents. Holds the agent routing, the six-slot brief every handoff uses, and the dispatch protocol, and names the topic skills for GitHub actions and modes. Read it before picking any sub-agent.
 when_to_use: Delegating development, triage, or review, or when the user asks to review a PR, comment on an issue, merge a PR, triage an item, or check where work stands. Triggers on "delegate this", "send Watson at", "have the team", "review this PR", "comment on", "merge", "orchestrate", or any multi-step dev task that should run in the background. Read-only research dispatches included, and whenever a dispatch gate refuses a handoff.
 ---
 
@@ -9,6 +9,16 @@ when_to_use: Delegating development, triage, or review, or when the user asks to
 You are the orchestrator. The work happens in sub-agents; the main conversation
 holds only the roster, the verdicts, and the decisions. You dispatch, you track,
 you relay — you do not implement, triage, or review.
+
+## Topic skills
+
+Load each with this one, before its path:
+
+- `/workbench-dev-team:orchestrate-github` — any GitHub action: a PR review,
+  a comment, an issue, a merge, triage, a status check, or opening a PR.
+- `/workbench-dev-team:orchestrate-modes` — an `Item ID: <n>` or
+  `Repo sweep: <owner/repo>` dispatch, Holmes on Direct-mode work or a
+  committed range, or the dispatcher, a mode, the model or the effort.
 
 ## The team
 
@@ -108,7 +118,7 @@ Why: `references/brief-rationale.md`.
    Set `false` only when the user explicitly wants to wait on a quick result.
 2. **No `model` parameter.** Never pass the Agent tool's `model` to a dev-team
    agent: its alias overrides the configured model (see "Model and effort"
-   below).
+   in `orchestrate-modes`).
 3. **Every handoff is a brief.** Send the brief defined below and nothing
    else — for Watson's Direct mode, Holmes's Local mode, and the read-only
    `Explore`, `Plan`, and `general-purpose` runs alike (why:
@@ -120,16 +130,6 @@ Why: `references/brief-rationale.md`.
    `references/brief-rationale.md`). A Watson or Holmes `Item ID: <n>` run
    needs no `Acceptance:` slot: the item's acceptance criteria, written by
    Lestrade at triage, are its Acceptance list.
-4. **A Watson Index-mode run goes through the dispatcher.** Dispatch
-   `Item ID: <n>` to Watson as usual. The dev-team mod runs
-   `~/.claude-workbench/bin/dispatch-agent.sh` in place of the Agent call,
-   because only the dispatcher gives the run its pipeline flag, and returns the
-   dispatcher's first line. A first line of `SKIP` (a run on that item is still alive) or `ESCALATE`
-   (the breaker judges the item wedged) means nothing was spawned: relay it to
-   the human rather than retrying. Track a spawned run from its log rather than
-   from a completion notification, and keep the roster line updated from it.
-   The run exits 0 even when calls were refused, so check the log for
-   `Permission denied:` lines, one per refused call.
 
 ### Direct-mode work comes back uncommitted
 
@@ -158,57 +158,6 @@ from the gate means the rule worked. Do not route around it: ask the human who
 runs it.
 Why: `references/brief-rationale.md`.
 
-## Action routing — Index MCP or gh CLI?
-
-Two questions, in order, decide the path for a GitHub action the user asks for.
-
-### 1. Whose voice does the action carry?
-
-- **Agent work products** — formal PR reviews, acceptance criteria, status
-  moves, agent comments — exist only inside The Index pipeline, signed by that
-  agent's GitHub App. They go through a dispatched agent and its MCP write
-  tools. Never produce them with `gh`. Why: `references/brief-rationale.md`.
-- **The user's own actions** — comments they dictate, merges they order — are
-  theirs, executed directly with `gh` under their identity, on any repo.
-- **Neither, when nothing reaches GitHub.** A Holmes Local-mode verdict is prose
-  returned to this conversation, so it carries no GitHub voice. Posting one
-  anywhere is the user's own action, and only after they have seen the exact
-  content and said so.
-
-### 2. Is the repo governed by The Index?
-
-A repo is governed when The Index's GitHub App is installed on it. How to check,
-and how to resolve the item ID that Lestrade and Holmes's Index mode need:
-`references/governed-repos.md`. A miss on the fallback scan is inconclusive, so
-ask rather than treat the repo as ungoverned. If the repo is governed but the
-item can't be resolved, **stop and report** — never fall back to `gh` for agent
-work products. A PR with no board item at all is not that case: the routing
-table sends it to Holmes Local mode.
-
-### Routing table
-
-| Request | Governed repo | Ungoverned repo |
-|---|---|---|
-| "review this PR" | Resolve item → dispatch **Holmes** (`Item ID: <n>`) — formal signed review. No board item → as ungoverned | **Holmes** Local mode on the PR branch's committed range, `Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require: Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose. Never unwind commits to fake an uncommitted tree |
-| "review what I've changed" / "review this working tree" | **Holmes** Local mode (the six-slot brief, via the Agent tool); the verdict comes back as prose | same |
-| "comment on issue/PR" (user's words) | `gh issue comment` / `gh pr comment` — the user's voice | same |
-| "create / open an issue" (user's words) | `gh issue create` — **the user's voice**, authored by you (the human); confirm repo + title first | same |
-| "implement / fix / build X" | Item exists → **Watson** Index mode, through the dispatcher (Dispatch protocol, step 4), never the Agent tool. No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the six-slot brief, via the Agent tool; the diff comes back uncommitted) |
-| "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
-| "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated: the MCP has no merge tool, and workbench-core's commit guard refuses a sub-agent's or the pipeline's `gh pr merge`. Board status follows via webhook | same |
-| "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
-
-**Every "ask" and "confirm" in this table goes through `AskUserQuestion`,**
-with the recommended choice first and any warning in its description.
-
-### Passing a gh body
-
-Before any `gh` call that carries prose (a comment, an issue, a PR body, or
-release notes), read "Passing a gh body" in `/workbench-dev-team:git-commit`.
-Pass the body in a quoted heredoc or a file: write
-`--body-file - <<'EOF'` (or `--notes-file -`), or name a file. Never write a
-multi-line body in double quotes: the shell runs its backticks.
-
 ## The brief — six slots, on every handoff
 
 A dispatch prompt is a **brief**, not a script: an outcome, the reasoning behind
@@ -220,7 +169,7 @@ Dispatch protocol, step 3.
 
 Fill these six slots, in this order, under the names given, and send nothing
 else but an optional `Unit:` line. No mode marker: see "The team's modes"
-(below).
+in `orchestrate-modes`.
 
 ```
 Workdir: <absolute path, plus the branch or worktree when one was agreed>
@@ -312,58 +261,6 @@ checks, and what to do when it refuses a handoff:
 `references/companion-gate.md`. Why the gate never classifies a dispatch:
 `references/brief-rationale.md`.
 
-## Holmes can review Direct-mode work first
-
-An uncommitted tree is exactly what Local mode takes, so a Watson Direct-mode
-result can go to Holmes on a six-slot brief before the human sees the diff —
-the same review the board path gets, with no board item and nothing posted to
-GitHub. Dispatch it the same way you dispatch
-Watson, with `Workdir:` pointing at the tree Watson left, and `Goal:` and
-`Acceptance:` copied from Watson's brief. `Acceptance:` is Holmes's rubric, and
-`Goal:` names the unit it belongs to. Offer it rather than assuming it: the
-review costs a fan-out, and a one-line change rarely earns one.
-
-## The team's modes
-
-Lestrade is coupled to The Index board — triage needs a `project_items.id`.
-Lestrade's sweep mode takes a repo slug instead of an item id; dispatch it when
-the user asks to "find blockers" or "mark dependencies" in a repo.
-
-Watson and Holmes each carry an off-board mode that takes a six-slot brief
-(contract above) and makes no board calls. **Watson's Direct mode** runs the
-`/workbench-dev-team:develop` workflow on any local repo and hands the work back
-as an uncommitted tree; **Holmes's Local mode** reviews exactly that — the
-uncommitted working tree in the brief's `Workdir:`, tracked changes and
-untracked files — against the brief's `Acceptance:` list as its rubric, and
-returns the verdict as prose. Holmes's Local mode makes no The Index call and
-no GitHub write at all, so it is safe on any repo, governed or not. Both agents
-run the off-board mode by default and switch to Index mode only on the
-`Item ID: <n>` token, so a brief needs no mode marker.
-
-**Holmes's Local mode also reviews a committed range.** A PR on a repo The
-Index does not govern, or a PR with no board item, goes to Holmes Local mode on
-the PR branch's range. First check out the PR at its current head, as
-`gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the
-user as the gates require. A local copy of the branch can be behind the
-author's last push. Holmes checks the head against the PR itself, and he never
-switches branches or moves a ref. Then name the range and the PR number in
-`Workdir:`, as
-`Workdir: <path> (branch: <head>, range: origin/<base>...HEAD, pr: <n>)`.
-Holmes reviews exactly that range against `Acceptance:`, and a range with no
-change fails closed. Never unwind the commits with `git reset --soft` to make an
-uncommitted tree: name the range.
-
-| The task | Dispatch |
-|---|---|
-| Implement, fix, refactor, add tests, edit docs | **Watson** (Index or Direct mode) |
-| Triage an item, write acceptance criteria | **Lestrade** |
-| Review a PR with a board item | **Holmes** (Index mode) |
-| Review a PR with no board item, or on an ungoverned repo | **Holmes** (Local mode, on the committed range) |
-| Review uncommitted local work | **Holmes** (Local mode) |
-| Find where something lives, map a codebase | `Explore` |
-| Sketch an approach before any code exists | `Plan` |
-| Answer a question that writes no file | `general-purpose` |
-
 ## Roster — oversight at all times
 
 Maintain a roster in the conversation. Post it when dispatching, update it when
@@ -417,54 +314,6 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   dispatch. Never ask for `/orchestrator off` to clear your own deny — it is the
   human's own command (`/orchestrator on | off | status`), and only when they
   run it does inline writing open up.
-
-## What the dispatcher does
-
-A Watson Index-mode run ends in commits and pushes. workbench-core's commit
-guard refuses both to any sub-agent, and only the top-level loop of a `claude -p --agent` run
-commits, with `WORKBENCH_DEV_TEAM_PIPELINE=1` to answer its prompts. The Agent
-tool can start neither, so the dev-team mod runs `bin/dispatch-agent.sh` in
-place of a main-session Watson `Item ID: <n>` call. The script starts the run
-and exports the flag.
-
-`bin/dispatch-agent.sh` reads the same config — model, effort, fallback,
-budget — runs the circuit-breaker pre-flight, backgrounds the run in auto mode
-with nobody to answer a prompt, and prints the log path. The run's folder is
-made in `~/Developer/scratchpad` and deleted when the run ends. How to read its
-output and track the run: Dispatch protocol, step 4.
-
-## Issue creation, two identities
-
-When *you* ask for an issue in conversation, it's opened with `gh issue create`
-so **you** (the human) are the author — the user's voice, same as comments.
-Agent-authored follow-ups are the other case, and only Holmes opens them. On
-either verdict, unrelated systemic debt that clears his materiality gate gets
-one, when no related open issue exists to expand. A bug, security, or integrity
-finding the PR's repo can fix never gets one: it blocks, with changes requested
-in the same PR, even when it predates the PR or sits outside its scope. One only
-another repo can fix goes to that repo as an issue, and does not hold the PR. Watson never opens one. He
-folds unit-belonging findings into the same PR. Holmes
-opens his via `mcp__the-index__create_issue(agent: …)`, so the issue carries the
-**agent's** GitHub App identity, lands on The Casebook, and gets the native `PBI`
-type. That path is internal to Holmes — not an orchestration call you make; it
-only works on governed repos (App-signed), and degrades to no Type on user-owned
-ones.
-
-## Model and effort come from the config, never from you
-
-Nothing in this skill reads the dev-team settings, the plugin's rows in
-`/config`. When you dispatch Watson, Holmes, or Lestrade by the public type, the
-dev-team mod reads them at spawn: it runs the mode agent the token picks, with
-the configured `model` and `effort`. All three ship `claude-opus-5-5[1m]` at
-`medium`.
-
-**Never pass the Agent tool's `model` parameter to a dev-team agent.** It
-accepts only an alias (`sonnet`, `opus`, `haiku`, `fable`), so it cannot carry
-the exact ID, and the mod lets a model the caller named stand, so `opus` would
-silently replace the pin with whatever the alias points at today. The Agent
-tool has no effort, budget, or fallback parameter, so the budget and fallback
-rows reach only the scheduled path. When the human edits a row in `/config`,
-both paths pick it up on the next dispatch.
 
 ## When NOT to orchestrate
 

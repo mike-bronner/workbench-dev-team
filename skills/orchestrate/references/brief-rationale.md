@@ -1,7 +1,8 @@
 # Why the brief and the workspace check are shaped the way they are
 
-On-demand reasoning for `skills/orchestrate/SKILL.md`. The skill states the
-rules; this file holds the measurements and arguments behind them. The
+On-demand reasoning for `skills/orchestrate/SKILL.md`, and for its topic skill
+`skills/orchestrate-github/SKILL.md` where a section says so. The skill states
+the rules; this file holds the measurements and arguments behind them. The
 orchestrator loads the skill on every orchestration and this file **only when a
 rule is challenged** — that split is the point, so nothing here is a rule and
 nothing here needs reading to dispatch correctly.
@@ -182,7 +183,8 @@ worked. The measurements are in the gate section below.
 
 ## Why agent work products never go through `gh`
 
-**Rule it explains:** *Action routing*, question 1, in `SKILL.md` — a review,
+**Rule it explains:** *Action routing*, question 1, in
+`skills/orchestrate-github/SKILL.md` — a review,
 acceptance criteria, a status move, or an agent comment goes through a
 dispatched agent, never through `gh`.
 

@@ -33,10 +33,10 @@ Node 24 is optional. On a Team or Enterprise login, it runs the fallbacks for th
 
 ## Bundled skills
 
-The plugin ships three skills for general use, plus one skill the agents write by:
+The plugin ships five skills for general use, plus one skill the agents write by:
 
 - **`develop`** and **`git-commit`** — universal development standards. They register themselves globally through the plugin's session rules (`hooks/mods/session-rules.ts`), which the hooks module sends as one shared system-prompt section, and as context at each sub-agent's start. They apply to every Claude Code / Cowork session, `claude -p` runs included, not just dev-team agents. Both are also packageable as `.skill` files for Claude Chat (Mac app) where plugins aren't supported but skills are.
-- **`orchestrate`** — runs the team as background sub-agents from any interactive session (see below). The same session rules make every session aware the team is available for delegation.
+- **`orchestrate`** — runs the team as background sub-agents from any interactive session (see below). Two topic skills hold its rarer paths: **`orchestrate-github`** routes GitHub actions, and **`orchestrate-modes`** holds the team's modes and the Index-mode dispatcher. The same session rules make every session aware the team is available for delegation.
 
 One more skill exists for the agents rather than for you. **`comms-style`** is how Lestrade, Watson, and Holmes write every piece of prose that isn't code — ticket comments, PR bodies, review verdicts — modeled on ASD-STE100 (Simplified Technical English).
 
@@ -72,6 +72,8 @@ Full type and emoji references at `skills/git-commit/references/`.
 
 Turns the current session into the team's orchestrator: dispatches Lestrade, Watson, and Holmes as **background sub-agents** (Agent tool, `run_in_background`), passing each agent's model from the shared config; maintains a roster table of who's working on what; relays verdicts and decision forks back to you; follows up on running agents via SendMessage. The main conversation stays lean — sub-agents do the heavy work in their own contexts and return summaries.
 
+**The skill is split so that every rule survives compaction.** After compaction, Claude Code brings back only the first 5,000 tokens of each invoked skill, within a combined 25,000 tokens. So `orchestrate` holds what a dispatch needs: the team, the workspace check, the brief, the dispatch protocol with its test timeline, and the roster. It names two topic skills to load before their paths: `orchestrate-github` for GitHub actions and opening a PR, and `orchestrate-modes` for the team's modes, the Index-mode dispatcher, and where the model and effort come from. `skills/orchestrate/lint-compaction.sh` holds each of the three, and `develop`, whole inside byte 18,000.
+
 Watson supports brief-driven **Direct mode** for ad-hoc dev work with no board item, and Holmes a brief-driven **Local mode** that reviews the resulting uncommitted tree, or a committed range such as an off-board pull request's `origin/main...HEAD`. Only Lestrade is Index-coupled and needs a board item ID.
 
 The skill also fixes **who gets dispatched, and what they're told**. Routing covers all three specialists: development goes to Watson, triage to Lestrade, review to Holmes, and the shape of the request says which. Anything ending in a changed file is Watson's, never `general-purpose` — a specialist loads `develop` and discovers the repo's conventions and test framework for itself, a generic agent doesn't. Read-only dispatches (`Explore`, `Plan`, `general-purpose`) stay legitimate and are called out as such.
@@ -88,7 +90,7 @@ The unit test database is `wt_<project>_<unit>_testing`, and **its name is at mo
 
 **Live use needs workbench-core 0.59.0 or later**, the first version with the provisioning ledger (commit 7ef2854). An older core refuses every create, and same-repo units then run one at a time. The steps and the accepted lines are in `skills/orchestrate/references/parallel-units.md`.
 
-The skill also **routes GitHub actions to the right executor**. Two rules: (1) *agent work products* (formal reviews, AC, status moves) only ever go through The Index, signed as the dispatched agent — never `gh`; (2) *your own actions* (comments you dictate, merges you order) go through `gh` under your identity, on any repo. Whether a repo is Index-governed is answered by `check_repo_access` — a server-side tool that checks The Index GitHub App's installation list. Only when that call fails does the skill fall back to a `list_items` scan, and it says so. A pull request merge and a merge into the default branch are never delegated to agents, and happen only on your explicit request. The orchestrator's own `--no-ff` merge of a parallel unit into its feature branch asks you first, one question per landing.
+The `orchestrate-github` topic skill **routes GitHub actions to the right executor**. Two rules: (1) *agent work products* (formal reviews, AC, status moves) only ever go through The Index, signed as the dispatched agent — never `gh`; (2) *your own actions* (comments you dictate, merges you order) go through `gh` under your identity, on any repo. Whether a repo is Index-governed is answered by `check_repo_access` — a server-side tool that checks The Index GitHub App's installation list. Only when that call fails does the skill fall back to a `list_items` scan, and it says so. A pull request merge and a merge into the default branch are never delegated to agents, and happen only on your explicit request. The orchestrator's own `--no-ff` merge of a parallel unit into its feature branch asks you first, one question per landing.
 
 ## Commits
 
@@ -425,7 +427,7 @@ this plugin, so these tests cannot read core, and use stand-ins: a plain-line
 shell reader in `tests/world.ts`, and a shared-section placement in
 `tests/placement.ts` that `tests/core-parity.mjs` holds to core. `tsc -p .` type-checks the module once a session has
 loaded the plugin, which lays the types into `.claude-plugin/types/`.
-- **`lint-*.sh`** — twenty scripts that grep English prose and YAML frontmatter in
+- **`lint-*.sh`** — 21 scripts that grep English prose and YAML frontmatter in
   the shipped Markdown. They guarantee nothing about behaviour, so they do not
   call themselves tests. They are `agents/lint-agent-tool-grants.sh`,
   `agents/lint-brief-contract.sh`, `agents/lint-comment-reads.sh`,
@@ -440,6 +442,7 @@ loaded the plugin, which lays the types into `.claude-plugin/types/`.
   `commands/lint-setup-dispatch.sh`,
   `skills/develop/lint-no-reviewer-request.sh`,
   `skills/git-commit/lint-commit-scope.sh`,
+  `skills/orchestrate-github/lint-opening-pr.sh`,
   `skills/orchestrate/lint-compaction.sh`,
   `skills/orchestrate/lint-decision-format.sh`,
   `skills/orchestrate/lint-rationale-split.sh`, and

@@ -93,7 +93,7 @@ printf '%s' "$section" | grep -Eiq 'the human creates (every |the )?worktrees?' 
   && unit+=("the section says the human creates worktrees, which the parallel-unit flow no longer needs")
 report "unit — a parallel unit's worktree is the orchestrator's, every other one the human's" ${unit[@]+"${unit[@]}"}
 
-iso_count="$(grep -cF 'isolation: "worktree"' "$SKILL")"
+iso_count="$(cat "$SKILL" "$DIR"/../orchestrate-*/SKILL.md | grep -cF 'isolation: "worktree"')"
 iso=()
 [ "$iso_count" = 1 ] || iso+=("'isolation: \"worktree\"' appears $iso_count times; want exactly 1, inside the workspace check")
 printf '%s' "$section" | grep -Fq 'Never pass the Agent tool'"'"'s `isolation: "worktree"`' \

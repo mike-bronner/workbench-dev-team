@@ -1,6 +1,7 @@
 # Is the repo governed by The Index?
 
-On-demand detail for `skills/orchestrate/SKILL.md`, "Action routing", question 2.
+On-demand detail for `skills/orchestrate-github/SKILL.md`, "Action routing",
+question 2.
 Read it when a GitHub action request needs the governed-or-not answer, or an
 item ID.
 

@@ -151,8 +151,8 @@ The dispatcher corroborates this reading; it never decides it.
 `Item ID: <n>` and exports `WORKBENCH_DEV_TEAM_PIPELINE=1` onto the process it
 spawns. Either one confirms an Index run, and **neither is the test**: an
 interactive session dispatches a board review on a governed repo with no
-scheduler and no such variable (`/workbench-dev-team:orchestrate` routing
-table). The token in your prompt is the whole test.
+scheduler and no such variable (`/workbench-dev-team:orchestrate-github`
+routing table). The token in your prompt is the whole test.
 
 This mirrors Watson's mode detection deliberately, so one rule covers both
 agents and neither drifts from the other.

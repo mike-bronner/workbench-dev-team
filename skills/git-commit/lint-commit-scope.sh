@@ -18,7 +18,7 @@ has() {
 GC="$(section '## Committing and pushing' '**Run it as a plain git line' "$ROOT/skills/git-commit/SKILL.md")"
 has "git-commit" "$GC" 'How Watson splits that work into commits is his own judgment.'
 
-OC="$(section '### Direct-mode work comes back uncommitted' '## Action routing' "$ROOT/skills/orchestrate/SKILL.md")"
+OC="$(section '### Direct-mode work comes back uncommitted' '## The brief' "$ROOT/skills/orchestrate/SKILL.md")"
 has "orchestrate" "$OC" "read the tree itself, never only the report's file list"
 
 DV="$(section '### Message format and hygiene' '## 6.' "$ROOT/skills/develop/SKILL.md")"

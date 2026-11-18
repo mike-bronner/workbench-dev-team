@@ -19,6 +19,8 @@
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 SKILL="$DIR/SKILL.md"
+SKILLS=("$SKILL")
+for f in "$DIR"/../orchestrate-*/SKILL.md; do [ -f "$f" ] && SKILLS+=("$f"); done
 REFERENCE="$DIR/references/brief-rationale.md"
 PASS=0
 FAIL=0
@@ -36,7 +38,7 @@ report() {
 
 # The delegation gate, described once. It was described twice, and two copies of
 # one rule drift into two rules.
-gate_count="$(grep -cF 'NotebookEdit' "$SKILL")"
+gate_count="$(cat "${SKILLS[@]}" | grep -cF 'NotebookEdit')"
 gate=()
 [ "$gate_count" = 1 ] || gate+=("the delegation gate is described $gate_count times; want exactly 1")
 report "gate — the delegation gate is described once" ${gate[@]+"${gate[@]}"}
@@ -51,7 +53,7 @@ check_moved() {
   local what="$1" phrase="$2"
   grep -Fq "$phrase" "$REFERENCE" \
     || split+=("$what: the reference no longer carries \"$phrase\"")
-  grep -Fq "$phrase" "$SKILL" \
+  cat "${SKILLS[@]}" | grep -Fq "$phrase" \
     && split+=("$what: the reasoning is inlined in the skill again (\"$phrase\")")
   return 0
 }
@@ -73,7 +75,7 @@ report "split — every relocated argument lives in the reference, none in the s
 # without a pointer beside its rule reddens, and so does a pointer deleted from
 # the skill. No number to bump when the next argument moves out.
 sections="$(grep -c '^## ' "$REFERENCE")"
-pointers="$(grep -cF 'references/brief-rationale.md' "$SKILL")"
+pointers="$(cat "${SKILLS[@]}" | grep -cF 'references/brief-rationale.md')"
 ptr=()
 [ "$pointers" -ge "$sections" ] \
   || ptr+=("the skill points at the reference $pointers times for $sections sections of reasoning; every stripped rule needs its pointer")

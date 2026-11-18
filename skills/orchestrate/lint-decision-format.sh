@@ -149,7 +149,7 @@ fi
 
 section skills/git-commit/SKILL.md '## Committing and pushing' '**Run it as a plain git line' git-commit
 gc="$s"
-section skills/orchestrate/SKILL.md '### Direct-mode work comes back uncommitted' '## Action routing' orchestrate
+section skills/orchestrate/SKILL.md '### Direct-mode work comes back uncommitted' '## The brief' orchestrate
 oc="$s"
 APPROVAL_PL='
   next if $ARGV =~ m{/testdata/};

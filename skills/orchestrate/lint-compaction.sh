@@ -19,106 +19,16 @@
 # suite. The skills measure about 3.9 bytes per token, so 18,000 bytes is about
 # 4,600 tokens, against a limit of 5,000: a margin of about 8 %. "The line"
 # below means byte 18,000 of a file.
-#
-# What it checks:
-#   1. lines — orchestrate's and develop's SKILL.md are each under 500 lines.
-#   2. listing — orchestrate's description is on one line, is 300 bytes or
-#      fewer, and its when_to_use is present. Only one line can be counted, so
-#      a description written over more than one line fails: any line before the
-#      next top-level key, blank lines included, and a quoted value that does
-#      not close on its own line. The value must be a quote closed on its line
-#      or a plain value, one space after the colon, so anything else fails
-#      too: more whitespace, a tag, an anchor, an alias, a block scalar, or a
-#      flow collection before or in place of the value. Only one description
-#      can be counted too, so a second description key fails, with any space
-#      before its colon. So does any frontmatter line that opens with ? ! & *
-#      a quote, or a bracket, because that is how a key is spelled other than
-#      plain.
-#   3. survive — develop: the whole file is inside the line, so no rule in it
-#      can sit past it. orchestrate: every must-survive section ends inside the
-#      line, and so does every pinned phrase.
-#   4. past the line — orchestrate's blocks past the line are exactly the ones
-#      in compaction-late-blocks.txt, beside this linter. A block is a
-#      paragraph, a list item, a table row, a heading, or a code fence. A block
-#      wholly past the line is listed as its text, with its whitespace
-#      collapsed. The check follows the text, not the headings: a
-#      rule moved past the line, under any heading or appended to any block
-#      already there, is a block the list does not hold, and the check fails.
-#      A block that straddles the line is listed with its start byte and its
-#      exact raw bytes before the line, whitespace included. Any net growth or
-#      shrinkage above the block moves the start byte. Any change inside the
-#      block before the line changes the raw bytes: a trailing space, an
-#      indent, a rewrap, or blank space moved from after the line to before
-#      it. Either way the check fails, however few bytes change. A block pushed
-#      wholly past the line is not listed, and fails too. When the line falls
-#      in blank space between blocks, nothing straddles it, and the first text
-#      that crosses it fails the check. The list is the whole of what may sit
-#      late. After a deliberate change above or past the line, review the
-#      blocks and rewrite the list with
-#      `./lint-compaction.sh --late-blocks > compaction-late-blocks.txt`.
-#   5. parallel — Mike's parallel-dispatch rule (vault: feedback/2026-10-05-
-#      parallel-subagents-within-guards.md) sits ahead of the dispatch protocol
-#      and keeps its key phrases.
-#
-# Sections and phrases are pinned on top of check 4, so a missing or renamed
-# rule is named. Detail that need not survive lives in each skill's references/
-# folder, behind a short form of the same rule in SKILL.md.
 
 set -u
 DIR="$(cd "$(dirname "$0")" && pwd)"
 ROOT="$(cd "$DIR/../.." && pwd)"
 SKILL="$DIR/SKILL.md"
 DEVELOP="$ROOT/skills/develop/SKILL.md"
-LATE_LIST="$DIR/compaction-late-blocks.txt"
 SURVIVE_BYTES=18000
+COMBINED_BYTES=90000
 PASS=0
 FAIL=0
-
-# Every orchestrate block that ends past the line, in file order, one per line.
-# A block is a paragraph, a list item, a table row, a heading, or a code fence.
-# Bytes are 1-based, as phrase_end below counts them, and a block starts at the
-# first byte of its first line, indent included. LC_ALL=C makes awk's length()
-# and substr() count bytes, not characters.
-#
-# A block wholly past the line is its text, with every run of whitespace
-# collapsed to one space, so a rewrap past the line changes nothing. A block
-# that straddles the line, starting at or before it, is
-#   @<start byte> "<its raw bytes up to the line>" <the rest, collapsed>
-# The raw bytes are exact, whitespace included: a backslash, a double quote, a
-# tab, a carriage return, and a line break are written \\ \" \t \r \n, and
-# nothing else is changed. So the start byte pins any growth or shrinkage above
-# the block, and the raw bytes pin any change inside it before the line.
-late_blocks() {
-  LC_ALL=C awk -v line="$SURVIVE_BYTES" '
-    function collapse(s) { gsub(/[[:space:]]+/, " ", s); sub(/^ /, "", s); sub(/ $/, "", s); return s }
-    function esc(s,   o, i, c) {
-      for (i = 1; i <= length(s); i++) {
-        c = substr(s, i, 1)
-        o = o (c == "\\" ? "\\\\" : c == "\"" ? "\\\"" : c == "\t" ? "\\t" : c == "\r" ? "\\r" : c == "\n" ? "\\n" : c)
-      }
-      return o
-    }
-    function flush(   rest) {
-      if (raw != "" && end > line) {
-        if (start > line) print collapse(raw)
-        else {
-          rest = collapse(substr(raw, line - start + 2))
-          print "@" start " \"" esc(substr(raw, 1, line - start + 1)) "\"" (rest == "" ? "" : " " rest)
-        }
-      }
-      raw = ""
-    }
-    { line_start = off + 1; line_end = off + length($0); off += length($0) + 1 }
-    fence { raw = raw "\n" $0; end = line_end; if ($0 ~ /^[[:space:]]*```/) { fence = 0; flush() }; next }
-    /^[[:space:]]*```/ { flush(); fence = 1; raw = $0; start = line_start; end = line_end; next }
-    /^[[:space:]]*$/ { flush(); next }
-    /^#/ || /^\|/ || /^[[:space:]]*([-*]|[0-9]+\.) / { flush() }
-    { if (raw == "") { raw = $0; start = line_start } else raw = raw "\n" $0; end = line_end }
-    END { flush() }
-  ' "$SKILL"
-}
-
-if [ "${1:-}" = --late-blocks ]; then late_blocks; exit 0; fi
 
 report() {
   local label="$1"; shift
@@ -132,13 +42,27 @@ report() {
 [ -f "$SKILL" ] || { echo "  ❌ no SKILL.md beside this linter"; exit 1; }
 [ -f "$DEVELOP" ] || { echo "  ❌ no skills/develop/SKILL.md"; exit 1; }
 
+FAMILY=("$SKILL")
+for f in "$ROOT"/skills/orchestrate-*/SKILL.md; do [ -f "$f" ] && FAMILY+=("$f"); done
+TOPICS=("${FAMILY[@]:1}")
+skill_name() { basename "$(dirname "$1")"; }
+
+family=()
+[ "${#TOPICS[@]}" -ge 2 ] && [ "${#TOPICS[@]}" -le 3 ] \
+  || family+=("${#TOPICS[@]} topic skills under skills/orchestrate-*; want two or three beside the core")
+for t in "${TOPICS[@]}"; do
+  name="$(skill_name "$t")"
+  grep -q "^name: $name\$" "$t" || family+=("$name: the frontmatter does not say name: $name")
+done
+report "family — the core orchestrate skill and two or three topic skills" ${family[@]+"${family[@]}"}
+
 # Under 500 lines each, the limit the skills docs set.
 lines=()
-for f in "$SKILL" "$DEVELOP"; do
+for f in "${FAMILY[@]}" "$DEVELOP"; do
   n="$(wc -l < "$f" | tr -d ' ')"
   [ "$n" -lt 500 ] || lines+=("${f#"$ROOT"/} is $n lines; want fewer than 500")
 done
-report "lines — orchestrate and develop each stay under 500 lines" ${lines[@]+"${lines[@]}"}
+report "lines — every orchestrate skill and develop stay under 500 lines" ${lines[@]+"${lines[@]}"}
 
 # A short description, with the trigger detail in when_to_use. The byte count
 # reads the description's own line only, so a description written over more
@@ -155,12 +79,6 @@ report "lines — orchestrate and develop each stay under 500 lines" ${lines[@]+
 # key fails, whatever comes before the quote. Third, any line between
 # description: and the next top-level key counts as more, blank lines
 # included, so every other continuation fails.
-frontmatter="$(awk 'NR==1 && /^---$/{f=1;next} f && /^---$/{exit} f' "$SKILL")"
-desc_keys="$(printf '%s\n' "$frontmatter" | grep -c '^description[[:space:]]*:')"
-odd_keys="$(printf '%s\n' "$frontmatter" | grep -c '^[?!&*"'\''[{]')"
-desc="$(printf '%s\n' "$frontmatter" | sed -n 's/^description: //p')"
-desc_more="$(printf '%s\n' "$frontmatter" | awk 'f && !/^[A-Za-z0-9_-]+:([[:space:]]|$)/ { n++; next } { f = /^description:/ } END { print n + 0 }')"
-wtu="$(printf '%s\n' "$frontmatter" | sed -n 's/^when_to_use: //p')"
 dq_closed='^"([^"\\]|\\.)*"[[:space:]]*(#.*)?$'
 sq_closed="^'([^']|'')*'[[:space:]]*(#.*)?\$"
 # A plain value opens on a byte no YAML indicator claims, or on - ? : with a
@@ -168,29 +86,32 @@ sq_closed="^'([^']|'')*'[[:space:]]*(#.*)?\$"
 # and a flow collection all fail it.
 plain_open='^([^]!&*|>%@`{}#,"'\''?:[[:space:]-]|[?:-][^[:space:]])'
 listing=()
-[ "$desc_keys" -le 1 ] || listing+=("$desc_keys description keys in the frontmatter; a parser keeps only one of them, and maybe not the one counted here, so write exactly one")
-[ "$odd_keys" -eq 0 ] || listing+=("$odd_keys frontmatter line(s) open with ? ! & * a quote or a bracket; write every key plain, so a second description cannot hide in another spelling")
-if [ -z "$desc" ]; then
-  listing+=("no description")
-else
-  case "$desc" in
-    '"'*) [[ "$desc" =~ $dq_closed ]] || listing+=("the description's double quotes do not close on its line; write it on one line, so its bytes can be counted") ;;
-    "'"*) [[ "$desc" =~ $sq_closed ]] || listing+=("the description's single quotes do not close on its line; write it on one line, so its bytes can be counted") ;;
-    *) [[ "$desc" =~ $plain_open ]] || listing+=("the description opens with '${desc:0:1}', not a plain value or a quote; write one space after description:, then a plain or quoted value, so its bytes can be counted") ;;
-  esac
-fi
-[ "$desc_more" -eq 0 ] || listing+=("$desc_more more line(s) follow the description before the next key; write it on one line, so its bytes can be counted")
-desc_bytes="$(printf '%s' "$desc" | wc -c | tr -d ' ')"
-[ "$desc_bytes" -le 300 ] || listing+=("the description is $desc_bytes bytes; want 300 or fewer")
-[ -n "$wtu" ] || listing+=("no when_to_use: the trigger detail has nowhere to go but the description")
-report "listing — a short description, the triggers in when_to_use" ${listing[@]+"${listing[@]}"}
+for f in "${FAMILY[@]}"; do
+  who="$(skill_name "$f")"
+  frontmatter="$(awk 'NR==1 && /^---$/{f=1;next} f && /^---$/{exit} f' "$f")"
+  desc_keys="$(printf '%s\n' "$frontmatter" | grep -c '^description[[:space:]]*:')"
+  odd_keys="$(printf '%s\n' "$frontmatter" | grep -c '^[?!&*"'\''[{]')"
+  desc="$(printf '%s\n' "$frontmatter" | sed -n 's/^description: //p')"
+  desc_more="$(printf '%s\n' "$frontmatter" | awk 'f && !/^[A-Za-z0-9_-]+:([[:space:]]|$)/ { n++; next } { f = /^description:/ } END { print n + 0 }')"
+  wtu="$(printf '%s\n' "$frontmatter" | sed -n 's/^when_to_use: //p')"
+  [ "$desc_keys" -le 1 ] || listing+=("$who: $desc_keys description keys in the frontmatter; a parser keeps only one of them, and maybe not the one counted here, so write exactly one")
+  [ "$odd_keys" -eq 0 ] || listing+=("$who: $odd_keys frontmatter line(s) open with ? ! & * a quote or a bracket; write every key plain, so a second description cannot hide in another spelling")
+  if [ -z "$desc" ]; then
+    listing+=("$who: no description")
+  else
+    case "$desc" in
+      '"'*) [[ "$desc" =~ $dq_closed ]] || listing+=("$who: the description's double quotes do not close on its line; write it on one line, so its bytes can be counted") ;;
+      "'"*) [[ "$desc" =~ $sq_closed ]] || listing+=("$who: the description's single quotes do not close on its line; write it on one line, so its bytes can be counted") ;;
+      *) [[ "$desc" =~ $plain_open ]] || listing+=("$who: the description opens with '${desc:0:1}', not a plain value or a quote; write one space after description:, then a plain or quoted value, so its bytes can be counted") ;;
+    esac
+  fi
+  [ "$desc_more" -eq 0 ] || listing+=("$who: $desc_more more line(s) follow the description before the next key; write it on one line, so its bytes can be counted")
+  desc_bytes="$(printf '%s' "$desc" | wc -c | tr -d ' ')"
+  [ "$desc_bytes" -le 300 ] || listing+=("$who: the description is $desc_bytes bytes; want 300 or fewer")
+  [ -n "$wtu" ] || listing+=("$who: no when_to_use: the trigger detail has nowhere to go but the description")
+done
+report "listing — every orchestrate skill has a short description, the triggers in when_to_use" ${listing[@]+"${listing[@]}"}
 
-# Every must-survive section ends inside the first SURVIVE_BYTES bytes of its
-# file. A section ends where the next heading of any level starts, so a
-# subsection that is not on the list is free to sit later. That is also why a
-# section check alone is not enough: a rule split out of a listed section into a
-# new one past the line leaves its old section passing. The past-the-line check
-# below is what catches that move, under any heading.
 section_end() { # <file> <heading prefix>
   LC_ALL=C awk -v want="$2" '
     found && /^##+ / { exit }
@@ -216,17 +137,20 @@ phrase_end() { # <file> <phrase>
   ' "$1"
 }
 
-# develop is inside the line whole, so every rule in it survives wherever it
-# sits. The size limit is the whole check: any growth past the line fails.
 survive=()
-dev_bytes="$(wc -c < "$DEVELOP" | tr -d ' ')"
-[ "$dev_bytes" -le "$SURVIVE_BYTES" ] || survive+=("develop: the file is $dev_bytes bytes; want $SURVIVE_BYTES or less, so no rule sits past the line")
+for f in "${FAMILY[@]}" "$DEVELOP"; do
+  bytes="$(wc -c < "$f" | tr -d ' ')"
+  [ "$bytes" -le "$SURVIVE_BYTES" ] || survive+=("${f#"$ROOT"/}: the file is $bytes bytes; want $SURVIVE_BYTES or less, so no rule sits past the line")
+done
 
-# orchestrate is not, so its must-survive sections and phrases are pinned one
-# row each: <section|phrase>|<file>|<heading or words>.
 while IFS='|' read -r kind which want; do
   [ -n "$kind" ] || continue
-  case "$which" in orchestrate) file="$SKILL" ;; develop) file="$DEVELOP" ;; *) survive+=("unknown file '$which'"); continue ;; esac
+  case "$which" in
+    orchestrate) file="$SKILL" ;;
+    develop) file="$DEVELOP" ;;
+    orchestrate-*) file="$ROOT/skills/$which/SKILL.md"; [ -f "$file" ] || { survive+=("no skills/$which/SKILL.md"); continue; } ;;
+    *) survive+=("unknown file '$which'"); continue ;;
+  esac
   if [ "$kind" = section ]; then end="$(section_end "$file" "$want")"; else end="$(phrase_end "$file" "$want")"; fi
   if [ "$end" = -1 ]; then
     survive+=("$which: no $kind '$want'")
@@ -234,19 +158,31 @@ while IFS='|' read -r kind which want; do
     survive+=("$which: $kind '$want' ends at byte $end; want $SURVIVE_BYTES or less")
   fi
 done <<'EOF'
+section|orchestrate|## Topic skills
 section|orchestrate|## The team
 section|orchestrate|## Agent choice
 section|orchestrate|## Dispatch in parallel
+section|orchestrate|## Check the workspace before you dispatch
 section|orchestrate|## Dispatch protocol
 section|orchestrate|### Direct-mode work comes back uncommitted
-section|orchestrate|## Action routing
-section|orchestrate|### 1. Whose voice does the action carry?
-section|orchestrate|### 2. Is the repo governed by The Index?
-section|orchestrate|### Routing table
-section|orchestrate|### Passing a gh body
 section|orchestrate|## The brief
 section|orchestrate|### Must omit
 section|orchestrate|### When a brief comes back
+section|orchestrate|### The companion gate
+section|orchestrate|## Roster
+section|orchestrate|## When NOT to orchestrate
+section|orchestrate-github|## Action routing
+section|orchestrate-github|### 1. Whose voice does the action carry?
+section|orchestrate-github|### 2. Is the repo governed by The Index?
+section|orchestrate-github|### Routing table
+section|orchestrate-github|### Passing a gh body
+section|orchestrate-github|## Issue creation, two identities
+section|orchestrate-github|## Opening a PR
+section|orchestrate-modes|## Holmes can review Direct-mode work first
+section|orchestrate-modes|## The team's modes
+section|orchestrate-modes|## Watson's Index-mode dispatch
+section|orchestrate-modes|## What the dispatcher does
+section|orchestrate-modes|## Model and effort come from the config, never from you
 phrase|orchestrate|Units that share files run one at a time, the short unit first.
 phrase|orchestrate|land it with `git merge --no-ff` on the feature branch, never a cherry-pick, rebase or reset
 phrase|orchestrate|Ask before each landing, one question each. A catch-up merge that brings a branch up to date runs unasked.
@@ -259,10 +195,10 @@ phrase|orchestrate|There is no length limit on the reasoning in `Context:`
 phrase|orchestrate|It does not cover how much work one brief asks for
 phrase|orchestrate|**New work gets its own dispatch.** Never SendMessage new work to a running agent
 phrase|orchestrate|A brief is an investigation or a bounded change, never both.
-phrase|orchestrate|A first line of `SKIP`
-phrase|orchestrate|means nothing was spawned: relay it to the human rather than retrying
-phrase|orchestrate|Track a spawned run from its log rather than from a completion notification
-phrase|orchestrate|check the log for `Permission denied:` lines
+phrase|orchestrate-modes|A first line of `SKIP`
+phrase|orchestrate-modes|means nothing was spawned: relay it to the human rather than retrying
+phrase|orchestrate-modes|Track a spawned run from its log rather than from a completion notification
+phrase|orchestrate-modes|check the log for `Permission denied:` lines
 phrase|orchestrate|**The full suite runs once, last.**
 phrase|orchestrate|No sub-agent runs the full suite: it hands back.
 phrase|orchestrate|ask the human through `AskUserQuestion` whether they run the full suite or Holmes does. On the Holmes pick, dispatch Holmes on a brief whose `Goal:` begins `Final suite run:`.
@@ -273,18 +209,18 @@ phrase|orchestrate|workbench-core's Full-suite gate enforces this rule
 phrase|orchestrate|Do not route around it: ask the human who runs it.
 phrase|orchestrate|A deny from the gate means the rule worked.
 phrase|orchestrate|minus any that asks for a test run outside the test timeline
-phrase|orchestrate|body in a quoted heredoc or a file
-phrase|orchestrate|Never write a multi-line body in double quotes
+phrase|orchestrate-github|body in a quoted heredoc or a file
+phrase|orchestrate-github|Never write a multi-line body in double quotes
 phrase|orchestrate|**Refused** — a slot is missing
 phrase|orchestrate|**Questions** — every slot is there
 phrase|orchestrate|Never start a fresh agent on the old brief
 phrase|orchestrate|A refusal means the rule worked. Report it, then re-dispatch.
 phrase|orchestrate|Never route around a gate — only the human lifts one.
 phrase|orchestrate|or a PR with no board item, reviewed as its committed range.
-phrase|orchestrate|**Holmes** Local mode on the PR branch's committed range
-phrase|orchestrate|range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require
-phrase|orchestrate|Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose
-phrase|orchestrate|Never unwind commits to fake an uncommitted tree
+phrase|orchestrate-github|**Holmes** Local mode on the PR branch's committed range
+phrase|orchestrate-github|range: origin/<base>...HEAD, pr: <n>)`. First check out the PR at its current head, as `gh pr checkout <n>` does, and bring `origin/<base>` up to date, asking the user as the gates require
+phrase|orchestrate-github|Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose
+phrase|orchestrate-github|Never unwind commits to fake an uncommitted tree
 phrase|develop|the existing tests that cover the files you changed, never the full suite.**
 phrase|develop|A sub-agent hands back when one is due. In a workbench plugin repo, name the test files to the runner: `claude plugin test .` runs every file.
 phrase|develop|**Run no mutation testing of any kind.**
@@ -295,26 +231,39 @@ phrase|develop|**Never mimic CI or another platform locally** with Docker, a VM 
 phrase|develop|**Investigation not converging?** When three hypotheses in a row are ruled out with no confirmed cause, stop.
 EOF
 for gone in 'also through a script' 'One test file, a filter, or one case still runs'; do
-  [ "$(phrase_end "$SKILL" "$gone")" = -1 ] || survive+=("orchestrate: '$gone' restates the Full-suite gate's scope, which the skill names rather than restates")
+  for f in "${FAMILY[@]}"; do
+    [ "$(phrase_end "$f" "$gone")" = -1 ] || survive+=("$(skill_name "$f"): '$gone' restates the Full-suite gate's scope, which the skill names rather than restates")
+  done
 done
-report "survive — develop fits inside the line whole, and orchestrate's must-survive sections and pinned phrases end inside it" ${survive[@]+"${survive[@]}"}
+report "survive — every orchestrate skill and develop fit inside the line whole, and each pinned section and phrase is in its skill" ${survive[@]+"${survive[@]}"}
 
-# orchestrate's blocks past the line are exactly the listed ones, compared as
-# sorted lists so a duplicate block counts twice. A block past the line and not
-# listed may be a must-survive rule that moved or was pushed there.
-late=()
-if [ ! -f "$LATE_LIST" ]; then
-  late+=("no ${LATE_LIST#"$ROOT"/}")
-else
-  while IFS= read -r d; do
-    case "$d" in
-      '< '*) late+=("past the line, not listed: ${d:2:110}") ;;
-      '> '*) late+=("listed, not past the line: ${d:2:110}") ;;
-    esac
-  done < <(diff <(late_blocks | LC_ALL=C sort) <(LC_ALL=C sort "$LATE_LIST"))
-  [ "${#late[@]}" -eq 0 ] || late+=("if the change is deliberate, review the blocks and run: ./lint-compaction.sh --late-blocks > compaction-late-blocks.txt")
-fi
-report "past the line — only the listed orchestrate blocks sit past byte $SURVIVE_BYTES" ${late[@]+"${late[@]}"}
+combined=()
+total="$(cat "${FAMILY[@]}" "$DEVELOP" | wc -c | tr -d ' ')"
+[ "$total" -le "$COMBINED_BYTES" ] || combined+=("the orchestrate skills and develop total $total bytes; want $COMBINED_BYTES or fewer, the combined 25,000 tokens that compaction brings back across skills")
+report "combined — the orchestrate skills and develop fit the 25,000-token budget across skills" ${combined[@]+"${combined[@]}"}
+
+topics=()
+map="$(awk '/^## Topic skills/{f=1;next} f && /^## /{exit} f' "$SKILL" | tr '\n' ' ' | tr -s ' ')"
+for t in "${TOPICS[@]}"; do
+  name="$(skill_name "$t")"
+  printf '%s' "$map" | grep -Fq "\`/workbench-dev-team:$name\` — " \
+    || topics+=("the core's Topic skills section does not name /workbench-dev-team:$name")
+done
+pinned=" "
+while IFS='|' read -r name when; do
+  [ -n "$name" ] || continue
+  pinned="$pinned$name "
+  printf '%s' "$map" | grep -Fq "\`/workbench-dev-team:$name\` — $when" \
+    || topics+=("the core's Topic skills entry for $name no longer says when to load it: '$when'")
+done <<'EOF'
+orchestrate-github|any GitHub action: a PR review, a comment, an issue, a merge, triage, a status check, or opening a PR.
+orchestrate-modes|an `Item ID: <n>` or `Repo sweep: <owner/repo>` dispatch, Holmes on Direct-mode work or a committed range, or the dispatcher, a mode, the model or the effort.
+EOF
+for t in "${TOPICS[@]}"; do
+  name="$(skill_name "$t")"
+  [[ "$pinned" == *" $name "* ]] || topics+=("no when-to-load phrase is pinned for $name; pin one from its Topic skills entry")
+done
+report "topics — the core names each topic skill and when to load it" ${topics[@]+"${topics[@]}"}
 
 # The parallel-dispatch rule: stated ahead of the dispatch protocol, with no
 # count cap on local work and the Index pipeline still bounded.
