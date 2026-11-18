@@ -5,8 +5,6 @@ description: Apply universal development standards when implementing code change
 
 # Development Workflow
 
-Universal standards for any code implementation work.
-
 ## Your lane decides what finishing looks like
 
 Three lanes run this skill, and several steps below end differently in each.
@@ -16,8 +14,7 @@ Know which one you are in before you start.
 - **Sub-agent** — dispatched through the Agent tool, Watson's Direct mode
   included. No human is reachable, workbench-core's commit guard refuses every
   commit and push, and you do not merge. You finish with an **uncommitted working tree and a report**:
-  the diff summary and a proposed commit message. The report never asks to
-  commit. There is no PR to open.
+  the diff summary and a proposed commit message. There is no PR to open.
 - **Scheduled Index pipeline** — `bin/dispatch-agent.sh` spawned you with
   `WORKBENCH_DEV_TEAM_PIPELINE=1`. You commit, push, and open the PR unattended,
   and never ask about committing or pushing. Board dispatch is the approval,
@@ -125,7 +122,7 @@ If you can't find three viable options, say so rather than pad a third:
   naming, error handling, structure, test organization. Don't impose new
   conventions on a codebase mid-stream.
 - **Look at recent commits** (`git log --oneline -20`) for the prevailing commit
-  format and the kinds of changes that land. Pattern-match.
+  format and the kinds of changes that land.
 
 If the repo has none of those files and conventions are unclear from sibling
 files, flag it — don't guess.
@@ -153,7 +150,7 @@ files, flag it — don't guess.
 
 ## 3. Implement
 
-Each rule in full, with its reasons and examples: `references/implementation.md`.
+Each rule in full: `references/implementation.md`.
 
 - **YAGNI — build the least that satisfies the AC.** No speculative
   abstraction, config knobs, extension points, or "future-proofing" nothing
@@ -196,7 +193,7 @@ Each rule in full, with its reasons and examples: `references/implementation.md`
 
 ## 4. Test
 
-The tier, test-strength, and doc-drift rules in full: `references/testing.md`.
+Each rule in full: `references/testing.md`.
 
 - **Every change gets a test.** Bug fixes get a regression test; features get
   coverage of the new behavior; refactors get tests that prove behavior didn't
@@ -221,10 +218,12 @@ The tier, test-strength, and doc-drift rules in full: `references/testing.md`.
 - **Use the repo's existing test framework**, never your favorite.
 - **Run the tests you wrote and the existing tests that cover the files you
   changed, never the full suite.** The full suite belongs to CI on the pull
-  request, or to Holmes's final run. Get those tests green: fix every failure
-  your change caused. A failure your change did not cause is out of scope (§2):
-  confirm it fails the same way without your change, then report it
-  rather than fold a fix in.
+  request, or to a final run the human picks. A sub-agent hands back when one
+  is due. In a workbench plugin repo, name the test files to the runner:
+  `claude plugin test .` runs every file. Get those tests green: fix every
+  failure your change caused. A failure your change did not cause is out of
+  scope (§2): confirm it fails the same way without your change, then report
+  it rather than fold a fix in.
 - **Never mimic CI or another platform locally** with Docker, a VM or a source
   build. Read CI's logs and the tool's changelog, use a version already
   installed, such as Herd's PHP or mise, or hand the question back to the

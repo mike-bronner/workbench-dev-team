@@ -264,12 +264,13 @@ phrase|orchestrate|means nothing was spawned: relay it to the human rather than 
 phrase|orchestrate|Track a spawned run from its log rather than from a completion notification
 phrase|orchestrate|check the log for `Permission denied:` lines
 phrase|orchestrate|**The full suite runs once, last.**
-phrase|orchestrate|dispatch Holmes on a brief whose `Goal:` begins `Final suite run:`
+phrase|orchestrate|No sub-agent runs the full suite: it hands back.
+phrase|orchestrate|ask the human through `AskUserQuestion` whether they run the full suite or Holmes does. On the Holmes pick, dispatch Holmes on a brief whose `Goal:` begins `Final suite run:`.
 phrase|orchestrate|On an Index-mode PR, CI is that final run, and Holmes adds none.
 phrase|orchestrate|No brief slot asks for a test run outside this timeline
 phrase|orchestrate|Never run the full suite yourself.
 phrase|orchestrate|workbench-core's Full-suite gate enforces this rule
-phrase|orchestrate|Do not route around it: dispatch Holmes on a brief whose `Goal:` begins `Final suite run:`.
+phrase|orchestrate|Do not route around it: ask the human who runs it.
 phrase|orchestrate|A deny from the gate means the rule worked.
 phrase|orchestrate|minus any that asks for a test run outside the test timeline
 phrase|orchestrate|body in a quoted heredoc or a file
@@ -285,6 +286,7 @@ phrase|orchestrate|range: origin/<base>...HEAD, pr: <n>)`. First check out the P
 phrase|orchestrate|Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose
 phrase|orchestrate|Never unwind commits to fake an uncommitted tree
 phrase|develop|the existing tests that cover the files you changed, never the full suite.**
+phrase|develop|A sub-agent hands back when one is due. In a workbench plugin repo, name the test files to the runner: `claude plugin test .` runs every file.
 phrase|develop|**Run no mutation testing of any kind.**
 phrase|orchestrate|The dev-team mod's no-mutation gate refuses one without it.
 phrase|orchestrate|A CI-only failure's brief rules out Docker, a VM or a CI-like local environment, and never asks for a local reproduction on another platform.

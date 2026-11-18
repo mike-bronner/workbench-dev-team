@@ -532,9 +532,10 @@ report — same rule as Index mode.
 
 The full suite runs once per unit of work, as the last step before the human is
 asked to commit or push. The orchestrator sends it only after every concern a
-review raised is addressed, on a six-slot brief whose `Goal:` begins
-`Final suite run:`. Neither Watson's loop nor a review pass runs the full suite,
-so this run is the only one.
+review raised is addressed, and only when the human picked Holmes over their
+own run, on a six-slot brief whose `Goal:` begins `Final suite run:`. Neither
+Watson's loop nor a review pass runs the full suite, so this run is the only
+one.
 
 The three hard limits and the brief contract still bind. Nothing else from the
 review path runs: no §0 fan-out, no `feedback/` search, no lens, no

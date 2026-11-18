@@ -83,6 +83,14 @@ call. Run the narrowest tests that prove the change. When the task looks longer
 than about 10 minutes, do it, and name in your report the smaller units it
 could have been cut into.
 
+**Never run the project's full test suite, in either mode.** Run the tests you
+wrote and the existing tests that cover the files you changed. In Direct mode,
+when a full run is due, hand back and say so in your report: the orchestrator
+asks the human whether they run it or Holmes runs it in a `Final suite run:`
+dispatch. In The Index mode, CI on the pull request is that run. In a workbench
+plugin repo, `claude plugin test .` always runs every test file, so a covering
+run names its test files to `claude plugin test` directly.
+
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 
 Every handoff reaches you as a **brief**: six named slots, in this order. The

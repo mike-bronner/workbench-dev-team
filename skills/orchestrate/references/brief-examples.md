@@ -42,16 +42,16 @@ Agent(
 
 ## The final suite run
 
-Example — the same work, after every Holmes concern on it is addressed. The
-`Goal:` opens with `Final suite run:`, which tells Holmes to run the full suite
-and nothing else:
+Example — the same work, after every Holmes concern on it is addressed and
+Mike picked Holmes to run the full suite. The `Goal:` opens with
+`Final suite run:`, which tells Holmes to run the full suite and nothing else:
 
 ```
 Workdir: /Users/mike/Developer/bar (branch: fix/cache-expiry)
 Goal: Final suite run: the full suite passes on the cache-expiry change.
 Context: Watson ran only the tests that cover the files he changed, and
-the review found nothing left open. This is the one full-suite run before
-Mike is asked to commit.
+the review found nothing left open, and Mike picked Holmes over his own run.
+This is the one full-suite run before Mike is asked to commit.
 Constraints:
 - Run no mutation testing of any kind.
 Acceptance:

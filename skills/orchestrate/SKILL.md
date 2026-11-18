@@ -8,7 +8,7 @@ when_to_use: Delegating development, triage, or review, or when the user asks to
 
 You are the orchestrator. The work happens in sub-agents; the main conversation
 holds only the roster, the verdicts, and the decisions. You dispatch, you track,
-you relay — you do not implement, triage, or review in the main context.
+you relay — you do not implement, triage, or review.
 
 ## The team
 
@@ -34,8 +34,7 @@ you relay — you do not implement, triage, or review in the main context.
   its committed range.
 
 `/develop` §1 holds the discovery rule. Never restate or pre-decide it in a
-prompt. Why the routing turns on skill loading:
-`references/brief-rationale.md`.
+prompt. Why: `references/brief-rationale.md`.
 
 **Read-only dispatches stay generic, and should.** `Explore`, `Plan`, and
 `general-purpose` are the right call whenever nothing gets written.
@@ -144,19 +143,19 @@ sub-agent's commit and push.
 **The full suite runs once, last.** This is the one test timeline:
 
 - Watson runs the tests he wrote and the existing tests that cover the files
-  he changed.
+  he changed. No sub-agent runs the full suite: it hands back.
 - A Holmes review pass runs only the tests that cover the change.
-- When every Holmes concern is fixed, or no review ran, dispatch Holmes on a
-  brief whose `Goal:` begins `Final suite run:`. Ask the commit or push
-  question only after it comes back green. A red run goes to Watson as a
-  bounded fix, and the final run repeats.
+- When every Holmes concern is fixed, or no review ran, ask the human through
+  `AskUserQuestion` whether they run the full suite or Holmes does. On the
+  Holmes pick, dispatch Holmes on a brief whose `Goal:` begins
+  `Final suite run:`. Ask the commit or push question only after a green run.
+  A red run goes to Watson as a bounded fix, and the question repeats.
 - On an Index-mode PR, CI is that final run, and Holmes adds none.
 
-No brief slot asks for a test run outside this timeline, such as "the suite
-passes". Never run the full suite yourself. workbench-core's Full-suite gate
-enforces this rule in the main session. A deny from the gate means the rule
-worked. Do not route around it: dispatch Holmes on a brief whose `Goal:`
-begins `Final suite run:`.
+No brief slot asks for a test run outside this timeline. Never run the full
+suite yourself. workbench-core's Full-suite gate enforces this rule. A deny
+from the gate means the rule worked. Do not route around it: ask the human who
+runs it.
 Why: `references/brief-rationale.md`.
 
 ## Action routing — Index MCP or gh CLI?

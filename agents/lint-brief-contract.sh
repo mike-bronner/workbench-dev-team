@@ -226,6 +226,24 @@ else
   fail_file "watson — the investigation stop is gone" "${stop_problems[@]}"
 fi
 
+suite_problems=()
+for suite_file in "$DIR/watson.md" "$DIR/watson-direct.md"; do
+  suite_text="$(tr '\n' ' ' < "$suite_file" | tr -s ' ')"
+  for phrase in \
+    "**Never run the project's full test suite, in either mode.**" \
+    "In Direct mode, when a full run is due, hand back and say so in your report: the orchestrator asks the human whether they run it or Holmes runs it in a \`Final suite run:\` dispatch." \
+    "In a workbench plugin repo, \`claude plugin test .\` always runs every test file, so a covering run names its test files to \`claude plugin test\` directly."; do
+    printf '%s' "$suite_text" | grep -Fq -- "$phrase" \
+      || suite_problems+=("$(basename "$suite_file") — the full-suite rule lost: $phrase")
+  done
+done
+if [ ${#suite_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ watson — never runs the full suite, hands back when one is due, and names plugin test files"
+else
+  fail_file "watson — the full-suite rule is gone" "${suite_problems[@]}"
+fi
+
 unit_problems=()
 for unit_file in "$DIR/watson.md" "$DIR/watson-direct.md"; do
   unit_section="$(awk '/^## Direct mode/{f=1} f && /^## / && !/^## Direct mode/{exit} f{print}' "$unit_file" | tr '\n' ' ' | tr -s ' ')"

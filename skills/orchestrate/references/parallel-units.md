@@ -138,10 +138,11 @@ goes to the guard's ordinary rules, which refuse it.
 
    A tree that git will not remove without `--force` holds work that did not
    land. Ask the human about it.
-8. **Run the final suite once, after the last unit lands.** Dispatch Holmes
-   with a `Goal:` that begins `Final suite run:`, as the test timeline in
-   `SKILL.md` says. The landed units leave the project tree clean, so name
-   them as a committed range:
+8. **Run the final suite once, after the last unit lands.** Ask the human
+   through `AskUserQuestion` whether they run it or Holmes does, as the test
+   timeline in `SKILL.md` says. On the Holmes pick, dispatch Holmes with a
+   `Goal:` that begins `Final suite run:`. The landed units leave the project
+   tree clean, so name them as a committed range:
    `Workdir: <project folder> (branch: <feature branch>, range: <base>...HEAD)`.
    Holmes reviews nothing in this run. He runs the full suite on the feature
    branch, and he skips the PR head check, because the run judges no PR.

@@ -125,9 +125,15 @@ that cover the files he changed.
 
 Direct-mode work reaches no CI before a commit, so that left nobody running the
 full suite on it. A full run inside Holmes's review would come back on every
-review round. So the full suite is one final Holmes run, dispatched with a
-`Goal:` that begins `Final suite run:` after every review concern is addressed,
-and before the commit or push question goes to Mike.
+review round. So the full suite runs once, after every review concern is
+addressed, and before the commit or push question goes to Mike.
+
+No sub-agent picks that run on its own. On 2026-11-18 a Watson run on
+workbench-core ran all 4,668 tests, though the timeline already said Watson
+never runs the full suite. Mike's rule since then: a sub-agent that finds a full
+run due hands back, and the orchestrator asks him through `AskUserQuestion`
+whether he runs it himself or Holmes runs it on a brief whose `Goal:` begins
+`Final suite run:`. Holmes's final run happens only on that pick.
 
 An Index-mode pull request gets no such Holmes run. CI already runs the full
 suite on the pull request, in the repo's own toolchain, and Holmes's step 4c
