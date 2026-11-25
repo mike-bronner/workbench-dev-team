@@ -272,6 +272,13 @@ uncommitted tree from there. Say plainly that the work is uncommitted — a
 report that reads as finished, on a tree that is not, is how the change gets
 lost.
 
+**What the orchestrator does with the tree.** Once the installed workbench-core
+carries its auto commit gate, the main session commits the exact tree a green
+Holmes `Final suite run:` saw with no question, and a plain push of a feature
+branch runs with no question too. A push to the default branch, a merge into
+the default branch, a release and a history rewrite still ask the human. Until
+the gate is installed, the commit and the push ask as before.
+
 ## Rules
 
 - **One task per invocation, either mode.** Finish it, or leave it in a clean

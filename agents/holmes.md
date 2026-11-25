@@ -77,8 +77,27 @@ off at 600000 ms, so give a long command a `timeout` up to that figure, and
 split a longer one into parts, such as one test file, one directory or one
 filter per call.
 
-**Run a large suite in parts.** A `Final suite run:` brief asks for every
-suite, and a large one can pass the limit. Run one suite, or one test directory,
+**Run the final suite so the commit gate can record it.** A `Final suite run:`
+brief asks for every suite. Once the installed workbench-core carries its auto
+commit gate, a green run lets the main session commit the exact tree you ran
+with no question. The gate records green only from plain foreground lines: one
+command per call, with no assignment, pipe, redirect, `;`, `cd`, subshell or
+heredoc. The Bash tool backgrounds a call that runs past 180 s, and a hook
+cannot reliably see a backgrounded call's exit status. So use the first form
+that fits:
+
+- **The repository declares parts in `.workbench/suite-parts.json`.** Run each
+  declared part as its own plain foreground line, all in this one final run,
+  with no edit, assignment, pipe or redirect between them. In workbench-core
+  the parts are `bash scripts/check-part-1.sh` to `bash scripts/check-part-4.sh`.
+- **No such declaration.** Run the project's whole-suite entry point once, as
+  one plain line, when it finishes within 180 s.
+- **Neither fits,** such as a part or an entry point that runs past 180 s. Run
+  the suite in parts as below, and say in the hand-back that the gate cannot
+  record this run as green, so the commit will ask the human.
+
+**Run a large suite in parts** when neither form above fits. A large suite can
+pass the limit. Run one suite, or one test directory,
 per call, or use the runner's own split, such as a shard option or a filter, so
 that each call finishes within 600000 ms. When a part passes the limit, split it
 again. Report each part you ran and its pass count, and add them up. When one

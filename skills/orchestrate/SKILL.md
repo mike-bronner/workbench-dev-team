@@ -75,8 +75,7 @@ unasked, land it with `git merge --no-ff` on the feature branch, never a
 cherry-pick, rebase or reset, then remove its worktree and database. Ask before
 each landing, one question each. A catch-up merge of the base branch runs
 unasked. To sync a branch with its own remote, run `git fetch --all`, then
-`git pull`, then `git push`, never a rebase or a hand-run merge. A merge into
-the default branch and every push still ask the human.
+`git pull`, then `git push`, never a rebase or a hand-run merge.
 
 **New work gets its own dispatch.** Never SendMessage new work to a running
 agent: it waits behind that agent's current task. A message to a running agent
@@ -107,8 +106,7 @@ path, `Workdir: /Users/mike/Developer/foo (branch: fix/retry-backoff)` — so no
 workspace choice is made inside a sub-agent the human never saw. A bare path
 stays valid, and means there was no workspace decision to record.
 
-**A read-only dispatch decides no workspace.** `Explore`, `Plan`, and
-`general-purpose` write nothing, and take the tree as it stands.
+**A read-only dispatch decides no workspace:** it takes the tree as it stands.
 
 Why: `references/brief-rationale.md`.
 
@@ -149,8 +147,13 @@ sub-agent's commit and push.
 - When every Holmes concern is fixed, or no review ran, ask the human through
   `AskUserQuestion` whether they run the full suite or Holmes does. On the
   Holmes pick, dispatch Holmes on a brief whose `Goal:` begins
-  `Final suite run:`. Ask the commit or push question only after a green run.
-  A red run goes to Watson as a bounded fix, and the question repeats.
+  `Final suite run:`. A red run goes to Watson as a bounded fix, and the
+  question repeats.
+- **Commit and push only after a green run.** Once the installed
+  workbench-core carries its auto commit gate, a main-session commit of the
+  exact tree a green Holmes `Final suite run:` saw, and a plain push of a
+  feature branch, run with no question. Otherwise ask. A push to or merge into
+  the default branch, a release and a history rewrite always ask.
 - On an Index-mode PR, CI is that final run, and Holmes adds none. In a
   plugin repo, Watson also runs `claude plugin test .`.
 
@@ -289,8 +292,6 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   lean-context point of delegating.
 - **Failures surface verbatim.** An agent that errored or hit its budget cap is
   reported as such, with its last reported state. No silent retries.
-- **Liveness comes from the task list and the transcript, never from
-  `ListAgents`:** `references/agent-liveness.md`.
 - **Decisions come home through `AskUserQuestion`.** Watson's `/develop` skill
   returns a meaningful fork as a graded table and a recommendation. Holmes's
   Local mode returns a rubric dispute the same way. A brief can come back with
@@ -313,9 +314,8 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   reads and Bash stay open. A file written through Bash — `sed -i`, a heredoc,
   a redirect, a script — is still a write. The gate cannot see it, so the rule
   binds you there on your own. A deny means the rule worked. Report it, then
-  dispatch. Never ask for `/orchestrator off` to clear your own deny — it is the
-  human's own command (`/orchestrator on | off | status`), and only when they
-  run it does inline writing open up.
+  dispatch. Never ask for `/orchestrator off` to clear your own deny: that
+  command is the human's alone.
 
 ## When NOT to orchestrate
 

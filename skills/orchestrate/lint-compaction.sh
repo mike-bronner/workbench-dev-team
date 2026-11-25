@@ -187,7 +187,8 @@ phrase|orchestrate|Units that share files run one at a time, the short unit firs
 phrase|orchestrate|land it with `git merge --no-ff` on the feature branch, never a cherry-pick, rebase or reset
 phrase|orchestrate|Ask before each landing, one question each. A catch-up merge of the base branch runs unasked.
 phrase|orchestrate|To sync a branch with its own remote, run `git fetch --all`, then `git pull`, then `git push`, never a rebase or a hand-run merge.
-phrase|orchestrate|A merge into the default branch and every push still ask the human.
+phrase|orchestrate|Once the installed workbench-core carries its auto commit gate, a main-session commit of the exact tree a green Holmes `Final suite run:` saw, and a plain push of a feature branch, run with no question.
+phrase|orchestrate|A push to or merge into the default branch, a release and a history rewrite always ask.
 phrase|orchestrate|Never merge two units into one brief
 phrase|orchestrate|**Cut the task into its smallest units before the first dispatch,** one brief per unit
 phrase|orchestrate|Unit: <optional: this dispatch's one step>

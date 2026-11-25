@@ -79,7 +79,11 @@ the question comes when the unit lands on another branch.
   branch is out of step with its own remote, such as after a rejected push, run
   `git fetch --all`, then `git pull`, then `git push`. Never rebase, and never
   hand-run a merge for this.
-- **Every push and every pull request still asks**, as before.
+- **A push follows the test timeline in `SKILL.md`.** Once the installed
+  workbench-core carries its auto commit gate, a plain push of a feature branch
+  runs with no question. Until then every push asks. A push to or merge into
+  the default branch, a pull request, a release and a history rewrite always
+  ask.
 
 ## Names
 
@@ -150,10 +154,13 @@ goes to the guard's ordinary rules, which refuse it.
    `Workdir: <project folder> (branch: <feature branch>, range: <base>...HEAD)`.
    Holmes reviews nothing in this run. He runs the full suite on the feature
    branch, and he skips the PR head check, because the run judges no PR.
-   Ask the push question only after this run comes back green.
+   Push only after this run comes back green.
 
-A merge into the default branch and every push still ask the human, as they do
-for any other work.
+The push then follows the test timeline in `SKILL.md`, as it does for any other
+work: a plain push of the feature branch runs with no question once the
+installed workbench-core carries its auto commit gate, and asks until then. A
+push to or merge into the default branch, a release and a history rewrite
+always ask the human.
 
 ## Refusals and leftovers
 

@@ -127,7 +127,10 @@ that cover the files he changed.
 Direct-mode work reaches no CI before a commit, so that left nobody running the
 full suite on it. A full run inside Holmes's review would come back on every
 review round. So the full suite runs once, after every review concern is
-addressed, and before the commit or push question goes to Mike.
+addressed, and before the commit and the push. Once the installed
+workbench-core carries its auto commit gate, a green Holmes run on the exact
+tree lets that commit run with no question, so the run must be one the gate
+can record.
 
 No sub-agent picks that run on its own. On 2026-11-18 a Watson run on
 workbench-core ran all 4,668 tests, though the timeline already said Watson

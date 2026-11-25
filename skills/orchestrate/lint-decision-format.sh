@@ -173,7 +173,10 @@ for f in agents/watson.md agents/watson-direct.md; do
   check "$joined" 'the full `git status --short --untracked-files=all` output of the tree' "$f hands back the whole status list" "$f — the hand-back no longer carries the full git status list"
   check "$joined" 'never trimmed to your own file list' "$f hands back the status list untrimmed" "$f — no longer says the status list is never trimmed to its own file list"
   check "$joined" 'The orchestrator takes the uncommitted tree from there.' "$f leaves the tree to the orchestrator" "$f — no longer says the orchestrator takes the uncommitted tree"
+  check "$joined" 'the main session commits the exact tree a green Holmes `Final suite run:` saw with no question, and a plain push of a feature branch runs with no question too. A push to the default branch, a merge into the default branch, a release and a history rewrite still ask the human.' "$f states the auto commit and push rule" "$f — no longer states which commit and push run with no question and which still ask"
 done
+[ -n "$gc" ] && check "$gc" 'A main-session commit of the exact tree a green Holmes `Final suite run:` saw runs with no question.' "git-commit states the auto commit rule" "git-commit — no longer says a commit of a green final run's tree runs with no question"
+[ -n "$gc" ] && check "$gc" 'A push to the default branch, a merge into the default branch, a release and a history rewrite still ask the human.' "git-commit keeps the default branch, releases and rewrites asking" "git-commit — no longer says a default-branch push or merge, a release and a history rewrite still ask"
 [ -n "$oc" ] && check "$oc" "read the tree itself, never only the report's file list" "orchestrate reads the tree, not the report's file list" "orchestrate — no longer reads the tree itself rather than the report's file list"
 check "$RULES_TEXT" 'The orchestrator takes the uncommitted tree from there.' "the session rules leave the tree to the orchestrator" "session rules — no longer say the orchestrator takes the uncommitted tree"
 

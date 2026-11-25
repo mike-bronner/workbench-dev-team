@@ -63,6 +63,15 @@ pushes unattended from the dispatcher's top-level run, and never asks about
 committing or pushing. How Watson splits that work into commits is his own
 judgment.
 
+**After a green final run, the main session commits and pushes with no
+question.** This holds once the installed workbench-core carries its auto
+commit gate. A main-session commit of the exact tree a green Holmes
+`Final suite run:` saw runs with no question. Make no edit after the run, and
+commit as one plain line. A plain push of a feature branch runs with no
+question too. A push to the default branch, a merge into the default branch, a
+release and a history rewrite still ask the human. Until the gate is installed,
+the commit and the push ask as before.
+
 **The ask rules.** `/workbench-core:setup` installs the `permissions.ask` rules.
 Eleven of them cover commits, pushes and merges. Six are for commits and
 pushes: `git commit *`, `git push *`, `git * commit *`, `git * push *`,

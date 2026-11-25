@@ -539,8 +539,10 @@ report — same rule as Index mode.
 
 ## §L6 — the final suite run: the full suite, once, and nothing else
 
-The full suite runs once per unit of work, as the last step before the human is
-asked to commit or push. The orchestrator sends it only after every concern a
+The full suite runs once per unit of work, as the last step before the commit
+and the push. Once the installed workbench-core carries its auto commit gate, a
+green run here lets the main session commit the exact tree it saw with no
+question. The orchestrator sends it only after every concern a
 review raised is addressed, and only when the human picked Holmes over their
 own run, on a six-slot brief whose `Goal:` begins `Final suite run:`. Neither
 Watson's loop nor a review pass runs the full suite, so this run is the only
@@ -559,16 +561,30 @@ verification, no Phase D, no verdict on the code, and no vault note.
 2. Discover the suite's entry point as §L4c says. Run every existing suite in
    the `Workdir:`, and the project's own test command with it, such as
    `claude plugin test` in a Claude Code plugin. Run them read-only, under
-   §L4c's limits. Run each call in the foreground, within 600000 ms. Run a
-   large suite in parts, one suite, one test directory or one shard per call,
-   and report each part's pass count, as "Foreground commands" in
-   `agents/holmes.md` says.
+   §L4c's limits, in the form the commit gate can record, as "Run the final
+   suite so the commit gate can record it" in `agents/holmes.md` says. The
+   gate records green only from plain foreground lines, with no assignment,
+   pipe, redirect, `;`, `cd`, subshell or heredoc, and the Bash tool
+   backgrounds a call that runs past 180 s. Use the first form that fits:
+   - When the repository declares parts in `.workbench/suite-parts.json`, run
+     each declared part as its own plain foreground line, all in this one run,
+     with no edit, assignment, pipe or redirect between them. In
+     workbench-core the parts are `bash scripts/check-part-1.sh` to
+     `bash scripts/check-part-4.sh`.
+   - With no such declaration, run the project's whole-suite entry point once,
+     as one plain line, when it finishes within 180 s.
+   - When neither fits, run a large suite in parts, one suite, one test
+     directory or one shard per call, each within 600000 ms, and report each
+     part's pass count, as "Foreground commands" in `agents/holmes.md` says.
+     Say in the report that the gate cannot record this run as green, so the
+     commit will ask the human.
 3. Report the result to the dispatching session, as prose, in one of three
    forms:
 
 ```
 ✅ **Suite green** — <workdir>
 - <each command run, and its pass count>
+- <the form used: declared parts, one entry point, or parts the gate cannot record, so the commit will ask>
 ```
 
 ```
