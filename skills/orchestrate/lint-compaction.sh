@@ -185,7 +185,8 @@ section|orchestrate-modes|## What the dispatcher does
 section|orchestrate-modes|## Model and effort come from the config, never from you
 phrase|orchestrate|Units that share files run one at a time, the short unit first.
 phrase|orchestrate|land it with `git merge --no-ff` on the feature branch, never a cherry-pick, rebase or reset
-phrase|orchestrate|Ask before each landing, one question each. A catch-up merge that brings a branch up to date runs unasked.
+phrase|orchestrate|Ask before each landing, one question each. A catch-up merge of the base branch runs unasked.
+phrase|orchestrate|To sync a branch with its own remote, run `git fetch --all`, then `git pull`, then `git push`, never a rebase or a hand-run merge.
 phrase|orchestrate|A merge into the default branch and every push still ask the human.
 phrase|orchestrate|Never merge two units into one brief
 phrase|orchestrate|**Cut the task into its smallest units before the first dispatch,** one brief per unit
@@ -203,6 +204,7 @@ phrase|orchestrate|**The full suite runs once, last.**
 phrase|orchestrate|No sub-agent runs the full suite: it hands back.
 phrase|orchestrate|ask the human through `AskUserQuestion` whether they run the full suite or Holmes does. On the Holmes pick, dispatch Holmes on a brief whose `Goal:` begins `Final suite run:`.
 phrase|orchestrate|On an Index-mode PR, CI is that final run, and Holmes adds none.
+phrase|orchestrate|In a plugin repo, Watson also runs `claude plugin test .`.
 phrase|orchestrate|No brief slot asks for a test run outside this timeline
 phrase|orchestrate|Never run the full suite yourself.
 phrase|orchestrate|workbench-core's Full-suite gate enforces this rule
@@ -222,7 +224,7 @@ phrase|orchestrate-github|range: origin/<base>...HEAD, pr: <n>)`. First check ou
 phrase|orchestrate-github|Holmes moves no ref, checks the head against PR `<n>`, and stops on a stale base or head. The verdict comes back as prose
 phrase|orchestrate-github|Never unwind commits to fake an uncommitted tree
 phrase|develop|the existing tests that cover the files you changed, never the full suite.**
-phrase|develop|A sub-agent hands back when one is due. In a workbench plugin repo, name the test files to the runner: `claude plugin test .` runs every file.
+phrase|develop|A sub-agent hands back when one is due. In a Claude Code plugin repo, `claude plugin test` takes only a folder: a sub-agent reports its tests as not run, and the pipeline runs it whole.
 phrase|develop|**Run no mutation testing of any kind.**
 phrase|orchestrate|The dev-team mod's no-mutation gate refuses one without it.
 phrase|orchestrate|A CI-only failure's brief rules out Docker, a VM or a CI-like local environment, and never asks for a local reproduction on another platform.

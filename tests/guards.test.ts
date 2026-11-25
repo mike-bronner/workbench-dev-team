@@ -98,6 +98,7 @@ describe('review guard — who is held', () => {
     ['Holmes', 'workbench-dev-team:holmes'],
     ['his Local mode', 'workbench-dev-team:holmes-local'],
     ['his Index mode', 'workbench-dev-team:holmes-index'],
+    ['his external mode', 'workbench-dev-team:holmes-external'],
     ['a bare holmes type', 'holmes'],
     ['holmes spelled with ſ', 'workbench-dev-team:holmeſ'],
   ]
@@ -110,6 +111,8 @@ describe('review guard — who is held', () => {
   const free: [string, string][] = [
     ['Watson', 'workbench-dev-team:watson'],
     ['a Watson mode', 'workbench-dev-team:watson-direct'],
+    ['Watson external mode', 'workbench-dev-team:watson-external'],
+    ['Lestrade external mode', 'workbench-dev-team:lestrade-external'],
     ['a generic sub-agent', 'general-purpose'],
     ['a type that only contains holmes', 'workbench-dev-team:holmes-review-bot'],
     ['a type that only extends a mode name', 'workbench-dev-team:holmes-localbot'],
@@ -138,6 +141,15 @@ describe('review guard — who is held', () => {
     reviewWorld(on, {
       lane: id => (id === undefined ? 'top-level-agent' : 'sub-agent'),
       env: { CLAUDE_CODE_AGENT: 'workbench-dev-team:holmes-index' },
+      agents: [{ id: 'g-1', type: 'general-purpose' }],
+    })
+    expect(await refusalOf($, bash(BREACH))).toContain('A Holmes reviewer')
+    expect(await refusalOf($, bash(BREACH), 'g-1')).toContain('A Holmes reviewer')
+  })
+  test('an external run of Holmes is held on its main loop and in its sub-agents', async ($, on) => {
+    reviewWorld(on, {
+      lane: id => (id === undefined ? 'top-level-agent' : 'sub-agent'),
+      env: { CLAUDE_CODE_AGENT: 'workbench-dev-team:holmes-external' },
       agents: [{ id: 'g-1', type: 'general-purpose' }],
     })
     expect(await refusalOf($, bash(BREACH))).toContain('A Holmes reviewer')
@@ -235,4 +247,91 @@ describe('a reviewer reaches GitHub through gh read verbs only (C9, C19, C21)', 
       expect(w.ran).toEqual([`Bash: ${line}`])
     })
   }
+})
+
+describe("external write rule — external-gh.sh is the one GitHub write route, and never a reviewer's", () => {
+  const POST = '/plugin/bin/external-gh.sh comment acme/shop 5 watson'
+  const UNDER_WATSON = {
+    lane: (id?: string) => (id === undefined ? ('top-level-agent' as const) : ('sub-agent' as const)),
+    env: { CLAUDE_CODE_AGENT: 'workbench-dev-team:watson-external', WORKBENCH_DEV_TEAM_EXTERNAL: '1' },
+    agents: [
+      { id: 'h-1', type: 'workbench-dev-team:holmes-local' },
+      { id: 'l-1', type: 'workbench-dev-team:lestrade-external' },
+    ],
+  }
+  for (const line of [POST, `WORKBENCH_DEV_TEAM_EXTERNAL=1 ${POST}`, 'gh pr view 5; /elsewhere/external-gh.sh pr acme/shop feature/5-x title']) {
+    test(`a holmes-local sub-agent of watson-external that runs \`${line}\` is refused`, async ($, on) => {
+      const w = world(on, UNDER_WATSON)
+      const deny = await refusalOf($ as never, bash(line), 'h-1')
+      expect(deny?.split('\n')[0]).toBe('🛑 Blocked: a Holmes reviewer ran external-gh.sh.')
+      expect(w.ran).toEqual([])
+    })
+  }
+  test('a holmes-local sub-agent of an interactive session that runs external-gh.sh is refused too', async ($, on) => {
+    const w = world(on, { lane: () => 'sub-agent', agents: [{ id: 'h-1', type: 'workbench-dev-team:holmes-local' }] })
+    expect(await refusalOf($ as never, bash(POST), 'h-1')).toContain('a Holmes reviewer ran external-gh.sh')
+    expect(w.ran).toEqual([])
+  })
+  test('watson-external and its Lestrade run external-gh.sh', async ($, on) => {
+    const w = world(on, UNDER_WATSON)
+    const LESTRADE = '/plugin/bin/external-gh.sh comment acme/shop 5 lestrade'
+    expect(await refusalOf($ as never, bash(POST))).toBeUndefined()
+    expect(await refusalOf($ as never, bash(LESTRADE), 'l-1')).toBeUndefined()
+    expect(w.ran).toEqual([`Bash: ${POST}`, `Bash: ${LESTRADE}`])
+  })
+  for (const line of [
+    'gh pr create --draft -t x -b y',
+    'gh pr ready 9',
+    'gh pr edit 9 -b x',
+    'gh pr comment 9 -b x',
+    'gh issue comment 5 -b x',
+    'gh issue create -t x -b y',
+    'gh api --method POST repos/acme/shop/issues/5/comments --input body.json',
+    'gh api -X PATCH repos/acme/shop/pulls/9',
+    'gh api repos/acme/shop/issues/5/comments -f body=x',
+    'gh api graphql -F query=x',
+  ]) {
+    test(`\`${line}\` from watson-external, on its main loop and from its Lestrade, is refused`, async ($, on) => {
+      const w = world(on, UNDER_WATSON)
+      expect((await refusalOf($ as never, bash(line)))?.split('\n')[2]).toContain('External write rule (workbench-dev-team).')
+      expect(await refusalOf($ as never, bash(line), 'l-1')).toContain('External write rule')
+      expect(w.ran).toEqual([])
+    })
+  }
+  const HELD: [string, NonNullable<Parameters<typeof world>[1]>, string][] = [
+    ['a lestrade-external sub-agent of an interactive session', { lane: () => 'sub-agent', agents: [{ id: 'l-1', type: 'workbench-dev-team:lestrade-external' }] }, 'l-1'],
+    ['a generic sub-agent of a run flagged external', { lane: () => 'sub-agent', env: { WORKBENCH_DEV_TEAM_EXTERNAL: '1' }, agents: [{ id: 'g-1', type: 'general-purpose' }] }, 'g-1'],
+    [
+      'a generic sub-agent of lestrade-external',
+      { lane: () => 'sub-agent', agents: [{ id: 'l-1', type: 'workbench-dev-team:lestrade-external' }, { id: 'g-1', type: 'general-purpose', parentId: 'l-1' }] },
+      'g-1',
+    ],
+  ]
+  for (const [label, options, agentId] of HELD) {
+    test(`${label} is held to the rule`, async ($, on) => {
+      const w = world(on, options)
+      expect(await refusalOf($ as never, bash('gh issue comment 5 -b x'), agentId)).toContain('External write rule')
+      expect(w.ran).toEqual([])
+    })
+  }
+  for (const line of [
+    'gh pr view 5 -R acme/shop --json url,state',
+    'gh issue view 5 -R acme/shop --json title,body',
+    'gh pr list -R acme/shop --author mike-b --state open',
+    'gh api repos/acme/shop --jq .default_branch',
+    'gh api --paginate repos/acme/shop/pulls/9/reviews',
+    'gh repo clone acme/shop /SB/tmp/scratch/c',
+    'gh pr checkout 9',
+  ]) {
+    test(`\`${line}\` from watson-external reads, so it runs`, async ($, on) => {
+      const w = world(on, UNDER_WATSON)
+      expect(await refusalOf($ as never, bash(line))).toBeUndefined()
+      expect(w.ran).toEqual([`Bash: ${line}`])
+    })
+  }
+  test('outside an external run the rule holds nothing: an Index Watson opens its PR', async ($, on) => {
+    const w = world(on, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: 'workbench-dev-team:watson-index' } })
+    expect(await refusalOf($ as never, bash('gh pr create --draft -t x -b y'))).toBeUndefined()
+    expect(w.ran).toEqual(['Bash: gh pr create --draft -t x -b y'])
+  })
 })

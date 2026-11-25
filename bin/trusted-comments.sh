@@ -11,6 +11,12 @@ for slug in "$@"; do
   [[ "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "$0: not an App slug: $slug" >&2; exit 2; }
 done
 
+me=
+if [ "${WORKBENCH_DEV_TEAM_EXTERNAL:-}" = 1 ]; then
+  me=$(gh api user --jq .login) || exit 2
+  [[ "$me" =~ ^[A-Za-z0-9-]+$ ]] || { echo "$0: gh api user named no login" >&2; exit 2; }
+fi
+
 codeowners=
 for path in .github/CODEOWNERS CODEOWNERS docs/CODEOWNERS; do
   if file=$(gh api "repos/$REPO/contents/$path"); then
@@ -40,11 +46,20 @@ if [ "$trust_author" = 1 ]; then
 fi
 
 pages=$(gh api --paginate "repos/$REPO/issues/$NUMBER/comments?per_page=100") || exit 2
-jq -s --arg author "$author" --args '($ARGS.positional | map(select(startswith("owner:")) | ltrimstr("owner:"))) as $owners
+jq -s --arg author "$author" --arg me "$me" --args '($ARGS.positional | map(select(startswith("owner:")) | ltrimstr("owner:"))) as $owners
   | ($ARGS.positional | map(select(startswith("app:")) | ltrimstr("app:") + "[bot]")) as $apps
+  | {"inspector-g-lestrade": "lestrade", "mr-sherlock-holmes": "holmes", "dr-john-h-watson": "watson"} as $agents
   | [.[] | if type == "array" then .[] else error("not a comment list") end
   | (.user.login? // "") as $login
-  | select((.user.type? == "Bot" and ($login | IN($apps[])))
-      or (.user.type? == "User" and ($login == "mikebronner" or ($author != "" and $login == $author) or ($login | ascii_downcase | IN($owners[])))))
-  | {author: .user.login, created_at, body}]' \
+  | (if $me != "" and .user.type? == "User" and $login == $me
+      then [(.body // "") | split("\n")[] | gsub("^\\s+|\\s+$"; "") | capture("^<!-- workbench:(?<a>[a-z]+) -->$").a] | unique
+      else [] end) as $marks
+  | if $marks != [] then
+      ([$apps[] | select(($marks | length) == 1 and $agents[rtrimstr("[bot]")] == $marks[0])][0] // empty) as $app
+      | {author: $app, created_at, body}
+    else
+      select((.user.type? == "Bot" and ($login | IN($apps[])))
+        or (.user.type? == "User" and ($login == "mikebronner" or ($author != "" and $login == $author) or ($login | ascii_downcase | IN($owners[])))))
+      | {author: .user.login, created_at, body}
+    end]' \
   "${@/#/app:}" "${owners[@]/#/owner:}" <<< "$pages" || exit 2

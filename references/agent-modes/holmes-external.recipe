@@ -1,0 +1,66 @@
+# Sherlock Holmes, external mode only. bin/compose-agents.sh reads this file;
+# the format is in that script's header.
+name: holmes-external
+source: holmes
+description: Sherlock Holmes in external mode only — the External review token from bin/dispatch-agent.sh in, a drafted review of one PR on a repo outside The Index out, written to the run's result file for Mike to post, with nothing posted to GitHub. Dispatch nothing here by hand: bin/dispatch-agent.sh external review starts it.
+tools: Agent, Bash, Read, Grep, Glob, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__write, mcp__plugin_workbench-core_memory__edit, mcp__plugin_workbench-core_memory__search
+
+requires: Agent, Bash, Read, Grep, Glob
+
+section: # Sherlock Holmes — Code Review Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — a template in your own folder, deleted when your run ends
+section: ## Foreground commands — each command and each task under about 10 minutes
+section: ## Validation — run the tests in place, and inspect them
+skip: ## Mode detection
+skip: ## The Index-mode input contract
+skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
+text: ## Input — a dispatch token, never a brief
+text:
+text: This prompt is the external mode of `workbench-dev-team:holmes`. It takes
+text: only the machine-built token `External review: <owner/repo#n>`, never a
+text: six-slot brief. If your prompt carries no such token, it reached the wrong
+text: type: change nothing, and report that `workbench-dev-team:holmes` takes the
+text: brief.
+text:
+text: The `Dev-team config:` line after the token comes from the dev-team mod.
+text: It is not part of the token, and §0 reads it.
+section: ## Working-context budget — roughly 250k tokens, self-checked
+skip: ## Tools
+skip: ## Tools — The Index mode
+skip: ## Local mode
+section: ## External mode
+section: ### External-mode input and tools
+section: ### External-mode steps
+skip: ## The Index-mode workflow
+text: ## The steps external mode shares with the other modes
+text:
+text: `references/holmes/local-review.md` names each step below by its Index-mode
+text: number and says how it applies to a review of a committed range. The other
+text: Index-mode steps are not yours.
+section: ### 0. The config line (fan-out knobs)
+skip: ### 1. Fetch the item
+skip: ### 2. Find the PR
+skip: ### 2.5. Decision request? (answer mode — before reviewing code)
+skip: ### 3. Compute the strike count — informs §5, never skips the review
+skip: ### 4. Review the PR
+skip: #### Phase A — set up the evidence
+skip: ##### 4a. Read the issue and AC
+section: ##### 4a.5. Search `feedback/` before you judge — required, in both modes
+skip: ##### 4b. Check out the PR — the shared evidence room
+skip: ##### 4c. Confirm the tests passed — trust CI, don't re-run
+section: #### Phases B, C, and D — fan-out, adversarial verification, memory context
+section: #### 4d. Check conformance against the acceptance criteria — the contract
+section: #### 4e. Defects and observations beyond the AC — route by the coherent unit of work, then coupling and locality
+skip: ### 5. Submit your verdict — three outcomes, and only three
+skip: #### 🕰️ Before you write anything — re-read the item
+skip: #### ✅ APPROVE — every AC item met, no hard defect this repo can fix, and the PR's own code **plus everything belonging to the coherent unit** carry no actionable finding
+skip: #### 🔄 REQUEST CHANGES — an AC item is unmet (impl wrong/incomplete), a hard defect surfaced, or the PR's own code **or anything belonging to the coherent unit** carries an actionable finding
+skip: #### 🛑 ESCALATE — the **AC itself** looks wrong/imprecise/impossible/contradicted, **or** the impl diverges from an AC item in a way you can't confidently call a strict, nothing-dropped improvement
+skip: ### 5.5. Record review learnings — on every verdict
+skip: ### 6. Report
+skip: ## Rules
+skip: ## Rules — Local mode
+skip: ## Rules — The Index mode
+section: ## Rules — External mode

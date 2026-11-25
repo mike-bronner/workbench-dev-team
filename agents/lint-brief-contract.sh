@@ -78,17 +78,13 @@ for file in "$DIR"/*.md; do
     continue
   fi
 
-  # A token-only mode file takes no brief either. bin/compose-agents.sh builds
-  # watson-index, holmes-index, lestrade-item and lestrade-sweep from a public
-  # agent, and the mode each one runs takes only a machine-built token. Exempt by
-  # what the file declares, as above: an `## Input — a dispatch token, never a
-  # brief` section naming its token, and the public agent it was composed from,
-  # which still carries the whole contract and is checked on its own.
   tokens_only="$(awk '/^## Input — a dispatch token, never a brief/{f=1} f && /^## / && !/^## Input — a dispatch token/{exit} f{print}' "$file" | tr '\n' ' ')"
   composed_from="$(sed -n 's|^# Composed by bin/compose-agents.sh from agents/\([a-z-]*\)\.md .*|\1|p' "$file" | head -1)"
   if [ -z "$section" ] && [ -n "$composed_from" ] && [ -f "$DIR/$composed_from.md" ] \
     && [[ $tokens_only == *"never a six-slot brief"* ]] \
-    && [[ $tokens_only == *'`Item ID: <n>`'* || $tokens_only == *'`Repo sweep: <owner/repo>`'* ]]; then
+    && [[ $tokens_only == *'`Item ID: <n>`'* || $tokens_only == *'`Repo sweep: <owner/repo>`'*
+      || $tokens_only == *'`External issue: <owner/repo#n>`'* || $tokens_only == *'`External review: <owner/repo#n>`'*
+      || $tokens_only == *'`External criteria: <owner/repo#n>`'* ]]; then
     PASS=$((PASS + 1))
     echo "  ✅ $agent — a token-only mode of $composed_from, no brief contract"
     continue
@@ -227,21 +223,53 @@ else
 fi
 
 suite_problems=()
-for suite_file in "$DIR/watson.md" "$DIR/watson-direct.md"; do
+for suite_file in "$DIR/watson.md" "$DIR/watson-direct.md" "$DIR/watson-index.md" "$DIR/watson-external.md"; do
   suite_text="$(tr '\n' ' ' < "$suite_file" | tr -s ' ')"
   for phrase in \
     "**Never run the project's full test suite, in either mode.**" \
     "In Direct mode, when a full run is due, hand back and say so in your report: the orchestrator asks the human whether they run it or Holmes runs it in a \`Final suite run:\` dispatch." \
-    "In a workbench plugin repo, \`claude plugin test .\` always runs every test file, so a covering run names its test files to \`claude plugin test\` directly."; do
+    "In a Claude Code plugin repo, the TypeScript tests cannot run per file. \`claude plugin test\` takes only a folder and runs every test file under it, and the full-suite gate refuses it for a sub-agent." \
+    "In Direct mode, run the type-check and the shell tests that cover the change there, and report the TypeScript tests as not run in your hand-back. The orchestrator's final suite run covers them." \
+    "In The Index mode and External mode, run \`claude plugin test .\` there before you open or update the PR, because CI has no Claude Code. That run is the one exception to this rule, and it holds only in those two unattended modes."; do
     printf '%s' "$suite_text" | grep -Fq -- "$phrase" \
       || suite_problems+=("$(basename "$suite_file") — the full-suite rule lost: $phrase")
   done
+  printf '%s' "$suite_text" | grep -Fq -- "names its test files to \`claude plugin test\`" \
+    && suite_problems+=("$(basename "$suite_file") — still tells Watson to name test files to claude plugin test, which takes only a folder")
 done
 if [ ${#suite_problems[@]} -eq 0 ]; then
   PASS=$((PASS + 1))
-  echo "  ✅ watson — never runs the full suite, hands back when one is due, and names plugin test files"
+  echo "  ✅ watson — never runs the full suite, hands back when one is due, reports a plugin's TypeScript tests as not run in Direct mode, and runs them in the unattended modes"
 else
   fail_file "watson — the full-suite rule is gone" "${suite_problems[@]}"
+fi
+
+plugin_problems=()
+holmes_local_clause="If the brief's \`Context:\` says the dispatching Watson ran \`claude plugin test .\` on this range, cite that run and its result. Otherwise report the TypeScript tests as not run and leave them to the final suite run. An external review has no final suite run, and External mode step 4 says what it does instead."
+holmes_external_clause="No final suite run covers a Claude Code plugin's TypeScript tests here. Name them as not run in the review body you write to the result file. Neither run them nor point at a final run."
+for plugin_file in "$DIR/holmes.md" "$DIR/holmes-local.md" "$DIR/holmes-index.md" "$DIR/holmes-external.md"; do
+  plugin_text="$(tr '\n' ' ' < "$plugin_file" | tr -s ' ')"
+  printf '%s' "$plugin_text" | grep -Fq -- "$holmes_local_clause" \
+    || plugin_problems+=("$(basename "$plugin_file") — the plugin-test clause of the Local-mode review is gone")
+done
+for plugin_file in "$DIR/holmes.md" "$DIR/holmes-external.md"; do
+  plugin_text="$(tr '\n' ' ' < "$plugin_file" | tr -s ' ')"
+  printf '%s' "$plugin_text" | grep -Fq -- "$holmes_external_clause" \
+    || plugin_problems+=("$(basename "$plugin_file") — the external review no longer names a plugin's TypeScript tests as not run")
+done
+pipeline_text="$(tr '\n' ' ' < "$DIR/../references/watson/external-mode-pipeline.md" | tr -s ' ')"
+for phrase in \
+  "run \`claude plugin test .\` here, before each Holmes review in step 5 and so before you open or update the PR." \
+  "In a Claude Code plugin repo, say that you ran \`claude plugin test .\` on this range in step 4, and give its result." \
+  "fix every finding under \`## Issues Found\`, commit, run step 4's tests again, update the \`Context:\` line with the new result, then dispatch a fresh Holmes with that brief."; do
+  printf '%s' "$pipeline_text" | grep -Fq -- "$phrase" \
+    || plugin_problems+=("external-mode-pipeline.md — the plugin-suite run before the review is gone: $phrase")
+done
+if [ ${#plugin_problems[@]} -eq 0 ]; then
+  PASS=$((PASS + 1))
+  echo "  ✅ holmes — a plugin's TypeScript tests are cited from Watson's run, left to the final suite run, or named as not run in an external review"
+else
+  fail_file "holmes — the plugin-test clauses are gone" "${plugin_problems[@]}"
 fi
 
 unit_problems=()

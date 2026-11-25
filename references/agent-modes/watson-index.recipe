@@ -25,6 +25,11 @@ section: ## The Index mode
 section: ### Input contract
 section: ### Tools
 section: ### The pipeline — read it before you touch anything
+skip: ## External mode
+skip: ### External input contract
+skip: ### External tools
+skip: ### External pipeline
 section: ## Rules
 skip: ## Rules — Direct mode
 section: ## Rules — The Index mode
+skip: ## Rules — External mode

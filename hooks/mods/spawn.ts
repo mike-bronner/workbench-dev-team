@@ -16,9 +16,9 @@ export type Family = 'watson' | 'holmes' | 'lestrade'
 // its token, so a mode type dispatched by name still runs the mode its prompt
 // calls for.
 const FAMILIES: Readonly<Record<Family, readonly string[]>> = {
-  watson: ['watson', 'watson-direct', 'watson-index'],
-  holmes: ['holmes', 'holmes-local', 'holmes-index'],
-  lestrade: ['lestrade', 'lestrade-item', 'lestrade-sweep'],
+  watson: ['watson', 'watson-direct', 'watson-index', 'watson-external'],
+  holmes: ['holmes', 'holmes-local', 'holmes-index', 'holmes-external'],
+  lestrade: ['lestrade', 'lestrade-item', 'lestrade-sweep', 'lestrade-external'],
 }
 
 export function familyOf(subagentType: string | undefined): Family | undefined {
@@ -28,16 +28,6 @@ export function familyOf(subagentType: string | undefined): Family | undefined {
   return (Object.keys(FAMILIES) as Family[]).find(family => FAMILIES[family].includes(name))
 }
 
-// The tokens. A token picks a mode only when it is the whole prompt: one
-// non-blank line, and that line the token, which is how workbench-core's
-// briefCheck reads the `item-id` and `repo-sweep` shapes. A brief that only
-// mentions `Item ID: 9`, in its Context or anywhere else, is a brief, so it
-// runs the off-board mode and the agent's own rule that a mention is not a
-// dispatch token still applies. Watson and Holmes take `Item ID: <n>` or one
-// bare id (a plain integer, a UUID, or a PVTI_ id) for The Index mode. Lestrade
-// takes `Item ID: <n>` or a bare integer for Item mode, and
-// `Repo sweep: <owner/repo>` for Sweep mode. Whitespace is the five ASCII
-// characters core's check uses, so an exotic space makes a line no token.
 const SPACE = '[ \\t\\r\\v\\f]*'
 const ITEM_ID = new RegExp(`^${SPACE}Item ID:${SPACE}[0-9]+${SPACE}$`)
 const BARE_INTEGER = new RegExp(`^${SPACE}[0-9]+${SPACE}$`)
@@ -45,6 +35,10 @@ const BARE_ID = new RegExp(
   `^${SPACE}(?:[0-9]+|[0-9a-fA-F]{8}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{4}-[0-9a-fA-F]{12}|PVTI_[A-Za-z0-9_-]+)${SPACE}$`,
 )
 const REPO_SWEEP = new RegExp(`^${SPACE}Repo sweep:${SPACE}[^ \\t\\r\\v\\f/]+/[^ \\t\\r\\v\\f/]+${SPACE}$`)
+const external = (kind: string): RegExp => new RegExp(`^${SPACE}External ${kind}:${SPACE}[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*${SPACE}$`)
+const EXTERNAL_ISSUE = external('issue')
+const EXTERNAL_REVIEW = external('review')
+const EXTERNAL_CRITERIA = external('criteria')
 const NONBLANK = /[^ \t\r\v\f\n]/
 
 // Whether the whole prompt is one token: a single non-blank line it matches.
@@ -66,12 +60,15 @@ export function itemIdOf(prompt: string): string | undefined {
 export function modeTypeOf(family: Family, prompt: string): string {
   switch (family) {
     case 'watson':
+      if (isWhole(prompt, EXTERNAL_ISSUE)) return `${PLUGIN}:watson-external`
       return `${PLUGIN}:${isWhole(prompt, ITEM_ID, BARE_ID) ? 'watson-index' : 'watson-direct'}`
     case 'holmes':
+      if (isWhole(prompt, EXTERNAL_REVIEW)) return `${PLUGIN}:holmes-external`
       return `${PLUGIN}:${isWhole(prompt, ITEM_ID, BARE_ID) ? 'holmes-index' : 'holmes-local'}`
     case 'lestrade':
       if (isWhole(prompt, ITEM_ID, BARE_INTEGER)) return `${PLUGIN}:lestrade-item`
       if (isWhole(prompt, REPO_SWEEP)) return `${PLUGIN}:lestrade-sweep`
+      if (isWhole(prompt, EXTERNAL_CRITERIA)) return `${PLUGIN}:lestrade-external`
       return `${PLUGIN}:lestrade`
   }
 }
@@ -106,14 +103,10 @@ export function knobsOf(configText: string | undefined, family: Family): Knobs {
   return knobs
 }
 
-// The knobs the review agents read at run time: whether Holmes and Lestrade
-// fan out to helpers, and the model the helpers run on. The mod adds them to
-// the prompt of the three modes that read them, so no agent reads the file:
-// at spawn for an interactive dispatch, and on prompt.submit for the top-level
-// run bin/dispatch-agent.sh starts, which raises no agent.spawn.
 export const CONFIG_MODES: Readonly<Record<string, Family>> = {
   [`${PLUGIN}:holmes-local`]: 'holmes',
   [`${PLUGIN}:holmes-index`]: 'holmes',
+  [`${PLUGIN}:holmes-external`]: 'holmes',
   [`${PLUGIN}:lestrade-item`]: 'lestrade',
 }
 
@@ -156,9 +149,7 @@ export const withConfigLine = (prompt: string, line: string): string =>
 
 export const LENS_TYPE = `${PLUGIN}:holmes-lens`
 
-// Holmes in any mode: the public type and its two mode types, by full or bare
-// name. Not holmes-lens, which holds no Agent tool.
-const HOLMES_MODE = /(^|[:/])holmes(-local|-index)?$/iu
+const HOLMES_MODE = /(^|[:/])holmes(-local|-index|-external)?$/iu
 export const isHolmesMode = (type: string | undefined): boolean => type !== undefined && HOLMES_MODE.test(type.trim())
 
 // The type a Holmes spawn runs as: holmes-lens, whatever the call named, or a

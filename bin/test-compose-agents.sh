@@ -57,7 +57,7 @@ for recipe in "$ROOT"/references/agent-modes/*.recipe; do
   model_mode=$(sed -n 's/^model: //p' "$ROOT/agents/$mode.md" | head -1)
   expect "$mode takes its model from $source" "$model_mode" "$model_src"
 done
-expect "six mode recipes ship" "$recipes" 6
+expect "nine mode recipes ship" "$recipes" 9
 
 echo "── the composer, in a sandbox ───────────────────────────────────────────"
 

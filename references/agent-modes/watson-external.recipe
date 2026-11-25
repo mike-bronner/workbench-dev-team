@@ -1,0 +1,37 @@
+# Dr. Watson, external mode only. bin/compose-agents.sh reads this file; the
+# format is in that script's header.
+name: watson-external
+source: watson
+description: Dr. Watson in external mode only — the External issue token from bin/dispatch-agent.sh in, Lestrade's criteria, a locally reviewed branch and a draft PR as Mike out, with the final state in the run's result file. Dispatch nothing here by hand: bin/dispatch-agent.sh external issue starts it.
+tools: Agent, Skill, Bash, Read, Write, Edit, Grep, Glob, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__search
+
+requires: Agent, Skill, Bash, Read, Write, Edit, Grep, Glob
+
+section: # Dr. Watson — Development Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — a template in your own folder, deleted when your run ends
+section: ## Foreground commands — each command and each task under about 10 minutes
+skip: ## Mode detection
+skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
+text: ## Input — a dispatch token, never a brief
+text:
+text: This prompt is the external mode of `workbench-dev-team:watson`. It takes
+text: only the machine-built token `External issue: <owner/repo#n>`, never a
+text: six-slot brief. If your prompt carries no such token, it reached the wrong
+text: type: change nothing, and report that `workbench-dev-team:watson` takes the
+text: brief.
+section: ## Working-context budget — roughly 250k tokens, self-checked
+skip: ## Direct mode
+skip: ## The Index mode
+skip: ### Input contract
+skip: ### Tools
+skip: ### The pipeline — read it before you touch anything
+section: ## External mode
+section: ### External input contract
+section: ### External tools
+section: ### External pipeline
+section: ## Rules
+skip: ## Rules — Direct mode
+skip: ## Rules — The Index mode
+section: ## Rules — External mode

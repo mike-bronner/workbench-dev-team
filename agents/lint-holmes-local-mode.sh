@@ -422,8 +422,10 @@ printf '%s' "$l4b" | grep -Fq 'If the base looks stale, say so' \
 l4b_flat="$(printf '%s' "$l4b" | tr -s ' ')"
 printf '%s' "$l4b_flat" | grep -Fq '**They differ:** stop. Report a stale head with both SHAs.' \
   || range+=("§L4b no longer stops a range review at a stale PR head")
-printf '%s' "$l4b_flat" | grep -Fq '**A lookup fails or prints nothing,** or the branch has no configured remote or merge ref: stop.' \
-  || range+=("§L4b no longer stops when the PR head cannot be looked up")
+printf '%s' "$l4b_flat" | grep -Fq '**`ls-remote` or `gh pr view` fails or prints nothing,** or the branch has a configured remote and no merge ref, or a merge ref and no remote: stop.' \
+  || range+=("§L4b no longer stops when the PR head cannot be looked up, or the branch is half-configured")
+printf '%s' "$l4b_flat" | grep -Fq 'When `Workdir:` names no `pr:`, and both `config` reads print nothing, the branch has no configured remote and no merge ref. It exists only in the workdir, so its `HEAD` is the head.' \
+  || range+=("§L4b no longer takes a never-pushed branch, with no pr: and neither config read, as its own head")
 printf '%s' "$l4b_flat" | grep -Fq 'Ask the sender to name the PR number in `Workdir:` as `pr: <n>`, which needs no tracking' \
   || range+=("§L4b's lookup stop no longer gives a remedy that changes the outcome")
 printf '%s' "$l4b_flat" | grep -Fq 'ask the sender to update `<base>` and dispatch again' \

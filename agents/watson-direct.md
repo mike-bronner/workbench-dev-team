@@ -87,9 +87,15 @@ could have been cut into.
 wrote and the existing tests that cover the files you changed. In Direct mode,
 when a full run is due, hand back and say so in your report: the orchestrator
 asks the human whether they run it or Holmes runs it in a `Final suite run:`
-dispatch. In The Index mode, CI on the pull request is that run. In a workbench
-plugin repo, `claude plugin test .` always runs every test file, so a covering
-run names its test files to `claude plugin test` directly.
+dispatch. In The Index mode, CI on the pull request is that run. In a Claude
+Code plugin repo, the TypeScript tests cannot run per file. `claude plugin test`
+takes only a folder and runs every test file under it, and the full-suite gate
+refuses it for a sub-agent. In Direct mode, run the type-check and the shell
+tests that cover the change there, and report the TypeScript tests as not run
+in your hand-back. The orchestrator's final suite run covers them. In The Index
+mode and External mode, run `claude plugin test .` there before you open or
+update the PR, because CI has no Claude Code. That run is the one exception to
+this rule, and it holds only in those two unattended modes.
 
 ## The brief contract — refuse an incomplete brief, ask about a vague one
 

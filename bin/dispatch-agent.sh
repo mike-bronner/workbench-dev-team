@@ -154,39 +154,58 @@ if [ "$MODE" = digest ]; then
   exit
 fi
 
-AGENT="${1:-}"
-TARGET="${2:-}"
-
-case "$AGENT" in
-  lestrade|holmes|watson) ;;
-  *) { echo "usage: $(basename "$0") [--check|--mark-escalated] <lestrade|holmes|watson> <item-id|owner/repo>"; echo "       $(basename "$0") --compact-digest"; } >&2; exit 2 ;;
-esac
-
-if [ -z "$TARGET" ]; then
-  echo "$(basename "$0"): missing target (item id, or owner/repo for a lestrade sweep)" >&2
-  exit 2
-fi
-
-# A target containing a slash is a repo sweep — Lestrade only, and a plain
-# dispatch only. Everything else is a project_items.id and must be numeric, so a
-# malformed argument fails here rather than spawning an agent that cannot find
-# its item, or writing a marker for one.
-SWEEP=0
-case "$TARGET" in
-  */*)
-    if [ "$AGENT" != lestrade ] || [ "$MODE" != dispatch ]; then
-      echo "$(basename "$0"): only a lestrade dispatch takes a repo sweep target, got '$TARGET'" >&2
-      exit 2
-    fi
-    SWEEP=1
-    ;;
-  ''|*[!0-9]*)
-    echo "$(basename "$0"): '$TARGET' is neither a numeric item id nor an owner/repo sweep target" >&2
+EXTERNAL=
+if [ "${1:-}" = external ]; then
+  EXTERNAL_USAGE="usage: $(basename "$0") [--check|--mark-escalated] external <issue|review> <owner/repo#n>"
+  EXTERNAL_TARGET='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$'
+  case "${2:-}" in
+    issue) AGENT=watson ;;
+    review) AGENT=holmes ;;
+    *) echo "$EXTERNAL_USAGE" >&2; exit 2 ;;
+  esac
+  EXTERNAL=$2
+  TARGET="${3:-}"
+  if [ $# -ne 3 ] || ! [[ "$TARGET" =~ $EXTERNAL_TARGET ]] || [[ "$TARGET" =~ ^(\.\.?/|[^/]*/\.\.?#) ]]; then
+    echo "$EXTERNAL_USAGE" >&2
     exit 2
-    ;;
-esac
+  fi
+  SWEEP=0
+  ID=$(printf '%s' "$TARGET" | tr 'A-Z/#' 'a-z++')
+else
+  AGENT="${1:-}"
+  TARGET="${2:-}"
 
-ID="$TARGET"
+  case "$AGENT" in
+    lestrade|holmes|watson) ;;
+    *) { echo "usage: $(basename "$0") [--check|--mark-escalated] <lestrade|holmes|watson> <item-id|owner/repo>"; echo "       $(basename "$0") --compact-digest"; } >&2; exit 2 ;;
+  esac
+
+  if [ -z "$TARGET" ]; then
+    echo "$(basename "$0"): missing target (item id, or owner/repo for a lestrade sweep)" >&2
+    exit 2
+  fi
+
+  # A target containing a slash is a repo sweep — Lestrade only, and a plain
+  # dispatch only. Everything else is a project_items.id and must be numeric, so a
+  # malformed argument fails here rather than spawning an agent that cannot find
+  # its item, or writing a marker for one.
+  SWEEP=0
+  case "$TARGET" in
+    */*)
+      if [ "$AGENT" != lestrade ] || [ "$MODE" != dispatch ]; then
+        echo "$(basename "$0"): only a lestrade dispatch takes a repo sweep target, got '$TARGET'" >&2
+        exit 2
+      fi
+      SWEEP=1
+      ;;
+    ''|*[!0-9]*)
+      echo "$(basename "$0"): '$TARGET' is neither a numeric item id nor an owner/repo sweep target" >&2
+      exit 2
+      ;;
+  esac
+
+  ID="$TARGET"
+fi
 MARKER="$LOGDIR/$AGENT-$ID.escalated"   # presence => the breaker escalated this item before
 
 # ── The circuit breaker ───────────────────────────────────────────────────────
@@ -349,6 +368,7 @@ case "$AGENT" in
   holmes) MODE_TYPE=holmes-index ;;
   lestrade) if [ "$SWEEP" = 1 ]; then MODE_TYPE=lestrade-sweep; else MODE_TYPE=lestrade-item; fi ;;
 esac
+[ -z "$EXTERNAL" ] || MODE_TYPE=$AGENT-external
 
 if [ "$SWEEP" = 1 ]; then
   PROMPT="Repo sweep: $TARGET"
@@ -356,10 +376,11 @@ if [ "$SWEEP" = 1 ]; then
   LOCK=
 else
   PROMPT="Item ID: $TARGET"
-  LOG="$LOGDIR/${AGENT}-${TARGET}-$STAMP.log"
+  [ -z "$EXTERNAL" ] || PROMPT="External $EXTERNAL: $TARGET"
+  LOG="$LOGDIR/${AGENT}-${ID}-$STAMP.log"
   # In-flight lock: the pre-flight SKIPs this item while this PID lives. Sweeps
   # are not per-item and take no lock.
-  LOCK="$LOGDIR/${AGENT}-${TARGET}.lock"
+  LOCK="$LOGDIR/${AGENT}-${ID}.lock"
 fi
 
 # Tools no pipeline run may use. Before each run started in its own empty folder
@@ -387,6 +408,11 @@ DENIED_TOOLS=(
 # Bash or Agent one. A server's tools take a glob only after a literal
 # mcp__<server>__ prefix, so each server is named here.
 ALLOWED_TOOLS=('mcp__the-index__*' 'mcp__plugin_workbench-core_memory__*')
+
+if [ -n "$EXTERNAL" ]; then
+  DENIED_TOOLS+=(mcp__the-index)
+  ALLOWED_TOOLS=('mcp__plugin_workbench-core_memory__*')
+fi
 
 # --disallowedTools and --allowedTools take variadic lists. Each goes in as one
 # comma-joined value, and an option always follows it, so neither can swallow
@@ -425,6 +451,39 @@ set -- "$@" --permission-mode auto --permission-prompts none \
 # is untouched — the property the old host-wide /tmp/watson.lock could not offer.
 export WORKBENCH_DEV_TEAM_PIPELINE=1
 
+RESULT=
+if [ -n "$EXTERNAL" ]; then
+  case "$LOG" in /*) RESULT="${LOG%.log}.result.json" ;; *) RESULT="$PWD/${LOG%.log}.result.json" ;; esac
+  export WORKBENCH_DEV_TEAM_EXTERNAL=1 WORKBENCH_DEV_TEAM_RESULT="$RESULT" WORKBENCH_DEV_TEAM_EXTERNAL_TARGET="$TARGET"
+else
+  unset WORKBENCH_DEV_TEAM_EXTERNAL WORKBENCH_DEV_TEAM_RESULT WORKBENCH_DEV_TEAM_EXTERNAL_TARGET
+fi
+
+write_result() {
+  local tmp
+  tmp=$(mktemp "$RESULT.XXXXXX" 2>/dev/null) || return 1
+  if jq -n --arg state "$1" --arg error "${2:-}" \
+      '{state: $state, prUrl: null, review: null, error: (if $error == "" then null else $error end)}' > "$tmp" \
+    && mv -f "$tmp" "$RESULT"; then
+    return 0
+  fi
+  rm -f -- "$tmp"
+  return 1
+}
+
+finish_result() {
+  [ -n "$RESULT" ] || return 0
+  jq -e '(.state == "draft_pr" and (.prUrl | type) == "string")
+      or (.state == "review_drafted" and (.review.event | IN("APPROVE", "REQUEST_CHANGES")) and (.review.body | type) == "string")
+      or (.state == "needs_mike" and (.error | type) == "string")
+      or .state == "failed"' "$RESULT" >/dev/null 2>&1 && return 0
+  if [ "$(jq -r '.state // empty' "$RESULT" 2>/dev/null)" = running ]; then
+    write_result failed "the run ended before it wrote a final state. Its log is ${RESULT%.result.json}.log"
+  else
+    write_result failed "the run ended with the result file holding no final state. Its log is ${RESULT%.result.json}.log"
+  fi
+}
+
 if [ "${DISPATCH_DRY_RUN:-0}" = 1 ]; then
   printf 'claude -p'; printf ' %s' "$@"; printf '\n'
   printf 'log=%s\n' "$LOG"
@@ -433,6 +492,7 @@ if [ "${DISPATCH_DRY_RUN:-0}" = 1 ]; then
   # Read back the exported variable rather than restating the literal, so the
   # dry run cannot claim a carve-out the real invocation does not set.
   printf 'pipeline=%s\n' "${WORKBENCH_DEV_TEAM_PIPELINE:-unset}"
+  [ -z "$EXTERNAL" ] || printf 'external=%s\nresult=%s\ntarget=%s\n' "${WORKBENCH_DEV_TEAM_EXTERNAL:-unset}" "$WORKBENCH_DEV_TEAM_RESULT" "$WORKBENCH_DEV_TEAM_EXTERNAL_TARGET"
   exit 0
 fi
 
@@ -466,6 +526,12 @@ fi
 unset CLAUDE_PROJECT_DIR
 
 mkdir -p "$LOGDIR"
+
+if [ -n "$RESULT" ] && ! write_result running; then
+  rmdir "$RUNDIR"
+  echo "$(basename "$0"): could not write the result file $RESULT; nothing dispatched" >&2
+  exit 1
+fi
 
 CLAUDE_CODE_OAUTH_TOKEN=$(security find-generic-password -s "claude-code" -a "oauth-token" -w 2>/dev/null || true)
 export CLAUDE_CODE_OAUTH_TOKEN
@@ -538,7 +604,7 @@ fi
 # and its folder is gone, so the lock holds for the whole run.
 (
   trap '' HUP
-  trap 'rm -rf -- "$RUNDIR"' EXIT
+  trap 'finish_result; rm -rf -- "$RUNDIR"' EXIT
   trap 'exit 143' TERM
   cd "$RUNDIR" || exit 1
   nohup claude -p "$@" | jq -nrR --unbuffered "$RENDER"
@@ -552,5 +618,9 @@ disown 2>/dev/null || true
 # that run wedges too, the breaker escalates from scratch and writes a new one.
 [ "$REPRIEVE" = 1 ] && rm -f "$MARKER"
 
-printf 'dispatched %s pid=%s log=%s\n' "$AGENT" "$DISPATCHED" "$LOG"
+if [ -n "$RESULT" ]; then
+  printf 'dispatched %s pid=%s log=%s result=%s\n' "$AGENT" "$DISPATCHED" "$LOG" "$RESULT"
+else
+  printf 'dispatched %s pid=%s log=%s\n' "$AGENT" "$DISPATCHED" "$LOG"
+fi
 [ -z "$DIGEST_LINE" ] || printf '%s\n' "$DIGEST_LINE"

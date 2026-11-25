@@ -20,9 +20,17 @@ describe('routing — a public type runs the mode its token picks', () => {
     ['lestrade', 'Repo sweep: mike-bronner/phpcs-rules', 'lestrade-sweep'],
     // Lestrade has no prose mode: a brief stays on the public type.
     ['lestrade', BRIEF, 'lestrade'],
+    ['watson', 'External issue: acme/shop.js#5', 'watson-external'],
+    ['holmes', 'External review: acme/shop#5', 'holmes-external'],
+    ['lestrade', 'External criteria: acme/shop#5', 'lestrade-external'],
+    ['lestrade', 'External issue: acme/shop#5', 'lestrade'],
+    ['lestrade', 'External criteria: acme/shop#5a', 'lestrade'],
     // A mode type named directly still runs the mode its prompt calls for.
     ['watson-index', BRIEF, 'watson-direct'],
     ['holmes-local', 'Item ID: 7', 'holmes-index'],
+    ['watson-external', BRIEF, 'watson-direct'],
+    ['holmes-local', 'External review: acme/shop#5', 'holmes-external'],
+    ['lestrade-external', 'Item ID: 7', 'lestrade-item'],
   ]
   for (const [from, prompt, to] of cases) {
     test(`${from} with ${JSON.stringify(prompt.slice(0, 24))} runs ${to}`, async ($, on) => {
@@ -30,6 +38,22 @@ describe('routing — a public type runs the mode its token picks', () => {
       const result = await $.agent.spawn(spawnInput(T(from), prompt, { parentAgentId: 'agent-parent' }))
       expect(result).toMatchObject({ agentId: 'agent-1' })
       expect(w.spawned.map(s => s.subagentType)).toEqual([T(to)])
+    })
+  }
+
+  for (const [from, prompt, gate] of [
+    ['watson', 'External review: acme/shop#5', 'a Watson Direct-mode dispatch'],
+    ['watson', 'External criteria: acme/shop#5', 'a Watson Direct-mode dispatch'],
+    ['watson', 'External issue: acme/shop#0', 'a Watson Direct-mode dispatch'],
+    ['watson', 'External issue: acme/shop', 'a Watson Direct-mode dispatch'],
+    ['holmes', 'External issue: acme/shop#5', 'a Holmes Local-mode dispatch'],
+    ['holmes', 'External review: acme/shop/x#5', 'a Holmes Local-mode dispatch'],
+  ] as const) {
+    test(`${from} with ${JSON.stringify(prompt)} is no external token, so the ${gate.slice(2)} brief gate judges it and nothing spawns`, async ($, on) => {
+      const w = world(on)
+      const result = (await $.agent.spawn(spawnInput(T(from), prompt, { parentAgentId: 'agent-parent' }))) as { deny?: string }
+      expect(result.deny?.split('\n')[0]).toContain(`🛑 Blocked: ${gate} whose brief`)
+      expect(w.spawned).toEqual([])
     })
   }
 

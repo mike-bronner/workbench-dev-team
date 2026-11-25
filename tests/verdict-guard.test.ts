@@ -612,6 +612,14 @@ describe('verdict guard — wired into tool.call', () => {
     expect(reached(w, MEM('write'))).toBe(1)
   })
 
+  test("Holmes external writing the digest is refused, as in Local mode; its own note is not this guard's", async ($, on) => {
+    const w = world(on, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('holmes-external') } })
+    expect(await denyOf($ as never, MEM('write'), { path: 'dev-team/top-lessons.md', content: 'x' })).toContain('C15')
+    expect(await denyOf($ as never, MEM('edit'), { path: 'dev-team/top-lessons.md', old_text: 'a', new_text: 'b' })).toContain('C15')
+    expect(await denyOf($ as never, MEM('write'), { path: 'dev-team/review-learnings/external-x.md', content: 'x' })).toBeUndefined()
+    expect(reached(w, MEM('write'))).toBe(1)
+  })
+
   test('when the mod cannot tell which Holmes run called, the call passes and the gap is logged', async ($, on) => {
     const w = world(on, { lane: () => new Error('lane unknown'), env: { CLAUDE_CODE_AGENT: T('holmes-index') } })
     expect(await denyOf($ as never, MEM('search'), { query: 'x', folder: 'feedback' })).toBeUndefined()

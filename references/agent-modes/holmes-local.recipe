@@ -20,6 +20,9 @@ section: ## Working-context budget — roughly 250k tokens, self-checked
 section: ## Tools
 skip: ## Tools — The Index mode
 section: ## Local mode
+skip: ## External mode
+skip: ### External-mode input and tools
+skip: ### External-mode steps
 skip: ## The Index-mode workflow
 text: ## The steps Local mode shares with The Index mode
 text:
@@ -50,6 +53,7 @@ skip: ### 6. Report
 section: ## Rules
 section: ## Rules — Local mode
 skip: ## Rules — The Index mode
+skip: ## Rules — External mode
 
 cut: The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
 cut: Workdir: <absolute path, plus the branch or worktree when one was agreed>

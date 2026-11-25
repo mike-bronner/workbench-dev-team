@@ -11,13 +11,6 @@
 // exercise a lens sub-agent ran `chmod` against that directory with the rule in
 // its own prompt. This guard is not advisory.
 //
-// WHO IS HELD. A call from Holmes (`holmes`, or his mode agents `holmes-local`
-// and `holmes-index`) or his helper (`holmes-lens`), with or without the
-// `workbench-dev-team:` prefix, and from any sub-agent one of them spawned, at
-// any depth. A top-level `--agent` run of one of them (the scheduled pipeline)
-// is held on its main loop and in every sub-agent. The main loop of any other
-// session, and every other agent, keeps its tools.
-//
 // THE SCRATCH ROOTS are the places a reviewer may write: workbench-core's
 // $.workbench.scratchRoots (the session scratchpad, ~/Developer/scratchpad and
 // ~/.claude/plans) and $TMPDIR, where a bare `mktemp -d` lands. A write lands
@@ -108,7 +101,7 @@ export type Verdict = { finding: Finding } | { writes: Write[] }
 
 // The agent types the guard holds. `u` folds `ſ` into `s`, as Python's
 // re.IGNORECASE did for the bash guard.
-const REVIEWER = /(^|[:/])holmes(-lens|-local|-index)?$/iu
+const REVIEWER = /(^|[:/])holmes(-lens|-local|-index|-external)?$/iu
 
 export const isReviewerType = (type: string | undefined): boolean => type !== undefined && REVIEWER.test(type.trim())
 

@@ -72,9 +72,13 @@ the question comes when the unit lands on another branch.
   pull that lands a unit branch asks, from any source and with any options,
   a fast-forward included. Name the unit branch and the branch it lands on.
   workbench-core's commit gate decides what the answer allows.
-- **A catch-up merge runs with no question.** A merge that brings a branch up
-  to date, such as `git merge origin/main`, lands no unit. Mike updates
-  branches with `git merge`.
+- **A catch-up merge runs with no question.** A merge that brings the base
+  branch into a feature branch, such as `git merge origin/main`, lands no unit.
+  Mike updates branches with `git merge`.
+- **Sync a branch with its own remote by fetch, pull and push.** When a local
+  branch is out of step with its own remote, such as after a rejected push, run
+  `git fetch --all`, then `git pull`, then `git push`. Never rebase, and never
+  hand-run a merge for this.
 - **Every push and every pull request still asks**, as before.
 
 ## Names

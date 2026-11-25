@@ -73,9 +73,10 @@ brief: the short one then waits behind the long one. How:
 **Only for units you dispatched,** commit each in its own tree after review,
 unasked, land it with `git merge --no-ff` on the feature branch, never a
 cherry-pick, rebase or reset, then remove its worktree and database. Ask before
-each landing, one question each. A catch-up merge that brings a branch up to
-date runs unasked. A merge into the default branch and every push still ask the
-human.
+each landing, one question each. A catch-up merge of the base branch runs
+unasked. To sync a branch with its own remote, run `git fetch --all`, then
+`git pull`, then `git push`, never a rebase or a hand-run merge. A merge into
+the default branch and every push still ask the human.
 
 **New work gets its own dispatch.** Never SendMessage new work to a running
 agent: it waits behind that agent's current task. A message to a running agent
@@ -150,7 +151,8 @@ sub-agent's commit and push.
   Holmes pick, dispatch Holmes on a brief whose `Goal:` begins
   `Final suite run:`. Ask the commit or push question only after a green run.
   A red run goes to Watson as a bounded fix, and the question repeats.
-- On an Index-mode PR, CI is that final run, and Holmes adds none.
+- On an Index-mode PR, CI is that final run, and Holmes adds none. In a
+  plugin repo, Watson also runs `claude plugin test .`.
 
 No brief slot asks for a test run outside this timeline. Never run the full
 suite yourself. workbench-core's Full-suite gate enforces this rule. A deny

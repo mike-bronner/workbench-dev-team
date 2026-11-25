@@ -78,6 +78,14 @@ for r in heads/both tags/v1 tags/both tags/feature/t remotes/origin/main; do
   git -C "$CLONE" rev-parse -q --verify "refs/$r" >/dev/null || { echo "❌ fixture is missing refs/$r"; exit 1; }
 done
 SHA=$(git -C "$CLONE" rev-parse HEAD)
+FORK="$T/tmp.fork"
+git init -q "$FORK"; seed "$FORK" main feature/5-x
+git -C "$FORK" update-ref refs/remotes/origin/main HEAD
+git -C "$FORK" symbolic-ref refs/remotes/origin/HEAD refs/remotes/origin/main
+git -C "$FORK" remote add origin https://github.com/mike-b/shop.git
+git -C "$FORK" remote add upstream https://github.com/acme/shop.git
+git -C "$FORK" update-ref refs/remotes/upstream/main HEAD
+git -C "$CLONE" remote add fork https://github.com/mike-b/shop.git
 # The deny rules from Mike's settings that name git or rm, plus two on git log and
 # git diff, which nothing else here refuses. Those cases show the rules are read,
 # and the diff rule's trailing " *" is what a bare git diff must still match.
@@ -232,6 +240,15 @@ for c in "git -C $CLONE push" "git -C $CLONE push origin" "git -C $CLONE push -u
          "git -C $CLONE push origin HEAD:Heads/main" "git -C $CLONE push origin feature/x:heads/feature/x" \
          "git -C $CLONE push origin feature/x:tags/v1" "git -C $CLONE push origin tags/v1" \
          "git -C $CLONE push origin feature/x:remotes/origin/main" "git -C $DEV push origin HEAD:heads/develop"; do
+  expect silent "$SANDBOX" "$c"
+done
+
+echo "An external run without push access pushes to origin of a clone of Mike's fork"
+expect allow "$SANDBOX" "git -C $FORK push -u origin feature/5-x"
+expect allow "$SANDBOX" "git -C $FORK push origin feature/5-x:feature/5-head"
+for c in "git -C $FORK push -u origin main" "git -C $FORK push origin feature/5-x:main" \
+         "git -C $FORK push -u upstream feature/5-x" \
+         "git -C $CLONE push -u fork feature/x"; do
   expect silent "$SANDBOX" "$c"
 done
 

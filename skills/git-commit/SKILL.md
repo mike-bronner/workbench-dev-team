@@ -86,6 +86,13 @@ workbench-core's commit guard refuses those forms. So:
   file, or an interpreter. The rules cannot see through any of them, so the
   commit or push would run with no prompt.
 
+**Sync a branch with its own remote by fetch, pull and push.** When a local
+branch is out of step with its own remote, such as after a rejected push, run
+`git fetch --all`, then `git pull`, then `git push`, each as a plain line.
+Never rebase, and never hand-run a merge such as `git merge origin/<branch>`
+for this. A merge that brings the base branch into a feature branch stays a
+merge.
+
 **What is never allowed.** A push that forces or deletes remote refs
 (`--force`, `-f`, a `+` refspec, `--mirror`, `--delete`, `-d`, a `:branch`
 refspec, `--prune`) is refused outright. Merge stays an explicit human request:
