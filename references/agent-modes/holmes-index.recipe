@@ -28,6 +28,9 @@ section: ## Working-context budget — roughly 250k tokens, self-checked
 section: ## Tools
 section: ## Tools — The Index mode
 skip: ## Local mode
+skip: ## External mode
+skip: ### External-mode input and tools
+skip: ### External-mode steps
 section: ## The Index-mode workflow
 section: ### 0. The config line (fan-out knobs)
 section: ### 1. Fetch the item
@@ -53,6 +56,7 @@ section: ### 6. Report
 section: ## Rules
 skip: ## Rules — Local mode
 section: ## Rules — The Index mode
+skip: ## Rules — External mode
 
 cut: The Index-mode PR checkout (step 4b) is the one exception: your helpers read it
 put: The PR checkout (step 4b) is the one exception: `holmes-checkout.sh` makes it and removes it.

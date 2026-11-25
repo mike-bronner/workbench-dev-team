@@ -213,6 +213,16 @@ for pair in watson:watson-index:7 holmes:holmes-index:7 lestrade:lestrade-item:7
     echo "  FAIL — agents/$mode.md is missing, so --agent would not find $mode"; fail=$((fail+1))
   fi
 done
+for pair in issue:watson-external review:holmes-external; do
+  IFS=: read -r kind mode <<< "$pair"
+  out=$(DISPATCH_SETTINGS="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" external "$kind" acme/shop#5 2>&1)
+  expect_has "external $kind starts $mode" "--agent workbench-dev-team:$mode " "$out"
+  if [ -f "$HERE/../agents/$mode.md" ]; then
+    echo "  ok   — agents/$mode.md ships"; pass=$((pass+1))
+  else
+    echo "  FAIL — agents/$mode.md is missing, so --agent would not find $mode"; fail=$((fail+1))
+  fi
+done
 
 echo "— defaults survive bad settings"
 for label in empty broken missing foreign; do
@@ -320,11 +330,12 @@ printf '#!/bin/sh\nexit 1\n' > "$STUB/security"
 printf '#!/bin/sh\nexit 1\n' > "$FAILSTUB/mktemp"
 printf '%s\n' '#!/bin/sh' \
   'printf "%s\n" "$@" > "$STUB_OUT.args"' \
-  '{ pwd -P; ls -A | wc -l | tr -d " "; echo "${CLAUDE_PROJECT_DIR-unset}"; echo "${WORKBENCH_DEV_TEAM_PIPELINE-unset}"; } > "$STUB_OUT.part"' \
+  '{ pwd -P; ls -A | wc -l | tr -d " "; echo "${CLAUDE_PROJECT_DIR-unset}"; echo "${WORKBENCH_DEV_TEAM_PIPELINE-unset}"; echo "${WORKBENCH_DEV_TEAM_EXTERNAL-unset}"; echo "${WORKBENCH_DEV_TEAM_RESULT-unset}"; jq -r .state "${WORKBENCH_DEV_TEAM_RESULT:-/nonexistent}" 2>/dev/null || echo none; echo "${WORKBENCH_DEV_TEAM_EXTERNAL_TARGET-unset}"; } > "$STUB_OUT.part"' \
   'mv "$STUB_OUT.part" "$STUB_OUT"' \
   ': > left-by-the-run' \
   'if [ -n "${STUB_HOLD:-}" ]; then while [ ! -e "$STUB_HOLD" ]; do sleep 0.1; done; fi' \
   'echo "stub ran"' \
+  '[ -z "${STUB_RESULT:-}" ] || printf "%s" "$STUB_RESULT" > "$WORKBENCH_DEV_TEAM_RESULT"' \
   '[ -z "${STUB_STREAM:-}" ] || cat "$STUB_STREAM"' \
   'exit "${STUB_RC:-0}"' > "$STUB/claude"
 chmod +x "$STUB/security" "$STUB/claude" "$FAILSTUB/mktemp"
@@ -475,6 +486,170 @@ STUB_STREAM="$WORK/kill.jsonl" SPAWN_AGENT=holmes spawn 18 >/dev/null; wait_for 
 expect_eq "a budget kill renders as the text-mode line" "Error: Exceeded USD budget" "$(tail -1 "$(logof holmes 18)" 2>/dev/null)"
 verdict=$(cd "$CALLER" && LOGDIR=logs bash "$SCRIPT" --check holmes 18)
 expect_has "...which the breaker escalates" "ESCALATE" "$verdict"
+
+echo "— external mode"
+# runx <settings> <args...> -> dry-run output. rcx <args...> -> the exit code.
+runx() {
+  local c="$1"; shift
+  DISPATCH_SETTINGS="$c" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 \
+    env -u WORKBENCH_DEV_TEAM_PIPELINE -u WORKBENCH_DEV_TEAM_EXTERNAL bash "$SCRIPT" "$@" 2>&1
+}
+rcx() { DISPATCH_SETTINGS="$FULL" LOGDIR="$WORK/logs" DISPATCH_DRY_RUN=1 bash "$SCRIPT" "$@" >/dev/null 2>&1; printf '%s' "$?"; }
+while IFS='|' read -r label args; do
+  read -ra argv <<< "$args"
+  expect_eq "external: $label exits 2" "2" "$(rcx "${argv[@]}")"
+  expect_has "...with the usage" "external <issue|review> <owner/repo#n>" "$(runx "$FULL" "${argv[@]}")"
+done <<'CASES'
+no kind|external
+an unknown kind|external fix acme/shop#5
+a kind in another case|external Issue acme/shop#5
+no target|external issue
+a target with no number|external issue acme/shop
+a target with an empty number|external issue acme/shop#
+number zero|external issue acme/shop#0
+a number with a leading zero|external review acme/shop#05
+a number that is not one|external issue acme/shop#5a
+a target with no repo|external issue acme#5
+a target with a nested path|external issue acme/shop/x#5
+a target with a shell character|external issue acme/shop;x#5
+an extra argument|external issue acme/shop#5 more
+a check with a bare item id|--check external issue 5
+an owner of one dot|external issue ./shop#5
+an owner of two dots|external issue ../shop#5
+a repo of one dot|external review acme/.#5
+a repo of two dots|external issue acme/..#5
+CASES
+expect_eq "external: a well-formed issue dispatch is accepted"  "0" "$(rcx external issue acme/shop.js#5)"
+expect_eq "external: a well-formed review dispatch is accepted" "0" "$(rcx external review acme/shop#5)"
+
+out=$(runx "$FULL" external issue acme/shop#5)
+expect_has "an issue starts the Watson external mode agent" "--agent workbench-dev-team:watson-external " "$out"
+expect_has "...with the issue token as the last argument" "--verbose External issue: acme/shop#5
+" "$out"
+expect_has "...on Watson's model and budget"  "--model opus --effort high --fallback-model sonnet --max-budget-usd 10 " "$out"
+expect_has "...with a log per agent and target" "log=$WORK/logs/watson-acme+shop+5-" "$out"
+expect_has "...and a lock per agent and target" "lock=$WORK/logs/watson-acme+shop+5.lock" "$out"
+expect_has "...flagged as the pipeline" "pipeline=1" "$out"
+expect_has "...and as external" "external=1" "$out"
+expect_has "...and told its target" "target=acme/shop#5" "$out"
+expect_eq "a dotted name inside a repo is still accepted" "0" "$(rcx external issue acme/shop..js#5)"
+result=$(printf '%s\n' "$out" | sed -n 's/^result=//p')
+log=$(printf '%s\n' "$out" | sed -n 's/^log=//p')
+expect_eq "...with the result file beside its log" "${log%.log}.result.json" "$result"
+expected_external=$(printf '%s\nmcp__the-index\n' "$expected_denied" | sort)
+got=$(dry_denied "$out" | tr ',' '\n' | sed '/^$/d' | sort)
+expect_eq "...denied the 24 tools and The Index" "$expected_external" "$got"
+expect_eq "...and allowed only the memory server" 'mcp__plugin_workbench-core_memory__*' "$(dry_allowed "$out")"
+out=$(runx "$FULL" external review acme/shop#5)
+expect_has "a review starts the Holmes external mode agent" "--agent workbench-dev-team:holmes-external " "$out"
+expect_has "...with the review token as the last argument" "--verbose External review: acme/shop#5
+" "$out"
+expect_has "...on Holmes's budget" "--max-budget-usd 5 " "$out"
+expect_has "...with Holmes's log and lock" "lock=$WORK/logs/holmes-acme+shop+5.lock" "$out"
+expect_eq "...denied The Index too" "$expected_external" "$(dry_denied "$out" | tr ',' '\n' | sed '/^$/d' | sort)"
+expect_has "a target in another case shares the lowercase lock" "lock=$WORK/logs/watson-acme+shop+5.lock" \
+  "$(runx "$FULL" external issue Acme/Shop#5)"
+expect_has "...and keeps its case in the token" "External issue: Acme/Shop#5" "$(runx "$FULL" external issue Acme/Shop#5)"
+expect_has "a dotted repo keeps its dots in the lock" "lock=$WORK/logs/watson-acme+shop.js+5.lock" \
+  "$(runx "$FULL" external issue acme/shop.js#5)"
+out=$(runx "$FULL" watson 5)
+expect_lacks "an Index dry run prints no external line" "external=" "$out"
+expect_lacks "an Index dry run prints no result line" "result=" "$out"
+
+# spawn_ext <stub name> <kind> <target> -> the script's output, from a real spawn.
+spawn_ext() {
+  (cd "$CALLER" && env -u WORKBENCH_DEV_TEAM_PIPELINE -u WORKBENCH_DEV_TEAM_EXTERNAL PATH="${PATH_PREFIX:+$PATH_PREFIX:}$STUB:$PATH" \
+    STUB_OUT="$WORK/stub-$1" CLAUDE_PROJECT_DIR="$CALLER" DISPATCH_SETTINGS="$FULL" LOGDIR=logs RUNROOT="$RUNS" \
+    bash "$SCRIPT" external "$2" "$3" 2>&1)
+}
+wait_dead() { local i=0; while kill -0 "$1" 2>/dev/null && [ "$i" -lt 50 ]; do sleep 0.2; i=$((i + 1)); done; }
+state_of() { jq -r .state "$1" 2>/dev/null; }
+
+HOLD="$WORK/hold-30"
+out=$(STUB_HOLD="$HOLD" spawn_ext 30 issue acme/shop#30); wait_for "$WORK/stub-30"
+log=$(printf '%s' "$out" | sed -n 's/^dispatched watson pid=[0-9]* log=\([^ ]*\) result=.*/\1/p')
+result=$(printf '%s' "$out" | sed -n 's/^dispatched watson pid=[0-9]* log=[^ ]* result=\(.*\)$/\1/p')
+expect_has "an external dispatch prints the dispatched line" "dispatched watson pid=" "$out"
+expect_eq "...ending in result=<absolute path> beside its log" "$CALLER/${log%.log}.result.json" "$result"
+expect_eq "...and the file there holds state running" "running" "$(state_of "$result")"
+expect_eq "...with no PR, review or error yet" '{"state":"running","prUrl":null,"review":null,"error":null}' "$(jq -c . "$result" 2>/dev/null)"
+expect_eq "the run already sees state running when it starts" "running" "$(sed -n 7p "$WORK/stub-30" 2>/dev/null)"
+expect_eq "the run is flagged external" "1" "$(sed -n 5p "$WORK/stub-30" 2>/dev/null)"
+expect_eq "the run is told where its result file is" "$result" "$(sed -n 6p "$WORK/stub-30" 2>/dev/null)"
+expect_eq "the run is told its target" "acme/shop#30" "$(sed -n 8p "$WORK/stub-30" 2>/dev/null)"
+expect_eq "the run is still the pipeline" "1" "$(sed -n 4p "$WORK/stub-30" 2>/dev/null)"
+expect_eq "the run gets the issue token" "External issue: acme/shop#30" "$(tail -1 "$WORK/stub-30.args" 2>/dev/null)"
+pid30=$(cat "$CALLER/logs/watson-acme+shop+30.lock" 2>/dev/null)
+expect_has "the lock holds the spawned PID" "pid=$pid30 " "$out"
+expect_has "a --check on the live run skips it" "SKIP" "$(cd "$CALLER" && LOGDIR=logs bash "$SCRIPT" --check external issue acme/shop#30)"
+expect_has "a second dispatch on the live run skips it" "SKIP" "$(spawn_ext 30b issue acme/shop#30)"
+expect_eq "...and spawns nothing" "absent" "$([ -e "$WORK/stub-30b" ] && echo present || echo absent)"
+: > "$HOLD"; wait_dead "$pid30"
+expect_eq "a run that ends without a final state leaves state failed" "failed" "$(state_of "$result")"
+expect_has "...with the reason and the log in error" "before it wrote a final state. Its log is $CALLER/$log" "$(jq -r .error "$result" 2>/dev/null)"
+leftover=absent; for f in "$CALLER/logs/"*.result.json.*; do [ -e "$f" ] && leftover=present; done
+expect_eq "...and no temporary file beside it" "absent" "$leftover"
+expect_eq "a --check after the run ends dispatches" "DISPATCH" "$(cd "$CALLER" && LOGDIR=logs bash "$SCRIPT" --check external issue acme/shop#30)"
+
+final='{"state":"draft_pr","prUrl":"https://example.test/acme/shop/pull/9","review":null,"error":null}'
+out=$(STUB_RESULT="$final" spawn_ext 31 issue acme/shop#31); wait_for "$WORK/stub-31"
+result=$(printf '%s' "$out" | sed -n 's/.* result=//p')
+wait_dead "$(cat "$CALLER/logs/watson-acme+shop+31.lock" 2>/dev/null)"
+expect_eq "a final state the run wrote is kept as it wrote it" "$final" "$(jq -c . "$result" 2>/dev/null)"
+for final in '{"state":"review_drafted","prUrl":null,"review":{"event":"REQUEST_CHANGES","body":"## Issues Found","comments":[{"path":"a","line":1,"body":"b"}]},"error":null}' \
+             '{"state":"needs_mike","prUrl":null,"review":null,"error":"The issue touches stored data."}'; do
+  out=$(STUB_RESULT="$final" spawn_ext 37 review acme/shop#37); wait_for "$WORK/stub-37"
+  result=$(printf '%s' "$out" | sed -n 's/.* result=//p')
+  wait_dead "$(cat "$CALLER/logs/holmes-acme+shop+37.lock" 2>/dev/null)"
+  expect_eq "a complete $(jq -r .state <<< "$final") the run wrote is kept as it wrote it" "$final" "$(jq -c . "$result" 2>/dev/null)"
+  rm -f "$WORK/stub-37"
+done
+bad_n=320
+for bad in '{"state":"done"}' 'not json' '{"state":"draft_pr","prUrl":null}' '{"state":"review_drafted","review":null}' \
+           '{"state":"review_drafted","review":{"event":"COMMENT","body":"x"}}' '{"state":"review_drafted","review":{"event":"APPROVE"}}' \
+           '{"state":"needs_mike","error":null}'; do
+  bad_n=$((bad_n + 1))
+  out=$(STUB_RESULT="$bad" spawn_ext 32 review "acme/shop#$bad_n"); wait_for "$WORK/stub-32"
+  result=$(printf '%s' "$out" | sed -n 's/.* result=//p')
+  wait_dead "$(cat "$CALLER/logs/holmes-acme+shop+$bad_n.lock" 2>/dev/null)"
+  expect_eq "a result file left as $bad ends as state failed" "failed" "$(state_of "$result")"
+  expect_has "...and says why" "holding no final state" "$(jq -r .error "$result" 2>/dev/null)"
+  rm -f "$WORK/stub-32"
+done
+HOLD="$WORK/hold-33"
+out=$(STUB_HOLD="$HOLD" spawn_ext 33 review acme/shop#33); wait_for "$WORK/stub-33"
+result=$(printf '%s' "$out" | sed -n 's/.* result=//p')
+pid33=$(cat "$CALLER/logs/holmes-acme+shop+33.lock" 2>/dev/null)
+expect_has "a review dispatch prints Holmes's dispatched line" "dispatched holmes pid=$pid33 " "$out"
+kill -TERM "$pid33" 2>/dev/null; sleep 0.3
+expect_eq "a TERM leaves state running while the agent lives" "running" "$(state_of "$result")"
+: > "$HOLD"; wait_dead "$pid33"
+expect_eq "...and state failed once it has ended" "failed" "$(state_of "$result")"
+
+NORESULT="$WORK/noresult"; mkdir -p "$NORESULT"
+printf '%s\n' '#!/bin/sh' 'case "$1" in -d) exec /usr/bin/mktemp "$@" ;; esac' 'exit 1' > "$NORESULT/mktemp"
+chmod +x "$NORESULT/mktemp"
+before=$(ls -d "$RUNS"/dispatch-watson.* 2>/dev/null | wc -l | tr -d ' ')
+out=$(PATH_PREFIX="$NORESULT" spawn_ext 34 issue acme/shop#34); code=$?
+expect_eq  "a result file that cannot be written exits 1" "1" "$code"
+expect_has "...and says nothing was dispatched" "could not write the result file" "$out"
+sleep 0.5
+expect_eq  "...and spawns nothing" "absent" "$([ -e "$WORK/stub-34" ] && echo present || echo absent)"
+expect_eq  "...and takes no lock" "absent" "$([ -e "$CALLER/logs/watson-acme+shop+34.lock" ] && echo present || echo absent)"
+expect_eq  "...and leaves no run folder" "$before" "$(ls -d "$RUNS"/dispatch-watson.* 2>/dev/null | wc -l | tr -d ' ')"
+out=$(spawn_ext 35 fix acme/shop#35); code=$?
+expect_eq  "a malformed kind spawns nothing: it exits 2" "2" "$code"
+sleep 0.5
+expect_eq  "...runs no agent" "absent" "$([ -e "$WORK/stub-35" ] && echo present || echo absent)"
+leftover=absent; for f in "$CALLER/logs/"*shop+35*; do [ -e "$f" ] && leftover=present; done
+expect_eq  "...and writes no log, lock or result" "absent" "$leftover"
+
+out=$(WORKBENCH_DEV_TEAM_EXTERNAL=1 WORKBENCH_DEV_TEAM_RESULT=/nowhere WORKBENCH_DEV_TEAM_EXTERNAL_TARGET=acme/shop#1 spawn 36); wait_for "$WORK/stub-36"
+expect_lacks "an Index dispatched line carries no result" "result=" "$out"
+expect_eq "an inherited external flag does not reach an Index run" "unset" "$(sed -n 5p "$WORK/stub-36" 2>/dev/null)"
+expect_eq "...nor an inherited result path" "unset" "$(sed -n 6p "$WORK/stub-36" 2>/dev/null)"
+expect_eq "...nor an inherited target" "unset" "$(sed -n 8p "$WORK/stub-36" 2>/dev/null)"
+wait_dead "$(cat "$CALLER/logs/watson-36.lock" 2>/dev/null)"
 
 echo
 echo "passed: $pass  failed: $fail"

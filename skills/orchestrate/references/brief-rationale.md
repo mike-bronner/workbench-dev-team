@@ -72,8 +72,8 @@ rules for the flow:
   on 2026-11-16 Mike first asked for a question before each unit commit too.
   He reversed that part the same day: "there is no point in gating commits for
   changes I cannot see on the current branch." The landing is where the work
-  becomes visible, so the question sits there. A catch-up merge that brings a
-  branch up to date lands no unit, and asks nothing.
+  becomes visible, so the question sits there. A catch-up merge that brings the
+  base branch into a feature branch lands no unit, and asks nothing.
 - Units land as merge commits. Mike forbids cherry-pick, rebase and reset,
   because he never rewrites history and always adds on top.
 
@@ -139,7 +139,10 @@ whether he runs it himself or Holmes runs it on a brief whose `Goal:` begins
 An Index-mode pull request gets no such Holmes run. CI already runs the full
 suite on the pull request, in the repo's own toolchain, and Holmes's step 4c
 reads its result. A Holmes run there would duplicate CI in a scratch clone whose
-toolchain may not match.
+toolchain may not match. CI has no Claude Code, so in a Claude Code plugin repo
+the unattended Watson runs `claude plugin test .` before he opens or updates
+the PR. Mike made that the one exception to Watson's full-suite rule, for The
+Index mode and External mode only.
 
 The agents' own rules limit their runs, but the orchestrator writes the briefs.
 A brief that asks for "the suite passes", or an orchestrator that runs the full

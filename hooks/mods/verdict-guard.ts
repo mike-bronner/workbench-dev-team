@@ -3,6 +3,7 @@ import { PLUGIN } from './spawn'
 
 export const INDEX_MODE = `${PLUGIN}:holmes-index`
 export const LOCAL_MODE = `${PLUGIN}:holmes-local`
+export const EXTERNAL_MODE = `${PLUGIN}:holmes-external`
 
 export type { Ledger }
 

@@ -26,6 +26,12 @@ describe('holmes-lens — every helper Holmes spawns runs on it', () => {
     expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-lens')])
   })
 
+  test('a top-level Holmes external run is held too, by its --agent type', async ($, on) => {
+    const w = world(on, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('holmes-external') } })
+    await $.agent.spawn(spawnInput('general-purpose', 'lens prompt'))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('holmes-lens')])
+  })
+
   test('a Holmes the mod did not start is found through $.agent.list()', async ($, on) => {
     const w = world(on, { agents: [{ id: 'agent-h', type: T('holmes-index') }] })
     await $.agent.spawn(spawnInput('general-purpose', 'lens prompt', { parentAgentId: 'agent-h' }))
@@ -229,6 +235,13 @@ describe('config knobs — fanout and lensModel reach the agents that read them'
     expect(w.spawned.map(s => s.prompt)).toEqual(['Item ID: 6\n\nDev-team config: fanout off; lensModel unset.'])
   })
 
+  test('Lestrade external mode, which an external Watson spawns, runs with its token alone, since it dispatches no helper', OPTIONS, async ($, on) => {
+    const w = world(on, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T('watson-external') } })
+    await $.agent.spawn(spawnInput(T('lestrade'), 'External criteria: acme/shop#5'))
+    expect(w.spawned.map(s => s.subagentType)).toEqual([T('lestrade-external')])
+    expect(w.spawned.map(s => s.prompt)).toEqual(['External criteria: acme/shop#5'])
+  })
+
   test('Watson, Lestrade Sweep and a generic agent get no line', OPTIONS, async ($, on) => {
     const w = world(on)
     await $.agent.spawn(spawnInput(T('watson'), BRIEF))
@@ -253,6 +266,7 @@ describe('config knobs — fanout and lensModel reach the agents that read them'
   for (const [mode, line] of [
     ['holmes-index', 'Dev-team config: fanout on; lensModel sonnet.'],
     ['lestrade-item', 'Dev-team config: fanout off; lensModel unset.'],
+    ['holmes-external', 'Dev-team config: fanout on; lensModel sonnet.'],
   ] as const) {
     test(`a top-level ${mode} run gets its own line as context on its prompt`, OPTIONS, async ($, on) => {
       world(on, { lane: () => 'top-level-agent', env: { CLAUDE_CODE_AGENT: T(mode) } })
@@ -268,6 +282,7 @@ describe('config knobs — fanout and lensModel reach the agents that read them'
 
   for (const [label, lane, agent] of [
     ['a top-level Watson Index run', 'top-level-agent', T('watson-index')],
+    ['a top-level Watson external run', 'top-level-agent', T('watson-external')],
     ['the main session', 'main', undefined],
   ] as const) {
     test(`${label} gets no context`, OPTIONS, async ($, on) => {

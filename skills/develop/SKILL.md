@@ -217,13 +217,13 @@ Each rule in full: `references/testing.md`.
   the open one.
 - **Use the repo's existing test framework**, never your favorite.
 - **Run the tests you wrote and the existing tests that cover the files you
-  changed, never the full suite.** The full suite belongs to CI on the pull
-  request, or to a final run the human picks. A sub-agent hands back when one
-  is due. In a workbench plugin repo, name the test files to the runner:
-  `claude plugin test .` runs every file. Get those tests green: fix every
-  failure your change caused. A failure your change did not cause is out of
-  scope (§2): confirm it fails the same way without your change, then report
-  it rather than fold a fix in.
+  changed, never the full suite.** The full suite belongs to CI on the PR, or
+  to a final run the human picks. A sub-agent hands back when one is due. In a
+  Claude Code plugin repo, `claude plugin test` takes only a folder: a
+  sub-agent reports its tests as not run, and the pipeline runs it whole.
+  Get those tests green: fix every failure your change caused. A failure your
+  change did not cause is out of scope (§2): confirm it fails the same way
+  without your change, then report it and fold no fix in.
 - **Never mimic CI or another platform locally** with Docker, a VM or a source
   build. Read CI's logs and the tool's changelog, use a version already
   installed, such as Herd's PHP or mise, or hand the question back to the

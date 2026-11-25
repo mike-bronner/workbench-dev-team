@@ -281,6 +281,83 @@ expect "a failed comment read exits 2" "$?" 2
 bash "$HERE/trusted-comments.sh" 'o/r;x' 7 >/dev/null 2>&1
 expect "a malformed repo is refused" "$?" 2
 
+echo "── external mode: trusted-comments.sh and app-comments.sh ───────────────"
+external() { WORKBENCH_DEV_TEAM_EXTERNAL=1 bash "$@"; }
+marked='[{"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T00:00:00Z","body":"<!-- m --> lestrade\n\n🤖 Generated with Claude Code\n<!-- workbench:lestrade -->"},
+  {"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T01:00:00Z","body":"<!-- m --> indented\n  <!-- workbench:watson -->  "},
+  {"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T02:00:00Z","body":"<!-- m --> holmes\n<!-- workbench:holmes -->"},
+  {"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T03:00:00Z","body":"<!-- m --> two agents\n<!-- workbench:lestrade -->\n<!-- workbench:watson -->"},
+  {"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T04:00:00Z","body":"<!-- m --> quoted\n> <!-- workbench:lestrade -->"},
+  {"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T05:00:00Z","body":"<!-- m --> unknown agent\n<!-- workbench:mycroft -->"},
+  {"user":{"login":"octo-owner","type":"Bot"},"created_at":"2026-01-01T06:00:00Z","body":"<!-- m --> owner login as a bot\n<!-- workbench:lestrade -->"},
+  {"user":{"login":"Octo-Owner","type":"User"},"created_at":"2026-01-01T07:00:00Z","body":"<!-- m --> owner in another case\n<!-- workbench:lestrade -->"}]
+[{"user":{"login":"alice","type":"User"},"created_at":"2026-01-02T00:00:00Z","body":"<!-- m --> alice\n<!-- workbench:lestrade -->"},
+  {"user":{"login":"mallory","type":"User"},"created_at":"2026-01-02T01:00:00Z","body":"<!-- m --> mallory\n<!-- workbench:watson -->"},
+  {"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-02T02:00:00Z","body":"<!-- m --> hard-coded login\n<!-- workbench:watson -->"},
+  {"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-02T03:00:00Z","body":"no purpose marker\n<!-- workbench:watson -->"},
+  {"user":{"login":"dr-john-h-watson[bot]","type":"Bot"},"created_at":"2026-01-02T04:00:00Z","body":"<!-- m --> watson app"}]'
+pairs() { jq -c 'map([.author, (.body | split("\n")[0])])'; }
+reset
+opened_by '{"user":{"login":"alice","type":"User"}}'
+no_codeowners
+fake_api user '{"login":"octo-owner"}'
+fake api "$marked"
+expect "trusted-comments counts the gh user's marked comments as the named agents' Apps, and the marker from any other login as nothing more than that login" \
+  "$(external "$HERE/trusted-comments.sh" o/r 7 inspector-g-lestrade dr-john-h-watson | pairs)" \
+  '[["inspector-g-lestrade[bot]","<!-- m --> lestrade"],["dr-john-h-watson[bot]","<!-- m --> indented"],["alice","<!-- m --> alice"],["mikebronner","<!-- m --> hard-coded login"],["dr-john-h-watson[bot]","no purpose marker"],["dr-john-h-watson[bot]","<!-- m --> watson app"]]'
+expect "trusted-comments reads the login from gh api user, once" "$(grep -c '^api user --jq .login$' "$FAKE_GH/calls")" 1
+expect "an agent left unnamed gains nothing from its marker" \
+  "$(external "$HERE/trusted-comments.sh" o/r 7 --no-issue-author dr-john-h-watson | pairs)" \
+  '[["dr-john-h-watson[bot]","<!-- m --> indented"],["mikebronner","<!-- m --> hard-coded login"],["dr-john-h-watson[bot]","no purpose marker"],["dr-john-h-watson[bot]","<!-- m --> watson app"]]'
+expect "app-comments counts the gh user's marked comments that start with the marker as the named agents' Apps" \
+  "$(external "$HERE/app-comments.sh" o/r 7 '<!-- m -->' inspector-g-lestrade dr-john-h-watson mr-sherlock-holmes | pairs)" \
+  '[["inspector-g-lestrade[bot]","<!-- m --> lestrade"],["dr-john-h-watson[bot]","<!-- m --> indented"],["mr-sherlock-holmes[bot]","<!-- m --> holmes"],["dr-john-h-watson[bot]","<!-- m --> watson app"]]'
+expect "app-comments keeps an unnamed agent's marked comment out" \
+  "$(external "$HERE/app-comments.sh" o/r 7 '<!-- m -->' dr-john-h-watson | pairs)" \
+  '[["dr-john-h-watson[bot]","<!-- m --> indented"],["dr-john-h-watson[bot]","<!-- m --> watson app"]]'
+: > "$FAKE_GH/calls"
+expect "outside external mode, trusted-comments counts no marked comment as an agent's" \
+  "$(bash "$HERE/trusted-comments.sh" o/r 7 inspector-g-lestrade dr-john-h-watson | pairs)" \
+  '[["alice","<!-- m --> alice"],["mikebronner","<!-- m --> hard-coded login"],["dr-john-h-watson[bot]","<!-- m --> watson app"]]'
+expect "outside external mode, app-comments counts no marked comment as an agent's" \
+  "$(bash "$HERE/app-comments.sh" o/r 7 '<!-- m -->' inspector-g-lestrade dr-john-h-watson | pairs)" \
+  '[["dr-john-h-watson[bot]","<!-- m --> watson app"]]'
+expect "outside external mode, neither script reads gh api user" "$(grep -c '^api user' "$FAKE_GH/calls")" 0
+for who in mikebronner:frank alice:alice; do
+  login=${who%%:*}; opener=${who#*:}
+  reset
+  opened_by "{\"user\":{\"login\":\"$opener\",\"type\":\"User\"}}"
+  no_codeowners
+  fake_api user "{\"login\":\"$login\"}"
+  fake api "[{\"user\":{\"login\":\"$login\",\"type\":\"User\"},\"created_at\":\"2026-01-01T00:00:00Z\",\"body\":\"<!-- m --> unmarked\"},
+    {\"user\":{\"login\":\"$login\",\"type\":\"User\"},\"created_at\":\"2026-01-01T01:00:00Z\",\"body\":\"<!-- m --> unnamed agent\n<!-- workbench:holmes -->\"},
+    {\"user\":{\"login\":\"$login\",\"type\":\"User\"},\"created_at\":\"2026-01-01T02:00:00Z\",\"body\":\"<!-- m --> unknown agent\n<!-- workbench:mycroft -->\"},
+    {\"user\":{\"login\":\"$login\",\"type\":\"User\"},\"created_at\":\"2026-01-01T03:00:00Z\",\"body\":\"<!-- m --> two agents\n<!-- workbench:lestrade -->\n<!-- workbench:watson -->\"},
+    {\"user\":{\"login\":\"$login\",\"type\":\"User\"},\"created_at\":\"2026-01-01T04:00:00Z\",\"body\":\"<!-- m --> same marker twice\n<!-- workbench:watson -->\n<!-- workbench:watson -->\"},
+    {\"user\":{\"login\":\"$login\",\"type\":\"User\"},\"created_at\":\"2026-01-01T05:00:00Z\",\"body\":\"<!-- m --> lestrade\n<!-- workbench:lestrade -->\"}]"
+  expect "with $login as the gh user and $opener as the issue's author, trusted-comments keeps only the unmarked comment as $login's, drops every unnamed, unknown or mixed marker, and counts the rest as Apps" \
+    "$(external "$HERE/trusted-comments.sh" o/r 7 inspector-g-lestrade dr-john-h-watson | pairs)" \
+    "[[\"$login\",\"<!-- m --> unmarked\"],[\"dr-john-h-watson[bot]\",\"<!-- m --> same marker twice\"],[\"inspector-g-lestrade[bot]\",\"<!-- m --> lestrade\"]]"
+  expect "with $login as the gh user, app-comments drops the unmarked comment and every unnamed, unknown or mixed marker" \
+    "$(external "$HERE/app-comments.sh" o/r 7 '<!-- m -->' inspector-g-lestrade dr-john-h-watson | pairs)" \
+    '[["dr-john-h-watson[bot]","<!-- m --> same marker twice"],["inspector-g-lestrade[bot]","<!-- m --> lestrade"]]'
+done
+expect "WORKBENCH_DEV_TEAM_EXTERNAL other than 1 is not external mode" \
+  "$(WORKBENCH_DEV_TEAM_EXTERNAL=yes bash "$HERE/app-comments.sh" o/r 7 '<!-- m -->' inspector-g-lestrade | pairs)" '[]'
+for script in trusted-comments app-comments; do
+  args=(o/r 7); [ "$script" = app-comments ] && args+=('<!-- m -->')
+  fake_api user '{"login":""}'
+  external "$HERE/$script.sh" "${args[@]}" dr-john-h-watson >/dev/null 2>&1
+  expect "$script exits 2 when gh api user names no login" "$?" 2
+  fake_api user '{"login":"octo owner"}'
+  external "$HERE/$script.sh" "${args[@]}" dr-john-h-watson >/dev/null 2>&1
+  expect "$script exits 2 when gh api user names a malformed login" "$?" 2
+  rm -f "$FAKE_GH/$(apikey user).json"; failing_api user
+  external "$HERE/$script.sh" "${args[@]}" dr-john-h-watson >/dev/null 2>&1
+  expect "$script exits 2 when gh api user fails" "$?" 2
+  rm -f "$FAKE_GH/$(apikey user).fail"
+done
+
 echo "── holmes-read-ac.sh ────────────────────────────────────────────────────"
 reset
 fake issue-view '{"body":"## Acceptance Criteria\n- [ ] from body"}'
@@ -318,6 +395,28 @@ expect "with no marked comment, the body section is read up to the next section"
 - [ ] from body
 ### sub
 - [ ] kept"
+fake issue-view '{"body":"## Acceptance Criteria\n- [ ] from body"}'
+fake_api user '{"login":"octo-owner"}'
+fake api '[{"user":{"login":"octo-owner","type":"User"},"body":"<!-- acceptance-criteria -->\n- [ ] older"},
+  {"user":{"login":"octo-owner","type":"User"},"body":"<!-- acceptance-criteria -->\n- [ ] A test covers an empty cart.\n- [ ] Totals round to cents.\n\n<!-- workbench:lestrade -->\n🤖 Generated with Claude Code"}]'
+expect "in external mode, the gh user's newest marked criteria are read, without the agent marker, the footer or the blank line before them" \
+  "$(WORKBENCH_DEV_TEAM_EXTERNAL=1 bash "$HERE/holmes-read-ac.sh" o/r 1)" "- [ ] A test covers an empty cart.
+- [ ] Totals round to cents."
+fake api '[{"user":{"login":"octo-owner","type":"User"},"body":"<!-- acceptance-criteria -->\n- [ ] kept\n  <!-- workbench:lestrade -->  \n  🤖 Generated with Claude Code  \n- [ ] after the footer\n> 🤖 Generated with Claude Code\n<!-- workbench:watson --> and more"}]'
+expect "in external mode, only whole marker and footer lines are dropped, wherever they sit" \
+  "$(WORKBENCH_DEV_TEAM_EXTERNAL=1 bash "$HERE/holmes-read-ac.sh" o/r 1)" "- [ ] kept
+- [ ] after the footer
+> 🤖 Generated with Claude Code
+<!-- workbench:watson --> and more"
+fake api '[{"user":{"login":"octo-owner","type":"User"},"body":"<!-- acceptance-criteria -->\n- [ ] by the gh user\n<!-- workbench:lestrade -->"}]'
+expect "outside external mode, the gh user's marked criteria are not an App's, and the body is read" \
+  "$(bash "$HERE/holmes-read-ac.sh" o/r 1)" "## Acceptance Criteria
+- [ ] from body"
+fake api '[{"user":{"login":"inspector-g-lestrade[bot]","type":"Bot"},"body":"<!-- acceptance-criteria -->\n- [ ] app\n<!-- workbench:lestrade -->\n🤖 Generated with Claude Code"}]'
+expect "outside external mode, an App comment keeps every line, marker and footer included" \
+  "$(bash "$HERE/holmes-read-ac.sh" o/r 1)" "- [ ] app
+<!-- workbench:lestrade -->
+🤖 Generated with Claude Code"
 fake issue-view '{"body":"no criteria"}'
 fake api '[]'
 bash "$HERE/holmes-read-ac.sh" o/r 1 >/dev/null 2>&1

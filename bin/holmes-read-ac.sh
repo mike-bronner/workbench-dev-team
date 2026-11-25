@@ -9,8 +9,10 @@ issue=$(gh issue view "$ISSUE" -R "$REPO" --json body) || exit 2
 comments=$(bash "$(dirname "$0")/app-comments.sh" "$REPO" "$ISSUE" \
   "<!-- acceptance-criteria -->" inspector-g-lestrade mr-sherlock-holmes dr-john-h-watson) || exit 2
 
-ac=$(jq -r '[.[].body | select(split("\n")[0] | rtrimstr("\r") == "<!-- acceptance-criteria -->")] | last // empty
-  | split("\n")[1:] | join("\n")' <<< "$comments") || exit 2
+ac=$(jq -r --arg external "${WORKBENCH_DEV_TEAM_EXTERNAL:-}" '[.[].body | select(split("\n")[0] | rtrimstr("\r") == "<!-- acceptance-criteria -->")] | last // empty
+  | split("\n")[1:]
+  | if $external == "1" then map(select(gsub("^\\s+|\\s+$"; "") | test("^(<!-- workbench:[a-z]+ -->|🤖 Generated with Claude Code)$") | not)) else . end
+  | join("\n")' <<< "$comments") || exit 2
 if [ -z "$ac" ]; then
   ac=$(jq -r '.body // ""' <<< "$issue" | awk '
     /^## Acceptance Criteria[[:space:]]*$/ { on = 1; print; next }

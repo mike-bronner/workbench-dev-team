@@ -221,14 +221,23 @@ git -C "<workdir>" ls-remote "<head-remote>" "<head-ref>"  # the PR head's remot
 `<head-remote>` and `<head-ref>` are what the two `config` reads print. Compare
 the `ls-remote` SHA with `git rev-parse HEAD`.
 
+**A branch that was never pushed has no head to compare.** When `Workdir:`
+names no `pr:`, and both `config` reads print nothing, the branch has no
+configured remote and no merge ref. It exists only in the workdir, so its
+`HEAD` is the head. Skip the head check, say so in the verdict, and go on. An
+external Watson sends exactly this brief, before his first push. When only one
+of the two reads prints something, the branch is half-configured: stop, as the
+last bullet below says.
+
 - **The two SHAs match:** the head is current. Go on.
 - **They differ:** stop. Report a stale head with both SHAs. Ask the sender to
   bring the local branch to the PR's current head, such as by running
   `gh pr checkout <n>` again, which fast-forwards it, or
   `gh pr checkout <n> --force` after a force-push, and dispatch again.
-- **A lookup fails or prints nothing,** or the branch has no configured remote
-  or merge ref: stop. Report what failed. Ask the sender to name the PR number
-  in `Workdir:` as `pr: <n>`, which needs no tracking, and dispatch again. When
+- **`ls-remote` or `gh pr view` fails or prints nothing,** or the branch has a
+  configured remote and no merge ref, or a merge ref and no remote: stop.
+  Report what failed. Ask the sender to name the PR number in `Workdir:` as
+  `pr: <n>`, which needs no tracking, and dispatch again. When
   `pr: <n>` was already named and `gh pr view` failed, ask the sender to restore
   `gh` access to the repository instead.
 

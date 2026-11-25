@@ -21,6 +21,7 @@ import type { RunsView } from '../types'
 import { BOARD_TIMEOUT_MS, EMPTY_BOARD, afterFetch, boardArgv, boardOutcome, cadenceMsOf, escalatedOf, isDue } from './mods/board'
 
 import { budgetNotice, contextOf, isOverBudget } from './mods/budget'
+import { externalFault, isExternalType } from './mods/external-guard'
 import {
   DIGEST_MODE,
   DISPATCH_CONTEXT,
@@ -79,6 +80,7 @@ import {
   INDEX_MODE,
   LOCAL_DIGEST_DENY,
   LOCAL_MODE,
+  EXTERNAL_MODE,
   CANCELLED,
   CHECKS_ARGV,
   checksOf,
@@ -458,11 +460,31 @@ async function reviewDeny($: EngineInterface, e: GuardInput, parse: ShellParse |
   return finding === undefined ? undefined : refusalOf(finding, roots)
 }
 
+async function isExternalRun($: EngineInterface, agentId: string | undefined): Promise<boolean> {
+  if ((await $.env.get('WORKBENCH_DEV_TEAM_EXTERNAL').catch(() => undefined)) === '1') return true
+  if (isExternalType(await $.env.get('CLAUDE_CODE_AGENT').catch(() => undefined))) return true
+  if (agentId === undefined) return false
+  const agents = await $.agent.list().catch(() => undefined)
+  const seen = new Set<string>()
+  for (let id: string | undefined = agentId; id !== undefined && !seen.has(id); ) {
+    seen.add(id)
+    const agent = agents?.find(a => a.id === id)
+    if (agent === undefined) return false
+    if (isExternalType(agent.type)) return true
+    id = agent.parentId
+  }
+  return false
+}
+
 async function guard($: EngineInterface, e: GuardInput): Promise<string | undefined> {
   const lane = await $.workbench.callerLane(e.agentId === undefined ? {} : { agentId: e.agentId }).catch(() => undefined)
   const reviewer = await isReviewer($, e.agentId, lane)
-  if (reviewer === false) return undefined
+  const external = e.tool === 'Bash' && (await isExternalRun($, e.agentId))
+  if (reviewer === false && !external) return undefined
   const parse = e.tool === 'Bash' ? await $.workbench.parseShell(typeof e.command === 'string' ? e.command : '') : undefined
+  const fault = parse === undefined ? undefined : externalFault(parse, { isReviewer: reviewer !== false, isExternal: external })
+  if (fault !== undefined) return fault
+  if (reviewer === false) return undefined
   const deny = await reviewDeny($, e, parse)
   if (deny === undefined || reviewer) return deny
   return `${deny}\n\nThe guard could not tell which agent made this call, so it held the call to the reviewer's rule. Report this to the human as a guard defect.`
@@ -476,7 +498,7 @@ async function holmesRunOf($: EngineInterface, agentId: string | undefined): Pro
     $.ui.log(VERDICT_UNKNOWN_RUN, { to: 'transcript' })
     return undefined
   })
-  return run?.type === INDEX_MODE || run?.type === LOCAL_MODE ? run : undefined
+  return run?.type === INDEX_MODE || run?.type === LOCAL_MODE || run?.type === EXTERNAL_MODE ? run : undefined
 }
 
 async function ledgerOf($: EngineInterface, run: Run): Promise<Ledger> {
@@ -545,7 +567,7 @@ async function digestTextOf($: EngineInterface): Promise<string | undefined> {
 
 async function verdictDeny($: EngineInterface, run: Run, call: Call): Promise<string | undefined> {
   try {
-    if (run.type === LOCAL_MODE) return isMemoryWrite(call.tool) && isDigest(call) ? LOCAL_DIGEST_DENY : undefined
+    if (run.type === LOCAL_MODE || run.type === EXTERNAL_MODE) return isMemoryWrite(call.tool) && isDigest(call) ? LOCAL_DIGEST_DENY : undefined
     if (isBoardWrite(call.tool)) {
       const ledger = await ledgerOf($, run)
       const facts = await factsOf($, run, ledger, call)

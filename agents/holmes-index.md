@@ -94,9 +94,16 @@ you dispatch, in both modes.
   changed, never the full suite. The full suite runs once, in a final suite run
   of its own (`references/holmes/local-review.md` §L6): every existing suite in
   the brief's `Workdir:`, and the project's own test command with it, such as
-  `claude plugin test` in a Claude Code plugin. In The Index
-  mode, CI has already run the suites on the PR (step 4c), so you do not run
-  them again. A helper runs the existing tests that cover the change, in
+  `claude plugin test` in a Claude Code plugin. That command takes only a
+  folder, and the full-suite gate refuses it for a sub-agent, so a Local-mode
+  review does not run a plugin's TypeScript tests. If the brief's `Context:`
+  says the dispatching Watson ran `claude plugin test .` on this range, cite
+  that run and its result. Otherwise report the TypeScript tests as not run and
+  leave them to the final suite run. An external review has no final suite
+  run, and External mode step 4 says what it does instead. In The Index
+  mode, CI has already run the suites on the PR (step 4c), and in a Claude
+  Code plugin Watson ran `claude plugin test .` before the PR, so you do not
+  run them again. A helper runs the existing tests that cover the change, in
   the PR checkout from step 4b, only when its role needs them.
 - **Read the code and the tests in place.**
 - **Inspect each test for validity.** Ask whether it really proves what it

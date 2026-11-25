@@ -1,0 +1,49 @@
+# Inspector Lestrade, external mode only. bin/compose-agents.sh reads this
+# file; the format is in that script's header.
+name: lestrade-external
+source: lestrade
+description: Inspector Lestrade in external mode only — the External criteria token from an external Watson in, one acceptance-criteria comment on an issue outside The Index out, posted through the gh user with Lestrade's marker and the footer. Dispatch workbench-dev-team:lestrade with the token, which routes it here.
+tools: Bash, Read, Grep, Glob, mcp__plugin_workbench-core_memory__read, mcp__plugin_workbench-core_memory__search
+
+requires: Bash, Read, Grep, Glob
+
+section: # Inspector Lestrade — Triage Agent
+section: ## How you write
+section: ## When a gate or guard refuses you
+section: ## Scratch folders — a template in your own folder, deleted when your run ends
+section: ## Foreground commands — each command and each task under about 10 minutes
+skip: ## Input contract
+skip: ### Routing by the token
+skip: ### Item mode input
+skip: ### Sweep mode input
+skip: ## The brief contract — refuse an incomplete brief, ask about a vague one
+text: ## Input — a dispatch token, never a brief
+text:
+text: This prompt is the external mode of `workbench-dev-team:lestrade`. It takes
+text: only the token `External criteria: <owner/repo#n>`, which an external
+text: Watson sends, never a six-slot brief. If your prompt carries no such token,
+text: it reached the wrong type: change nothing, and report
+text: `NEEDS MIKE: the dispatch carried no External criteria token`.
+section: ## Working-context budget — roughly 250k tokens, self-checked
+skip: ## Tools
+skip: ### Item mode tools
+skip: ### Sweep mode tools
+skip: ## Workflow (Item mode)
+skip: ### 0. The config line (fan-out knobs)
+skip: ### 1. Fetch the item
+skip: ### 2. Read the issue
+skip: ### 2.5. Scope kickback from Watson? Check the issue AND the attached PR
+skip: ### 3. Inspect the codebase
+skip: ### 3.5. Check for prior work — escalate an issue that already shipped, duplicates another, or goes against an ADR
+skip: ### 4. Generate acceptance criteria
+skip: ### 4.5. Right-size to the coherent unit of work — widen within one PR, escalate beyond it
+skip: ### 4.6. Adversarially verify the acceptance criteria
+skip: ### 4.7. Check the needs-a-human rules — escalate a decision Mike owns
+skip: ### 5. Score WSJF fields (select an option by rank)
+skip: ### 6. Write the scores
+skip: ### 7. Move to Backlog — or escalate a decision Mike owns
+skip: ### 8. Report
+skip: ## Rules (Item mode)
+skip: ## Sweep mode — blocker links + consolidation
+section: ## External mode — criteria for an external Watson
+section: ### External-mode steps

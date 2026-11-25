@@ -20,6 +20,11 @@ skip: ## The Index mode
 skip: ### Input contract
 skip: ### Tools
 skip: ### The pipeline — read it before you touch anything
+skip: ## External mode
+skip: ### External input contract
+skip: ### External tools
+skip: ### External pipeline
 section: ## Rules
 section: ## Rules — Direct mode
 skip: ## Rules — The Index mode
+skip: ## Rules — External mode

@@ -316,6 +316,35 @@ expect "--mark-escalated refuses a sweep target" "2" "$?"
 LOGDIR="$d" HOME="$WORK/home" bash "$SCRIPT" --check watson abc >/dev/null 2>&1
 expect "--check refuses a non-numeric id" "2" "$?"
 
+# An external target keys its log and lock on <owner>+<repo>+<n>, lowercased,
+# and the pre-flight gives it the same verdict an Index item gets from the same state.
+runx() { LOGDIR="$1" HOME="$WORK/home" bash "$SCRIPT" --check external "$2" "$3"; }
+d="$WORK/ext1"; mkdir -p "$d"
+echo $$ > "$d/watson-acme+shop+5.lock"; echo $$ > "$d/watson-5.lock"
+expect "external issue with a live lock -> skip" "SKIP" "$(runx "$d" issue acme/shop#5)"
+expect "...the same line as an Index item's" "$(run "$d" watson 5)" "$(runx "$d" issue Acme/Shop#5)"
+expect "...and the lock is per kind's agent: a review on it dispatches" "DISPATCH" "$(runx "$d" review acme/shop#5)"
+expect "...and per target: another number dispatches" "DISPATCH" "$(runx "$d" issue acme/shop#55)"
+d="$WORK/ext2"; mkdir -p "$d"
+mklog "$d" holmes acme+shop+6 202606210800 "Review drafted."
+mklog "$d" holmes 6 202606210800 "Review drafted."
+echo "$cb_dead" > "$d/holmes-acme+shop+6.lock"; echo "$cb_dead" > "$d/holmes-6.lock"
+expect "external review whose run ended -> dispatch" "DISPATCH" "$(runx "$d" review acme/shop#6)"
+expect "...the same line as an Index item's" "$(run "$d" holmes 6)" "$(runx "$d" review acme/shop#6)"
+d="$WORK/ext3"; mkdir -p "$d"
+mklog "$d" holmes acme+shop+7 202606210800 "API Error: Output blocked by content filtering policy"
+expect "external review blocked by the content filter -> escalate" "ESCALATE" "$(runx "$d" review acme/shop#7)"
+out=$(LOGDIR="$d" HOME="$WORK/home" bash "$SCRIPT" --mark-escalated external review acme/shop#7)
+expect "--mark-escalated takes an external target" "marked holmes-acme+shop+7 escalated" "$out"
+expect "...and the next check is a reprieve" "REPRIEVE" "$(runx "$d" review acme/shop#7)"
+LOGDIR="$d" HOME="$WORK/home" bash "$SCRIPT" --check external issue acme/shop >/dev/null 2>&1
+expect "--check refuses an external target with no number" "2" "$?"
+d="$WORK/ext4"; mkdir -p "$d"
+mklog "$d" holmes acme+shop+12 202606210800 "API Error: Output blocked by content filtering policy"
+echo $$ > "$d/holmes-acme+shop+12.lock"
+expect "logs and a live lock for acme/shop#12 do not hold acme/shop#1" "DISPATCH" "$(runx "$d" review acme/shop#1)"
+expect "...while acme/shop#12 itself is held" "SKIP" "$(runx "$d" review acme/shop#12)"
+
 echo
 echo "circuit-breaker: $pass passed, $fail failed"
 [ "$fail" -eq 0 ]

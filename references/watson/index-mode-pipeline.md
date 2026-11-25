@@ -634,6 +634,10 @@ absent-field / unexpected-input path, and grep the tree for doc-drift on every
 symbol or claim you changed. These are the top review-rejection categories —
 catching them here is a bounce round you don't pay for later.
 
+In a Claude Code plugin repo, CI has no Claude Code, so run
+`claude plugin test .` here, before you push and mark the PR ready. That run
+is the one exception to the full-suite rule.
+
 This is also where you catch
 the **coherent-unit** findings Holmes would otherwise bounce for (holmes.md §4e):
 if your change hardens a loader, every read in that loader belongs to the unit —
