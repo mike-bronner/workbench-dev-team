@@ -2,8 +2,11 @@ import { describe, expect, test } from 'claude-code/testing'
 
 import type { Call, Facts, Ledger } from '../hooks/mods/verdict-guard'
 import {
+  APPROVAL_MARKS,
   CHECKS_ARGV,
   EMPTY_LEDGER,
+  approvalFault,
+  approvalOf,
   bodyFault,
   checksOf,
   disputeFault,
@@ -28,7 +31,7 @@ const IDX = (name: string) => `mcp__the-index__${name}`
 const MEM = (name: string) => `mcp__plugin_workbench-core_memory__${name}`
 
 const READY: Ledger = { ...EMPTY_LEDGER, seq: 5, itemId: '7', repo: 'o/r', issue: 42, status: 'In Review', lastGetItemAt: 5, feedbackSearches: 2 }
-const FACTS: Facts = { pr: 9, decision: 'review', checks: 'pass', strikes: 0 }
+const FACTS: Facts = { pr: 9, decision: 'review', checks: 'pass', strikes: 0, approval: 'holmes' }
 
 const APPROVE_BODY = [
   '✅ **Approved**',
@@ -39,8 +42,10 @@ const APPROVE_BODY = [
   '## 📋 Non-blocking follow-ups',
   '- None.',
   '',
-  'Ready for @mikebronner to merge.',
+  APPROVAL_MARKS.holmes,
 ].join('\n')
+
+const PERSON_BODY = APPROVE_BODY.replace(APPROVAL_MARKS.holmes, `- .github/ci.yml: a rule needs a person\n\n${APPROVAL_MARKS.person}`)
 
 const CHANGES_BODY = [
   '🔄 **Changes Requested**',
@@ -221,10 +226,46 @@ describe('verdict guard — board writes (C1, C5–C8, C12–C14, C16)', () => {
   })
 })
 
+describe('verdict guard — approval policy (C5)', () => {
+  test('the policy script decides the mark: only a first line of holmes lets Holmes approve alone', () => {
+    expect(approvalOf('holmes\n')).toBe('holmes')
+    for (const out of ['person\n- x: no rule matches it', '', 'holmesish', 'ok\nholmes', null, undefined]) expect(approvalOf(out)).toBe('person')
+  })
+
+  test('approvalFault wants the mark the policy names, on a line of its own, and never both marks', () => {
+    expect(approvalFault(APPROVE_BODY, 'holmes')).toBeUndefined()
+    expect(approvalFault(PERSON_BODY, 'person')).toBeUndefined()
+    expect(approvalFault(APPROVE_BODY, 'person')).toBe(`lacks the approval-policy line ${APPROVAL_MARKS.person}`)
+    expect(approvalFault(PERSON_BODY, 'holmes')).toBe(`lacks the approval-policy line ${APPROVAL_MARKS.holmes}`)
+    expect(approvalFault(`${APPROVE_BODY}\n${APPROVAL_MARKS.person}`, 'person')).toContain('carries both approval-policy lines')
+    expect(approvalFault(APPROVE_BODY.replace(APPROVAL_MARKS.holmes, `Note: ${APPROVAL_MARKS.holmes}`), 'holmes')).toContain('lacks')
+  })
+
+  test('an approve that claims Holmes is enough is refused when the policy needs a person, and names the paths', () => {
+    const deny = judgeBoard(READY, review('approve', APPROVE_BODY), { ...FACTS, approval: 'person', why: { approval: '.github/ci.yml: a rule needs a person' } })
+    expect(deny).toContain('Verdict guard (workbench-dev-team), C5.')
+    expect(deny).toContain('a person must approve (.github/ci.yml: a rule needs a person)')
+    expect(judgeBoard(READY, review('approve', PERSON_BODY), { ...FACTS, approval: 'person' })).toBeUndefined()
+  })
+
+  test('an approve that says a person must approve is refused when the policy lets Holmes approve alone', () => {
+    expect(judgeBoard(READY, review('approve', PERSON_BODY), FACTS)).toContain("says Holmes's approval is enough")
+  })
+
+  test('with no policy answer the guard fails closed to a person', () => {
+    expect(judgeBoard(READY, review('approve', APPROVE_BODY), { ...FACTS, approval: undefined })).toContain('C5')
+    expect(judgeBoard(READY, review('approve', PERSON_BODY), { ...FACTS, approval: undefined })).toBeUndefined()
+  })
+
+  test('a request-changes needs no approval-policy line', () => {
+    expect(judgeBoard(READY, review('request_changes', CHANGES_BODY), { ...FACTS, approval: undefined })).toBeUndefined()
+  })
+})
+
 describe('verdict guard — body shapes', () => {
   test('bodyFault names each missing part', () => {
     expect(bodyFault('approve', APPROVE_BODY)).toBeUndefined()
-    expect(bodyFault('approve', APPROVE_BODY.replace('Ready for @mikebronner to merge.', ''))).toContain('Ready for @mikebronner to merge.')
+    expect(bodyFault('approve', APPROVE_BODY.replace('## Review Summary', ''))).toContain('## Review Summary')
     expect(bodyFault('request_changes', CHANGES_BODY)).toBeUndefined()
     expect(bodyFault('request_changes', CHANGES_BODY.replace('## Issues Found', '## Problems'))).toContain('## Issues Found')
   })
@@ -412,13 +453,14 @@ describe('verdict guard — wired into tool.call', () => {
     '- a rule',
     '',
   ].join('\n')
-  type Scripts = { decision?: string; strikes?: string; buckets?: string[]; failing?: string }
+  type Scripts = { decision?: string; strikes?: string; policy?: string; buckets?: string[]; failing?: string }
   const scripts = (o: Scripts) => (argv: readonly string[]) => {
     const script = (argv[1] ?? '').split('/').pop() ?? ''
     if (script === o.failing) return { exitCode: 2, stdout: '', stderr: `gh: HTTP 502 in ${script}` }
     if (script === 'holmes-find-pr.sh') return { exitCode: 0, stdout: '9\n', stderr: '' }
     if (script === 'holmes-decision-request.sh') return { exitCode: 0, stdout: `${o.decision ?? 'review'}\n`, stderr: '' }
     if (script === 'holmes-strike-count.sh') return { exitCode: 0, stdout: `${o.strikes ?? '0'}\n`, stderr: '' }
+    if (script === 'holmes-approval-policy.sh') return { exitCode: 0, stdout: `${o.policy ?? 'holmes'}\n`, stderr: '' }
     if (argv[0] === 'gh' && argv[2] === 'checks') {
       const buckets = o.buckets ?? ['pass']
       return { exitCode: buckets.includes('pending') ? 8 : 0, stdout: JSON.stringify(buckets.map((bucket, i) => ({ name: `job${i}`, bucket }))), stderr: '' }
@@ -513,6 +555,32 @@ describe('verdict guard — wired into tool.call', () => {
       expect(reached(w, IDX('submit_review'))).toBe(0)
     })
   }
+
+  test('an approve runs the policy script on the linked PR, and its person answer decides the mark', async ($, on) => {
+    const w = world(on, holmesIndex({ policy: 'person\n- src/auth/a.ts: a rule needs a person' }))
+    await prepare($ as never)
+    const deny = await denyOf($ as never, IDX('submit_review'), { id: 7, agent: 'holmes', pr_number: 9, decision: 'approve', body: APPROVE_BODY })
+    expect(deny).toContain('a person must approve (src/auth/a.ts: a rule needs a person)')
+    expect(w.runs.find(argv => (argv[1] ?? '').endsWith('holmes-approval-policy.sh'))?.slice(2)).toEqual(['o/r', '9'])
+    expect(await denyOf($ as never, IDX('submit_review'), { id: 7, agent: 'holmes', pr_number: 9, decision: 'approve', body: PERSON_BODY })).toBeUndefined()
+    expect(reached(w, IDX('submit_review'))).toBe(1)
+  })
+
+  test('a request-changes never runs the policy script, so its failure cannot refuse the review', async ($, on) => {
+    const w = world(on, holmesIndex({ failing: 'holmes-approval-policy.sh' }))
+    await prepare($ as never)
+    expect(await denyOf($ as never, IDX('submit_review'), { id: 7, agent: 'holmes', pr_number: 9, decision: 'request_changes', body: CHANGES_BODY })).toBeUndefined()
+    expect(reached(w, IDX('submit_review'))).toBe(1)
+    expect(w.runs.some(argv => (argv[1] ?? '').endsWith('holmes-approval-policy.sh'))).toBe(false)
+  })
+
+  test('a policy script that fails makes the guard want the person mark', async ($, on) => {
+    const w = world(on, holmesIndex({ failing: 'holmes-approval-policy.sh' }))
+    await prepare($ as never)
+    expect(await denyOf($ as never, IDX('submit_review'), { id: 7, agent: 'holmes', pr_number: 9, decision: 'approve', body: APPROVE_BODY })).toContain('exit 2: gh: HTTP 502 in holmes-approval-policy.sh')
+    expect(await denyOf($ as never, IDX('submit_review'), { id: 7, agent: 'holmes', pr_number: 9, decision: 'approve', body: PERSON_BODY })).toBeUndefined()
+    expect(reached(w, IDX('submit_review'))).toBe(1)
+  })
 
   test('with the vault down, two errored feedback searches still let the verdict through', async ($, on) => {
     const w = world(on, { ...holmesIndex(), tools: (input: Record<string, unknown>) => (input.tool === MEM('search') ? { isError: true, result: [{ type: 'text', text: 'down' }], text: 'down' } : answers(input)) })
