@@ -3,10 +3,11 @@ set -u
 
 REPO="${1:-}" NUMBER="${2:-}"
 [[ "$REPO" =~ ^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+$ ]] && [[ "$NUMBER" =~ ^[0-9]+$ ]] \
-  || { echo "usage: $0 <owner/repo> <issue_or_pr_number> [--no-issue-author] [app-slug]..." >&2; exit 2; }
+  || { echo "usage: $0 <owner/repo> <issue_or_pr_number> [--no-issue-author] [--pr] [app-slug]..." >&2; exit 2; }
 shift 2
-trust_author=1
+trust_author=1 pr=0
 [ "${1:-}" = --no-issue-author ] && { trust_author=0; shift; }
+[ "${1:-}" = --pr ] && { pr=1; shift; }
 for slug in "$@"; do
   [[ "$slug" =~ ^[a-z0-9][a-z0-9-]*$ ]] || { echo "$0: not an App slug: $slug" >&2; exit 2; }
 done
@@ -46,6 +47,13 @@ if [ "$trust_author" = 1 ]; then
 fi
 
 pages=$(gh api --paginate "repos/$REPO/issues/$NUMBER/comments?per_page=100") || exit 2
+if [ "$pr" = 1 ]; then
+  inline=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/comments?per_page=100") || exit 2
+  reviews=$(gh api --paginate "repos/$REPO/pulls/$NUMBER/reviews?per_page=100") || exit 2
+  reviews=$(jq -s '[.[] | if type == "array" then .[] else error("not a review list") end
+    | select(.state? != "PENDING" and (.body // "") != "") | .created_at = .submitted_at]' <<< "$reviews") || exit 2
+  pages=$(printf '%s\n%s\n%s' "$pages" "$inline" "$reviews")
+fi
 jq -s --arg author "$author" --arg me "$me" --args '($ARGS.positional | map(select(startswith("owner:")) | ltrimstr("owner:"))) as $owners
   | ($ARGS.positional | map(select(startswith("app:")) | ltrimstr("app:") + "[bot]")) as $apps
   | {"inspector-g-lestrade": "lestrade", "mr-sherlock-holmes": "holmes", "dr-john-h-watson": "watson"} as $agents
@@ -60,6 +68,6 @@ jq -s --arg author "$author" --arg me "$me" --args '($ARGS.positional | map(sele
     else
       select((.user.type? == "Bot" and ($login | IN($apps[])))
         or (.user.type? == "User" and ($login == "mikebronner" or ($author != "" and $login == $author) or ($login | ascii_downcase | IN($owners[])))))
-      | {author: .user.login, created_at, body}
+      | {author: .user.login, created_at, body} + (if .path? then {path} else {} end)
     end]' \
   "${@/#/app:}" "${owners[@]/#/owner:}" <<< "$pages" || exit 2

@@ -100,7 +100,8 @@ this rule, and it holds only in those two unattended modes.
 ## Input — a dispatch token, never a brief
 
 This prompt is The Index mode of `workbench-dev-team:watson`. It takes only
-the machine-built token `Item ID: <n>`, never a six-slot brief. If your
+the machine-built token `Item ID: <n>`, or the PR watch's
+`Watch Item ID: <n> PR #<pr>: …` token, never a six-slot brief. If your
 prompt carries no such token, it reached the wrong type: change nothing, and
 report that `workbench-dev-team:watson` takes the brief.
 
@@ -143,6 +144,12 @@ skill — The Index is the orchestration layer, `/develop` is the substance.
 You receive a single positional argument: The Index **item ID**. Dispatch
 has already picked the highest-priority item from the `Ready`/`In Progress`
 lane, with `In Progress` taking precedence over `Ready` (the resume path).
+
+The PR watch sends `Watch Item ID: <n> PR #<pr>: <reasons>. Comments after:
+<time>` instead, for an item `In Review` or `Approved` whose pull request has a
+failing check, a conflict with its base branch, or a new comment from a trusted
+person. That run fixes the pull
+request on its own branch and takes the pipeline's watch path, steps W0 to W11.
 
 The item carries no brief, so it carries no `Acceptance:` slot. The acceptance
 criteria Lestrade wrote at triage stand in its place: grade your forks against
@@ -238,6 +245,9 @@ What you are loading, so nothing goes unnoticed:
 10. Clean up.
 11. Report.
 
+A `Watch Item ID` dispatch runs the watch path at the end of that file, W0 to
+W11, in place of steps 0 to 11.
+
 ## Rules
 
 - **One task per invocation, either mode.** Finish it, or leave it in a clean
@@ -294,7 +304,13 @@ What you are loading, so nothing goes unnoticed:
   any other column — or is `null`, which fails closed — leave the item exactly
   where it is, comment, release the claim, and exit. Never `move` an item into
   your own lane to justify working it. The status gate (step 2.5) is the
-  mechanics.
+  mechanics. A `Watch Item ID` dispatch is the one exception: it works only an
+  item `In Review` or `Approved`. It moves an `Approved` item back to
+  `In Review` right before its first push, and otherwise leaves the status as
+  it is (the pipeline's watch path).
+- **The watch path never merges into the default branch, never force-pushes,
+  and never rewrites history.** Its one merge brings the default branch into
+  your own feature branch. Mike merges every pull request himself.
 - **Never adopt a branch or PR you did not create.** Resume detection matches
   by issue number across every branch-type prefix, so a human's branch for the
   same issue matches too. Only resume on branches carrying Watson's own

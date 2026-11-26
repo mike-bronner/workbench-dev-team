@@ -281,6 +281,44 @@ expect "a failed comment read exits 2" "$?" 2
 bash "$HERE/trusted-comments.sh" 'o/r;x' 7 >/dev/null 2>&1
 expect "a malformed repo is refused" "$?" 2
 
+reset
+no_codeowners
+fake_api repos/o/r/issues/7/comments '[{"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-01T00:00:00Z","body":"conversation"}]'
+fake_api repos/o/r/pulls/7/comments '[{"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-02T00:00:00Z","path":"bin/a.sh","body":"inline"},
+  {"user":{"login":"alice","type":"User"},"created_at":"2026-01-02T01:00:00Z","path":"bin/a.sh","body":"alice inline"}]'
+fake_api repos/o/r/pulls/7/reviews '[{"user":{"login":"mikebronner","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-03T00:00:00Z","body":"review"},
+  {"user":{"login":"mikebronner","type":"User"},"state":"APPROVED","submitted_at":"2026-01-03T01:00:00Z","body":""},
+  {"user":{"login":"mikebronner","type":"User"},"state":"PENDING","body":"pending"},
+  {"user":{"login":"alice","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-03T02:00:00Z","body":"alice review"}]'
+expect "without --pr, only the conversation is read" "$(authors --no-issue-author)" '["conversation"]'
+expect "...and no pulls endpoint is called" "$(grep -c 'pulls' "$FAKE_GH/calls")" 0
+expect "--pr adds trusted inline comments and submitted review bodies, and drops pending and empty reviews" \
+  "$(authors --no-issue-author --pr)" '["conversation","inline","review"]'
+expect "--pr gives an inline comment its path and a review its submitted time" \
+  "$(bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr | jq -c '[.[] | [.path, .created_at]]')" \
+  '[[null,"2026-01-01T00:00:00Z"],["bin/a.sh","2026-01-02T00:00:00Z"],[null,"2026-01-03T00:00:00Z"]]'
+expect "--pr reads every page of both endpoints" \
+  "$(grep -c '^api --paginate repos/o/r/pulls/7/comments?per_page=100$\|^api --paginate repos/o/r/pulls/7/reviews?per_page=100$' "$FAKE_GH/calls")" 2
+fake_api repos/o/r/pulls/7/comments '[{"user":{"login":"alice","type":"User"},"created_at":"2026-01-02T01:00:00Z","body":"page one"}]
+[{"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-04T00:00:00Z","path":"b.sh","body":"inline on page two"}]'
+fake_api repos/o/r/pulls/7/reviews '[{"user":{"login":"alice","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-03T02:00:00Z","body":"page one"}]
+[{"user":{"login":"mikebronner","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-05T00:00:00Z","body":"review on page two"}]'
+expect "--pr keeps a trusted inline comment and review found only on the second page" \
+  "$(authors --no-issue-author --pr)" '["conversation","inline on page two","review on page two"]'
+bash "$HERE/trusted-comments.sh" o/r 7 --pr --no-issue-author >/dev/null 2>&1
+expect "--no-issue-author after --pr exits 2" "$?" 2
+failing_api repos/o/r/pulls/7/reviews
+bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr >/dev/null 2>&1
+expect "a failed review read exits 2" "$?" 2
+fake_api repos/o/r/pulls/7/reviews '{"message":"Not Found"}'
+rm -f "$FAKE_GH/api_repos_o_r_pulls_7_reviews.fail"
+bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr >/dev/null 2>&1
+expect "a review page that is not a list exits 2" "$?" 2
+fake_api repos/o/r/pulls/7/reviews '[]'
+failing_api repos/o/r/pulls/7/comments
+bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr >/dev/null 2>&1
+expect "a failed inline comment read exits 2" "$?" 2
+
 echo "── external mode: trusted-comments.sh and app-comments.sh ───────────────"
 external() { WORKBENCH_DEV_TEAM_EXTERNAL=1 bash "$@"; }
 marked='[{"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T00:00:00Z","body":"<!-- m --> lestrade\n\n🤖 Generated with Claude Code\n<!-- workbench:lestrade -->"},

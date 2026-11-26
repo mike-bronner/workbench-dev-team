@@ -226,10 +226,19 @@ d="$WORK/case19"; mkdir -p "$d"
 echo $$ > "$d/holmes-431.lock"
 expect "other item's lock ignored -> dispatch" "DISPATCH" "$(run "$d" holmes 432)"
 
-# 20. The lock is per AGENT too — Watson working item 431 must not block Holmes reviewing it later.
 d="$WORK/case20"; mkdir -p "$d"
+echo $$ > "$d/holmes-431.lock"
+expect "a live Holmes lock does not hold Watson -> dispatch" "DISPATCH" "$(run "$d" watson 431)"
+
+d="$WORK/case20b"; mkdir -p "$d"
 echo $$ > "$d/watson-431.lock"
-expect "other agent's lock ignored -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+expect "a live Watson run on the item holds Holmes -> skip" "SKIP	a Watson run on this item is still alive" "$(run "$d" holmes 431)"
+echo "$cb_dead" > "$d/watson-431.lock"
+expect "a dead Watson lock holds nothing -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+echo $$ > "$d/watson-432.lock"
+expect "a live Watson on another item holds nothing -> dispatch" "DISPATCH" "$(run "$d" holmes 431)"
+echo $$ > "$d/watson-431.lock"; touch "$d/holmes-431.escalated"
+expect "a live Watson beats a Holmes reprieve, so the marker waits -> skip" "SKIP" "$(run "$d" holmes 431)"
 
 # 21. A permission refusal quotes the refused call, and the wrapper prints it just
 # before the final result. A refused command that names a signature is not that
