@@ -830,31 +830,35 @@ block exits non-zero, stop Step 7 entirely, so the task is not written either.
 # >>> dispatcher-install >>>  (markers used by commands/test-dispatch-setup.sh — keep them)
 DI_SRC="${SRC_ROOT:-}/bin"
 DI_BIN="$HOME/.claude-workbench/bin"
-for DI_F in dispatch-agent.sh test-dispatch-agent.sh test-circuit-breaker.sh; do
+for DI_F in dispatch-agent.sh trusted-comments.sh test-dispatch-agent.sh test-circuit-breaker.sh test-pr-watch.sh; do
   if [ ! -f "$DI_SRC/$DI_F" ]; then
     echo "❌ $DI_SRC/$DI_F is missing, so the dispatcher was not installed. Nothing changed."
     exit 1
   fi
 done
-for DI_F in test-dispatch-agent.sh test-circuit-breaker.sh; do
+for DI_F in test-dispatch-agent.sh test-circuit-breaker.sh test-pr-watch.sh; do
   if ! bash "$DI_SRC/$DI_F" >/dev/null 2>&1; then
     echo "❌ bin/$DI_F failed, so the dispatcher was not installed. Nothing changed. For the detail, run: bash $DI_SRC/$DI_F"
     exit 1
   fi
 done
 if ! { mkdir -p "$DI_BIN" \
+    && install -m 755 "$DI_SRC/trusted-comments.sh" "$DI_BIN/trusted-comments.sh.new" \
     && install -m 755 "$DI_SRC/dispatch-agent.sh" "$DI_BIN/dispatch-agent.sh.new" \
+    && mv -f "$DI_BIN/trusted-comments.sh.new" "$DI_BIN/trusted-comments.sh" \
     && mv -f "$DI_BIN/dispatch-agent.sh.new" "$DI_BIN/dispatch-agent.sh"; }; then
-  echo "❌ Could not write $DI_BIN/dispatch-agent.sh. The dispatcher installed before, if any, still runs."
+  echo "❌ Could not write $DI_BIN/dispatch-agent.sh and trusted-comments.sh. The dispatcher installed before, if any, still runs."
   exit 1
 fi
 echo "✅ Dispatcher installed and self-tested: $DI_BIN/dispatch-agent.sh"
 # <<< dispatcher-install <<<
 ```
 
-The two suites cover the per-item in-flight lock, the budget cap and its
-reprieve multiple, the defaults that apply when a `/config` row is unset, and
-the circuit-breaker pre-flight with its one-shot reprieve marker.
+The three suites cover the per-item in-flight lock, the budget cap and its
+reprieve multiple, the defaults that apply when a `/config` row is unset, the
+circuit-breaker pre-flight with its one-shot reprieve marker, and the PR watch.
+The PR watch judges comments with `trusted-comments.sh`, so it is installed
+beside the dispatcher.
 
 **If this block exits non-zero, read its last line to the human, go on to 7c,
 and skip 7e.** The Dispatch task keeps running the dispatcher and the prompt it

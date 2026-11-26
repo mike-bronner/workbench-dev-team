@@ -281,6 +281,44 @@ expect "a failed comment read exits 2" "$?" 2
 bash "$HERE/trusted-comments.sh" 'o/r;x' 7 >/dev/null 2>&1
 expect "a malformed repo is refused" "$?" 2
 
+reset
+no_codeowners
+fake_api repos/o/r/issues/7/comments '[{"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-01T00:00:00Z","body":"conversation"}]'
+fake_api repos/o/r/pulls/7/comments '[{"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-02T00:00:00Z","path":"bin/a.sh","body":"inline"},
+  {"user":{"login":"alice","type":"User"},"created_at":"2026-01-02T01:00:00Z","path":"bin/a.sh","body":"alice inline"}]'
+fake_api repos/o/r/pulls/7/reviews '[{"user":{"login":"mikebronner","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-03T00:00:00Z","body":"review"},
+  {"user":{"login":"mikebronner","type":"User"},"state":"APPROVED","submitted_at":"2026-01-03T01:00:00Z","body":""},
+  {"user":{"login":"mikebronner","type":"User"},"state":"PENDING","body":"pending"},
+  {"user":{"login":"alice","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-03T02:00:00Z","body":"alice review"}]'
+expect "without --pr, only the conversation is read" "$(authors --no-issue-author)" '["conversation"]'
+expect "...and no pulls endpoint is called" "$(grep -c 'pulls' "$FAKE_GH/calls")" 0
+expect "--pr adds trusted inline comments and submitted review bodies, and drops pending and empty reviews" \
+  "$(authors --no-issue-author --pr)" '["conversation","inline","review"]'
+expect "--pr gives an inline comment its path and a review its submitted time" \
+  "$(bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr | jq -c '[.[] | [.path, .created_at]]')" \
+  '[[null,"2026-01-01T00:00:00Z"],["bin/a.sh","2026-01-02T00:00:00Z"],[null,"2026-01-03T00:00:00Z"]]'
+expect "--pr reads every page of both endpoints" \
+  "$(grep -c '^api --paginate repos/o/r/pulls/7/comments?per_page=100$\|^api --paginate repos/o/r/pulls/7/reviews?per_page=100$' "$FAKE_GH/calls")" 2
+fake_api repos/o/r/pulls/7/comments '[{"user":{"login":"alice","type":"User"},"created_at":"2026-01-02T01:00:00Z","body":"page one"}]
+[{"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-04T00:00:00Z","path":"b.sh","body":"inline on page two"}]'
+fake_api repos/o/r/pulls/7/reviews '[{"user":{"login":"alice","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-03T02:00:00Z","body":"page one"}]
+[{"user":{"login":"mikebronner","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-05T00:00:00Z","body":"review on page two"}]'
+expect "--pr keeps a trusted inline comment and review found only on the second page" \
+  "$(authors --no-issue-author --pr)" '["conversation","inline on page two","review on page two"]'
+bash "$HERE/trusted-comments.sh" o/r 7 --pr --no-issue-author >/dev/null 2>&1
+expect "--no-issue-author after --pr exits 2" "$?" 2
+failing_api repos/o/r/pulls/7/reviews
+bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr >/dev/null 2>&1
+expect "a failed review read exits 2" "$?" 2
+fake_api repos/o/r/pulls/7/reviews '{"message":"Not Found"}'
+rm -f "$FAKE_GH/api_repos_o_r_pulls_7_reviews.fail"
+bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr >/dev/null 2>&1
+expect "a review page that is not a list exits 2" "$?" 2
+fake_api repos/o/r/pulls/7/reviews '[]'
+failing_api repos/o/r/pulls/7/comments
+bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr >/dev/null 2>&1
+expect "a failed inline comment read exits 2" "$?" 2
+
 echo "── external mode: trusted-comments.sh and app-comments.sh ───────────────"
 external() { WORKBENCH_DEV_TEAM_EXTERNAL=1 bash "$@"; }
 marked='[{"user":{"login":"octo-owner","type":"User"},"created_at":"2026-01-01T00:00:00Z","body":"<!-- m --> lestrade\n\n🤖 Generated with Claude Code\n<!-- workbench:lestrade -->"},
@@ -429,6 +467,98 @@ touch "$FAKE_GH/issue-view.fail"
 fake api '[]'
 bash "$HERE/holmes-read-ac.sh" o/r 1 >/dev/null 2>&1
 expect "a failed issue read exits 2" "$?" 2
+
+echo "── holmes-approval-policy.sh ────────────────────────────────────────────"
+POLICY_API=repos/o/r/contents/.workbench/approval-policy.json
+STANDARD='{"rules":[{"paths":["**"],"approval":"holmes"},{"paths":[".github/**","src/auth/**"],"approval":"person"}]}'
+pr_files() {
+  reset
+  local list
+  list=$(jq -cn '$ARGS.positional | map(split(">") | if length == 2 then {filename: .[1], previous_filename: .[0]} else {filename: .[0]} end)' --args "$@")
+  fake_api repos/o/r/pulls/3 "$(jq -cn --argjson n "$#" '{base: {ref: "main"}, head: {ref: "feat/3-x"}, changed_files: $n}')"
+  fake_api repos/o/r/pulls/3/files "$list"
+}
+with_policy() { fake_api "$POLICY_API" "$(codeowners_file "$1")"; }
+policy() { bash "$HERE/holmes-approval-policy.sh" o/r 3; }
+verdict() { policy | head -1; }
+
+pr_files src/app.ts docs/a.md; with_policy "$STANDARD"
+expect "only paths a holmes rule matches: Holmes's approval is enough" "$(policy)" holmes
+pr_files src/app.ts .github/workflows/ci.yml; with_policy "$STANDARD"
+expect "a path both rules match takes the stricter person rule, and names that path" "$(policy)" "person
+- .github/workflows/ci.yml: a rule needs a person"
+out=$(policy); rc=$?
+expect "a person verdict still exits 0" "$rc" 0
+pr_files src/app.ts lib/x.rb; with_policy '{"rules":[{"paths":["src/*"],"approval":"holmes"}]}'
+expect "a path no rule matches needs a person" "$(policy)" "person
+- lib/x.rb: no rule matches it"
+pr_files .github/ci.yml\>src/ci.yml; with_policy "$STANDARD"
+expect "a rename out of a person path is judged by its old path too" "$(policy)" "person
+- .github/ci.yml: a rule needs a person"
+pr_files src/a.ts src/b.ts src/auth/login.ts; with_policy "$STANDARD"
+fake_api repos/o/r/pulls/3/files '[{"filename":"src/a.ts"},{"filename":"src/b.ts"}]
+[{"filename":"src/auth/login.ts"}]'
+expect "a person path on the second page of the file list is judged, against the total count" "$(policy)" "person
+- src/auth/login.ts: a rule needs a person"
+pr_files docs/guide/a.md; with_policy '{"rules":[{"paths":["*.md"],"approval":"holmes"}]}'
+expect "a * matches across folders" "$(verdict)" holmes
+pr_files src/a1.ts; with_policy '{"rules":[{"paths":["src/a?.ts"],"approval":"holmes"}]}'
+expect "a ? matches one character" "$(verdict)" holmes
+pr_files src/a12.ts; with_policy '{"rules":[{"paths":["src/a?.ts"],"approval":"holmes"}]}'
+expect "a ? matches no more than one character" "$(verdict)" person
+pr_files srcxapp.ts; with_policy '{"rules":[{"paths":["src.app.ts"],"approval":"holmes"}]}'
+expect "a . in a glob is a literal dot, not any character" "$(verdict)" person
+pr_files 'src/(a)+.ts'; with_policy '{"rules":[{"paths":["src/(a)+.ts"],"approval":"holmes"}]}'
+expect "regex characters in a glob match themselves" "$(verdict)" holmes
+
+pr_files src/app.ts; missing_api "$POLICY_API"
+expect "no policy file on the base branch needs a person" "$(policy)" "person
+- main has no .workbench/approval-policy.json"
+pr_files src/app.ts; failing_api "$POLICY_API"
+expect "a policy read that fails needs a person" "$(verdict)" person
+pr_files src/app.ts; fake_api "$POLICY_API" '{"type":"dir"}'
+expect "a policy path that is not a file needs a person" "$(verdict)" person
+for bad in 'not json' '[]' '{}' '{"rules":[]}' '{"rules":[{"paths":["**"],"approval":"auto"}]}' \
+  '{"rules":[{"paths":"**","approval":"holmes"}]}' '{"rules":[{"paths":[],"approval":"holmes"}]}' \
+  '{"rules":[{"paths":[""],"approval":"holmes"}]}' '{"rules":[{"paths":[7],"approval":"holmes"}]}' \
+  '{"rules":[{"approval":"holmes"}]}' '{"rules":["**"]}'; do
+  pr_files src/app.ts; with_policy "$bad"
+  expect "an invalid policy fails closed: $bad" "$(policy)" "person
+- the .workbench/approval-policy.json on main is not valid"
+done
+pr_files src/app.ts; with_policy '{"rules":[{"paths":["**"],"approval":"holmes"},{"paths":["x"],"approval":"none"}]}'
+expect "one invalid rule voids the whole policy" "$(verdict)" person
+
+pr_files src/app.ts; with_policy "$STANDARD"
+policy >/dev/null
+expect "the policy is read from the base branch, never the PR's head" \
+  "$(grep -c "contents/.workbench/approval-policy.json?ref=main$" "$FAKE_GH/calls"):$(grep -c 'ref=feat' "$FAKE_GH/calls")" "1:0"
+pr_files src/app.ts; with_policy "$STANDARD"
+fake_api repos/o/r/pulls/3 '{"base":{"ref":"release/1.0 x"},"changed_files":1}'
+policy >/dev/null
+expect "the base branch name is URL-encoded into the ref" "$(grep -c 'approval-policy.json?ref=release%2F1.0%20x$' "$FAKE_GH/calls")" 1
+pr_files src/app.ts; with_policy "$STANDARD"
+fake_api repos/o/r/pulls/3 '{"changed_files":1}'
+expect "a PR with no base branch needs a person, and no policy is read" "$(verdict):$(grep -c contents "$FAKE_GH/calls")" "person:0"
+pr_files src/app.ts docs/a.md; with_policy "$STANDARD"
+fake_api repos/o/r/pulls/3 '{"base":{"ref":"main"},"changed_files":3}'
+expect "a file list shorter than the PR's count needs a person" "$(policy)" "person
+- the file list holds 2 of the PR's 3 changed files"
+pr_files; with_policy "$STANDARD"
+expect "a PR with no changed files needs a person" "$(verdict)" person
+pr_files src/app.ts; with_policy "$STANDARD"
+fake_api repos/o/r/pulls/3 '{"base":{"ref":"main"}}'
+expect "a PR with no changed-file count needs a person" "$(verdict)" person
+pr_files src/app.ts; with_policy "$STANDARD"; failing_api repos/o/r/pulls/3/files
+expect "a failed file read needs a person" "$(verdict)" person
+pr_files src/app.ts; with_policy "$STANDARD"; fake_api repos/o/r/pulls/3/files '{"message":"x"}'
+expect "a file read that is not a list needs a person" "$(verdict)" person
+pr_files src/app.ts; with_policy "$STANDARD"; failing_api repos/o/r/pulls/3
+expect "a failed PR read needs a person" "$(verdict)" person
+bash "$HERE/holmes-approval-policy.sh" 'o/r;x' 3 >/dev/null 2>&1
+expect "a malformed repo is refused" "$?" 2
+bash "$HERE/holmes-approval-policy.sh" o/r 3x >/dev/null 2>&1
+expect "a malformed PR number is refused" "$?" 2
 
 echo "── holmes-checkout.sh ───────────────────────────────────────────────────"
 reset

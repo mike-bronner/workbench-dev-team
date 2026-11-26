@@ -83,6 +83,7 @@ import {
   EXTERNAL_MODE,
   CANCELLED,
   CHECKS_ARGV,
+  approvalOf,
   checksOf,
   factOf,
   whyOf,
@@ -549,6 +550,12 @@ async function factsOf($: EngineInterface, holmes: Run, ledger: Ledger, call: Ca
     const read = run === undefined ? { names: [] } : checksOf(run)
     facts.checks = read.checks
     facts.why = { ...facts.why, checks: read.checks === undefined ? whyOf(run) : read.names.join(', ') }
+  }
+  if (tool === 'submit_review' && call.decision === 'approve') {
+    const run = await scriptRun($, 'holmes-approval-policy.sh', repo, String(pr))
+    const policy = factOf(run)
+    facts.approval = approvalOf(policy)
+    if (facts.approval === 'person') facts.why = { ...facts.why, approval: typeof policy === 'string' ? policy.split('\n').slice(1).map(line => line.replace(/^- /u, '')).join('; ') : whyOf(run) }
   }
   return facts
 }

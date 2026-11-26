@@ -25,13 +25,23 @@ export type Call = Record<string, unknown> & { tool: string }
 
 export type Checks = 'pass' | 'none' | 'pending' | 'fail' | 'cancelled'
 
+export type Approval = 'holmes' | 'person'
+
+export const APPROVAL_MARKS: Readonly<Record<Approval, string>> = {
+  holmes: "🟢 **Approval policy: Holmes's approval is enough.** Ready for @mikebronner to merge.",
+  person: '🧑 **Approval policy: a person must approve.** @mikebronner, approve this PR yourself before you merge it.',
+}
+
+export const approvalOf = (stdout: string | null | undefined): Approval => (stdout?.split('\n')[0]?.trim() === 'holmes' ? 'holmes' : 'person')
+
 export type Facts = {
   pr?: number | null
   strikes?: number
   checks?: Checks
   decision?: 'decision-request' | 'review'
+  approval?: Approval
   memoryAvailable?: boolean
-  why?: Partial<Record<'pr' | 'decision' | 'strikes' | 'checks', string>>
+  why?: Partial<Record<'pr' | 'decision' | 'strikes' | 'checks' | 'approval', string>>
 }
 
 export const CATEGORIES: readonly string[] = [
@@ -166,10 +176,17 @@ export function bodyFault(decision: 'approve' | 'request_changes', body: string)
   const head = decision === 'approve' ? '✅ **Approved**' : '🔄 **Changes Requested**'
   const parts =
     decision === 'approve'
-      ? ['## Review Summary', '## 📋 Non-blocking follow-ups', 'Ready for @mikebronner to merge.']
+      ? ['## Review Summary', '## 📋 Non-blocking follow-ups']
       : ['## Issues Found', "## What's Good", '## 📋 Non-blocking follow-ups', 'Please address the above and re-request review.']
   const absent = [...(body.trimStart().startsWith(head) ? [] : [`the first line ${head}`]), ...missing(body, parts)]
   return absent.length === 0 ? undefined : absent.join(', ')
+}
+
+export function approvalFault(body: string, approval: Approval): string | undefined {
+  const lines = body.split('\n').map(line => line.trim())
+  const want = APPROVAL_MARKS[approval]
+  if (!lines.includes(want)) return `lacks the approval-policy line ${want}`
+  return lines.includes(APPROVAL_MARKS[approval === 'holmes' ? 'person' : 'holmes']) ? `carries both approval-policy lines, but the policy allows only ${want}` : undefined
 }
 
 export function disputeFault(body: string): string | undefined {
@@ -243,6 +260,10 @@ export function judgeBoard(ledger: Ledger, call: Call, facts: Facts): string | u
     if (decision === 'approve') {
       const checks = checksDeny(facts)
       if (checks !== undefined) return checks
+      const approval = facts.approval ?? 'person'
+      const mark = approvalFault(str(call.body) ?? '', approval)
+      if (mark !== undefined)
+        return deny('C5', `the approve body ${mark}.`, `The approval policy on the base branch says ${approval === 'holmes' ? "Holmes's approval is enough" : 'a person must approve'}${facts.why?.approval ? ` (${facts.why.approval})` : ''}. Write that line in the body on a line of its own, where the §5 template puts it.`)
     } else {
       if (facts.strikes === undefined) return deny('C1', `the guard could not compute the strike count (${facts.why?.strikes ?? 'no answer'}).`, 'Report the error and stop.')
       if (facts.strikes >= 3)

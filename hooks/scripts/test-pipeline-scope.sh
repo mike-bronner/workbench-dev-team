@@ -324,7 +324,7 @@ out=$(jq -cn --arg c "rm -rf $CLONE" --arg d "$SANDBOX" '{cwd: $d, tool_input: {
 echo "The pipeline doc's own git and cleanup lines are allowed"
 n=0
 while IFS= read -r line; do
-  line=${line//<clone path>/$CLONE}; line=${line//<issue_number>/12}; line=${line//<branch>/feature/12-add-x}
+  line=${line//<clone path>/$CLONE}; line=${line//<issue_number>/12}; line=${line//<branch>/feature/12-add-x}; line=${line//<default branch>/main}
   expect allow "$SANDBOX" "$line"; n=$((n + 1))
 done < <(grep -E '^(git -C <clone path> |rm -rf <clone path>)' "$PIPELINE_MD")
 [ "$n" -ge 3 ] && ok "$n lines found in the pipeline doc" || bad "only $n git -C or rm lines found in $PIPELINE_MD"

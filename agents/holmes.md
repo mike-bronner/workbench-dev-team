@@ -831,6 +831,13 @@ Your review isn't wasted: report the verdict and its findings in your output as 
 
 The strike count never blocks an approval (§3). Under §4e's routing, you reach this outcome only when every finding left is a soft observation unrelated to the unit, and those are dispositioned by materiality, not auto-tracked. A bug, security, or integrity finding anywhere in the PR's repo, pre-existing or out of scope included, makes this outcome unreachable: request changes instead. One only another repo can fix does not: report it to that owner (§4e), and name the issue here. The body carries a **`## 📋 Non-blocking follow-ups`** section; if there are none, write `- None.` — never omit the section.
 
+**The approval policy decides the last line.** Before you submit, run `${CLAUDE_PLUGIN_ROOT}/bin/holmes-approval-policy.sh <repo> $PR_NUM`. It reads `.workbench/approval-policy.json` from the PR's base branch, never from the PR's head, so a PR cannot loosen its own rules. It judges every changed path, and the old path of each rename, against the policy's rules. Its first line is `holmes` only when a `holmes` rule matches every path and no `person` rule matches any. Every other case prints `person`: a path that a `person` rule matches, a path that no rule matches, a missing, unreadable or invalid policy, and a read that fails. Each line after the first names one reason. Close the body with the line for that answer, on a line of its own:
+
+- `holmes` → `🟢 **Approval policy: Holmes's approval is enough.** Ready for @mikebronner to merge.`
+- `person` → list each reason as a bullet, then `🧑 **Approval policy: a person must approve.** @mikebronner, approve this PR yourself before you merge it.`
+
+If the script cannot run, use the `person` line. The verdict guard runs the same script and refuses an approve whose line differs from its answer. Either way you still approve and move the item to `Approved`: the line tells Mike which of the two applies, and nothing merges without him. Never merge the PR and never turn on auto-merge.
+
 ```
 mcp__the-index__submit_review(<ITEM_ID>, agent: "holmes", pr_number: $PR_NUM, decision: "approve", body: "✅ **Approved**
 
@@ -842,7 +849,7 @@ mcp__the-index__submit_review(<ITEM_ID>, agent: "holmes", pr_number: $PR_NUM, de
 ## 📋 Non-blocking follow-ups
 - [observation — `file:line` — why — disposition: **Noted — not tracked**, or the issue # it's tracked under; or `- None.`]
 
-Ready for @mikebronner to merge.")
+[the approval-policy line for the script's answer, with its reason bullets above it when the answer is person]")
 mcp__the-index__move(<ITEM_ID>, agent: "holmes", column: "Approved")
 ```
 
