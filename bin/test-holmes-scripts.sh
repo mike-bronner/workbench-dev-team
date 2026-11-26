@@ -297,8 +297,10 @@ expect "--pr adds trusted inline comments and submitted review bodies, and drops
 expect "--pr gives an inline comment its path and a review its submitted time" \
   "$(bash "$HERE/trusted-comments.sh" o/r 7 --no-issue-author --pr | jq -c '[.[] | [.path, .created_at]]')" \
   '[[null,"2026-01-01T00:00:00Z"],["bin/a.sh","2026-01-02T00:00:00Z"],[null,"2026-01-03T00:00:00Z"]]'
-expect "--pr reads every page of both endpoints" \
-  "$(grep -c '^api --paginate repos/o/r/pulls/7/comments?per_page=100$\|^api --paginate repos/o/r/pulls/7/reviews?per_page=100$' "$FAKE_GH/calls")" 2
+: > "$FAKE_GH/calls"
+authors --no-issue-author --pr >/dev/null
+expect "--pr reads every page of both endpoints once" \
+  "$(grep -cxF 'api --paginate repos/o/r/pulls/7/comments?per_page=100' "$FAKE_GH/calls"):$(grep -cxF 'api --paginate repos/o/r/pulls/7/reviews?per_page=100' "$FAKE_GH/calls"):$(grep -cF pulls/ "$FAKE_GH/calls")" 1:1:2
 fake_api repos/o/r/pulls/7/comments '[{"user":{"login":"alice","type":"User"},"created_at":"2026-01-02T01:00:00Z","body":"page one"}]
 [{"user":{"login":"mikebronner","type":"User"},"created_at":"2026-01-04T00:00:00Z","path":"b.sh","body":"inline on page two"}]'
 fake_api repos/o/r/pulls/7/reviews '[{"user":{"login":"alice","type":"User"},"state":"COMMENTED","submitted_at":"2026-01-03T02:00:00Z","body":"page one"}]
