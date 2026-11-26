@@ -26,7 +26,8 @@ fake_src() {
   local root="$WORK/src-$1-${2:-pass}-${3:-whole}" f
   mkdir -p "$root/bin"
   printf '%s dispatcher\n' "$1" > "$root/bin/dispatch-agent.sh"
-  for f in test-dispatch-agent.sh test-circuit-breaker.sh; do
+  printf '%s trusted\n' "$1" > "$root/bin/trusted-comments.sh"
+  for f in test-dispatch-agent.sh test-circuit-breaker.sh test-pr-watch.sh; do
     printf 'exit %s\n' "$([ "$f" = "${2:-}" ] && echo 1 || echo 0)" > "$root/bin/$f"
   done
   [ -z "${3:-}" ] || rm -f "$root/bin/$3"
@@ -34,6 +35,7 @@ fake_src() {
 }
 install_run() { ( HOME="$2" SRC_ROOT="$3" "$1" "$WORK/dispatcher-install.sh" 2>&1 ); }
 installed() { cat "$1/.claude-workbench/bin/dispatch-agent.sh" 2>/dev/null; }
+installed_trusted() { cat "$1/.claude-workbench/bin/trusted-comments.sh" 2>/dev/null; }
 mode_of() { stat -c '%a' "$1" 2>/dev/null || stat -f '%Lp' "$1"; }
 
 for sh in $SHELLS; do
@@ -44,22 +46,26 @@ for sh in $SHELLS; do
   expect_eq "a first install exits 0" 0 "$rc"
   expect_eq "and installs the dispatcher" "v1 dispatcher" "$(installed "$home")"
   expect_eq "as an executable" 755 "$(mode_of "$home/.claude-workbench/bin/dispatch-agent.sh")"
-  expect_eq "and leaves no staged copy" no "$([ -e "$home/.claude-workbench/bin/dispatch-agent.sh.new" ] && echo yes || echo no)"
+  expect_eq "and installs trusted-comments.sh beside it" "v1 trusted" "$(installed_trusted "$home")"
+  expect_eq "as an executable too" 755 "$(mode_of "$home/.claude-workbench/bin/trusted-comments.sh")"
+  expect_eq "and leaves no staged copy" no "$([ -e "$home/.claude-workbench/bin/dispatch-agent.sh.new" ] || [ -e "$home/.claude-workbench/bin/trusted-comments.sh.new" ] && echo yes || echo no)"
   expect_has "and says so" "Dispatcher installed and self-tested" "$out"
 
   out=$(install_run "$sh" "$home" "$(fake_src v2)"); rc=$?
   expect_eq "a re-run exits 0" 0 "$rc"
   expect_eq "and replaces the dispatcher" "v2 dispatcher" "$(installed "$home")"
+  expect_eq "and trusted-comments.sh" "v2 trusted" "$(installed_trusted "$home")"
 
-  for suite in test-dispatch-agent.sh test-circuit-breaker.sh; do
+  for suite in test-dispatch-agent.sh test-circuit-breaker.sh test-pr-watch.sh; do
     out=$(install_run "$sh" "$home" "$(fake_src v3 "$suite")"); rc=$?
     expect_eq "a failing $suite exits 1" 1 "$rc"
     expect_has "and names it" "bin/$suite failed" "$out"
     expect_has "and says nothing changed" "Nothing changed" "$out"
     expect_eq "and the installed dispatcher stays" "v2 dispatcher" "$(installed "$home")"
+    expect_eq "and so does trusted-comments.sh" "v2 trusted" "$(installed_trusted "$home")"
   done
 
-  for missing in dispatch-agent.sh test-dispatch-agent.sh test-circuit-breaker.sh; do
+  for missing in dispatch-agent.sh trusted-comments.sh test-dispatch-agent.sh test-circuit-breaker.sh test-pr-watch.sh; do
     out=$(install_run "$sh" "$home" "$(fake_src v3 "" "$missing")"); rc=$?
     expect_eq "a missing $missing exits 1" 1 "$rc"
     expect_has "and names it" "$missing is missing" "$out"
@@ -83,6 +89,7 @@ home="$WORK/home-shipped"; mkdir -p "$home"
 out=$(install_run bash "$home" "$REPO"); rc=$?
 expect_eq "the shipped suites pass, so it exits 0" 0 "$rc"
 expect_eq "and installs the shipped dispatcher" yes "$(cmp -s "$REPO/bin/dispatch-agent.sh" "$home/.claude-workbench/bin/dispatch-agent.sh" && echo yes || echo no)"
+expect_eq "and the shipped trusted-comments.sh" yes "$(cmp -s "$REPO/bin/trusted-comments.sh" "$home/.claude-workbench/bin/trusted-comments.sh" && echo yes || echo no)"
 
 allow_run() { ( HOME="$2" WORKBENCH_SETTINGS_FILE="$3" "$1" "$WORK/dispatcher-allow.sh" 2>&1 ); }
 backups() { ls "$1".bak-dispatcher-* 2>/dev/null | wc -l | tr -d ' '; }

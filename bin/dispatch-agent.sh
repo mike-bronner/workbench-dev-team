@@ -1,16 +1,6 @@
 #!/usr/bin/env bash
 # Dispatch one dev-team agent as a detached subprocess, behind the circuit breaker.
 #
-# An item dispatch runs the pre-flight first, and its first output line says what
-# happened:
-#   dispatched <agent> pid=… log=…   the normal case
-#   SKIP<TAB><reason>                a run on this item is still alive; nothing spawned
-#   ESCALATE<TAB><reason>            the item is wedged; nothing spawned. The caller
-#                                    escalates it, then runs --mark-escalated.
-#   REPRIEVE<TAB><note>              a human re-activated an escalated item; the
-#                                    marker is consumed and a `dispatched` line
-#                                    follows, with the budget multiplied.
-#
 # Environment read:
 #   DISPATCH_DRY_RUN=1  print the command that would run; spawn nothing, consume nothing
 #   LOGDIR, DISPATCH_SETTINGS, DISPATCH_PLUGIN_KEY, RUNROOT  test overrides
@@ -155,7 +145,21 @@ if [ "$MODE" = digest ]; then
 fi
 
 EXTERNAL=
-if [ "${1:-}" = external ]; then
+WATCH=
+if [ "${1:-}" = watch ]; then
+  if [ "$MODE" != dispatch ] || [ $# -ne 3 ] || ! [[ "${2:-}" =~ ^[1-9][0-9]*$ ]] \
+    || [[ "${3:-}" =~ ^(\.\.?/|[^/]*/\.\.?#) ]] || ! [[ "${3:-}" =~ ^([A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+)#([1-9][0-9]*)$ ]]; then
+    echo "usage: $(basename "$0") watch <item-id> <owner/repo#issue>" >&2
+    exit 2
+  fi
+  WATCH_REPO=${BASH_REMATCH[1]}
+  WATCH_ISSUE=${BASH_REMATCH[2]}
+  WATCH=1
+  AGENT=watson
+  ID=$2
+  TARGET=$2
+  SWEEP=0
+elif [ "${1:-}" = external ]; then
   EXTERNAL_USAGE="usage: $(basename "$0") [--check|--mark-escalated] external <issue|review> <owner/repo#n>"
   EXTERNAL_TARGET='^[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+#[1-9][0-9]*$'
   case "${2:-}" in
@@ -177,7 +181,7 @@ else
 
   case "$AGENT" in
     lestrade|holmes|watson) ;;
-    *) { echo "usage: $(basename "$0") [--check|--mark-escalated] <lestrade|holmes|watson> <item-id|owner/repo>"; echo "       $(basename "$0") --compact-digest"; } >&2; exit 2 ;;
+    *) { echo "usage: $(basename "$0") [--check|--mark-escalated] <lestrade|holmes|watson> <item-id|owner/repo>"; echo "       $(basename "$0") watch <item-id> <owner/repo#issue>"; echo "       $(basename "$0") --compact-digest"; } >&2; exit 2 ;;
   esac
 
   if [ -z "$TARGET" ]; then
@@ -246,12 +250,12 @@ preflight() {
   # otherwise read as one.
   cb_tail() { grep -v '^Permission denied: ' "$1" 2>/dev/null | tail -3; }
   CB_FATAL_STRIKES=3
-  local cb_lock="$LOGDIR/$AGENT-$ID.lock" cb_latest cb_pid cb_f cb_sig cb_strikes cb_newer_watson
+  local cb_latest cb_pid cb_f cb_sig cb_strikes cb_newer_watson
   cb_latest=$(ls -t "$LOGDIR/$AGENT-$ID-"*.log 2>/dev/null | head -1)
-  cb_pid=$(cat "$cb_lock" 2>/dev/null || true)
-  case "$cb_pid" in ''|0|*[!0-9]*) cb_pid= ;; esac   # `kill -0 0` hits our own process group — never a run
-  if [ -n "$cb_pid" ] && kill -0 "$cb_pid" 2>/dev/null; then
+  if cb_pid=$(live_pid "$AGENT"); then
     printf 'SKIP\ta run dispatched on this item is still alive (pid %s) — a second one would duplicate its work and race its board writes\n' "$cb_pid"
+  elif [ "$AGENT" = holmes ] && [ -z "$EXTERNAL" ] && cb_pid=$(live_pid watson); then
+    printf 'SKIP\ta Watson run on this item is still alive (pid %s) and may still push to its branch, so a review now would read a head that is about to change\n' "$cb_pid"
   elif [ -f "$MARKER" ]; then
     printf 'REPRIEVE\thuman re-activated a previously-escalated item — granting one fresh run with a raised budget\n'
   elif [ -z "$cb_latest" ]; then
@@ -300,6 +304,100 @@ preflight() {
   fi
 }
 
+live_pid() {
+  local pid
+  pid=$(cat "$LOGDIR/$1-$ID.lock" 2>/dev/null || true)
+  case "$pid" in ''|0|*[!0-9]*) return 1 ;; esac   # `kill -0 0` hits our own process group — never a run
+  kill -0 "$pid" 2>/dev/null && printf '%s' "$pid"
+}
+
+WATCH_TRIES=3
+WATCH_FILE="$LOGDIR/watson-$ID.watch"
+WATCH_JQ_COMMENTS='[.[] | if type == "array" then .[] else error("not a comment list") end
+  | select(.user.type? == "Bot" and .user.login? == "dr-john-h-watson[bot]")
+  | (.body // "" | split("\n") | map(rtrimstr("\r"))) as $lines
+  | ($lines[0] | capture("^<!-- watson-watch(?: read=(?<read>[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}Z))?(?<asks> asks)? -->$")) as $m
+  | {created_at, read: ($m.read // ""), asks: ($m.asks != null),
+     summary: ($lines[1] // "" | gsub("[\t`]"; "") | .[0:200])}]'
+
+watch_verdict() {
+  local base branches branch mine pulls pr view facts last flags pages watch trusted tries
+  base=$(gh repo view "$WATCH_REPO" --json defaultBranchRef) \
+    && base=$(jq -er '.defaultBranchRef.name | strings' <<< "$base") \
+    && branches=$(gh api --paginate "repos/$WATCH_REPO/branches?per_page=100") \
+    && branches=$(jq -rs --arg re "^(build|chore|ci|docs|feat|feature|fix|perf|refactor|revert|style|test|watson)/$WATCH_ISSUE(-.*)?\$" \
+      '.[] | if type == "array" then .[] else error("not a branch list") end | .name | strings | select(test($re))' <<< "$branches") \
+    || { printf 'SKIP\tthe branches of %s could not be read\n' "$WATCH_REPO"; return; }
+  case "$(printf '%s' "$branches" | grep -c .)" in
+    0) printf 'IDLE\tno branch for #%s exists\n' "$WATCH_ISSUE"; return ;;
+    1) branch=$branches ;;
+    *) printf 'IDLE\tmore than one branch for #%s exists, so a person may own one, and the watch touches none\n' "$WATCH_ISSUE"; return ;;
+  esac
+  case "$branch" in
+    watson/*) mine=1 ;;
+    *) mine=$(gh api "repos/$WATCH_REPO/compare/$base...$branch") \
+         && mine=$(jq -r --arg n "$WATCH_ISSUE" 'if (.commits | type) == "array" then
+             [.commits[].commit.message // "" | split("\n")[] | rtrimstr("\r")
+               | select(. == "Watson-Branch: #\($n)" or . == "chore: start work on #\($n)")] | if length > 0 then 1 else 0 end
+             else error("not a comparison") end' <<< "$mine") \
+         || { printf 'SKIP\tthe commits of branch %s could not be read\n' "$branch"; return; } ;;
+  esac
+  [ "$mine" = 1 ] || { printf 'IDLE\tbranch %s is not one Watson started, so it is not the watch'"'"'s to touch\n' "$branch"; return; }
+
+  pulls=$(gh pr list -R "$WATCH_REPO" --head "$branch" --state all --limit 200 --json number,headRefName,isCrossRepository,state) \
+    && pr=$(jq -r --arg b "$branch" 'if type == "array" then
+        [.[] | select(.headRefName == $b and .isCrossRepository == false)][0] // {} | if .state == "OPEN" then .number else "" end
+        else error("not a list") end' <<< "$pulls") \
+    || { printf 'SKIP\tthe pull requests of %s could not be read\n' "$WATCH_REPO"; return; }
+  [ -n "$pr" ] || { printf 'IDLE\tthe newest pull request on branch %s is not an open one from this repository\n' "$branch"; return; }
+
+  view=$(gh pr view "$pr" -R "$WATCH_REPO" --json headRefName,isCrossRepository,isDraft,mergeable,statusCheckRollup,commits) \
+    && facts=$(jq -r --arg b "$branch" '
+      if (.isDraft | type) != "boolean" or (.commits | type) != "array" or .headRefName != $b or .isCrossRepository != false
+      then error("not this repository'"'"'s pull request on the branch") else . end
+      | [ (if .isDraft then "draft" else empty end),
+          (if any(.statusCheckRollup[]?; (.conclusion // "" | IN("FAILURE", "TIMED_OUT", "STARTUP_FAILURE"))
+                or (.state // "" | IN("FAILURE", "ERROR"))) then "failing-check" else empty end),
+          (if .mergeable == "CONFLICTING" then "conflict" else empty end) ] as $flags
+      | "\([.commits[].committedDate | strings] | max // "")\t\($flags | join(" "))"' <<< "$view") \
+    || { printf 'SKIP\tpull request #%s of %s could not be read\n' "$pr" "$WATCH_REPO"; return; }
+  IFS=$'\t' read -r last flags <<< "$facts"
+  case " $flags " in
+    *" draft "*) printf 'IDLE\tpull request #%s is a draft, so it waits on an answer, not on a fix\n' "$pr"; return ;;
+  esac
+
+  pages=$(gh api --paginate "repos/$WATCH_REPO/issues/$pr/comments?per_page=100") \
+    && watch=$(jq -sc "$WATCH_JQ_COMMENTS" <<< "$pages") \
+    || { printf 'SKIP\tthe comments on pull request #%s could not be read\n' "$pr"; return; }
+  if [ ! -f "$(dirname "$0")/trusted-comments.sh" ]; then
+    printf 'SKIP\ttrusted-comments.sh is not beside %s, so no comment can be judged. Rerun /workbench-dev-team:setup\n' "$0"
+    return
+  fi
+  trusted=$(WORKBENCH_DEV_TEAM_EXTERNAL='' bash "$(dirname "$0")/trusted-comments.sh" "$WATCH_REPO" "$pr" --no-issue-author --pr) \
+    || { printf 'SKIP\tthe trusted comments on pull request #%s could not be read\n' "$pr"; return; }
+  tries=$(jq -Rsc 'split("\n") | map(select(. != "") | split("\t") | {at: .[0], reasons: (.[2] // "")})' "$WATCH_FILE" 2>/dev/null) || tries='[]'
+
+  jq -nr --argjson watch "$watch" --argjson trusted "$trusted" --argjson tries "$tries" --arg last "$last" \
+    --arg flags "$flags" --arg pr "$pr" --argjson cap "$WATCH_TRIES" '
+    ([$watch[] | .read | select(. != "")] | max) as $read
+    | ([$watch[] | .created_at] | max // "") as $answered
+    | (if $read == null or $last > $answered then [$read // "", $last] | max else $read end) as $since
+    | any($trusted[]; .created_at > $since) as $new
+    | (($flags | split(" ") | map(select(. != ""))) + (if $new then ["comment"] else [] end)) as $reasons
+    | ($watch | max_by(.created_at) // {asks: false}) as $newest
+    | if $newest.asks and ($new | not) then
+        "IDLE\tthe newest watch comment on pull request #\($pr) asks a question, and no trusted comment has answered it"
+      elif $reasons == [] then "IDLE\tpull request #\($pr) has no failing check, no conflict with its base and no new trusted comment"
+      elif ($tries | length) >= $cap then
+        ($tries[0].at) as $first
+        | [$watch[] | select(.created_at > $first) | .summary] as $said
+        | "ESCALATE\tthe PR watch stopped after \($tries | length) runs on pull request #\($pr), which still has: \($reasons | join(", ")). The runs were dispatched for: \([$tries | to_entries[] | "\(.key + 1). \(.value.reasons)"] | join(" ")). "
+          + (if $said == [] then "None of them posted a watch comment."
+             else "Their watch comments say: \([$said | to_entries[] | "\(.key + 1). \(.value)"] | join(" "))" end)
+      else "WATCH\t\($pr)\t\($reasons | join(", "))\t\($since)" end' \
+    || printf 'SKIP\tthe comments on pull request #%s could not be judged\n' "$pr"
+}
+
 if [ "$MODE" = check ]; then
   preflight
   exit 0
@@ -310,7 +408,13 @@ if [ "$MODE" = mark ]; then
   # there is nothing for a later re-activation to reprieve.
   mkdir -p "$LOGDIR"
   : > "$MARKER"
+  [ "$AGENT" != watson ] || [ -n "$EXTERNAL" ] || rm -f "$WATCH_FILE"
   printf 'marked %s-%s escalated\n' "$AGENT" "$ID"
+  exit 0
+fi
+
+if [ -n "$WATCH" ] && HOLMES_PID=$(live_pid holmes); then
+  printf 'SKIP\ta Holmes review of this item is still alive (pid %s), and a push now would change the head it reads\n' "$HOLMES_PID"
   exit 0
 fi
 
@@ -319,6 +423,15 @@ if [ "$SWEEP" = 0 ]; then
   VERDICT=$(preflight)
   case "$VERDICT" in
     SKIP*|ESCALATE*) printf '%s\n' "$VERDICT"; exit 0 ;;
+  esac
+  if [ -n "$WATCH" ]; then
+    WATCH_LINE=$(watch_verdict)
+    case "$WATCH_LINE" in
+      WATCH$'\t'*) IFS=$'\t' read -r _ WATCH_PR WATCH_REASONS WATCH_SINCE <<< "$WATCH_LINE" ;;
+      *) printf '%s\n' "$WATCH_LINE"; exit 0 ;;
+    esac
+  fi
+  case "$VERDICT" in
     REPRIEVE*) printf '%s\n' "$VERDICT"; REPRIEVE=1 ;;
   esac
 fi
@@ -377,6 +490,7 @@ if [ "$SWEEP" = 1 ]; then
 else
   PROMPT="Item ID: $TARGET"
   [ -z "$EXTERNAL" ] || PROMPT="External $EXTERNAL: $TARGET"
+  [ -z "$WATCH" ] || PROMPT="Watch Item ID: $TARGET PR #$WATCH_PR: $WATCH_REASONS. Comments after: ${WATCH_SINCE:-none}"
   LOG="$LOGDIR/${AGENT}-${ID}-$STAMP.log"
   # In-flight lock: the pre-flight SKIPs this item while this PID lives. Sweeps
   # are not per-item and take no lock.
@@ -617,6 +731,7 @@ disown 2>/dev/null || true
 # One reprieve per human touch: the marker goes once the fresh run is spawned. If
 # that run wedges too, the breaker escalates from scratch and writes a new one.
 [ "$REPRIEVE" = 1 ] && rm -f "$MARKER"
+[ -z "$WATCH" ] || printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$WATCH_PR" "$WATCH_REASONS" >> "$WATCH_FILE"
 
 if [ -n "$RESULT" ]; then
   printf 'dispatched %s pid=%s log=%s result=%s\n' "$AGENT" "$DISPATCHED" "$LOG" "$RESULT"

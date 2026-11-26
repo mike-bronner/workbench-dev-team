@@ -87,7 +87,9 @@ case "${1:-}" in
     done
     f="$FIXTURE/pr/$(slug "$head")"
     [ -f "$f" ] || exit 0              # no PR for this branch
-    read -r num state < "$f"
+    read -r num state cross < "$f"
+    case "$jqexpr" in *'.isCrossRepository == false'*) ;; *) cross= ;; esac
+    [ "$cross" = fork ] && exit 0
     case "$jqexpr" in
       *number*) printf '%s\n' "$num" ;;
       *state*)  printf '%s\n' "$state" ;;
@@ -182,6 +184,13 @@ watson_commits chore/317-harden-mutex-poisoning-recovery
 pr chore/317-harden-mutex-poisoning-recovery 401 CLOSED
 expect "watson branch, closed unmerged PR -> closed" \
   "CLOSED${tab}chore/317-harden-mutex-poisoning-recovery${tab}401" "$(run)"
+
+ISSUE=317; newcase c5b
+branch chore/317-harden-mutex-poisoning-recovery
+watson_commits chore/317-harden-mutex-poisoning-recovery
+printf '%s %s %s\n' 402 CLOSED fork > "$CASE/pr/chore_317-harden-mutex-poisoning-recovery"
+expect "watson branch whose only PR comes from a fork -> resume with no PR, not closed" \
+  "RESUME${tab}chore/317-harden-mutex-poisoning-recovery${tab}-" "$(run)"
 
 # 6. Legacy `watson/` prefix with no trailer (pre-provenance branch) -> RESUME on the prefix alone.
 ISSUE=83; newcase c6

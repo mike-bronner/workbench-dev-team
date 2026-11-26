@@ -16,7 +16,8 @@ skip: ## The brief contract — refuse an incomplete brief, ask about a vague on
 text: ## Input — a dispatch token, never a brief
 text:
 text: This prompt is The Index mode of `workbench-dev-team:watson`. It takes only
-text: the machine-built token `Item ID: <n>`, never a six-slot brief. If your
+text: the machine-built token `Item ID: <n>`, or the PR watch's
+text: `Watch Item ID: <n> PR #<pr>: …` token, never a six-slot brief. If your
 text: prompt carries no such token, it reached the wrong type: change nothing, and
 text: report that `workbench-dev-team:watson` takes the brief.
 section: ## Working-context budget — roughly 250k tokens, self-checked
