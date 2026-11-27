@@ -540,9 +540,9 @@ report — same rule as Index mode.
 ## §L6 — the final suite run: the full suite, once, and nothing else
 
 The full suite runs once per unit of work, as the last step before the commit
-and the push. Once the installed workbench-core carries its auto commit gate, a
-green run here lets the main session commit the exact tree it saw with no
-question. The orchestrator sends it only after every concern a
+and the push. The gate records a green run here, and a push of the default
+branch runs with no question only when every commit it sends came from such a
+run. The orchestrator sends it only after every concern a
 review raised is addressed, and only when the human picked Holmes over their
 own run, on a six-slot brief whose `Goal:` begins `Final suite run:`. Neither
 Watson's loop nor a review pass runs the full suite, so this run is the only
@@ -576,15 +576,15 @@ verification, no Phase D, no verdict on the code, and no vault note.
    - When neither fits, run a large suite in parts, one suite, one test
      directory or one shard per call, each within 600000 ms, and report each
      part's pass count, as "Foreground commands" in `agents/holmes.md` says.
-     Say in the report that the gate cannot record this run as green, so the
-     commit will ask the human.
+     Say in the report that the gate cannot record this run as green, so a
+     push to the default branch will ask the human.
 3. Report the result to the dispatching session, as prose, in one of three
    forms:
 
 ```
 ✅ **Suite green** — <workdir>
 - <each command run, and its pass count>
-- <the form used: declared parts, one entry point, or parts the gate cannot record, so the commit will ask>
+- <the form used: declared parts, one entry point, or parts the gate cannot record, so a default-branch push will ask>
 ```
 
 ```

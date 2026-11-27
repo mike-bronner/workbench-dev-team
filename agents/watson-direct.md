@@ -246,7 +246,8 @@ unit's tree.
   database lines, and its deletion of a unit branch. Report a need for one to
   the orchestrator.
 - **You commit nothing.** The orchestrator commits the unit in its own tree
-  after review, and merges it. Hand the tree back uncommitted, as below.
+  after review, and lands it with `git merge --squash`. Hand the tree back
+  uncommitted, as below.
 - **Use the unit's own test database**, which the brief's `Context:` names,
   never the project tree's. When the brief says the name is long, set
   `TEST_DB_DATABASE` to it in the worktree's local, untracked settings, never
@@ -272,12 +273,13 @@ uncommitted tree from there. Say plainly that the work is uncommitted — a
 report that reads as finished, on a tree that is not, is how the change gets
 lost.
 
-**What the orchestrator does with the tree.** Once the installed workbench-core
-carries its auto commit gate, the main session commits the exact tree a green
-Holmes `Final suite run:` saw with no question, and a plain push of a feature
-branch runs with no question too. A push to the default branch, a merge into
-the default branch, a release and a history rewrite still ask the human. Until
-the gate is installed, the commit and the push ask as before.
+**What the orchestrator does with the tree.** The main session commits the
+tree after a green Holmes `Final suite run:`, with no question, and a plain
+push of a feature branch runs with no question too. These still ask the human:
+a push to the default branch, unless every commit it sends came from a green
+run, a merge or pull into the default branch, a rebasing pull, a release, a
+history rewrite, a branch reset, a remote-tracking ref update, `gh alias set`,
+and a default-branch API write.
 
 ## Rules
 

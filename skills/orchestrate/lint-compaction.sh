@@ -184,11 +184,11 @@ section|orchestrate-modes|## Watson's Index-mode dispatch
 section|orchestrate-modes|## What the dispatcher does
 section|orchestrate-modes|## Model and effort come from the config, never from you
 phrase|orchestrate|Units that share files run one at a time, the short unit first.
-phrase|orchestrate|land it with `git merge --no-ff` on the feature branch, never a cherry-pick, rebase or reset
-phrase|orchestrate|Ask before each landing, one question each. A catch-up merge of the base branch runs unasked.
+phrase|orchestrate|unasked, land each after review with `git merge --squash` into the feature tree, never `--no-ff`, cherry-pick, rebase or reset. One commit follows the green final run. Only then remove each worktree, branch and database.
+phrase|orchestrate|Catch up or sync unasked, never while units are out.
 phrase|orchestrate|To sync a branch with its own remote, run `git fetch --all`, then `git pull`, then `git push`, never a rebase or a hand-run merge.
-phrase|orchestrate|Once the installed workbench-core carries its auto commit gate, a main-session commit of the exact tree a green Holmes `Final suite run:` saw, and a plain push of a feature branch, run with no question.
-phrase|orchestrate|A push to or merge into the default branch, a release and a history rewrite always ask.
+phrase|orchestrate|A main-session commit and a plain push of a feature branch run unasked.
+phrase|orchestrate|These always ask: a push to the default branch, unless all its commits came from a green run, a merge or pull into it, a rebasing pull, a release, a history rewrite, a branch reset, a remote-tracking ref update, `gh alias set`, and a default-branch API write.
 phrase|orchestrate|Never merge two units into one brief
 phrase|orchestrate|**Cut the task into its smallest units before the first dispatch,** one brief per unit
 phrase|orchestrate|Unit: <optional: this dispatch's one step>
@@ -281,8 +281,8 @@ fi
 section="$(awk '/^## Dispatch in parallel/{f=1;next} f && /^## /{exit} f' "$SKILL" | tr '\n' ' ')"
 for phrase in 'Dispatch every independent unit at once' 'Never serialize out of habit' \
               'Local work has no count cap' 'one Watson per' 'every Index-mode cap stays' \
-              'Only for units you dispatched' 'commit each in its own tree' \
-              'remove its worktree and database'; do
+              'Only for units you dispatched' 'git merge --squash' \
+              'Only then remove each worktree, branch and database' 'One commit follows the green final run'; do
   printf '%s' "$section" | grep -Fq "$phrase" || parallel+=("the parallel rule no longer says '$phrase'")
 done
 report "parallel — independent units go out at once, local work has no count cap" ${parallel[@]+"${parallel[@]}"}

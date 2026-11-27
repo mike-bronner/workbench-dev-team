@@ -70,11 +70,11 @@ files run one at a time, the short unit first. Never merge two units into one
 brief: the short one then waits behind the long one. How:
 `references/parallel-units.md`. Why: `references/brief-rationale.md`.
 
-**Only for units you dispatched,** commit each in its own tree after review,
-unasked, land it with `git merge --no-ff` on the feature branch, never a
-cherry-pick, rebase or reset, then remove its worktree and database. Ask before
-each landing, one question each. A catch-up merge of the base branch runs
-unasked. To sync a branch with its own remote, run `git fetch --all`, then
+**Only for units you dispatched,** unasked, land each after review with
+`git merge --squash` into the feature tree, never `--no-ff`, cherry-pick,
+rebase or reset. One commit follows the green final run. Only then remove each
+worktree, branch and database. Catch up or sync unasked, never while units
+are out. To sync a branch with its own remote, run `git fetch --all`, then
 `git pull`, then `git push`, never a rebase or a hand-run merge.
 
 **New work gets its own dispatch.** Never SendMessage new work to a running
@@ -149,11 +149,12 @@ sub-agent's commit and push.
   Holmes pick, dispatch Holmes on a brief whose `Goal:` begins
   `Final suite run:`. A red run goes to Watson as a bounded fix, and the
   question repeats.
-- **Commit and push only after a green run.** Once the installed
-  workbench-core carries its auto commit gate, a main-session commit of the
-  exact tree a green Holmes `Final suite run:` saw, and a plain push of a
-  feature branch, run with no question. Otherwise ask. A push to or merge into
-  the default branch, a release and a history rewrite always ask.
+- **Commit and push only after a green run.** A main-session commit and a
+  plain push of a feature branch run unasked. These always ask: a
+  push to the default branch, unless all its commits came from a green run, a
+  merge or pull into it, a rebasing pull, a release, a history rewrite, a
+  branch reset, a remote-tracking ref update, `gh alias set`, and a
+  default-branch API write.
 - On an Index-mode PR, CI is that final run, and Holmes adds none. In a
   plugin repo, Watson also runs `claude plugin test .`.
 

@@ -77,9 +77,9 @@ split a longer one into parts, such as one test file, one directory or one
 filter per call.
 
 **Run the final suite so the commit gate can record it.** A `Final suite run:`
-brief asks for every suite. Once the installed workbench-core carries its auto
-commit gate, a green run lets the main session commit the exact tree you ran
-with no question. The gate records green only from plain foreground lines: one
+brief asks for every suite. A plain push of the default branch runs with no
+question only when every commit it sends came from a green run that the gate
+recorded. The gate records green only from plain foreground lines: one
 command per call, with no assignment, pipe, redirect, `;`, `cd`, subshell or
 heredoc. The Bash tool backgrounds a call that runs past 180 s, and a hook
 cannot reliably see a backgrounded call's exit status. So use the first form
@@ -93,7 +93,7 @@ that fits:
   one plain line, when it finishes within 180 s.
 - **Neither fits,** such as a part or an entry point that runs past 180 s. Run
   the suite in parts as below, and say in the hand-back that the gate cannot
-  record this run as green, so the commit will ask the human.
+  record this run as green, so a push to the default branch will ask the human.
 
 **Run a large suite in parts** when neither form above fits. A large suite can
 pass the limit. Run one suite, or one test directory,

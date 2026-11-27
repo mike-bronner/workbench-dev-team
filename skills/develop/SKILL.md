@@ -241,9 +241,9 @@ Each rule in full: `references/testing.md`.
 ## 5. Commit
 
 **Which lane you are in decides what you may do at all.** Claude Code
-`permissions.ask` rules, installed by `/workbench-core:setup`, raise a
-permission prompt on each commit, push, and merge. workbench-core's commit
-guard refuses what those rules cannot cover. It is a mistake-catcher, not a
+`permissions.ask` rules, installed by `/workbench-core:setup`, back each
+commit, push, and merge. workbench-core's commit guard refuses what those rules
+cannot cover. It is a mistake-catcher, not a
 security boundary.
 
 **Sub-agent → you do not commit, merge, or push.** The guard refuses your

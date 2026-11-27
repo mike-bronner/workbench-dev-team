@@ -51,7 +51,7 @@ Workdir: /Users/mike/Developer/bar (branch: fix/cache-expiry)
 Goal: Final suite run: the full suite passes on the cache-expiry change.
 Context: Watson ran only the tests that cover the files he changed, and
 the review found nothing left open, and Mike picked Holmes over his own run.
-This is the one full-suite run before Mike is asked to commit.
+This is the one full-suite run before the commit.
 Constraints:
 - Run no mutation testing of any kind.
 Acceptance:

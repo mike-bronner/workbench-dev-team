@@ -64,18 +64,37 @@ rules for the flow:
   dispatched.
 - Each unit gets its own test database, or its test runs queue behind the
   other units' runs.
-- A sub-agent never commits. So the orchestrator commits each unit in its own
-  tree, after Holmes's review. No other agent writes in that tree, so the
-  commit holds that unit's work and nothing else.
-- A unit commits with no question, and asks before it lands on another branch.
-  Eleven units had once landed on a shared feature branch with no question, so
-  on 2026-11-16 Mike first asked for a question before each unit commit too.
-  He reversed that part the same day: "there is no point in gating commits for
-  changes I cannot see on the current branch." The landing is where the work
-  becomes visible, so the question sits there. A catch-up merge that brings the
-  base branch into a feature branch lands no unit, and asks nothing.
-- Units land as merge commits. Mike forbids cherry-pick, rebase and reset,
-  because he never rewrites history and always adds on top.
+- A sub-agent never commits. So the orchestrator commits each unit on its own
+  unit branch, after Holmes's review, only to carry it to the landing. No
+  other agent writes in that tree, so the commit holds that unit's work and
+  nothing else.
+- A unit lands with no question. On 2026-11-16 a landing asked Mike, after
+  eleven units had once landed on a shared feature branch with no question.
+  On 2026-11-27 he reversed that: "if you create separate branches for
+  parallel development, never ask me to merge them or not. it makes me think
+  you are working on the main branch." The same day workbench-core stopped
+  asking before a commit, so a main-session commit and a landing onto a
+  feature branch run free.
+- The task gets one commit. Mike chose this on 2026-11-27: each unit lands in
+  the feature branch's working tree with `git merge --squash`, which makes no
+  commit, a fix after a red final run goes in the same tree, and the main
+  session commits once after the green final run. Merge commits per unit had
+  cluttered the history. Mike forbids cherry-pick, rebase and reset, because
+  he never rewrites history and always adds on top.
+- The session tears down what it made without asking. Mike's rule is that
+  anything an agent creates without asking, it also removes without asking.
+  The teardown waits for the task commit, for every unit at once. Until then
+  a unit's work after its squash lives only uncommitted in the project tree,
+  and its unit branch is the one ref that keeps its commit. Core's Holmes
+  found that an earlier teardown leaves that commit on no ref when the tree is
+  thrown away after a red run, and only `git fsck` can find it until gc runs.
+  A squash-landed branch is not merged in git's sense, so the teardown
+  deletes it with `git branch -D`, and only when a mechanical check proves
+  that the committed HEAD holds the unit's version of each path the unit
+  touched. On any difference the branch stays, even when a later fix
+  explains it, because a diff that mixes a fix with missing work in one file
+  is easy to misread. A kept branch costs nothing, and lost work may not come
+  back.
 
 The Agent tool's `isolation: "worktree"` and `EnterWorktree` stay refused,
 because the harness picks their place and branch, so the guard cannot record
@@ -127,10 +146,10 @@ that cover the files he changed.
 Direct-mode work reaches no CI before a commit, so that left nobody running the
 full suite on it. A full run inside Holmes's review would come back on every
 review round. So the full suite runs once, after every review concern is
-addressed, and before the commit and the push. Once the installed
-workbench-core carries its auto commit gate, a green Holmes run on the exact
-tree lets that commit run with no question, so the run must be one the gate
-can record.
+addressed, and before the commit and the push. The gate records a green
+Holmes run on the exact tree, and a push of the default branch runs with no
+question only when every commit it sends came from such a run. So the run must
+be one the gate can record.
 
 No sub-agent picks that run on its own. On 2026-11-18 a Watson run on
 workbench-core ran all 4,668 tests, though the timeline already said Watson

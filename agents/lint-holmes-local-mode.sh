@@ -489,14 +489,14 @@ for f in "$HOLMES" "$DIR/holmes-local.md" "$DIR/holmes-index.md" "$DIR/holmes-ex
     'The gate records green only from plain foreground lines: one command per call, with no assignment, pipe, redirect, `;`, `cd`, subshell or heredoc.' \
     '**The repository declares parts in `.workbench/suite-parts.json`.** Run each declared part as its own plain foreground line, all in this one final run, with no edit, assignment, pipe or redirect between them.' \
     '**No such declaration.** Run the project'"'"'s whole-suite entry point once, as one plain line, when it finishes within 180 s.' \
-    'say in the hand-back that the gate cannot record this run as green, so the commit will ask the human.'; do
+    'say in the hand-back that the gate cannot record this run as green, so a push to the default branch will ask the human.'; do
     printf '%s' "$flat" | grep -Fq -- "$want" || final+=("$(basename "$f") lost: $want")
   done
 done
 for want in \
   'run each declared part as its own plain foreground line, all in this one run, with no edit, assignment, pipe or redirect between them.' \
   'With no such declaration, run the project'"'"'s whole-suite entry point once, as one plain line, when it finishes within 180 s.' \
-  'Say in the report that the gate cannot record this run as green, so the commit will ask the human.'; do
+  'Say in the report that the gate cannot record this run as green, so a push to the default branch will ask the human.'; do
   printf '%s' "$l6_flat" | grep -Fq -- "$want" || final+=("§L6 lost: $want")
 done
 report "final run — Holmes runs the final suite in plain lines the commit gate can record" ${final[@]+"${final[@]}"}
