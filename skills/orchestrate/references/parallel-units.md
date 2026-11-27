@@ -6,7 +6,10 @@ steps and the exact lines workbench-core's provisioning guard accepts.
 
 **This flow needs workbench-core 0.59.0 or later**, the first release with the
 provisioning ledger (commit 7ef2854). An older core refuses every create, and
-same-repo units then run one at a time.
+same-repo units then run one at a time. The landing and commit steps below run
+with no question from the first workbench-core release after 0.66.1, which
+carries commit 6e6b534. With an older core, its commit gate still raises a
+question for each.
 
 ## Cut the task into units first
 
@@ -42,19 +45,30 @@ A unit that depends on the others, such as docs regenerated from all of them,
 waits until they land, then runs as a unit of its own. Units that touch the
 same files run one at a time, the short unit first.
 
+**A later unit runs in the project tree, with no worktree.** A squash landing
+leaves the feature branch's committed tip where it was, and a worktree is cut
+from that tip. So a worktree never holds the units landed before it. A unit
+that depends on landed units, or that shares files with one, runs in the
+project tree on the feature branch after those units land. Watson's `Workdir:`
+is the project folder, and Holmes reviews that unit in the same tree.
+
 Units land on a feature branch. Settle that branch with the workspace check in
 `SKILL.md` before the first unit starts. The project tree stays on it until the
-last unit lands.
+task's commit.
+
+**The task gets one commit.** Each unit lands in the feature branch's working
+tree with `git merge --squash`, which makes no commit. A fix after a red final
+suite run goes in the same tree. The main session commits once, after the green
+final suite run. The feature branch gains no merge commit and no commit per
+unit.
 
 ## Who does what
 
-- **The main session provisions, commits, lands and cleans up.** It does each
-  step itself, for the units it dispatched and for no other. It provisions and
-  cleans up with no question to the human. The guard holds this rule: it
+- **The main session provisions, lands, tears down and commits.** It does each
+  step itself, for the units it dispatched and for no other, and asks the
+  human nothing for any of them. The guard holds the ownership rule: it
   accepts a database create, a worktree remove and a database drop with no
   question only for a unit that this session recorded in the ledger.
-- **A unit commits with no question, and asks before it lands.** See "What
-  asks the human" below.
 - **A sub-agent provisions nothing and commits nothing.** Watson works in the
   unit worktree his brief names, and reports a need for anything else.
 - **Holmes reviews each unit in its own tree**, on a Local-mode brief whose
@@ -62,16 +76,12 @@ last unit lands.
 
 ## What asks the human
 
-Mike's rule, from 2026-11-16: "there is no point in gating commits for changes
-I cannot see on the current branch." A unit's commit stays in its own tree, so
-the question comes when the unit lands on another branch.
+Mike's rules, from 2026-11-27: never ask him whether to land a unit branch, and
+anything a session creates without asking, it also tears down without asking.
 
-- **Commit the unit with no question.** A commit in its ledger worktree runs
-  free, whatever the repo's remotes.
-- **Ask before each landing, one `AskUserQuestion` each.** A local merge or
-  pull that lands a unit branch asks, from any source and with any options,
-  a fast-forward included. Name the unit branch and the branch it lands on.
-  workbench-core's commit gate decides what the answer allows.
+- **Land, tear down and commit with no question.** A main-session commit runs
+  free on any branch. So does a local merge, or a pull that does not rebase,
+  onto a branch other than the default branch, a unit landing included.
 - **A catch-up merge runs with no question.** A merge that brings the base
   branch into a feature branch, such as `git merge origin/main`, lands no unit.
   Mike updates branches with `git merge`.
@@ -79,11 +89,19 @@ the question comes when the unit lands on another branch.
   branch is out of step with its own remote, such as after a rejected push, run
   `git fetch --all`, then `git pull`, then `git push`. Never rebase, and never
   hand-run a merge for this.
-- **A push follows the test timeline in `SKILL.md`.** Once the installed
-  workbench-core carries its auto commit gate, a plain push of a feature branch
-  runs with no question. Until then every push asks. A push to or merge into
-  the default branch, a pull request, a release and a history rewrite always
-  ask.
+- **Catch up or sync only before the first worktree add or after the task
+  commit, never while units are out.** A catch-up after the worktrees are cut
+  moves HEAD off the units' base, so each squash becomes a true merge, and a
+  merge or pull refuses to run on an index that holds staged squashes.
+- **A plain push of the feature branch runs with no question.**
+- **These still ask the human:**
+  - a push to the default branch, except a plain push whose every commit came
+    from a green final suite run
+  - a merge or pull into the default branch
+  - a pull that rebases, which asks as a history rewrite
+  - a release, a history rewrite and a branch reset
+  - a remote-tracking ref update, `gh alias set`, and a write to the default
+    branch through the GitHub API
 
 ## Names
 
@@ -115,52 +133,80 @@ goes to the guard's ordinary rules, which refuse it.
 1. **Create the worktree first.** It reserves the unit database.
    `git worktree add -b <unit branch> <path> <feature branch>`
    The guard records the entry before the line runs, and takes it out when git
-   fails. Before the first unit's add, record the commit the feature branch
-   holds, as `git -C <project folder> rev-parse HEAD` prints it. That commit is
-   `<base>` in step 8.
+   fails.
 2. **Create the database once, under the reserved name only.**
    `createdb [-h <host>] [-p <port>] [-U <user>] [-w] <db>`, or
    `psql [-h -p -U -w] -d postgres -c 'CREATE DATABASE "<db>"'`.
    Use the host, port and user of the project's test connection. A project
-   whose tests use no database server skips this step and step 7's drop.
+   whose tests use no database server skips this step and step 9's drop.
 3. **Dispatch one Watson per unit, all in one message.** `Workdir:` is
    `<path> (worktree: <unit>, branch: <unit branch>)`. `Context:` names the
    unit database, and says when `TEST_DB_DATABASE` must be set to it.
 4. **Review and fix in the unit's own tree.** Holmes reviews each unit. A fix
    goes back to that unit's Watson, and the review repeats.
-5. **Commit the unit after Holmes's review.** Run `git -C <path> add -A` on its
-   own line, then `git -C <path> commit -m <message>` or `-F <file>`, with HEAD
-   on the unit branch. The commit needs no question. Never `cd <path> &&`, and
-   never `git -c`.
-6. **Land the unit with a merge commit.** In the project folder, on the
-   feature branch, ask the human first, as "What asks the human" says, then
-   run `git merge --no-ff <unit branch>`. Never cherry-pick, rebase or reset a
-   unit onto the branch. A merge that stops on a conflict means the units were
-   not independent: stop, and ask the human.
-7. **Clean up the unit once it lands.**
-   - `git worktree remove <path>`, with the same path as the add and without
-     `--force`.
-   - `psql [-h -p -U] -d postgres [-w] -c 'DROP DATABASE "<db>"'`, with exactly
-     the create's `-h`, `-p` and `-U`. `dropdb` stays refused.
-   - `git branch -d <unit branch>`, which is ungated in the main session.
-
-   A tree that git will not remove without `--force` holds work that did not
-   land. Ask the human about it.
-8. **Run the final suite once, after the last unit lands.** Ask the human
+5. **Commit the unit on its own branch after Holmes's review.** Run
+   `git -C <path> add -A` on its own line, then
+   `git -C <path> commit -m <message>` or `-F <file>`, with HEAD on the unit
+   branch. This commit only carries the unit to its landing. It never reaches
+   the feature branch, and it goes with the unit branch in step 9. Never
+   `cd <path> &&`, and never `git -c`.
+6. **Land the unit with a squash, unasked.** In the project folder, on the
+   feature branch, run `git merge --squash <unit branch>`. It stages the
+   unit's changes in the feature branch's working tree and makes no commit.
+   The feature branch gains no commit while units land, so each later squash
+   adds its unit beside the units already in the tree. Never `--no-ff`, and
+   never cherry-pick, rebase or reset a unit onto the branch. A squash that
+   stops on a conflict, or on local changes it would overwrite, means the
+   units were not independent: stop, and ask the human. Run no catch-up merge
+   and no sync while units are out, as "What asks the human" says.
+7. **Run the final suite once, after the last unit lands.** Ask the human
    through `AskUserQuestion` whether they run it or Holmes does, as the test
    timeline in `SKILL.md` says. On the Holmes pick, dispatch Holmes with a
-   `Goal:` that begins `Final suite run:`. The landed units leave the project
-   tree clean, so name them as a committed range:
-   `Workdir: <project folder> (branch: <feature branch>, range: <base>...HEAD)`.
-   Holmes reviews nothing in this run. He runs the full suite on the feature
-   branch, and he skips the PR head check, because the run judges no PR.
-   Push only after this run comes back green.
+   `Goal:` that begins `Final suite run:`. The landed units sit uncommitted in
+   the project tree, so name the tree:
+   `Workdir: <project folder> (branch: <feature branch>)`.
+   Holmes reviews nothing in this run. He runs the full suite on that tree.
+   A red run goes to Watson as a bounded fix in the same tree, and the question
+   repeats.
+8. **Commit the task once the run comes back green.** In the project folder,
+   run `git add -A` on its own line, then `git commit -m <message>` or
+   `-F <file>`. The commit needs no question.
+9. **Tear every unit down after the task commit, unasked.** Until that
+   commit, a unit's work after its squash lives only uncommitted in the
+   project tree, and its unit branch is the one ref that keeps its commit.
+   Tear down earlier, and a tree thrown away after a red run leaves that
+   commit on no ref. So keep every worktree, unit branch and database until
+   the task commit has landed. Then, for each unit, run each line on its own:
+   - `git worktree remove <path>`, with the same path as the add and without
+     `--force`.
+   - `git diff --no-renames --name-only HEAD...<unit branch>`, to list every
+     path the unit added, changed or deleted since its base. Without
+     `--no-renames`, a rename lists only its new path. Then run
+     `git diff --quiet <unit branch> HEAD -- <those paths>`. An exit of 0
+     proves that the committed HEAD holds the unit's version of each listed
+     path, so a path the unit deleted is absent from it too.
+   - `git branch -D <unit branch>`. A squash-landed branch is not merged in
+     git's sense, so `git branch -d` refuses it. Run `-D` only when the check
+     above exits 0, with no exception.
+   - `psql [-h -p -U] -d postgres [-w] -c 'DROP DATABASE "<db>"'`, with exactly
+     the create's `-h`, `-p` and `-U`. `dropdb` stays refused.
+
+   Report the teardown in one line. A tree that git will not remove without
+   `--force` holds work that did not land, so ask the human about it.
+   **On any difference, keep the unit branch.** Report it in one line that
+   names the branch and the differing paths. Read the difference with
+   `git diff <unit branch> HEAD -- <those paths>`. A fix from step 7 or a
+   later project-tree unit that shares the path explains a difference. Ask
+   the human only when the difference cannot be traced to either. A
+   misjudgment then costs a kept branch, never lost work.
+   workbench-core's Stop check holds an attended session that leaves a landed
+   unit in place. It counts a squash-landed unit as landed only once HEAD's
+   committed tree matches the unit's files, so it waits for the task commit
+   too.
 
 The push then follows the test timeline in `SKILL.md`, as it does for any other
-work: a plain push of the feature branch runs with no question once the
-installed workbench-core carries its auto commit gate, and asks until then. A
-push to or merge into the default branch, a release and a history rewrite
-always ask the human.
+work. A plain push of the feature branch runs with no question. Anything on the
+list in "What asks the human" still asks.
 
 ## Refusals and leftovers
 
@@ -179,8 +225,8 @@ always ask the human.
     the refusal gives it. Never run the command.
   - A create refusal says "Create nothing". Report it to Mike, who decides what
     happens to that unit.
-  - A commit in that unit's tree gets no exemption, so the commit gate asks
-    Mike, as it does outside a unit.
+  - Commit, land and tear down nothing of that unit. Its work belongs to the
+    other session.
 - **Session start reports leftovers, and only reports them.** The
   "Provisioning ledger leftovers" block lists each unit that another session
   recorded, with a "Mike runs:" list of `!` commands. Report each unit to Mike

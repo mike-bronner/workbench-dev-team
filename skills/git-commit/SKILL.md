@@ -63,14 +63,23 @@ pushes unattended from the dispatcher's top-level run, and never asks about
 committing or pushing. How Watson splits that work into commits is his own
 judgment.
 
-**After a green final run, the main session commits and pushes with no
-question.** This holds once the installed workbench-core carries its auto
-commit gate. A main-session commit of the exact tree a green Holmes
-`Final suite run:` saw runs with no question. Make no edit after the run, and
-commit as one plain line. A plain push of a feature branch runs with no
-question too. A push to the default branch, a merge into the default branch, a
-release and a history rewrite still ask the human. Until the gate is installed,
-the commit and the push ask as before.
+**The main session commits with no question.** Every main-session commit runs
+with no question, on any branch, the default branch included. So does a local
+merge, or a pull that does not rebase, onto a branch other than the default
+branch, a parallel unit's landing included. A plain push of a feature branch
+runs with no question too. Commit only after the green final suite run, make
+no edit after the run, and commit as one plain line. These still ask the human:
+
+- a push to the default branch, except a plain push whose every commit came
+  from a green final suite run
+- a merge or pull into the default branch
+- a pull that rebases, which asks as a history rewrite
+- a release, a history rewrite and a branch reset
+- a remote-tracking ref update, `gh alias set`, and a write to the default
+  branch through the GitHub API
+
+This holds from the first workbench-core release after 0.66.1, which carries
+commit 6e6b534. With an older core, its commit gate still raises a question.
 
 **The ask rules.** `/workbench-core:setup` installs the `permissions.ask` rules.
 Eleven of them cover commits, pushes and merges. Six are for commits and
@@ -78,8 +87,9 @@ pushes: `git commit *`, `git push *`, `git * commit *`, `git * push *`,
 `git * commit`, and `git * push`. Five are for merges: `gh pr merge:*`,
 `gh * pr merge *`, `gh * pr merge`, and `gh api *pulls/*/merge*` for pull
 requests, and `gh api *repos/*/merges*` for a branch merge through the REST
-API. They raise the harness's permission prompt on
-each commit, push, and merge, as the mechanical backstop.
+API. They stay as the mechanical backstop. In the main session, workbench-core's
+hook answers the prompt for every plain commit line, and for a push or a merge
+only as the list above allows.
 
 **Run it as a plain git line, so the rules see it.** The rules match a command
 that starts with `git`, `git -C <path>` included, anywhere in a compound line.
