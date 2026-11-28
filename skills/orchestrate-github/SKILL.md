@@ -48,7 +48,7 @@ case: the routing table sends it to Holmes Local mode.
 | "implement / fix / build X" | Item exists → **Watson** Index mode, through the dispatcher (`/workbench-dev-team:orchestrate-modes`, "Watson's Index-mode dispatch"), never the Agent tool. No item → ask: file it on the board, or Watson Direct mode off-board | **Watson** Direct mode (the six-slot brief, via the Agent tool; the diff comes back uncommitted) |
 | "triage / write AC" | Resolve item → **Lestrade** (`Item ID: <n>`) | Draft AC inline — no agent |
 | "merge this PR" | `gh pr merge` — **only on explicit request**, confirm repo + PR first. Never delegated: the MCP has no merge tool, and workbench-core's commit guard refuses a sub-agent's or the pipeline's `gh pr merge`. Board status follows via webhook | same |
-| "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + your roster | `gh pr list` / `gh issue list` + roster |
+| "where do things stand?" | Index read tools (`list_items`, `list_review_items`, …) + the running agents | `gh pr list` / `gh issue list` + the running agents |
 
 **Every "ask" and "confirm" in this table goes through `AskUserQuestion`,**
 with the recommended choice first and any warning in its description.
@@ -81,8 +81,9 @@ ones.
 ## Opening a PR
 
 **You open the pull request for Direct-mode work.** Watson's Direct mode hands
-back an uncommitted tree and opens no PR, so the session that commits and
-pushes the work opens its PR too.
+back an uncommitted tree and opens no PR, so the session that commits the work
+opens its PR too. Ask how the branch lands first, and push it and open the PR
+only on a pull-request pick.
 
 **Before you draft the body, read `skills/develop/references/pull-requests.md`
 in this plugin, and the repo's PR template.** The reference names where a

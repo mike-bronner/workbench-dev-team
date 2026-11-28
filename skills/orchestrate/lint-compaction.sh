@@ -169,7 +169,7 @@ section|orchestrate|## The brief
 section|orchestrate|### Must omit
 section|orchestrate|### When a brief comes back
 section|orchestrate|### The companion gate
-section|orchestrate|## Roster
+section|orchestrate|## Oversight at all times
 section|orchestrate|## When NOT to orchestrate
 section|orchestrate-github|## Action routing
 section|orchestrate-github|### 1. Whose voice does the action carry?
@@ -187,8 +187,13 @@ phrase|orchestrate|Units that share files run one at a time, the short unit firs
 phrase|orchestrate|unasked, land each after review with `git merge --squash` into the feature tree, never `--no-ff`, cherry-pick, rebase or reset. One commit follows the green final run. Only then remove each worktree, branch and database.
 phrase|orchestrate|Catch up or sync unasked, never while units are out.
 phrase|orchestrate|To sync a branch with its own remote, run `git fetch --all`, then `git pull`, then `git push`, never a rebase or a hand-run merge.
-phrase|orchestrate|A main-session commit and a plain push of a feature branch run unasked.
+phrase|orchestrate|A main-session commit runs unasked.
+phrase|orchestrate|Push a feature branch only for a pull request, or when it tracks a remote branch.
+phrase|orchestrate|A local merge pushes only the default branch.
+phrase|orchestrate|One local-merge pick runs that merge with no second question. A pull-request pick approves no merge.
 phrase|orchestrate|These always ask: a push to the default branch, unless all its commits came from a green run, a merge or pull into it, a rebasing pull, a release, a history rewrite, a branch reset, a remote-tracking ref update, `gh alias set`, and a default-branch API write.
+phrase|orchestrate|**Post no table or status line of agents in a reply.**
+phrase|orchestrate|Name a dispatched or finished agent in prose only when it changes what the human does.
 phrase|orchestrate|Never merge two units into one brief
 phrase|orchestrate|**Cut the task into its smallest units before the first dispatch,** one brief per unit
 phrase|orchestrate|Unit: <optional: this dispatch's one step>
@@ -239,6 +244,13 @@ for gone in 'also through a script' 'One test file, a filter, or one case still 
   done
 done
 report "survive — every orchestrate skill and develop fit inside the line whole, and each pinned section and phrase is in its skill" ${survive[@]+"${survive[@]}"}
+
+roster=()
+for f in "${FAMILY[@]}" "$DIR"/references/*.md; do
+  n="$(grep -ci 'roster' "$f")"
+  [ "$n" -eq 0 ] || roster+=("${f#"$ROOT"/}: $n line(s) name a roster; the session's agent view shows the agents, so no reply carries a roster")
+done
+report "roster — no orchestrate text asks for a roster in a reply" ${roster[@]+"${roster[@]}"}
 
 combined=()
 total="$(cat "${FAMILY[@]}" "$DEVELOP" | wc -c | tr -d ' ')"

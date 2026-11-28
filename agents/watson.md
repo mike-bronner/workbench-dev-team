@@ -308,8 +308,10 @@ report that reads as finished, on a tree that is not, is how the change gets
 lost.
 
 **What the orchestrator does with the tree.** The main session commits the
-tree after a green Holmes `Final suite run:`, with no question, and a plain
-push of a feature branch runs with no question too. These still ask the human:
+tree after a green Holmes `Final suite run:`, with no question. Then it asks how
+the feature branch lands before any push of it, and pushes the branch only for
+a pull request or when it already tracks a remote branch. A local merge pushes
+only the default branch. These still ask the human:
 a push to the default branch, unless every commit it sends came from a green
 run, a merge or pull into the default branch, a rebasing pull, a release, a
 history rewrite, a branch reset, a remote-tracking ref update, `gh alias set`,

@@ -14,7 +14,9 @@ every review himself. The rule covers all four routes:
 When the work is for a tracked issue:
 
 - **Create the PR as a draft early** — before implementation is complete.
-  Visible work-in-progress is better than a black-box dump at the end.
+  Visible work-in-progress is better than a black-box dump at the end. In a
+  foreground session, ask how the branch lands before its first push, and
+  push it and open the draft only on a pull-request pick.
 - **Use the repo's PR template when one exists.** `gh pr create --body`
   silently bypasses templates, so discover and apply it yourself. Check, in
   order: `.github/PULL_REQUEST_TEMPLATE.md`, `PULL_REQUEST_TEMPLATE.md`

@@ -66,9 +66,21 @@ judgment.
 **The main session commits with no question.** Every main-session commit runs
 with no question, on any branch, the default branch included. So does a local
 merge, or a pull that does not rebase, onto a branch other than the default
-branch, a parallel unit's landing included. A plain push of a feature branch
-runs with no question too. Commit only after the green final suite run, make
-no edit after the run, and commit as one plain line. These still ask the human:
+branch, a parallel unit's landing included. Commit only after the green final
+suite run, make no edit after the run, and commit as one plain line.
+
+**Ask how a finished feature branch lands before any push of it.** Ask it in a
+question of its own, and recommend a pull request. Push the feature branch only
+when it lands as a pull request, or when it already tracks a remote branch. A
+local merge pushes only the default branch. A pushed branch that then merges
+locally leaves a remote branch no pull request needs, and the guard refuses
+`--delete`, so the human has to delete it by hand. One local-merge pick, such
+as "Merge locally" or "I merge locally into main", runs that one merge with no
+second merge question. "Skip the merge", "Merge locally?" and every
+pull-request label approve no merge. The plain push itself runs with no
+question.
+
+These still ask the human:
 
 - a push to the default branch, except a plain push whose every commit came
   from a green final suite run
@@ -80,6 +92,8 @@ no edit after the run, and commit as one plain line. These still ask the human:
 
 This holds from the first workbench-core release after 0.66.1, which carries
 commit 6e6b534. With an older core, its commit gate still raises a question.
+The landing question reads a local-merge pick as above from the same release,
+which carries commit 464902b.
 
 **The ask rules.** `/workbench-core:setup` installs the `permissions.ask` rules.
 Eleven of them cover commits, pushes and merges. Six are for commits and

@@ -93,7 +93,11 @@ anything a session creates without asking, it also tears down without asking.
   commit, never while units are out.** A catch-up after the worktrees are cut
   moves HEAD off the units' base, so each squash becomes a true merge, and a
   merge or pull refuses to run on an index that holds staged squashes.
-- **A plain push of the feature branch runs with no question.**
+- **Ask how the feature branch lands before any push of it.** Recommend a pull
+  request. Push the feature branch only for a pull request, or when it already
+  tracks a remote branch. A local merge pushes only the default branch. One
+  local-merge pick runs that merge with no second question. A pull-request
+  pick approves no merge.
 - **These still ask the human:**
   - a push to the default branch, except a plain push whose every commit came
     from a green final suite run
@@ -204,9 +208,9 @@ goes to the guard's ordinary rules, which refuse it.
    committed tree matches the unit's files, so it waits for the task commit
    too.
 
-The push then follows the test timeline in `SKILL.md`, as it does for any other
-work. A plain push of the feature branch runs with no question. Anything on the
-list in "What asks the human" still asks.
+After the task commit, ask how the feature branch lands, as for any other
+work. Push it only for a pull request, or when it already tracks a remote
+branch. Anything on the list in "What asks the human" still asks.
 
 ## Refusals and leftovers
 
