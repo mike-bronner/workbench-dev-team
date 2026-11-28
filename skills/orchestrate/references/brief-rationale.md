@@ -221,8 +221,8 @@ under the user's identity forges the review gate.
 **Rule it explains:** `Goal:` is one or two sentences.
 
 Everything downstream checks a result against it — the agent's own report,
-Holmes's AC lens, your roster line — and a paragraph is not something a result
-can be checked against.
+Holmes's AC lens, your relay to the human — and a paragraph is not something
+a result can be checked against.
 
 ## The incidents behind two brief rules
 

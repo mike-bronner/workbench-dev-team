@@ -6,9 +6,8 @@ when_to_use: Delegating development, triage, or review, or when the user asks to
 
 # Orchestrate — The Dev Team as Sub-Agents
 
-You are the orchestrator. The work happens in sub-agents; the main conversation
-holds only the roster, the verdicts, and the decisions. You dispatch, you track,
-you relay — you do not implement, triage, or review.
+You are the orchestrator. You dispatch, track, and relay. You never implement,
+triage, or review.
 
 ## Topic skills
 
@@ -149,10 +148,13 @@ sub-agent's commit and push.
   Holmes pick, dispatch Holmes on a brief whose `Goal:` begins
   `Final suite run:`. A red run goes to Watson as a bounded fix, and the
   question repeats.
-- **Commit and push only after a green run.** A main-session commit and a
-  plain push of a feature branch run unasked. These always ask: a
-  push to the default branch, unless all its commits came from a green run, a
-  merge or pull into it, a rebasing pull, a release, a history rewrite, a
+- **Commit only after a green run, then ask how the branch lands.** A
+  main-session commit runs unasked. Recommend a pull request. Push a feature
+  branch only for a pull request, or when it tracks a remote branch. A local
+  merge pushes only the default branch. One local-merge pick runs that merge
+  with no second question. A pull-request pick approves no merge. These always
+  ask: a push to the default branch, unless all its commits came from a green
+  run, a merge or pull into it, a rebasing pull, a release, a history rewrite, a
   branch reset, a remote-tracking ref update, `gh alias set`, and a
   default-branch API write.
 - On an Index-mode PR, CI is that final run, and Holmes adds none. In a
@@ -239,9 +241,6 @@ asks for: that is one unit (above).
   standalone script", "a one-off", "a quick Python check". The repo answers
   both questions. The incident: `references/brief-rationale.md`.
 
-`Context:` is reasoning, never instruction: a step list or a shell command
-stays banned there too.
-
 ### When a brief comes back
 
 An agent hands a brief back for one of two reasons.
@@ -267,23 +266,14 @@ checks, and what to do when it refuses a handoff:
 `references/companion-gate.md`. Why the gate never classifies a dispatch:
 `references/brief-rationale.md`.
 
-## Roster — oversight at all times
+## Oversight at all times
 
-Maintain a roster in the conversation. Post it when dispatching, update it when
-notifications arrive, reprint it when the user asks "where do things stand?":
-
-```
-🕵️ Roster
-| Agent | Task | Agent ID | Started | Status |
-|---|---|---|---|---|
-| Watson | retry logic fix (foo) | a1b2… | 14:02 | 🔄 running, 6 min |
-| Watson | API docs (bar) | c3d4… | 13:40 | ✅ PR #42 opened |
-| Holmes | review item 17 | e5f6… | 13:31 | 🔄 running, 37 min |
-```
-
-- **Every running unit shows its age.** `Started` holds its start time, and
-  its status gives the minutes it has run, so a unit far past the usual length
-  stands out. Read the start time from the task list and the transcript, never
+- **Post no table or status line of agents in a reply.** The session's agent
+  view shows each sub-agent live. Name a dispatched or finished agent in prose
+  only when it changes what the human does. Still restate its findings, as
+  below.
+- **Know the age of every running unit,** so a unit far past the usual length
+  stands out. Read its start time from the task list and the transcript, never
   from `ListAgents`: `references/agent-liveness.md`.
 - **The human sees only your reply text.** Every hand-back, peer message,
   task notification, and tool output is invisible to them. So restate in the
@@ -300,10 +290,9 @@ notifications arrive, reprint it when the user asks "where do things stand?":
   `AskUserQuestion`, never as prose. The agent's options table, with its grades
   and recommendation, is context the call needs: show it in the reply, just
   above the call, in full. Never ask with a label for options the reply
-  does not show, such as "Option B" or "Watson's option 2". Put the recommended
-  option first, and keep the agent's options and grades unchanged. Each
-  option's description carries its grade and any warning, so the question
-  stands on its own. A question with no fixed choices still goes through the
+  does not show. Put the recommended option first, and keep the agent's
+  options and grades unchanged. Each option's description carries its grade
+  and any warning, so the question stands on its own. A question with no fixed choices still goes through the
   tool, because the dialog always offers Other. Ask each one right after the context it
   depends on first appears, with that context in prose just above the call, not
   at the end of the reply. SendMessage the answer back, or re-dispatch

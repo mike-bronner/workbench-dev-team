@@ -71,7 +71,7 @@ because only the dispatcher gives the run its pipeline flag, and returns the
 dispatcher's first line. A first line of `SKIP` (a run on that item is still alive) or `ESCALATE`
 (the breaker judges the item wedged) means nothing was spawned: relay it to
 the human rather than retrying. Track a spawned run from its log rather than
-from a completion notification, and keep the roster line updated from it.
+from a completion notification.
 The run exits 0 even when calls were refused, so check the log for
 `Permission denied:` lines, one per refused call.
 
